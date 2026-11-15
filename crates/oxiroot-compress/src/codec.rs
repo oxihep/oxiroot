@@ -18,20 +18,51 @@ pub(crate) fn zstd_decode(
 ) -> Result<Vec<u8>, CompressError> {
     let mut decoder = ruzstd::decoding::StreamingDecoder::new(payload)
         .map_err(|e| CompressError::Codec(format!("zstd: {e:?}")))?;
-    // `uncompressed_size` is the block header's (untrusted) declared size. Cap the
-    // speculative reservation so a forged header can't force a large allocation;
-    // the caller verifies the produced length matches afterward.
-    let mut out = Vec::with_capacity(uncompressed_size.min(crate::MAX_CHUNK_SIZE));
-    decoder
-        .read_to_end(&mut out)
-        .map_err(|e| CompressError::Codec(format!("zstd: {e}")))?;
-    Ok(out)
+    read_bounded(&mut decoder, uncompressed_size, "zstd")
 }
 
-/// Decode a single zlib-compressed block payload (a standard zlib stream).
-pub(crate) fn zlib_decode(payload: &[u8]) -> Result<Vec<u8>, CompressError> {
-    miniz_oxide::inflate::decompress_to_vec_zlib(payload)
-        .map_err(|e| CompressError::Codec(format!("zlib: {e:?}")))
+/// Decode a single zlib-compressed block payload (a standard zlib stream),
+/// producing at most `uncompressed_size` bytes.
+pub(crate) fn zlib_decode(
+    payload: &[u8],
+    uncompressed_size: usize,
+) -> Result<Vec<u8>, CompressError> {
+    use miniz_oxide::inflate::TINFLStatus;
+    match miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(payload, uncompressed_size) {
+        Ok(out) => Ok(out),
+        // The stream holds more than the header declared: stop instead of
+        // inflating it, so a small block cannot expand into a huge buffer.
+        Err(e) if e.status == TINFLStatus::HasMoreOutput => Err(CompressError::SizeMismatch {
+            expected: uncompressed_size,
+            got: uncompressed_size + 1,
+        }),
+        Err(e) => Err(CompressError::Codec(format!("zlib: {e:?}"))),
+    }
+}
+
+/// Read a streaming decoder to the end, producing at most `limit` bytes.
+///
+/// `limit` is the block header's declared (untrusted, but at most 16 MiB)
+/// size. Reading stops one byte past it, so a stream that would expand further
+/// fails with [`CompressError::SizeMismatch`] instead of allocating its whole
+/// output first.
+fn read_bounded(
+    decoder: &mut impl Read,
+    limit: usize,
+    codec: &str,
+) -> Result<Vec<u8>, CompressError> {
+    let mut out = Vec::with_capacity(limit.min(crate::MAX_CHUNK_SIZE));
+    decoder
+        .take(limit as u64 + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| CompressError::Codec(format!("{codec}: {e}")))?;
+    if out.len() > limit {
+        return Err(CompressError::SizeMismatch {
+            expected: limit,
+            got: out.len(),
+        });
+    }
+    Ok(out)
 }
 
 /// Decode a ROOT LZ4 block payload: an 8-byte big-endian XXH64 checksum (over
@@ -53,8 +84,13 @@ pub(crate) fn lz4_decode(
     if xxh64(data, 0) != stored {
         return Err(CompressError::Codec("lz4: xxh64 checksum mismatch".into()));
     }
-    lz4_flex::block::decompress(data, uncompressed_size)
-        .map_err(|e| CompressError::Codec(format!("lz4: {e}")))
+    // `decompress_into` reports a too-small output as an error, where
+    // `decompress` may panic, so a forged size cannot crash the reader.
+    let mut out = vec![0u8; uncompressed_size];
+    let n = lz4_flex::block::decompress_into(data, &mut out)
+        .map_err(|e| CompressError::Codec(format!("lz4: {e}")))?;
+    out.truncate(n);
+    Ok(out)
 }
 
 /// Decode a ROOT LZMA block payload (a complete XZ stream). `uncompressed_size`
@@ -64,13 +100,9 @@ pub(crate) fn lzma_decode(
     payload: &[u8],
     uncompressed_size: usize,
 ) -> Result<Vec<u8>, CompressError> {
-    let mut out = Vec::with_capacity(uncompressed_size.min(crate::MAX_CHUNK_SIZE));
     // A ROOT block holds exactly one XZ stream, so `allow_multiple_streams=false`.
     let mut reader = lzma_rust2::XzReader::new(payload, false);
-    reader
-        .read_to_end(&mut out)
-        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
-    Ok(out)
+    read_bounded(&mut reader, uncompressed_size, "lzma")
 }
 
 /// Encode `data` as a single zlib stream — the payload of a ROOT `ZL` block.
