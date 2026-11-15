@@ -250,7 +250,8 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<(String, Ve
     }
 
     let mut tags = TagReader::new(keylen);
-    let mut out = Vec::with_capacity(n as usize);
+    // `n` comes from the file; every entry takes at least a 4-byte header.
+    let mut out = Vec::with_capacity((n as usize).min(r.remaining() / 4));
     for _ in 0..n {
         let header = tags.read_header(&mut r)?;
         match (header.class_name, header.end) {
@@ -526,7 +527,8 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<ObjMap> {
     let n = r.be_i32()?.max(0);
 
     let mut tags = TagReader::new(keylen);
-    let mut pairs = Vec::with_capacity(n as usize);
+    // `n` comes from the file; every pair takes at least two 4-byte headers.
+    let mut pairs = Vec::with_capacity((n as usize).min(r.remaining() / 8));
     for _ in 0..n {
         let key = read_entry(&mut r, &mut tags, object)?;
         let value = read_entry(&mut r, &mut tags, object)?;
@@ -588,5 +590,27 @@ impl ReadRoot for ObjMap {
     }
     fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
         read_tmap_in(file, dir, name)
+    }
+}
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+    use crate::buffer::K_BYTE_COUNT_MASK;
+
+    /// A collection claiming `i32::MAX` entries in a few bytes is an error
+    /// once the buffer runs out, not an attempt to reserve gigabytes first.
+    #[test]
+    fn a_forged_entry_count_does_not_reserve_memory() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(K_BYTE_COUNT_MASK | 30).to_be_bytes()); // TList version header
+        body.extend_from_slice(&5u16.to_be_bytes());
+        body.extend_from_slice(&1u16.to_be_bytes()); // TObject version
+        body.extend_from_slice(&0u32.to_be_bytes()); // fUniqueID
+        body.extend_from_slice(&0x0300_0000u32.to_be_bytes()); // fBits
+        body.push(0); // fName ""
+        body.extend_from_slice(&i32::MAX.to_be_bytes()); // fSize
+        body.resize(34, 0);
+        assert!(read_members("TList", &body, 0).is_err());
     }
 }

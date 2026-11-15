@@ -75,3 +75,50 @@ fn tree_truncations_never_panic() {
         }
     }
 }
+
+/// A basket key whose `fKeyLen` is larger than the bytes probed for it used to
+/// slice out of bounds (review finding 1A H1). Patch every `TBasket` key of
+/// each fixture so its key header claims to run past the original record, and
+/// read everything: errors are fine, panics are not.
+#[test]
+fn basket_key_longer_than_probe_never_panics() {
+    for (name, tree) in FIXTURES {
+        let original = fixture(name);
+        let mut patched_any = false;
+        let mut at = 0;
+        while let Some(off) = find(&original[at..], b"\x07TBasket") {
+            let class_at = at + off;
+            at = class_at + 1;
+            // The class name follows the key's fixed header and its two seek
+            // pointers: 4-byte seeks (version <= 1000) or 8-byte ones.
+            for start in [class_at.checked_sub(26), class_at.checked_sub(34)]
+                .into_iter()
+                .flatten()
+            {
+                let version = u16::from_be_bytes([original[start + 4], original[start + 5]]);
+                let small = class_at - start == 26 && version <= 1000;
+                let big = class_at - start == 34 && version > 1000;
+                if !(small || big) {
+                    continue;
+                }
+                let nbytes = i32::from_be_bytes(original[start..start + 4].try_into().unwrap());
+                if nbytes <= 0 {
+                    continue;
+                }
+                let mut bytes = original.clone();
+                let key_len = (nbytes + 100).min(i32::from(i16::MAX)) as i16;
+                bytes[start + 14..start + 16].copy_from_slice(&key_len.to_be_bytes());
+                bytes[start..start + 4].copy_from_slice(&(i32::from(key_len) + 100).to_be_bytes());
+                patched_any = true;
+                if let Ok(f) = FileReader::from_bytes(bytes) {
+                    poke_tree(&f, tree);
+                }
+            }
+        }
+        assert!(patched_any, "{name}: no TBasket key found to patch");
+    }
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
