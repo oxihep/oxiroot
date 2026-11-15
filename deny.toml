@@ -1,0 +1,26 @@
+# cargo-deny configuration, run in CI by the `supply-chain` job:
+#   cargo deny check advisories bans sources
+
+[graph]
+all-features = true
+
+[advisories]
+# Fail on any RustSec vulnerability or unmaintained/unsound notice in the tree.
+version = 2
+yanked = "deny"
+
+[bans]
+# Two versions of one crate are reported but do not fail the build: several
+# come from upstream (e.g. two hashbrown versions). The oxihep crates must
+# never be duplicated; the `oxihep-lockstep` CI job enforces that.
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies inside this workspace carry a version too.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The oxihep crates are git dependencies until they are on crates.io.
+allow-org = { github = ["oxihep"] }
