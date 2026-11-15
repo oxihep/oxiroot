@@ -79,7 +79,9 @@ jobs:
       - name: Each crate with no features, and with each feature alone
         # Catches a feature that only compiles alongside another one. Features
         # must add API, never change it, so every combination has to build.
-        run: cargo hack check --locked --workspace --each-feature --no-dev-deps
+        # Not --locked: --no-dev-deps edits the manifests while it runs, which
+        # changes the lockfile it would otherwise check against.
+        run: cargo hack check --workspace --each-feature --no-dev-deps
 
       - name: Clippy with all features
         # The only job that compiles the `http` and `xrootd` remote-read paths.
