@@ -11,15 +11,25 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
 > The name is *ROOT + oxide* — Rust is oxidized iron.
 
-oxiroot is the ROOT-file part of the [oxihep](https://github.com/oxihep)
-family, the way uproot is in Scikit-HEP: histograms come from
-[oxihist](https://github.com/oxihep/oxihist), plots from
-[oxiplot](https://github.com/oxihep/oxiplot), fits from
-[oxifit](https://github.com/oxihep/oxifit), statistics from
-[oxistats](https://github.com/oxihep/oxistats) and particle data from
-[oxiparticle](https://github.com/oxihep/oxiparticle). The `oxiroot` crate
-re-exports all of them, so one dependency gives you the lot; see
-[the family](#the-oxihep-family) below.
+## Part of the oxihep family
+
+oxiroot is the ROOT-file crate of [oxihep](https://github.com/oxihep), a set of
+Rust crates for high-energy physics split the way Python's
+[Scikit-HEP](https://scikit-hep.org) is: oxiroot plays uproot's part, and the
+other jobs live in their own repositories. The `oxiroot` crate re-exports all
+of them, so one dependency gives you the lot.
+
+| Crate | What it does | Python counterpart | In oxiroot |
+| --- | --- | --- | --- |
+| **oxiroot** (this repository) | Read and write ROOT files: `TTree`, RNTuple, ROOT histograms and graphs | uproot | — |
+| [oxihist](https://github.com/oxihep/oxihist) | Histograms: typed axes, weighted and profile storages | boost-histogram, hist | `Hist`, `oxiroot::hist::oxihist` |
+| [oxiplot](https://github.com/oxihep/oxiplot) | Plotting to SVG/PNG/PDF with an mplhep look | matplotlib, mplhep | `oxiroot::plot` (`plot` feature) |
+| [oxifit](https://github.com/oxihep/oxifit) | Curve fitting with Minuit2, and a `TFormula` engine | iminuit | `oxiroot::fit` (`fit` feature) |
+| [oxistats](https://github.com/oxihep/oxistats) | Statistics, HEP lineshapes and intervals | scipy.stats, hepstats | `oxiroot::stat` |
+| [oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data and ID decoding | particle | `oxiroot::particle` |
+
+None of them is on crates.io yet; depend on them from GitHub (see
+[Quick start](#quick-start)).
 
 ## Highlights
 
@@ -35,6 +45,10 @@ re-exports all of them, so one dependency gives you the lot; see
 - 📊 **Histograms & profiles** — `Hist1D`/`Hist2D`/`Hist3D` (every precision, uniform or
   irregular bins), `Profile1D`/`Profile2D`/`Profile3D`, `Efficiency`,
   N-dimensional `SparseHist`, and polygon-binned `PolyHist` — all read **and** write.
+  Build and analyse histograms with [oxihist](https://github.com/oxihep/oxihist)
+  and convert both ways: `Hist::reg(50, 0.0, 100.0).weight().to_root()` is a
+  `TH1D`, and `th1.to_hist()` (or `Histogram::read_root`) brings a ROOT
+  histogram back, the way uproot and `hist` work together.
 - 🎲 **Sampling & smoothing** — draw from a histogram's or function's
   distribution (`get_random`/`fill_random`, ROOT's `GetRandom`/`FillRandom`) and
   smooth with ROOT's `353QH` (`smooth`), via a small seedable built-in `Random` (no
@@ -43,24 +57,19 @@ re-exports all of them, so one dependency gives you the lot; see
   and `MultiErrorGraph` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `Func1D`).
 - 🧮 **Functions** — standalone `Func1D`/`Func2D`/`Func3D` keys backed by a real
-  `TFormula` expression engine (arbitrary formulas, ROOT `gaus`/`expo`/`pol`
+  `TFormula` expression engine (oxifit-formula, from [oxifit](https://github.com/oxihep/oxifit); arbitrary formulas, ROOT `gaus`/`expo`/`pol`
   shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
   fittable via `Model::from_formula`.
-- 📐 **Statistics** (`oxiroot::stat`) — a dependency-free, `scipy.stats`-verified
-  core: special functions (`erf`, `gammainc`, `betainc`, `ndtri`), the
-  `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions (`pdf`/`cdf`/`sf`/`ppf`)
-  plus Poisson/Binomial, descriptive stats (`describe`, `skew`, `kurtosis`, `sem`,
-  `iqr`, `median_abs_deviation`, `entropy`, …), `pearsonr`/`spearmanr`, and tests
-  (`chisquare`, `ks_1samp`/`ks_2samp`, `ttest_ind`, `normaltest`,
-  `mannwhitneyu`/`wilcoxon`) plus a seeded `bootstrap_ci`. A **`physics`** module
-  adds HEP conventions: significance ↔ p-value ("nσ"), inverse-variance
-  measurement combination, Clopper–Pearson / Garwood / Wilson / Agresti–Coull
-  efficiency intervals, and the **Feldman–Cousins** unified interval. A
-  **`lineshapes`** module has the HEP fit shapes — **Crystal Ball** (and
-  double-sided), Breit–Wigner / relativistic BW, the **Voigt** profile,
-  Novosibirsk, ARGUS, bifurcated Gaussian, Moyal, and **Landau** — each also a
-  ready-to-fit [`Model`](#fitting-oxirootfit-fit-feature) (`Model::crystal_ball`,
-  `voigtian`, …).
+- 📐 **Statistics** (`oxiroot::stat`) — [oxistats](https://github.com/oxihep/oxistats),
+  re-exported: `scipy.stats`-verified special functions, distributions,
+  descriptive statistics and tests, plus the HEP pieces (significance ↔ p-value,
+  efficiency and Feldman–Cousins intervals, Crystal Ball / Voigt / Landau
+  lineshapes). Every lineshape is also a ready-to-fit `Model`.
+- 🎯 **Fitting** (`oxiroot::fit`) — [oxifit](https://github.com/oxihep/oxifit)'s
+  Minuit2 fitter works directly on `Hist1D` and `Graph` (`h.fit(&model)`), and a
+  `Func1D` turns into a fit `Model`.
+- ⚛️ **Particle data** (`oxiroot::particle`) — [oxiparticle](https://github.com/oxihep/oxiparticle),
+  re-exported: PDG ID decoding and a bundled particle table.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -97,10 +106,10 @@ re-exports all of them, so one dependency gives you the lot; see
 - 🔎 **Command-line inspector** — `oxroot ls` / `show` / `dump` / `stat` looks
   into any ROOT file (keys, `TTree`/RNTuple structure, entries, histogram bins)
   from the shell — no ROOT, no Python (the `oxiroot-cli` crate).
-- 🎨 **Plotting** (optional) — render `Hist1D`/`Hist2D`/`Graph`/`Profile1D` to **SVG,
-  PNG, and PDF** with a matplotlib-like API and an mplhep histogram style —
-  grids, ratio plots, LaTeX (`$…$`) math labels — all pure Rust, no matplotlib,
-  no system fonts.
+- 🎨 **Plotting** (`oxiroot::plot`) — [oxiplot](https://github.com/oxihep/oxiplot),
+  re-exported: `Hist1D`/`Hist2D`/`Graph`/`Profile1D` render to **SVG, PNG and
+  PDF** with a matplotlib-like API and an mplhep style — ratio plots, LaTeX
+  (`$…$`) labels, no matplotlib, no system fonts.
 - 🛡 **Robust by construction** — readers never panic on malformed input
   (fuzz-tested); writers cross the 2 GiB mark by switching to ROOT's 64-bit
   container form (never silently truncating a 32-bit seek pointer).
@@ -299,7 +308,10 @@ cargo run -p oxiroot --example analysis
 
 ### Fitting (`oxiroot::fit`, `fit` feature)
 
-Fitting lives in its **own crate** ([`oxifit`](https://github.com/oxihep/oxifit)), so it works on **any 1-D
+> From [oxifit](https://github.com/oxihep/oxifit), re-exported. Its README
+> covers the fitter itself; this section shows it on oxiroot's types.
+
+Fitting lives in its **own crate**, so it works on **any 1-D
 data**, not just histograms. A dataset implements the `FitData` trait (yielding
 `(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `Hist1D` and
 `Graph` implement `FitData` out of the box, and `Points` (or your own `FitData`
@@ -499,11 +511,13 @@ assert_eq!(cov.get(0, 1), cov.get(1, 0)); // symmetric
 
 ### Particle data (`oxiroot::particle`)
 
+> From [oxiparticle](https://github.com/oxihep/oxiparticle), re-exported.
+
 A Rust take on [scikit-hep `particle`](https://github.com/scikit-hep/particle):
 decode a PDG Monte Carlo ID straight from its digits (`PdgId`), and look particles
 up in a bundled ~600-particle PDG table (`Particle`) for their mass, width,
 lifetime, and quantum numbers. Dependency-free and **verified against the
-`particle` package** the way `oxiroot::stat` is verified against `scipy.stats`.
+`particle` package** the way oxistats is verified against `scipy.stats`.
 
 ```rust
 use oxiroot::particle::{Particle, PdgId};
@@ -572,6 +586,10 @@ assert_eq!(meta.get::<Parameter>("lumi").unwrap()?.value().as_f64(), 137.5);
 > writes, and oxiroot reads ROOT's `TMap`s.
 
 ### Plotting (`oxiroot::plot`, `plot` feature)
+
+> From [oxiplot](https://github.com/oxihep/oxiplot), re-exported. oxiplot plots
+> anything that implements its data traits; oxiroot implements them for
+> `Hist1D`, `Hist2D`, `Profile1D` and `Graph`, and oxihist for its histograms.
 
 Render histograms and graphs to **SVG, PNG, and PDF** with a matplotlib-like API and an
 mplhep histogram style — **pure Rust**, no matplotlib, no system fonts. One
@@ -890,17 +908,9 @@ on, so nothing extra is needed.
 | `oxiroot-tree` | Classic `TTree` read/write |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
 
-The parts that are not about ROOT live in their own repositories in the
-[oxihep](https://github.com/oxihep) organization, the way Python's Scikit-HEP
-splits uproot, hist, mplhep and particle. The facade re-exports each one, so the
-`oxiroot::…` paths are unchanged:
-
-| Crate | Repository | Purpose | In oxiroot |
-|-------|------------|---------|------------|
-| `oxistats` | [oxihep/oxistats](https://github.com/oxihep/oxistats) | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) | `oxiroot::stat` |
-| `oxiparticle` | [oxihep/oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) | `oxiroot::particle` |
-| `oxifit`, `oxifit-formula` | [oxihep/oxifit](https://github.com/oxihep/oxifit) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`), and the `TFormula` expression engine behind the functions and formula fits | `oxiroot::fit` (`fit` feature) |
-| `oxiplot`, `oxiplot-tex` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Matplotlib-style SVG/PNG/PDF plotting, and the vendored ReX TeX engine for its math labels | `oxiroot::plot` (`plot` feature) |
+The crates that are not about ROOT (oxihist, oxiplot, oxifit, oxistats,
+oxiparticle) live in their own repositories; see
+[the family table](#part-of-the-oxihep-family).
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
@@ -923,24 +933,6 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 The facade is batteries-included: everything marked ✅ is on by default. For a
 lean, pure-Rust format core with a minimal dependency set, opt out with
 `default-features = false` and re-enable what you need.
-
-## The oxihep family
-
-Rust crates for high-energy physics, split the way Python's
-[Scikit-HEP](https://scikit-hep.org) is. Each works on its own; oxiroot
-re-exports the others, so the `oxiroot` crate alone gives you all of them.
-
-| Crate | What it does | Python counterpart | In oxiroot |
-| --- | --- | --- | --- |
-| **oxiroot** (this repository) | Read and write ROOT files: `TTree`, RNTuple, ROOT histograms and graphs | uproot | — |
-| [oxihist](https://github.com/oxihep/oxihist) | Histograms: typed axes, weighted and profile storages | boost-histogram, hist | `Hist`, `oxiroot::hist::oxihist` |
-| [oxiplot](https://github.com/oxihep/oxiplot) | Plotting to SVG/PNG/PDF with an mplhep look | matplotlib, mplhep | `oxiroot::plot` (`plot` feature) |
-| [oxifit](https://github.com/oxihep/oxifit) | Curve fitting with Minuit2, and a `TFormula` engine | iminuit | `oxiroot::fit` (`fit` feature) |
-| [oxistats](https://github.com/oxihep/oxistats) | Statistics, HEP lineshapes and intervals | scipy.stats, hepstats | `oxiroot::stat` |
-| [oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data and ID decoding | particle | `oxiroot::particle` |
-
-None of them is on crates.io yet; oxiroot depends on each through GitHub,
-pinned to a release tag.
 
 ## Build & test
 
@@ -981,7 +973,7 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 
 ## Roadmap
 
-Pre-1.0 (`0.1`): the API may still change between minor versions. On the list —
+Pre-1.0: the API may still change between minor versions. On the list —
 each item targets the same bar as what
 already ships: byte-level round-trips verified against both ROOT and uproot.
 Grouped by the ROOT feature each fills.
@@ -1008,7 +1000,7 @@ Grouped by the ROOT feature each fills.
 
 Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
 throws); and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
-the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
+the `plot` feature (oxiplot) renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 
