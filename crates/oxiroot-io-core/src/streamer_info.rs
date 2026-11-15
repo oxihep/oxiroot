@@ -61,10 +61,10 @@ pub struct StreamerRegistry {
 }
 
 impl StreamerRegistry {
-    /// Build a registry from an explicit list of infos (used by the generic
-    /// reader's tests to construct hand-made — including hostile — layouts).
-    #[cfg(test)]
-    pub(crate) fn from_infos(infos: Vec<StreamerInfo>) -> Self {
+    /// Build a registry from an explicit list of infos, for example a
+    /// hand-made layout in a test.
+    #[must_use]
+    pub fn from_infos(infos: Vec<StreamerInfo>) -> Self {
         StreamerRegistry { infos }
     }
 

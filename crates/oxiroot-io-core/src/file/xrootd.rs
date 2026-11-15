@@ -40,6 +40,12 @@ const KXR_ERROR: u16 = 4003;
 const KXR_REDIRECT: u16 = 4004;
 const KXR_WAIT: u16 = 4005;
 
+/// How many `kXR_wait` replies an open honours before giving up.
+const MAX_WAITS: usize = 30;
+/// The largest payload a control request (login, auth, open, stat, close) may
+/// return; reads are capped at the length they asked for.
+const SMALL_RESPONSE: usize = 64 * 1024;
+
 // Open option: read-only.
 const KXR_OPEN_READ: u16 = 0x10;
 
@@ -150,7 +156,17 @@ impl Conn {
 
     /// Send a request (24-byte header + `data`) and return the collected
     /// response payload, resolving `kXR_wait` (retry) and surfacing errors.
-    fn request(&mut self, reqid: u16, body: [u8; 16], data: &[u8]) -> Result<(u16, Vec<u8>)> {
+    ///
+    /// `max_len` is the most response payload this request can legitimately
+    /// carry; a server that announces more is a protocol error, so it cannot
+    /// make the client buffer an arbitrary amount.
+    fn request(
+        &mut self,
+        reqid: u16,
+        body: [u8; 16],
+        data: &[u8],
+        max_len: usize,
+    ) -> Result<(u16, Vec<u8>)> {
         self.stream_id = self.stream_id.wrapping_add(1);
         let mut hdr = Vec::with_capacity(24 + data.len());
         hdr.extend_from_slice(&self.stream_id.to_be_bytes());
@@ -161,25 +177,41 @@ impl Conn {
         self.stream
             .write_all(&hdr)
             .map_err(|e| io_err("sending request", e))?;
-        self.read_response()
+        self.read_response(max_len)
     }
 
-    /// Read one logical response, concatenating `kXR_oksofar` continuations.
-    fn read_response(&mut self) -> Result<(u16, Vec<u8>)> {
+    /// Read one logical response, concatenating `kXR_oksofar` continuations,
+    /// of at most `max_len` payload bytes in all. Each frame is read as its
+    /// bytes arrive rather than into a buffer sized by the frame header, so a
+    /// header announcing more than the server sends cannot force a large
+    /// allocation.
+    fn read_response(&mut self, max_len: usize) -> Result<(u16, Vec<u8>)> {
         let mut payload = Vec::new();
         loop {
             let mut head = [0u8; 8];
             self.read_exact(&mut head)?;
             let status = u16::from_be_bytes([head[2], head[3]]);
             let dlen = i32::from_be_bytes([head[4], head[5], head[6], head[7]]).max(0) as usize;
-            let mut chunk = vec![0u8; dlen];
-            self.read_exact(&mut chunk)?;
-            if status == KXR_OKSOFAR {
-                payload.extend_from_slice(&chunk);
-                continue;
+            if payload.len() + dlen > max_len {
+                return Err(protocol_err(format!(
+                    "root://: response of {} bytes exceeds the {max_len} this request allows",
+                    payload.len() + dlen
+                )));
             }
-            payload.extend_from_slice(&chunk);
-            return Ok((status, payload));
+            let start = payload.len();
+            (&mut self.stream)
+                .take(dlen as u64)
+                .read_to_end(&mut payload)
+                .map_err(|e| io_err("reading response", e))?;
+            if payload.len() - start != dlen {
+                return Err(io_err(
+                    "reading response",
+                    std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+                ));
+            }
+            if status != KXR_OKSOFAR {
+                return Ok((status, payload));
+            }
         }
     }
 
@@ -197,7 +229,7 @@ impl Conn {
         let mut body = [0u8; 16];
         body[4..10].copy_from_slice(b"nobody");
         body[14] = 0x04;
-        let (status, payload) = self.request(KXR_LOGIN, body, &[])?;
+        let (status, payload) = self.request(KXR_LOGIN, body, &[], SMALL_RESPONSE)?;
         if status != KXR_OK {
             return Err(server_error("login", status, &payload));
         }
@@ -223,7 +255,7 @@ impl Conn {
         // Body: reserved[12] + credtype[4]="unix"; credential is the tag itself.
         let mut body = [0u8; 16];
         body[12..16].copy_from_slice(b"unix");
-        let (status, payload) = self.request(KXR_AUTH, body, b"unix\0")?;
+        let (status, payload) = self.request(KXR_AUTH, body, b"unix\0", SMALL_RESPONSE)?;
         if status != KXR_OK {
             return Err(server_error("unix authentication", status, &payload));
         }
@@ -231,22 +263,37 @@ impl Conn {
     }
 
     fn try_open(&mut self, path: &str) -> Result<OpenOutcome> {
+        // A server may ask us to wait and retry; give up after a bounded
+        // number of waits instead of retrying (or recursing) forever.
+        for _ in 0..MAX_WAITS {
+            if let Some(outcome) = self.open_once(path)? {
+                return Ok(outcome);
+            }
+        }
+        Err(protocol_err(format!(
+            "root://: server asked to wait {MAX_WAITS} times while opening {path}"
+        )))
+    }
+
+    /// One `kXR_open` attempt: the outcome, or `None` after honouring a
+    /// `kXR_wait`.
+    fn open_once(&mut self, path: &str) -> Result<Option<OpenOutcome>> {
         // Body: mode(0) + options + reserved[12]; data = path.
         let mut body = [0u8; 16];
         body[0..2].copy_from_slice(&0u16.to_be_bytes()); // mode
         body[2..4].copy_from_slice(&KXR_OPEN_READ.to_be_bytes());
-        let (status, payload) = self.request(KXR_OPEN, body, path.as_bytes())?;
+        let (status, payload) = self.request(KXR_OPEN, body, path.as_bytes(), SMALL_RESPONSE)?;
         match status {
             KXR_OK => {
                 if payload.len() < 4 {
                     return Err(protocol_err("root://: short open response".into()));
                 }
                 self.fhandle.copy_from_slice(&payload[0..4]);
-                Ok(OpenOutcome::Opened)
+                Ok(Some(OpenOutcome::Opened))
             }
             KXR_REDIRECT => {
                 let (host, port, opaque) = parse_redirect(&payload)?;
-                Ok(OpenOutcome::Redirect { host, port, opaque })
+                Ok(Some(OpenOutcome::Redirect { host, port, opaque }))
             }
             KXR_WAIT => {
                 let secs = payload
@@ -255,7 +302,7 @@ impl Conn {
                     .unwrap_or(1)
                     .min(10);
                 std::thread::sleep(Duration::from_secs(secs));
-                self.try_open(path)
+                Ok(None)
             }
             _ => Err(server_error(&format!("opening {path}"), status, &payload)),
         }
@@ -267,7 +314,7 @@ impl Conn {
         // Body: reserved[11] + options(0) + fhandle[4]; no path (dlen 0) => fstat.
         let mut body = [0u8; 16];
         body[12..16].copy_from_slice(&self.fhandle);
-        let (status, payload) = self.request(KXR_STAT, body, &[])?;
+        let (status, payload) = self.request(KXR_STAT, body, &[], SMALL_RESPONSE)?;
         if status != KXR_OK {
             return Err(server_error("stat", status, &payload));
         }
@@ -284,7 +331,7 @@ impl Conn {
         body[0..4].copy_from_slice(&self.fhandle);
         body[4..12].copy_from_slice(&(offset as i64).to_be_bytes());
         body[12..16].copy_from_slice(&(len as i32).to_be_bytes());
-        let (status, payload) = self.request(KXR_READ, body, &[])?;
+        let (status, payload) = self.request(KXR_READ, body, &[], len)?;
         if status != KXR_OK {
             return Err(server_error("reading", status, &payload));
         }
@@ -300,7 +347,7 @@ impl Conn {
     fn close(&mut self) {
         let mut body = [0u8; 16];
         body[0..4].copy_from_slice(&self.fhandle);
-        let _ = self.request(KXR_CLOSE, body, &[]);
+        let _ = self.request(KXR_CLOSE, body, &[], SMALL_RESPONSE);
     }
 }
 

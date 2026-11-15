@@ -7,8 +7,10 @@ change the API.
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
+- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
+  and a public `StreamerRegistry::from_infos` for hand-built registries.
 - **`ThreadedHist` got slower as threads were added.** Every fill took a
   shared read lock to find the thread's copy. The copies now live in
   thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
@@ -16,22 +18,11 @@ change the API.
 - **`fill_par` cloned the template once per rayon split.** It now fills a few
   chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
 
-### Fixed
-
-- **Decompression is bounded by the block's declared size.** zstd, zlib and
-  LZMA blocks used to decode in full and be checked afterwards, so a small
-  crafted block could expand into gigabytes before being rejected. Decoding
-  now stops one byte past the declared size (at most 16 MiB per block), and
-  LZ4 uses the decoder entry point that reports a too-small output as an error
-  instead of panicking.
-
 ### Changed
 
-- Codec crates upgraded: ruzstd 0.9, lz4_flex 0.14, lzma-rust2 0.25. Files
+- Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
+  decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
   written with each codec read back in ROOT 6.40 unchanged.
-
-### Changed
-
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, a new
   ROOT-free histogram library modelled on boost-histogram and scikit-hep `hist`
   (category and boolean axes, `Double`/`Int64`/`Weight`/`Mean`/`WeightedMean`
@@ -66,6 +57,7 @@ change the API.
   switches to the new names (`oxiroot_stat::` → `oxistats::`, and so on). Until
   the new crates are published they are git dependencies pinned to their
   `v0.1.0` tags.
+
 - **oxiplot no longer depends on oxiroot.** It plots anything that implements
   its `Hist1dData`/`Hist2dData`/`PointData` traits; `oxiroot-hist` now
   implements them for `Hist1D`, `Profile1D`, `Hist2D` and `Graph` behind a new
@@ -73,7 +65,6 @@ change the API.
   `oxiroot-io-core` (its new `plot` feature). The facade's `plot` feature turns
   both on. oxiplot also gained `Binned1D`/`Binned2D`/`Points` for plotting plain
   arrays.
-
 - **Types are named as Rust, not as C++: the `T` prefix is gone.** The workspace
   followed ROOT's C++ convention only halfway — the IO layer was already
   idiomatic (`FileReader`, `TreeReader`, `Directory`, `Value`) while the data
@@ -111,6 +102,30 @@ change the API.
   and uproot interop suites pass unchanged. The dynamic `Value` tree likewise
   keeps ROOT's member names verbatim (`fName`, `fBins`, …) — they are data read
   out of the file, not a naming choice.
+
+### Fixed
+
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
+- **Recursion driven by file or server data is bounded.** The TTree streamer
+  walker now stops at `MAX_STREAMER_DEPTH` (64) base-class levels, like the
+  generic object reader already did; a class listing itself as its own base
+  used to overflow the stack. The XRootD client honours at most 30 `kXR_wait`
+  replies while opening a file (it used to recurse once per reply).
+- **XRootD responses are capped.** Control requests may return at most 64 KiB
+  and reads at most the length requested, and frame data is read as it arrives
+  instead of into a buffer sized by the frame header, so a server announcing
+  2 GB cannot make the client allocate it.
 
 ## [0.3.0] — 2026-09-24
 
