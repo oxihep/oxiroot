@@ -7,15 +7,6 @@ change the API.
 
 ## [Unreleased]
 
-### Fixed
-
-- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
-  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
-- **Reading objects from a subdirectory re-read its key list each time, and
-  every object read re-parsed the file's streamer info.** `FileReader` now
-  reads each subdirectory once and parses the streamer info once: 3 000
-  objects from one subdirectory take 13 ms instead of 425 ms.
-
 ### Added
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
@@ -29,6 +20,12 @@ change the API.
 
 ### Changed
 
+- **Breaking: `FileReader::open_mmap` is `unsafe`, and `mmap` is no longer a
+  default feature of `oxiroot`.** Its contract (the file must not change while
+  mapped, or the result is undefined behaviour) was only in prose, on a safe
+  function. Call it as `unsafe { FileReader::open_mmap(path) }` with the
+  `mmap` feature enabled, or use `FileReader::open_ranged`, which reads lazily
+  with no such contract.
 - Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
   decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
   written with each codec read back in ROOT 6.40 unchanged.
@@ -114,6 +111,12 @@ change the API.
 
 ### Fixed
 
+- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
+  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
+- **Reading objects from a subdirectory re-read its key list each time, and
+  every object read re-parsed the file's streamer info.** `FileReader` now
+  reads each subdirectory once and parses the streamer info once: 3 000
+  objects from one subdirectory take 13 ms instead of 425 ms.
 - **Decompression is bounded by the block's declared size.** zstd, zlib and
   LZMA blocks used to decode in full and be checked afterwards, so a small
   crafted block could expand into gigabytes before being rejected. Decoding

@@ -73,17 +73,23 @@ impl FileReader {
 
     /// Open and parse a ROOT file by memory-mapping it, avoiding a full read into
     /// memory — useful for large files where only some objects are touched.
+    /// Requires the `mmap` feature. [`open_ranged`](Self::open_ranged) gives
+    /// the same lazy reads with no `unsafe` contract.
     ///
-    /// Requires the `mmap` feature. The map is read-only; as with any `mmap`,
-    /// the caller must ensure the file is not modified or truncated by another
-    /// process while the [`FileReader`] is alive (which would be undefined behavior).
+    /// # Safety
+    ///
+    /// The file must not be modified or truncated, by this process or any
+    /// other, while the returned [`FileReader`] (or anything borrowing it) is
+    /// alive. The reader's slices point straight into the mapped file, so a
+    /// change underneath them is undefined behaviour, and a truncation can
+    /// crash the process with `SIGBUS`. Only map files you control.
     #[cfg(feature = "mmap")]
-    pub fn open_mmap(path: impl AsRef<Path>) -> Result<FileReader> {
+    #[allow(unsafe_code)]
+    pub unsafe fn open_mmap(path: impl AsRef<Path>) -> Result<FileReader> {
         let file = std::fs::File::open(path)?;
-        // SAFETY: see the read-only / no-concurrent-modification contract above.
-        // This is the sole `unsafe` in the workspace (the `unsafe_code` lint is
-        // denied everywhere else); memmap2's `map` is unavoidably `unsafe`.
-        #[allow(unsafe_code)]
+        // SAFETY: the caller upholds the no-modification contract above. This
+        // is the only `unsafe` in the workspace (`unsafe_code` is denied
+        // everywhere else); memmap2's `map` is unavoidably `unsafe`.
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
         Self::from_source(Box::new(super::source::MmapSource::new(mmap)))
     }

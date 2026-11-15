@@ -124,11 +124,11 @@ the others.
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
-# the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
+# the facade. Fitting, plotting and argmin are ON BY DEFAULT, so nothing
 # extra to enable (add `features = ["rayon"]` for the parallel helpers):
 oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 
-# …leaner, just the format core (drops the fitting/plotting/mmap deps):
+# …leaner, just the format core (drops the fitting/plotting deps):
 # oxiroot = { git = "https://github.com/oxihep/oxiroot", default-features = false }
 
 # …or depend on just one crate (Cargo finds it in the repository):
@@ -922,7 +922,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
-| `mmap` | ✅ | Memory-mapped read path (`FileReader::open_mmap`) for large files; adds `memmap2`. |
+| `mmap` | — | Memory-mapped read path (`unsafe FileReader::open_mmap`) for large files; adds `memmap2`. Opt-in: the file must not change while mapped. `FileReader::open_ranged` reads lazily with no such contract. |
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
