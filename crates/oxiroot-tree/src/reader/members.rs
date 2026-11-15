@@ -97,10 +97,32 @@ pub(super) fn walk_members(
     on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
     stop_after: &str,
 ) -> Result<()> {
+    walk_members_at(r, reg, elements, out, on_object, stop_after, 0)
+}
+
+/// [`walk_members`] at base-class nesting `depth`, which is limited by
+/// [`MAX_STREAMER_DEPTH`](oxiroot_io_core::MAX_STREAMER_DEPTH): the file's own
+/// streamer info drives the recursion, and a class listing itself as its base
+/// would otherwise recurse until the stack overflows.
+fn walk_members_at(
+    r: &mut RBuffer,
+    reg: &StreamerRegistry,
+    elements: &[StreamerElement],
+    out: &mut Members,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    stop_after: &str,
+    depth: usize,
+) -> Result<()> {
+    if depth > oxiroot_io_core::MAX_STREAMER_DEPTH {
+        return Err(Error::Format(format!(
+            "base classes nested deeper than {} levels",
+            oxiroot_io_core::MAX_STREAMER_DEPTH
+        )));
+    }
     for el in elements {
         let t = el.el_type;
         if el.element_class == "TStreamerBase" {
-            read_base(r, reg, &el.name, out, on_object, stop_after)?;
+            read_base(r, reg, &el.name, out, on_object, stop_after, depth)?;
         } else if t == 65 {
             // kTString
             out.insert(el.name.clone(), MemberVal::Str(r.string()?));
@@ -150,6 +172,7 @@ fn read_base(
     out: &mut Members,
     on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
     stop_after: &str,
+    depth: usize,
 ) -> Result<()> {
     match class {
         "TObject" => {
@@ -166,7 +189,15 @@ fn read_base(
             let vh = r.read_version()?;
             match reg.get_at(class, i32::from(vh.version)) {
                 Some(info) => {
-                    walk_members(r, reg, &info.elements, out, on_object, stop_after)?;
+                    walk_members_at(
+                        r,
+                        reg,
+                        &info.elements,
+                        out,
+                        on_object,
+                        stop_after,
+                        depth + 1,
+                    )?;
                     if let Some(end) = vh.end {
                         r.seek(end)?;
                     }
@@ -274,5 +305,32 @@ mod tests {
             4,
             "c's 4 bytes are left for the caller to skip"
         );
+    }
+
+    /// A class that lists itself as its own base must end in an error after
+    /// `MAX_STREAMER_DEPTH` levels, not recurse until the stack overflows.
+    #[test]
+    fn a_self_referential_base_class_is_an_error() {
+        use oxiroot_io_core::StreamerInfo;
+        let looped = StreamerInfo {
+            class_name: "Loop".into(),
+            class_version: 1,
+            checksum: 0,
+            elements: vec![elem("TStreamerBase", "Loop", 0, None)],
+        };
+        let reg = StreamerRegistry::from_infos(vec![looped.clone()]);
+        // Each level reads a version header: byte count (with the
+        // kByteCountMask bit) then version 1. Far more levels than allowed.
+        let mut bytes = Vec::new();
+        for _ in 0..100_000 {
+            bytes.extend_from_slice(&(0x4000_0000u32 | 6).to_be_bytes());
+            bytes.extend_from_slice(&1u16.to_be_bytes());
+        }
+        let mut r = RBuffer::new(&bytes);
+        let mut out = Members::new();
+        let mut on_object = |_: &str, _: &mut RBuffer| Ok(());
+        let err =
+            walk_members(&mut r, &reg, &looped.elements, &mut out, &mut on_object, "").unwrap_err();
+        assert!(err.to_string().contains("nested deeper"), "{err}");
     }
 }
