@@ -18,7 +18,7 @@ jobs:
     name: test / lint / fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -62,7 +62,7 @@ jobs:
     name: feature combinations
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -115,7 +115,7 @@ jobs:
     # --duplicates` lists any crate built from more than one source.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -138,7 +138,7 @@ jobs:
     # (crates.io, plus git only from github.com/oxihep). Configured in deny.toml.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -148,7 +148,7 @@ jobs:
     name: minimum Rust version (1.95)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the workspace's declared rust-version
         uses: dtolnay/rust-toolchain@master
@@ -167,7 +167,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -184,7 +184,7 @@ jobs:
     name: package (dry run)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -214,7 +214,7 @@ jobs:
     name: fuzz targets build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -238,7 +238,7 @@ jobs:
     # branch is exercised only in the ROOT C++ job.)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -248,7 +248,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -293,7 +293,7 @@ jobs:
       HOME: /root
       DOCKER_CONFIG: /tmp
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
