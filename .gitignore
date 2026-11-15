@@ -1,6 +1,5 @@
 /target
 **/*.rs.bk
-Cargo.lock
 
 # Python oracle / fixture-generation environment
 /.venv
