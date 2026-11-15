@@ -134,7 +134,7 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
     let n = hdr.uncompressed_size as usize;
     let out = match hdr.algorithm() {
         Algorithm::Zstd => codec::zstd_decode(payload, n)?,
-        Algorithm::Zlib => codec::zlib_decode(payload)?,
+        Algorithm::Zlib => codec::zlib_decode(payload, n)?,
         Algorithm::Lz4 => codec::lz4_decode(payload, n)?,
         Algorithm::Lzma => codec::lzma_decode(payload, n)?,
         // The legacy `CS` ("old ROOT") codec and unknown tags remain unhandled.
@@ -266,6 +266,31 @@ mod tests {
             assert!(compressed.len() < data.len(), "should actually shrink");
             assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
         }
+    }
+
+    /// A block whose payload expands far beyond its declared size (a
+    /// decompression bomb) is rejected after producing at most one byte more
+    /// than declared, not after inflating the whole payload.
+    #[test]
+    fn a_block_cannot_expand_past_its_declared_size() {
+        let data = vec![0u8; 4 << 20]; // 4 MiB of zeros: a few KiB compressed
+        for setting in [101, 505, 205] {
+            let mut block = compress(&data, setting).unwrap();
+            assert!(block.len() < data.len() / 64, "setting {setting}");
+            // Declare 100 bytes in the header and ask for 100 bytes.
+            block[6..9].copy_from_slice(&[100, 0, 0]);
+            match decompress(&block, 100) {
+                Err(CompressError::SizeMismatch { expected, got }) => {
+                    assert_eq!(expected, 100, "setting {setting}");
+                    assert!(got <= 101, "setting {setting}: inflated {got} bytes first");
+                }
+                other => panic!("setting {setting}: expected SizeMismatch, got {other:?}"),
+            }
+        }
+        // LZ4 decodes into a buffer of the declared size and fails on overflow.
+        let mut block = compress(&data, 404).unwrap();
+        block[6..9].copy_from_slice(&[100, 0, 0]);
+        assert!(decompress(&block, 100).is_err());
     }
 
     #[test]

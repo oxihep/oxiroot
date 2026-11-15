@@ -7,25 +7,11 @@ change the API.
 
 ## [Unreleased]
 
-### Fixed
-
-- **Crafted files that used to panic or abort now return errors:**
-  - a TTree basket key whose `fKeyLen` runs past the probed bytes (an
-    out-of-bounds slice);
-  - object and version byte counts that end outside the buffer or before the
-    header (checked once in `TagReader::read_header` and
-    `RBuffer::read_version`, so collections and `TMap` entries no longer slice
-    with them);
-  - collection and `TMap` entry counts, and string-vector branch counts, that
-    reserved memory for every claimed entry before reading any (now clamped to
-    what the buffer can hold);
-  - an RNTuple deferred column starting at an absurd element index (capped at
-    65 536 elements per entry, and allocated fallibly);
-  - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
-    writes (10–31 and 1–32).
-
 ### Changed
 
+- Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
+  decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
+  written with each codec read back in ROOT 6.40 unchanged.
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, a new
   ROOT-free histogram library modelled on boost-histogram and scikit-hep `hist`
   (category and boolean axes, `Double`/`Int64`/`Weight`/`Mean`/`WeightedMean`
@@ -60,6 +46,7 @@ change the API.
   switches to the new names (`oxiroot_stat::` → `oxistats::`, and so on). Until
   the new crates are published they are git dependencies pinned to their
   `v0.1.0` tags.
+
 - **oxiplot no longer depends on oxiroot.** It plots anything that implements
   its `Hist1dData`/`Hist2dData`/`PointData` traits; `oxiroot-hist` now
   implements them for `Hist1D`, `Profile1D`, `Hist2D` and `Graph` behind a new
@@ -67,7 +54,6 @@ change the API.
   `oxiroot-io-core` (its new `plot` feature). The facade's `plot` feature turns
   both on. oxiplot also gained `Binned1D`/`Binned2D`/`Points` for plotting plain
   arrays.
-
 - **Types are named as Rust, not as C++: the `T` prefix is gone.** The workspace
   followed ROOT's C++ convention only halfway — the IO layer was already
   idiomatic (`FileReader`, `TreeReader`, `Directory`, `Value`) while the data
@@ -105,6 +91,29 @@ change the API.
   and uproot interop suites pass unchanged. The dynamic `Value` tree likewise
   keeps ROOT's member names verbatim (`fName`, `fBins`, …) — they are data read
   out of the file, not a naming choice.
+
+### Fixed
+
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
+- **Crafted files that used to panic or abort now return errors:**
+  - a TTree basket key whose `fKeyLen` runs past the probed bytes (an
+    out-of-bounds slice);
+  - object and version byte counts that end outside the buffer or before the
+    header (checked once in `TagReader::read_header` and
+    `RBuffer::read_version`, so collections and `TMap` entries no longer slice
+    with them);
+  - collection and `TMap` entry counts, and string-vector branch counts, that
+    reserved memory for every claimed entry before reading any (now clamped to
+    what the buffer can hold);
+  - an RNTuple deferred column starting at an absurd element index (capped at
+    65 536 elements per entry, and allocated fallibly);
+  - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
+    writes (10–31 and 1–32).
 
 ## [0.3.0] — 2026-09-24
 
