@@ -18,9 +18,10 @@
 //! - [`fill_par`] — one-call parallel fill of a slice (requires the `rayon`
 //!   feature).
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
-use std::thread::ThreadId;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use thread_local::ThreadLocal;
 
 use oxiroot_io_core::{Parameter, Result};
 
@@ -95,16 +96,16 @@ impl Mergeable for Parameter {
 /// Hold one *template* histogram (a binning prototype, normally **empty**), share
 /// `&ThreadedHist` across threads, and call [`fill`](ThreadedHist::fill) from any
 /// of them: each thread transparently gets its own private copy of the template
-/// (created on first use) and fills it without contending with the others. At the
+/// (created on first use) and fills it without touching shared state. At the
 /// end, [`merge`](Self::merge) combines every thread's copy into one — exactly as
 /// if a single histogram had been filled with all the data (up to floating-point
 /// summation order). This mirrors ROOT's `TThreadedObject` (`Fill` per thread,
 /// `Merge` at the end), without ROOT's explicit slot bookkeeping.
 ///
 /// `&ThreadedHist` is [`Sync`], so it is shared across [`std::thread::scope`]
-/// workers without an `Arc`. (Concurrent fills run in parallel under a shared
-/// read lock; each thread's copy is touched only by that thread, so its lock is
-/// never contended.)
+/// workers without an `Arc`. Finding a thread's copy takes no shared lock (the
+/// copies live in thread-local storage), so fills scale with the number of
+/// threads.
 ///
 /// ```
 /// use oxiroot_hist::ToRoot;
@@ -129,10 +130,11 @@ impl Mergeable for Parameter {
 /// ```
 pub struct ThreadedHist<H: Mergeable> {
     template: H,
-    /// One private copy per thread, keyed by its (never-reused) [`ThreadId`].
-    /// The `Arc` lets a fill clone its slot out and drop the map lock before
-    /// touching the histogram, so a long fill never blocks other threads.
-    slots: RwLock<HashMap<ThreadId, Arc<Mutex<H>>>>,
+    /// One copy per thread. `ThreadLocal` finds the calling thread's slot
+    /// without a shared lock, so filling threads never write to a common cache
+    /// line (a shared `RwLock` here made fills slower with more threads).
+    slots: ThreadLocal<RefCell<H>>,
+    count: AtomicUsize,
 }
 
 impl<H: Mergeable> ThreadedHist<H> {
@@ -141,7 +143,8 @@ impl<H: Mergeable> ThreadedHist<H> {
     pub fn new(template: H) -> Self {
         Self {
             template,
-            slots: RwLock::new(HashMap::new()),
+            slots: ThreadLocal::new(),
+            count: AtomicUsize::new(0),
         }
     }
 
@@ -160,32 +163,25 @@ impl<H: Mergeable> ThreadedHist<H> {
     ///     }
     /// });
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// If `f` uses the same accumulator again (a nested `fill` or
+    /// `with_local`): the thread's copy is already borrowed.
     pub fn with_local<R>(&self, f: impl FnOnce(&mut H) -> R) -> R {
-        let id = std::thread::current().id();
-        // Clone this thread's slot (an Arc) out, releasing the map lock before
-        // running `f` so a long fill never blocks other threads' first-touch.
-        let slot = {
-            let read = self.slots.read().unwrap_or_else(|e| e.into_inner());
-            if let Some(slot) = read.get(&id) {
-                Arc::clone(slot)
-            } else {
-                drop(read);
-                Arc::clone(
-                    self.slots
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .entry(id)
-                        .or_insert_with(|| Arc::new(Mutex::new(self.template.clone()))),
-                )
-            }
-        };
-        let mut local = slot.lock().unwrap_or_else(|e| e.into_inner());
-        f(&mut local)
+        let slot = self.slots.get_or(|| {
+            self.count.fetch_add(1, Ordering::Relaxed);
+            RefCell::new(self.template.clone())
+        });
+        f(&mut slot.borrow_mut())
     }
 
-    /// Number of threads that have filled so far (diagnostic).
+    /// The number of per-thread copies made so far: at most one per thread
+    /// that filled. A thread started after another has exited may reuse the
+    /// exited thread's copy, which keeps that thread's fills, so the merged
+    /// result is unaffected.
     pub fn num_slots(&self) -> usize {
-        self.slots.read().unwrap_or_else(|e| e.into_inner()).len()
+        self.count.load(Ordering::Relaxed)
     }
 
     /// Combine every thread's private copy into the final histogram, consuming
@@ -193,18 +189,11 @@ impl<H: Mergeable> ThreadedHist<H> {
     /// filled. Call after the workers have joined. Errors only if a copy's
     /// binning diverged from the template (normal fills keep it).
     pub fn merge(self) -> Result<H> {
-        let slots = self.slots.into_inner().unwrap_or_else(|e| e.into_inner());
-        let locals = slots.into_values().map(|arc| match Arc::try_unwrap(arc) {
-            Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
-            // A worker still holds a reference (it outlived merge): clone its copy.
-            Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-        });
+        let locals = self.slots.into_iter().map(RefCell::into_inner);
         Ok(H::merge_all(locals)?.unwrap_or(self.template))
     }
 }
 
-/// ROOT-style `Fill`: route to the calling thread's private copy, creating it on
-/// first use. The headline convenience over [`with_local`](ThreadedHist::with_local).
 impl ThreadedHist<Hist1D> {
     /// Fill the calling thread's copy with `x` (weight 1).
     pub fn fill(&self, x: f64) {
@@ -274,8 +263,9 @@ impl ThreadedHist<Profile3D> {
 /// Fill a histogram from a slice in parallel (requires the `rayon` feature).
 ///
 /// Convenience over [`ThreadedHist`] for the common "one histogram, fill from a
-/// `&[T]`" case: rayon splits `data`, each task folds into a private
-/// `template.clone()`, and the partial histograms reduce with [`Mergeable::merge`].
+/// `&[T]`" case: `data` is cut into a few chunks per worker thread, each chunk
+/// is filled into one `template.clone()`, and the partial histograms reduce
+/// with [`Mergeable::merge`].
 /// The result equals a serial fill (up to floating-point summation order).
 ///
 /// `fill(&mut h, &item)` applies one item — e.g. `|h, &x| h.fill(x)` for a 1-D
@@ -299,22 +289,24 @@ where
     F: Fn(&mut H, &T) + Sync,
 {
     use rayon::prelude::*;
-    data.par_iter()
-        .fold(
-            || template.clone(),
-            |mut h, item| {
+    // A few chunks per thread balance the load without cloning the template
+    // once per rayon split (which costs a lot for a large histogram).
+    let chunks = rayon::current_num_threads().max(1) * 4;
+    let chunk_len = data.len().div_ceil(chunks).max(1);
+    data.par_chunks(chunk_len)
+        .map(|chunk| {
+            let mut h = template.clone();
+            for item in chunk {
                 fill(&mut h, item);
-                h
-            },
-        )
-        .reduce(
-            || template.clone(),
-            |mut a, b| {
-                // Every partial and identity is cloned from the same template, so
-                // the binnings are identical and `merge` cannot mismatch here.
-                a.merge(&b)
-                    .expect("fill_par: identical binning by construction");
-                a
-            },
-        )
+            }
+            h
+        })
+        .reduce_with(|mut a, b| {
+            // Every partial is cloned from the same template, so the binnings
+            // are identical and `merge` cannot mismatch here.
+            a.merge(&b)
+                .expect("fill_par: identical binning by construction");
+            a
+        })
+        .unwrap_or_else(|| template.clone())
 }
