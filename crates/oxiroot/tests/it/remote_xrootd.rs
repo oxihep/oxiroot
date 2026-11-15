@@ -31,9 +31,24 @@ const KXR_OPEN: u16 = 3010;
 const KXR_READ: u16 = 3013;
 const KXR_STAT: u16 = 3017;
 const KXR_OK: u16 = 0;
+const KXR_WAIT: u16 = 4005;
+
+/// How the mock server behaves: correctly, or like a hostile/broken server.
+#[derive(Clone, Copy)]
+enum Mode {
+    Normal,
+    /// Answer every open with `kXR_wait` (0 seconds), forever.
+    WaitForever,
+    /// Announce a 2 GB stat response, then send nothing.
+    HugeFrame,
+}
 
 /// Serve `data` as a single XRootD data server on a background thread.
 fn serve(data: Vec<u8>) -> String {
+    serve_as(data, Mode::Normal)
+}
+
+fn serve_as(data: Vec<u8>, mode: Mode) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().unwrap().port();
     let data = Arc::new(data);
@@ -41,7 +56,7 @@ fn serve(data: Vec<u8>) -> String {
         for conn in listener.incoming() {
             let Ok(stream) = conn else { continue };
             let data = Arc::clone(&data);
-            std::thread::spawn(move || handle(stream, &data));
+            std::thread::spawn(move || handle(stream, &data, mode));
         }
     });
     format!("root://127.0.0.1:{port}//file.root")
@@ -56,7 +71,7 @@ fn reply(stream: &mut TcpStream, streamid: [u8; 2], status: u16, payload: &[u8])
     stream.write_all(&msg).is_ok()
 }
 
-fn handle(mut stream: TcpStream, data: &[u8]) {
+fn handle(mut stream: TcpStream, data: &[u8], mode: Mode) {
     // Handshake: read the 20-byte client handshake, reply 16 bytes (the client
     // ignores the content: two pad int32, protover, server flags = data server).
     let mut hs = [0u8; 20];
@@ -92,7 +107,18 @@ fn handle(mut stream: TcpStream, data: &[u8]) {
                 reply(&mut stream, streamid, KXR_OK, &pl)
             }
             KXR_AUTH => reply(&mut stream, streamid, KXR_OK, &[]),
+            KXR_OPEN if matches!(mode, Mode::WaitForever) => {
+                reply(&mut stream, streamid, KXR_WAIT, &0i32.to_be_bytes())
+            }
             KXR_OPEN => reply(&mut stream, streamid, KXR_OK, &[0, 0, 0, 0]), // fhandle
+            KXR_STAT if matches!(mode, Mode::HugeFrame) => {
+                let mut head = Vec::new();
+                head.extend_from_slice(&streamid);
+                head.extend_from_slice(&KXR_OK.to_be_bytes());
+                head.extend_from_slice(&2_000_000_000i32.to_be_bytes());
+                let _ = stream.write_all(&head);
+                return; // and send nothing more
+            }
             KXR_STAT => {
                 // "id size flags modtime"
                 let s = format!("0 {} 0 0", data.len());
@@ -113,6 +139,24 @@ fn handle(mut stream: TcpStream, data: &[u8]) {
             return;
         }
     }
+}
+
+/// A server that keeps answering `kXR_wait` makes the open fail after a
+/// bounded number of retries (the client used to recurse once per reply).
+#[test]
+fn endless_kxr_wait_is_an_error() {
+    let url = serve_as(Vec::new(), Mode::WaitForever);
+    let err = FileReader::open_url(&url).unwrap_err();
+    assert!(err.to_string().contains("wait"), "{err}");
+}
+
+/// A frame announcing far more than the request allows is a protocol error,
+/// raised before anything is buffered.
+#[test]
+fn an_oversized_response_is_an_error_not_an_allocation() {
+    let url = serve_as(Vec::new(), Mode::HugeFrame);
+    let err = FileReader::open_url(&url).unwrap_err();
+    assert!(err.to_string().contains("exceeds"), "{err}");
 }
 
 #[test]

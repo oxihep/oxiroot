@@ -7,6 +7,11 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
+  and a public `StreamerRegistry::from_infos` for hand-built registries.
+
 ### Changed
 
 - Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
@@ -100,6 +105,15 @@ change the API.
   now stops one byte past the declared size (at most 16 MiB per block), and
   LZ4 uses the decoder entry point that reports a too-small output as an error
   instead of panicking.
+- **Recursion driven by file or server data is bounded.** The TTree streamer
+  walker now stops at `MAX_STREAMER_DEPTH` (64) base-class levels, like the
+  generic object reader already did; a class listing itself as its own base
+  used to overflow the stack. The XRootD client honours at most 30 `kXR_wait`
+  replies while opening a file (it used to recurse once per reply).
+- **XRootD responses are capped.** Control requests may return at most 64 KiB
+  and reads at most the length requested, and frame data is read as it arrives
+  instead of into a buffer sized by the frame header, so a server announcing
+  2 GB cannot make the client allocate it.
 - **Crafted files that used to panic or abort now return errors:**
   - a TTree basket key whose `fKeyLen` runs past the probed bytes (an
     out-of-bounds slice);

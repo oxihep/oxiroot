@@ -8,6 +8,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # The toolchain every "stable" job uses. Pinned so a new Rust release (new
+  # lints under -D warnings, rustfmt changes) cannot break main on its own;
+  # bump it in a PR (see RELEASING.md). The scheduled job tests the latest stable.
+  RUST_STABLE: "1.100"
 
 jobs:
   test:
@@ -16,9 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_STABLE }}
           components: rustfmt, clippy
 
       - name: Cache cargo
@@ -28,10 +33,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Test (plotting feature combos)
         # `cargo test --workspace` builds the facade with its default features.
@@ -39,8 +44,8 @@ jobs:
         # the facade with `plot,fit` (the high-level `tests/plot.rs`, which only
         # compiles under the `plot` feature).
         run: |
-          cargo test -p oxiroot-hist --features plot
-          cargo test -p oxiroot --features plot,fit
+          cargo test --locked -p oxiroot-hist --features plot
+          cargo test --locked -p oxiroot --features plot,fit
 
       - name: Run examples (smoke)
         # The showcase examples drive the method-based read/write API end to end —
@@ -48,10 +53,10 @@ jobs:
         # Tree/Ntuple::write_root, and nested RNTuple round-trips — so a regression
         # in any of them fails CI (each asserts against its own written output).
         run: |
-          cargo run -q -p oxiroot --example analysis
-          cargo run -q -p oxiroot --example tree
-          cargo run -q -p oxiroot --example rntuple_nested
-          cargo run -q -p oxiroot --example plot --features plot,fit
+          cargo run --locked -q -p oxiroot --example analysis
+          cargo run --locked -q -p oxiroot --example tree
+          cargo run --locked -q -p oxiroot --example rntuple_nested
+          cargo run --locked -q -p oxiroot --example plot --features plot,fit
 
   features:
     name: feature combinations
@@ -59,9 +64,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_STABLE }}
           components: clippy
 
       - name: Install cargo-hack
@@ -73,17 +79,19 @@ jobs:
       - name: Each crate with no features, and with each feature alone
         # Catches a feature that only compiles alongside another one. Features
         # must add API, never change it, so every combination has to build.
+        # Not --locked: --no-dev-deps edits the manifests while it runs, which
+        # changes the lockfile it would otherwise check against.
         run: cargo hack check --workspace --each-feature --no-dev-deps
 
       - name: Clippy with all features
         # The only job that compiles the `http` and `xrootd` remote-read paths.
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Test with all features
-        run: cargo test --workspace --all-features
+        run: cargo test --locked --workspace --all-features
 
       - name: Test the facade with no default features
-        run: cargo test -p oxiroot --no-default-features
+        run: cargo test --locked -p oxiroot --no-default-features
 
       - name: Histogram-only builds do not compile the formula engine
         # TF1/TF2/TF3 live in oxiroot-hist-func so that oxiroot-hist (with or
@@ -98,6 +106,43 @@ jobs:
           if grep oxifit <<<"$hist_plot"; then
             echo "oxiroot-hist with plot must not depend on oxifit"; exit 1
           fi
+
+  oxihep-lockstep:
+    name: oxihep crates resolve once
+    # Every oxihep crate must come from a single git tag. If oxiroot and, say,
+    # oxifit name different oxistats tags, Cargo builds two oxistats and their
+    # types stop being interchangeable (see RELEASING.md). `cargo tree
+    # --duplicates` lists any crate built from more than one source.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: No oxihep crate is built twice
+        run: |
+          set -euo pipefail
+          dups=$(cargo tree --locked --workspace --all-features --duplicates -e normal,build,dev --depth 0 --prefix none --format '{p}' | grep -E '^oxi(hist|plot|plot-tex|fit|fit-formula|stats|particle) ' || true)
+          if [ -n "$dups" ]; then
+            echo "These oxihep crates resolve to more than one tag; bump every manifest to the same tag:"
+            echo "$dups" | sort -u
+            exit 1
+          fi
+
+  supply-chain:
+    name: supply chain (cargo-deny)
+    # Known vulnerabilities (RustSec), yanked crates, and dependency sources
+    # (crates.io, plus git only from github.com/oxihep). Configured in deny.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans sources
 
   msrv:
     name: minimum Rust version (1.95)
@@ -114,7 +159,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check
-        run: cargo check --workspace --all-targets --all-features
+        run: cargo check --locked --workspace --all-targets --all-features
 
   docs:
     name: API docs
@@ -124,14 +169,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Build the docs, denying broken links
-        run: cargo doc --no-deps --all-features --workspace
+        run: cargo doc --locked --no-deps --all-features --workspace
 
   package:
     name: package (dry run)
@@ -139,8 +186,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -159,7 +208,7 @@ jobs:
             echo "::notice title=package skipped::the workspace has git dependencies (unpublished oxihep crates); cargo package needs them on crates.io"
             exit 0
           fi
-          cargo package --workspace
+          cargo package --locked --workspace
 
   fuzz-build:
     name: fuzz targets build
@@ -191,8 +240,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -205,18 +256,18 @@ jobs:
         run: pip install uproot numpy awkward
 
       - name: Build interop driver
-        run: cargo build -p oxiroot --example interop
+        run: cargo build --locked -p oxiroot --example interop
 
       - name: Rust writes → uproot reads
         run: |
           mkdir -p /tmp/interop
-          cargo run -q -p oxiroot --example interop -- write /tmp/interop
+          cargo run --locked -q -p oxiroot --example interop -- write /tmp/interop
           python scripts/interop_uproot.py read /tmp/interop
 
       - name: uproot writes → Rust reads
         run: |
           python scripts/interop_uproot.py write /tmp/interop
-          cargo run -q -p oxiroot --example interop -- read /tmp/interop
+          cargo run --locked -q -p oxiroot --example interop -- read /tmp/interop
 
   interop-root:
     name: interop (ROOT C++)
@@ -246,11 +297,11 @@ jobs:
 
       - name: Install Rust
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${{ env.RUST_STABLE }}
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build interop driver
-        run: cargo build -p oxiroot --example interop
+        run: cargo build --locked -p oxiroot --example interop
 
       - name: Build ROOT C++ oracle
         run: c++ $(root-config --cflags) scripts/interop_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_root
@@ -259,9 +310,9 @@ jobs:
         run: |
           mkdir -p /tmp/interop
           /tmp/interop_root write /tmp/interop
-          cargo run -q -p oxiroot --example interop -- read /tmp/interop
+          cargo run --locked -q -p oxiroot --example interop -- read /tmp/interop
 
       - name: Rust writes → ROOT C++ reads
         run: |
-          cargo run -q -p oxiroot --example interop -- write /tmp/interop
+          cargo run --locked -q -p oxiroot --example interop -- write /tmp/interop
           /tmp/interop_root read /tmp/interop
