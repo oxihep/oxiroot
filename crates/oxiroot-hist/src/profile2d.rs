@@ -66,7 +66,7 @@ pub struct Profile2D {
 impl Profile2D {
     /// Create an empty `Profile2D` with uniform x and y bins and no z
     /// restriction. Internal primitive behind the public builder:
-    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).profile()`.
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Profile2D {
         let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2)) as usize;

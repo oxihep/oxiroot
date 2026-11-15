@@ -113,6 +113,7 @@ The free functions `write_tree_file` and `write_tree_file_baskets` are the
 function-style counterparts (they take the tree name and a `&[Branch]` directly)
 and remain available; the `Tree` methods are thin wrappers over them.
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 

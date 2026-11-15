@@ -260,6 +260,7 @@ new on-disk state.
 | `interpolate(x)` | linear interpolation between adjacent bin centers |
 | `quantiles(&probs)` | x values where the cumulative reaches each probability |
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
@@ -297,6 +298,7 @@ source tracks it.
 | `projection_xy/xz/yz(name)` | `Hist3D` → `Hist2D` | sum the dropped axis |
 | `profile_x(name)` / `profile_y(name)` | `Hist2D` → `Profile1D` | profile along an axis |
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
@@ -314,6 +316,7 @@ to its content, and the value is interpolated within it. Sampling needs a unifor
 source; oxiroot has no `gRandom`, so a small seedable [`Random`](../api/oxiroot/index.html)
 is provided (no `rand` dependency, reproducible draws).
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
@@ -351,6 +354,7 @@ h.smooth(2);
 p-values. Both require identical binning and otherwise return
 `Error::BinningMismatch`.
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
@@ -460,6 +464,7 @@ existing objects never move — so files that already contain subdirectories or 
 RNTuple are preserved (added objects land in the top directory; only *creating*
 new subdirectories while appending is unsupported):
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 

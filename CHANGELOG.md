@@ -7,6 +7,16 @@ change the API.
 
 ## [Unreleased]
 
+### Documentation
+
+- Every Rust snippet of the guides and the README now compiles in CI
+  (`scripts/check_guide_snippets.py`, 129 blocks on 18 pages). Fixed the
+  snippets that had drifted: the `Func1D` import in the plotting guide, the
+  error match in the reading guide, the non-exhaustive `GraphErrors` match.
+- The crate-layout page lists oxihist; the installation page documents the
+  `http` and `xrootd` features; rustdoc no longer names the removed
+  `.profile()` and `.int32()` builder calls.
+
 ### Fixed
 
 - **`SparseHist::fill` scanned every filled cell.** It now finds the cell

@@ -188,6 +188,7 @@ let deep = Profile1D::read_root_in(&FileReader::open("regions.root")?, "signal/2
 `FileWriter::open` reopens an existing file so further objects can be appended in a
 second pass (ROOT "update" mode):
 
+<!-- fragment -->
 ```rust
 FileWriter::open("out.root")?
     .add(&extra)
@@ -276,14 +277,14 @@ wildcard arm:
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::Error;
+use oxiroot::file::Error;
 
 let file = FileReader::open("hist.root")?;
 match Hist1D::read_root(&file, "h") {
     Ok(h) => println!("{} entries", h.entries()),
     Err(Error::NotFound { .. }) => println!("no object named h"),
     Err(Error::WrongClass { found, .. }) => println!("h is a {found}, not a 1-D histogram"),
-    Err(e) => return Err(e),
+    Err(e) => return Err(e.into()),
 }
 # Ok::<(), oxiroot::Error>(())
 ```
