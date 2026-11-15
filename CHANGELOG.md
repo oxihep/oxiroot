@@ -7,6 +7,15 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
+  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
+- **Reading objects from a subdirectory re-read its key list each time, and
+  every object read re-parsed the file's streamer info.** `FileReader` now
+  reads each subdirectory once and parses the streamer info once: 3 000
+  objects from one subdirectory take 13 ms instead of 425 ms.
+
 ### Added
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,

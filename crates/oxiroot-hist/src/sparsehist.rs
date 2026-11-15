@@ -43,11 +43,45 @@ pub struct SparseHist {
     pub tsumwx: Vec<f64>,
     /// Per-axis `Σ(w·x²)` (`fTsumwx2`).
     pub tsumwx2: Vec<f64>,
-    /// The filled cells (sparse storage).
+    /// The filled cells (sparse storage). Editing it directly is allowed; a
+    /// fill notices cells added or removed, but not an edit that changes one
+    /// cell's coordinates to another cell's, which would duplicate that cell.
     pub bins: Vec<SparseBin>,
+    /// Where each cell's coordinates sit in `bins`, so a fill finds its cell
+    /// without scanning every filled one. Derived from `bins` (which is
+    /// public), so it is checked on use and rebuilt when it no longer matches.
+    index: CellIndex,
+}
+
+/// A lookup from cell coordinates to their position in `bins`; derived data,
+/// so it never makes two histograms differ.
+#[derive(Debug, Clone, Default)]
+struct CellIndex(std::collections::HashMap<Vec<i32>, usize>);
+
+impl PartialEq for CellIndex {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl SparseHist {
+    /// The position in `bins` of the cell at `coords`, if it is filled. The
+    /// index is rebuilt first if `bins` was changed directly.
+    fn cell(&mut self, coords: &[i32]) -> Option<usize> {
+        let fresh = self.index.0.len() == self.bins.len()
+            && self
+                .index
+                .0
+                .get(coords)
+                .is_none_or(|&i| self.bins.get(i).is_some_and(|b| b.coords == coords));
+        if !fresh {
+            self.index.0 = (self.bins.iter().enumerate())
+                .map(|(i, b)| (b.coords.clone(), i))
+                .collect();
+        }
+        self.index.0.get(coords).copied()
+    }
+
     /// Create an empty `SparseHist` over the given per-dimension uniform axes,
     /// `(nbins, xmin, xmax)`.
     pub fn new(axes: &[(i32, f64, f64)]) -> SparseHist {
@@ -66,6 +100,7 @@ impl SparseHist {
             tsumwx: vec![0.0; n],
             tsumwx2: vec![0.0; n],
             bins: Vec::new(),
+            index: CellIndex::default(),
         }
     }
 
@@ -90,13 +125,15 @@ impl SparseHist {
             .map(|(ax, &x)| ax.find_bin(x) as i32)
             .collect();
         self.entries += 1.0;
-        if let Some(b) = self.bins.iter_mut().find(|b| b.coords == bins) {
-            b.content += 1.0;
-        } else {
-            self.bins.push(SparseBin {
-                coords: bins,
-                content: 1.0,
-            });
+        match self.cell(&bins) {
+            Some(i) => self.bins[i].content += 1.0,
+            None => {
+                self.index.0.insert(bins.clone(), self.bins.len());
+                self.bins.push(SparseBin {
+                    coords: bins,
+                    content: 1.0,
+                });
+            }
         }
         Ok(())
     }
@@ -171,6 +208,7 @@ impl SparseHist {
             tsumwx,
             tsumwx2,
             bins: Vec::new(),
+            index: CellIndex::default(),
         };
         let bit_widths = h.axis_bits();
         h.bins = bins
@@ -273,4 +311,37 @@ pub(crate) fn read_thnsparse_in(file: &FileReader, subdir: &str, name: &str) -> 
         name,
         "THnSparseT<TArrayD>",
     )?))
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    /// The cell index gives the same cells and contents as counting by hand,
+    /// and notices cells removed from `bins` directly.
+    #[test]
+    fn indexed_fill_matches_a_plain_count() {
+        let mut h = SparseHist::new(&[(50, 0.0, 50.0), (50, 0.0, 50.0), (4, 0.0, 4.0)]);
+        let mut expect: std::collections::HashMap<Vec<i32>, f64> = Default::default();
+        for i in 0..20_000u32 {
+            let p = [
+                f64::from(i * 7 % 50),
+                f64::from(i * 13 % 50),
+                f64::from(i % 4),
+            ];
+            h.fill(&p).unwrap();
+            let key: Vec<i32> = p.iter().map(|&x| x as i32 + 1).collect();
+            *expect.entry(key).or_default() += 1.0;
+        }
+        assert_eq!(h.bins.len(), expect.len());
+        for b in &h.bins {
+            assert_eq!(Some(&b.content), expect.get(&b.coords), "{:?}", b.coords);
+        }
+        // Edit `bins` directly: drop a cell, then fill it again.
+        let gone = h.bins.remove(0);
+        let x: Vec<f64> = gone.coords.iter().map(|&c| f64::from(c - 1)).collect();
+        h.fill(&x).unwrap();
+        let again = h.bins.iter().filter(|b| b.coords == gone.coords).count();
+        assert_eq!(again, 1);
+    }
 }
