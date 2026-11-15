@@ -7,6 +7,15 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `FileReader::open_mmap` is `unsafe`, and `mmap` is no longer a
+  default feature of `oxiroot`.** Its contract (the file must not change while
+  mapped, or the result is undefined behaviour) was only in prose, on a safe
+  function. Call it as `unsafe { FileReader::open_mmap(path) }` with the
+  `mmap` feature enabled, or use `FileReader::open_ranged`, which reads lazily
+  with no such contract.
+
 ### Added
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,

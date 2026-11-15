@@ -31,15 +31,16 @@ use oxiroot::prelude::*;
 
 ## Optional features
 
-The `oxiroot` facade is **batteries-included**: fitting, plotting and the mmap
-read path are on by default, so there is usually nothing extra to enable. The
-parallel helpers (`rayon`) and remote reads (`http`, `xrootd`) are opt-in. Opt
+The `oxiroot` facade is **batteries-included**: fitting and plotting
+are on by default, so there is usually nothing extra to enable. The parallel
+helpers (`rayon`), remote reads (`http`, `xrootd`) and the memory-mapped read
+path (`mmap`) are opt-in. Opt
 out with `default-features = false` (then re-enable à la carte) when you want
 just the lean, pure-Rust format core.
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
-| `mmap` | ✅ | Memory-mapped read path (`FileReader::open_mmap`) for large files; adds `memmap2`. |
+| `mmap` | — | Memory-mapped read path (`unsafe FileReader::open_mmap`) for large files; adds `memmap2`. Opt-in: the file must not change while mapped. `FileReader::open_ranged` reads lazily with no such contract. |
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
@@ -47,7 +48,7 @@ just the lean, pure-Rust format core.
 
 ```toml
 [dependencies]
-# Batteries-included — fitting, plotting, mmap, and argmin all on:
+# Batteries-included — fitting, plotting and argmin all on:
 oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 
 # …or the lean format core only (drops the extra dependencies):
