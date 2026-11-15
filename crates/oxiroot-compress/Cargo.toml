@@ -12,11 +12,11 @@ description = "ROOT compression block framing and codecs"
 
 [dependencies]
 miniz_oxide = "0.9.1"
-ruzstd = "0.8.3"
-lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
+ruzstd = "0.9"
+lz4_flex = { version = "0.14", default-features = false, features = ["alloc", "safe-encode", "safe-decode", "checked-decode"] }
 # Pure-Rust LZMA/XZ (tukaani xz-for-java port). Both directions: `xz` gives the
 # decoder, `encoder` the compressor. `optimization` improves the ratio.
-lzma-rust2 = { version = "0.16", default-features = false, features = ["std", "xz", "encoder", "optimization"] }
+lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "encoder", "optimization"] }
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 
 [dev-dependencies]
