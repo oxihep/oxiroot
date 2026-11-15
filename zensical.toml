@@ -10,12 +10,12 @@
 [project]
 site_name = "oxiroot"
 site_description = "Pure-Rust IO for the CERN ROOT file format — RNTuple, TTree, histograms, graphs, and fitting, with no libROOT or Python dependency."
-site_url = "https://mathieuouillon.github.io/oxiroot/"
+site_url = "https://oxihep.github.io/oxiroot/"
 site_author = "Mathieu Ouillon"
 copyright = "Copyright &copy; 2026 Mathieu Ouillon · MIT"
 
-repo_url = "https://github.com/mathieuouillon/oxiroot"
-repo_name = "mathieuouillon/oxiroot"
+repo_url = "https://github.com/oxihep/oxiroot"
+repo_name = "oxihep/oxiroot"
 edit_uri = "edit/main/docs/"
 
 # Explicit navigation. A value that does not resolve to a Markdown page (such as
@@ -92,7 +92,7 @@ toggle.name = "Switch to light mode"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/mathieuouillon/oxiroot"
+link = "https://github.com/oxihep/oxiroot"
 
 # --- Markdown extensions ---
 [project.markdown_extensions.abbr]
