@@ -15,6 +15,7 @@ oxiroot-io-core = { workspace = true }
 oxistats = { workspace = true }
 oxihist = { workspace = true }
 rayon = { version = "1", optional = true }
+thread_local = { workspace = true }
 oxifit = { workspace = true, optional = true }
 oxiplot = { workspace = true, optional = true }
 

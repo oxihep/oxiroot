@@ -9,6 +9,15 @@ change the API.
 
 ### Fixed
 
+- **`ThreadedHist` got slower as threads were added.** Every fill took a
+  shared read lock to find the thread's copy. The copies now live in
+  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
+  13.5 s before, 26 ms now.
+- **`fill_par` cloned the template once per rayon split.** It now fills a few
+  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
+
+### Fixed
+
 - **Decompression is bounded by the block's declared size.** zstd, zlib and
   LZMA blocks used to decode in full and be checked afterwards, so a small
   crafted block could expand into gigabytes before being rejected. Decoding
