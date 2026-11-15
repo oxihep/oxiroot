@@ -150,7 +150,16 @@ jobs:
         # through a temporary local registry, so a missing file, a git
         # dependency, or a dependency without a version fails here instead of
         # at release.
-        run: cargo package --workspace
+        #
+        # While the oxihep crates are git dependencies (not yet on crates.io)
+        # nothing here can be packaged, so the step is skipped with a notice.
+        # It runs again as soon as the workspace has no `git =` dependency.
+        run: |
+          if grep -Eq '^[a-z0-9_-]+ = \{[^}]*git = ' Cargo.toml; then
+            echo "::notice title=package skipped::the workspace has git dependencies (unpublished oxihep crates); cargo package needs them on crates.io"
+            exit 0
+          fi
+          cargo package --workspace
 
   fuzz-build:
     name: fuzz targets build
