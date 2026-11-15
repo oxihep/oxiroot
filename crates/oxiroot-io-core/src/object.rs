@@ -74,7 +74,30 @@ impl TagReader {
 
     /// Read a `ReadObjectAny`-style header, resolving the class name and the
     /// object's end offset. Leaves the cursor at the object body.
+    ///
+    /// The end offset comes from the file's byte count, so it is checked here,
+    /// once, for every caller: it must lie between the cursor and the end of
+    /// the buffer.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Format`] if the byte count points outside that range, and the
+    /// buffer's errors if the header is truncated.
     pub fn read_header(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
+        let header = self.read_header_unchecked(r)?;
+        if let Some(end) = header.end {
+            if end > r.len() || end < r.pos() {
+                return Err(Error::Format(format!(
+                    "object byte count ends at {end}, outside {}..={}",
+                    r.pos(),
+                    r.len()
+                )));
+            }
+        }
+        Ok(header)
+    }
+
+    fn read_header_unchecked(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
         let beg = r.pos();
         let bcnt_raw = r.be_u32()?;
 
@@ -152,5 +175,49 @@ impl TagReader {
                 pos,
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod byte_count_tests {
+    use super::*;
+
+    /// A record header whose byte count runs past the buffer, or ends before
+    /// the header itself, is a format error (callers used to slice with it).
+    #[test]
+    fn read_header_rejects_a_byte_count_outside_the_buffer() {
+        let mut past = Vec::new();
+        past.extend_from_slice(&(K_BYTE_COUNT_MASK | 1000).to_be_bytes());
+        past.extend_from_slice(&K_NEW_CLASS_TAG.to_be_bytes());
+        past.extend_from_slice(b"TObject\0");
+        let mut r = RBuffer::new(&past);
+        assert!(matches!(
+            TagReader::new(0).read_header(&mut r),
+            Err(Error::Format(_))
+        ));
+
+        let mut short = Vec::new();
+        short.extend_from_slice(&(K_BYTE_COUNT_MASK | 4).to_be_bytes()); // ends before the class name
+        short.extend_from_slice(&K_NEW_CLASS_TAG.to_be_bytes());
+        short.extend_from_slice(b"TObject\0");
+        let mut r = RBuffer::new(&short);
+        assert!(matches!(
+            TagReader::new(0).read_header(&mut r),
+            Err(Error::Format(_))
+        ));
+    }
+
+    #[test]
+    fn read_version_rejects_a_byte_count_outside_the_buffer() {
+        let mut past = Vec::new();
+        past.extend_from_slice(&(K_BYTE_COUNT_MASK | 16).to_be_bytes());
+        past.extend_from_slice(&1u16.to_be_bytes());
+        assert!(matches!(
+            RBuffer::new(&past).read_version(),
+            Err(Error::Format(_))
+        ));
+        let mut fits = past.clone();
+        fits.extend_from_slice(&[0u8; 14]);
+        assert!(RBuffer::new(&fits).read_version().is_ok());
     }
 }

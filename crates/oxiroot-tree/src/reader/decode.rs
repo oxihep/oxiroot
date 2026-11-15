@@ -475,7 +475,9 @@ fn decode_vec_strings(regions: &[&[u8]]) -> Result<BranchValues> {
             buf.be_u32()?; // byte count
             buf.be_u16()?; // version
             let count = buf.be_u32()? as usize;
-            row.reserve(count);
+            // Each string takes at least one byte, so the count cannot
+            // legitimately exceed what is left.
+            row.reserve(count.min(buf.remaining()));
             for _ in 0..count {
                 row.push(buf.string()?);
             }

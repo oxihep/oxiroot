@@ -126,6 +126,20 @@ change the API.
   and reads at most the length requested, and frame data is read as it arrives
   instead of into a buffer sized by the frame header, so a server announcing
   2 GB cannot make the client allocate it.
+- **Crafted files that used to panic or abort now return errors:**
+  - a TTree basket key whose `fKeyLen` runs past the probed bytes (an
+    out-of-bounds slice);
+  - object and version byte counts that end outside the buffer or before the
+    header (checked once in `TagReader::read_header` and
+    `RBuffer::read_version`, so collections and `TMap` entries no longer slice
+    with them);
+  - collection and `TMap` entry counts, and string-vector branch counts, that
+    reserved memory for every claimed entry before reading any (now clamped to
+    what the buffer can hold);
+  - an RNTuple deferred column starting at an absurd element index (capped at
+    65 536 elements per entry, and allocated fallibly);
+  - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
+    writes (10–31 and 1–32).
 
 ## [0.3.0] — 2026-09-24
 
