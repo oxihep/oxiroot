@@ -7,6 +7,20 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
+
+### Changed
+
+- Codec crates upgraded: ruzstd 0.9, lz4_flex 0.14, lzma-rust2 0.25. Files
+  written with each codec read back in ROOT 6.40 unchanged.
+
 ### Changed
 
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, a new
