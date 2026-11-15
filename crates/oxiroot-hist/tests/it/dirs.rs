@@ -1,6 +1,7 @@
 //! Item 4: write histograms organized into subdirectories, then read them back
 //! through our reader (and, separately, validate with official ROOT + uproot).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FileWriter, Hist, Hist1D, ReadRoot};
@@ -10,18 +11,21 @@ use oxiroot_io_core::FileReader;
 fn writes_histograms_into_subdirectories() {
     let mut top = Hist::reg(3, 0.0, 3.0)
         .double()
+        .to_root()
         .named("top")
         .titled("top-level");
     top.fill(0.5);
 
     let mut sr = Hist::reg(4, 0.0, 4.0)
         .double()
+        .to_root()
         .named("mll")
         .titled("signal region");
     sr.fill(1.5);
     sr.fill(2.5);
     let mut cr = Hist::reg(4, 0.0, 4.0)
         .double()
+        .to_root()
         .named("mll")
         .titled("control region");
     cr.fill(0.5);
@@ -70,7 +74,7 @@ fn writes_histograms_into_subdirectories() {
 #[test]
 fn writes_directories_nested_several_levels_deep() {
     let named = |name: &str, weight: f64| {
-        let mut h = Hist::reg(1, 0.0, 1.0).double().named(name);
+        let mut h = Hist::reg(1, 0.0, 1.0).double().to_root().named(name);
         h.fill_weight(0.5, weight);
         h
     };
@@ -127,7 +131,7 @@ fn writes_directories_nested_several_levels_deep() {
 /// it, not silently written for a reader to trip over.
 #[test]
 fn a_clash_inside_a_nested_directory_names_its_path() {
-    let h = Hist::reg(1, 0.0, 1.0).double().named("same");
+    let h = Hist::reg(1, 0.0, 1.0).double().to_root().named("same");
     let err = FileWriter::create("/tmp/oxiroot_nested_clash.root")
         .dir("a", |d| d.dir("b", |d| d.add(&h).add(&h)))
         .to_bytes(oxiroot_io_core::Compression::None)

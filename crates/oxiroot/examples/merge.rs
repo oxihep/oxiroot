@@ -26,6 +26,7 @@ fn main() -> oxiroot::Result<()> {
     ] {
         let mut h = Hist::reg(10, 0.0, 100.0)
             .double()
+            .to_root()
             .named("pt")
             .titled("p_{T}");
         for x in fills {

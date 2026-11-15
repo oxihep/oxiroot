@@ -23,6 +23,7 @@ fn main() {
     let hist = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()
+            .to_root()
             .named("mass")
             .titled("toy mass [GeV]"),
     );
@@ -66,6 +67,7 @@ fn main() {
     // moment sums agree up to floating-point summation order).
     let mut serial = Hist::reg(100, 0.0, 100.0)
         .double()
+        .to_root()
         .named("mass")
         .titled("toy mass [GeV]");
     for &x in &data {

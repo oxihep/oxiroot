@@ -1,6 +1,7 @@
 //! Histogram fitting (`fit` feature). Run: `cargo test -p oxiroot-hist --features fit`.
 #![cfg(feature = "fit")]
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FitExt, Hist, Hist1D, Model, ReadRoot};
@@ -62,7 +63,7 @@ fn gaussian_fit_matches_root() {
 #[test]
 fn polynomial_fit_recovers_a_line() {
     // y = 3 + 2x exactly on a fine grid -> a degree-1 fit recovers (3, 2).
-    let mut h = Hist::reg(100, 0.0, 10.0).double().named("line");
+    let mut h = Hist::reg(100, 0.0, 10.0).double().to_root().named("line");
     for i in 1..=100 {
         let x = h.bin_center(i);
         h.contents[i] = 3.0 + 2.0 * x;
@@ -93,8 +94,9 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     // from chi-square.
     use oxiroot_hist::{FitMethod, FitOptions};
     let counts = [10.0, 20.0, 30.0, 40.0];
-    let mut h = Hist::reg(counts.len() as i32, 0.0, counts.len() as f64)
+    let mut h = Hist::reg(counts.len(), 0.0, counts.len() as f64)
         .double()
+        .to_root()
         .named("c");
     for (i, &c) in counts.iter().enumerate() {
         h.contents[i + 1] = c;
@@ -173,7 +175,7 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
 #[test]
 fn under_determined_fit_is_flagged_invalid() {
     // 2 data points, 3-parameter Gaussian -> cannot be determined.
-    let mut h = Hist::reg(2, 0.0, 2.0).double().named("tiny");
+    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().named("tiny");
     h.contents[1] = 5.0;
     h.contents[2] = 7.0;
     let r = h.fit(&Model::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));

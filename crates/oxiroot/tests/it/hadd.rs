@@ -10,7 +10,11 @@ fn tmp(name: &str) -> std::path::PathBuf {
 fn sums_histograms_and_copies_other_objects() {
     // Two files, each a Hist1D "h" (2 in-range fills) plus an ObjString "meta".
     for (tag, xs) in [("hist_a", [0.5, 1.5]), ("hist_b", [2.5, 3.5])] {
-        let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("h");
+        let mut h = Hist::reg(4, 0.0, 4.0)
+            .double()
+            .to_root()
+            .named("h")
+            .titled("h");
         for x in xs {
             h.fill(x);
         }
@@ -95,7 +99,7 @@ fn refuses_a_fileset_mixing_a_tree_with_histograms() {
     Tree::new("Events", vec![Branch::i32("i", vec![0, 1])])
         .write_root(tmp("mix_tree"), Compression::None)
         .unwrap();
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     h.fill(1.5);
     h.write_root(tmp("mix_hist"), Compression::None).unwrap();
 

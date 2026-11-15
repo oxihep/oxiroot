@@ -1,11 +1,12 @@
 //! Naming is optional at construction and a write-time/file-key concern — and
 //! same-name collisions are a loud error, not ROOT's silent shadow-on-read.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Compression, FileWriter, Hist, Hist1D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Error, FileReader};
 
 fn filled(name: &str) -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named(name);
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named(name);
     for b in 0..4 {
         h.fill(b as f64 + 0.5);
     }
@@ -15,7 +16,7 @@ fn filled(name: &str) -> Hist1D {
 #[test]
 fn histograms_are_anonymous_until_named() {
     // No name forced at construction.
-    let h = Hist::reg(10, 0.0, 1.0).double();
+    let h = Hist::reg(10, 0.0, 1.0).double().to_root();
     assert_eq!(h.name, "");
     assert_eq!(h.title, "");
     // `named`/`titled` are chainable and set the fields.
@@ -29,6 +30,7 @@ fn writing_an_unnamed_object_is_a_clear_error() {
     let path = std::env::temp_dir().join("oxiroot_naming_anon.root");
     let err = Hist::reg(4, 0.0, 4.0)
         .double()
+        .to_root()
         .write_root(&path, Compression::None);
     match err {
         Err(Error::InvalidInput(msg)) => assert!(msg.contains("unnamed"), "got: {msg}"),

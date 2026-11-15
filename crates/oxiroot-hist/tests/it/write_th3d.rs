@@ -9,6 +9,7 @@
 //! affect the data. So instead of byte-identity we assert that real
 //! ROOT-produced data round-trips losslessly through our write→read.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist3D, ReadRoot, WriteRoot};
@@ -41,6 +42,7 @@ fn create_fill_save_round_trips() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h3")
         .titled("filled");
     h.fill(0.5, 0.5, 0.5); // (1,1,1)

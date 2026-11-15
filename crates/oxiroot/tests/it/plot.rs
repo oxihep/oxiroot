@@ -8,7 +8,7 @@ use oxiroot::plot::{Axes, Color, HistOpts, HistType, SaveOpts};
 use oxiroot::prelude::*;
 
 fn gauss_hist() -> Hist1D {
-    let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt");
+    let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt");
     let mut s = 0xC0FF_EE12_3456_789Au64;
     let mut next = move || {
         s = s

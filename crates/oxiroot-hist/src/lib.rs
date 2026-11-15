@@ -20,10 +20,10 @@
 mod base;
 mod collections;
 mod compare;
+mod convert;
 mod from_member;
 mod naming;
 mod ops;
-mod quick;
 mod read;
 
 mod axis;
@@ -63,11 +63,18 @@ pub use graph2d::Graph2D;
 pub use multierrorgraph::MultiErrorGraph;
 // The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
 // resolving.
+pub use convert::{FromRoot, ToRoot};
 pub use efficiency::Efficiency;
 pub use hist1d::Hist1D;
 pub use hist2d::Hist2D;
 pub use hist3d::Hist3D;
 pub use ops::Histogram;
+/// The ROOT-free histogram library these types convert to and from.
+pub use oxihist;
+pub use oxihist::Random;
+/// Build histograms with oxihist's builder, then [`ToRoot::to_root`] them:
+/// `Hist::reg(50, 0.0, 100.0).weight().to_root()` is a `TH1D` with `Sumw2`.
+pub use oxihist::{Build1, Build2, Build3, Hist};
 pub use oxiroot_io_core::{
     FromMember, ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter,
 };
@@ -75,9 +82,7 @@ pub use polyhist::{PolyBin, PolyHist};
 pub use profile1d::{ErrorMode, Profile1D};
 pub use profile2d::Profile2D;
 pub use profile3d::Profile3D;
-pub use quick::{Build1D, Build2D, Build3D, Hist};
 pub use read::ReadRoot;
-pub use sample::Random;
 pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;

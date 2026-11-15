@@ -13,7 +13,7 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 ```toml
 [dependencies]
 # the `plot` feature is on by default:
-oxiroot = "0.3"
+oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 ```
 
 !!! note "How it works"
@@ -59,7 +59,7 @@ The API mirrors matplotlib but reads as idiomatic Rust:
 use oxiroot::plot::Axes;
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt");
 h.fill(42.0);
 
 let mut ax = Axes::new();

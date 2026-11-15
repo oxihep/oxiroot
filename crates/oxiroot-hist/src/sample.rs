@@ -8,80 +8,19 @@
 //! reproducible draws.
 //!
 //! ```
+//! use oxiroot_hist::ToRoot;
 //! use oxiroot_hist::{Hist, Random};
-//! let mut src = Hist::reg(100, -5.0, 5.0).double();
+//! let mut src = Hist::reg(100, -5.0, 5.0).double().to_root();
 //! for x in [-1.0, 0.0, 0.0, 1.0, 2.0] { src.fill(x); }
 //! let mut rng = Random::seed(1);
-//! let mut drawn = Hist::reg(100, -5.0, 5.0).double();
+//! let mut drawn = Hist::reg(100, -5.0, 5.0).double().to_root();
 //! drawn.fill_random(&src, 10_000, &mut rng); // draw 10k from src's shape
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
 
+use oxihist::Random;
+
 use crate::hist1d::Hist1D;
-
-/// A small seedable pseudo-random generator (SplitMix64), yielding `f64` in
-/// `[0, 1)` — oxiroot's `TRandom`. Dependency-free and reproducible — seed it
-/// and the draws repeat.
-#[doc(
-    alias = "TRandom",
-    alias = "gRandom",
-    alias = "Rng",
-    alias = "SplitMix64"
-)]
-#[derive(Debug, Clone)]
-pub struct Random {
-    state: u64,
-}
-
-impl Random {
-    /// A generator seeded with `seed` (any value, including 0).
-    #[must_use]
-    pub fn seed(seed: u64) -> Random {
-        Random { state: seed }
-    }
-
-    /// The next uniform `f64` in `[0, 1)`.
-    pub fn uniform(&mut self) -> f64 {
-        // SplitMix64.
-        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^= z >> 31;
-        // Top 53 bits → a double in [0, 1).
-        (z >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    /// Draw one value from a binned density: bin `k` spans
-    /// `[edges[k], edges[k + 1])` and is picked with probability proportional to
-    /// `weights[k]`, and the value is interpolated within it (ROOT's
-    /// `GetRandom`). Makes exactly one [`uniform`](Random::uniform) draw.
-    ///
-    /// Returns `None`, without drawing, when `edges.len() != weights.len() + 1`
-    /// or the weights do not sum to a positive, finite total (a NaN or infinite
-    /// weight included).
-    ///
-    /// ```
-    /// use oxiroot_hist::Random;
-    /// let mut rng = Random::seed(5);
-    /// let x = rng.sample_binned(&[0.0, 1.0, 0.0], &[0.0, 1.0, 2.0, 3.0]).unwrap();
-    /// assert!((1.0..2.0).contains(&x)); // only the middle bin has weight
-    /// assert_eq!(rng.sample_binned(&[1.0], &[0.0]), None);
-    /// ```
-    pub fn sample_binned(&mut self, weights: &[f64], edges: &[f64]) -> Option<f64> {
-        if edges.len() != weights.len() + 1 {
-            return None;
-        }
-        let cdf = build_cdf(weights)?;
-        Some(sample_cdf(&cdf, edges, self.uniform()))
-    }
-}
-
-impl Default for Random {
-    fn default() -> Random {
-        Random::seed(0)
-    }
-}
 
 /// The normalized cumulative of `weights` (one entry per bin): `cdf[0] = 0`,
 /// `cdf[k] = Σ weights[..k] / total`, length `weights.len() + 1`. `None` if the
@@ -295,13 +234,13 @@ fn smooth_array(xx: &mut [f64], ntimes: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quick::Hist;
+    use crate::{Hist, ToRoot};
 
     #[test]
     fn smooth_matches_root() {
         // ROOT: TH1D(10,0,10) contents [2,8,4,9,3,7,1,6,5,2]; Smooth(1) →
         // [2, 3.5, 4, 4.25, 4.75, 5, 5, 5, 5, 5].
-        let mut h = Hist::reg(10, 0.0, 10.0).double();
+        let mut h = Hist::reg(10, 0.0, 10.0).double().to_root();
         for (i, &v) in [2.0, 8.0, 4.0, 9.0, 3.0, 7.0, 1.0, 6.0, 5.0, 2.0]
             .iter()
             .enumerate()
@@ -318,7 +257,7 @@ mod tests {
     #[test]
     fn get_random_reproduces_the_source_distribution() {
         // A source peaked at 5 with width ~1; drawing from it recovers the shape.
-        let mut src = Hist::reg(100, 0.0, 10.0).double();
+        let mut src = Hist::reg(100, 0.0, 10.0).double().to_root();
         src.fill_random_fn(
             |x| (-0.5 * (x - 5.0).powi(2)).exp(),
             400_000,
@@ -327,7 +266,7 @@ mod tests {
         assert!((src.mean() - 5.0).abs() < 0.02, "mean {}", src.mean());
         assert!((src.std_dev() - 1.0).abs() < 0.02, "std {}", src.std_dev());
 
-        let mut drawn = Hist::reg(100, 0.0, 10.0).double();
+        let mut drawn = Hist::reg(100, 0.0, 10.0).double().to_root();
         drawn.fill_random(&src, 400_000, &mut Random::seed(11));
         assert!((drawn.mean() - src.mean()).abs() < 0.03);
         assert!((drawn.std_dev() - src.std_dev()).abs() < 0.03);
@@ -366,7 +305,7 @@ mod tests {
 
     #[test]
     fn get_random_on_a_malformed_histogram_returns_the_lower_edge() {
-        let mut h = Hist::reg(4, 1.0, 5.0).double();
+        let mut h = Hist::reg(4, 1.0, 5.0).double().to_root();
         for x in [1.5, 2.5, 3.5, 4.5] {
             h.fill(x);
         }

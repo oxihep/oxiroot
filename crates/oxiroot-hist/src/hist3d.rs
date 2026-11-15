@@ -226,7 +226,7 @@ impl Hist3D {
 
     /// Change the on-disk bin content type of an existing histogram — the
     /// post-construction counterpart of the builder's storage finalizers (build
-    /// with a given type via [`Hist::reg(...).reg(...).reg(...).float()`](crate::Hist) → `TH3F`, …).
+    /// with a given type via [`Hist::reg(...).reg(...).reg(...).double().to_root_as(crate::BinContentType::F32)`](crate::Hist) → `TH3F`, …).
     #[must_use]
     pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
         self.bin_content_type = bin_content_type;

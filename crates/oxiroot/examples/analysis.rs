@@ -17,6 +17,7 @@ fn main() -> oxiroot::Result<()> {
     let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
     let mut pt = Hist::var(&edges)
         .double()
+        .to_root()
         .named("pt")
         .titled("p_{T} spectrum");
     pt.sumw2(); // track per-bin errors for the weighted fills
@@ -25,6 +26,7 @@ fn main() -> oxiroot::Result<()> {
     let mut eta_phi = Hist::reg(5, -2.5, 2.5)
         .reg(4, -3.2, 3.2)
         .double()
+        .to_root()
         .named("eta_phi")
         .titled("#eta vs #phi");
 
@@ -57,6 +59,7 @@ fn main() -> oxiroot::Result<()> {
     let acc = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()
+            .to_root()
             .named("mass")
             .titled("toy mass"),
     );
@@ -102,7 +105,8 @@ fn main() -> oxiroot::Result<()> {
 
     // --- A flat file mixing any writable types — histograms, profiles, graphs. -
     let mut prof = Hist::reg(5, 0.0, 5.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("pt_prof")
         .titled("<pt> per region");
     for (region, &(p, ..)) in events.iter().enumerate() {

@@ -43,6 +43,7 @@ fn main() -> oxiroot::Result<()> {
     // A deterministic Gaussian-filled di-muon mass histogram (Sumw2 on).
     let mut mc = Hist::reg(40, 50.0, 130.0)
         .double()
+        .to_root()
         .named("mass")
         .titled("di-muon mass");
     mc.sumw2();
@@ -113,6 +114,7 @@ fn main() -> oxiroot::Result<()> {
     let mut h2 = Hist::reg(40, -4.0, 4.0)
         .reg(40, -4.0, 4.0)
         .double()
+        .to_root()
         .named("h2");
     for ix in 0..40 {
         for iy in 0..40 {

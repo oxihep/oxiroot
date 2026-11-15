@@ -4,7 +4,7 @@ use oxiroot::prelude::*;
 use oxiroot::Error;
 
 fn hist() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("pt");
     h.fill(0.5);
     h.fill(2.5);
     h

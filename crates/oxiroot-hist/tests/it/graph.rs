@@ -3,6 +3,7 @@
 //! and uproot, which read the oxiroot-written files with the right classes and
 //! values.)
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Graph, GraphErrors, Hist, ReadRoot, WriteRoot};
@@ -142,6 +143,7 @@ fn reads_root_graph_histogram() {
 fn graph_histogram_round_trips() {
     let frame = Hist::reg(20, -5.0, 5.0)
         .double()
+        .to_root()
         .named("Graph")
         .titled("frame;x;y");
     let g = Graph::with_errors(

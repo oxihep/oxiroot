@@ -16,6 +16,7 @@ fn writes_and_reads_a_mixed_object_file() {
     // profile, a function, a graph, and a string — all in one file.
     let mut h = Hist::reg(20, 0.0, 100.0)
         .double()
+        .to_root()
         .named("pt")
         .titled("p_{T}");
     for x in [5.0, 15.0, 15.0, 95.0] {
@@ -24,15 +25,20 @@ fn writes_and_reads_a_mixed_object_file() {
 
     let mut hv = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0])
         .double()
+        .to_root()
         .named("hv");
     for x in [0.5, 3.0, 50.0] {
         hv.fill(x);
     }
 
-    let mut h2 = Hist::reg(4, 0.0, 4.0).reg(3, 0.0, 3.0).double().named("h2");
+    let mut h2 = Hist::reg(4, 0.0, 4.0)
+        .reg(3, 0.0, 3.0)
+        .double()
+        .to_root()
+        .named("h2");
     h2.fill(1.5, 1.5);
 
-    let mut prof = Hist::reg(10, 0.0, 10.0).profile().named("prof");
+    let mut prof = Hist::reg(10, 0.0, 10.0).mean().to_root().named("prof");
     prof.fill(1.0, 5.0);
     prof.fill(1.0, 7.0);
 
@@ -129,7 +135,7 @@ fn rntuple_round_trips_through_the_facade() {
 #[test]
 fn sampling_a_histogram_reproduces_its_shape() {
     // A source distribution peaked at 3.0.
-    let mut src = Hist::reg(50, 0.0, 10.0).double().named("src");
+    let mut src = Hist::reg(50, 0.0, 10.0).double().to_root().named("src");
     for _ in 0..200 {
         src.fill(3.0);
     }
@@ -140,7 +146,7 @@ fn sampling_a_histogram_reproduces_its_shape() {
 
     // Draw from it into a new histogram — reproducibly, with the seedable Random.
     let mut rng = Random::seed(7);
-    let mut drawn = Hist::reg(50, 0.0, 10.0).double().named("drawn");
+    let mut drawn = Hist::reg(50, 0.0, 10.0).double().to_root().named("drawn");
     drawn.fill_random(&src, 20_000, &mut rng);
 
     // All draws land in range, and the sampled mean tracks the source's.
@@ -160,7 +166,7 @@ fn sampling_a_histogram_reproduces_its_shape() {
 #[test]
 fn hadd_merges_histogram_files_end_to_end() {
     for (name, xs) in [("m1", [1.0, 2.0]), ("m2", [2.0, 3.0])] {
-        let mut h = Hist::reg(5, 0.0, 5.0).double().named("h");
+        let mut h = Hist::reg(5, 0.0, 5.0).double().to_root().named("h");
         for x in xs {
             h.fill(x);
         }

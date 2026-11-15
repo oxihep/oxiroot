@@ -1,6 +1,7 @@
 //! Constructors and fills that pair inputs reject inputs of different lengths
 //! instead of truncating or padding them, and leave the object unchanged.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Graph, Graph2D, Hist, MultiErrorGraph, PolyHist, SparseHist};
 use oxiroot_io_core::Error;
 
@@ -48,7 +49,7 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
 
 #[test]
 fn fill_many_weighted_fills_nothing_on_a_mismatch() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
     assert_eq!(
         h.fill_many_weighted(&[0.5, 1.5, 2.5], &[1.0, 2.0])
             .unwrap_err(),

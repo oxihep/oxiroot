@@ -21,6 +21,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
 
     let mut h = Hist::reg(4, 0.0, 4.0)
         .double()
+        .to_root()
         .named("h")
         .titled("appended");
     h.fill(0.5);

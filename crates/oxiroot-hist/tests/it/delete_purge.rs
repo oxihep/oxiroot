@@ -1,12 +1,13 @@
 //! Deleting, purging and compacting in update mode (`FileWriter::open`).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FileWriter, Hist, Hist1D, ReadRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn hist(name: &str, content: f64) -> Hist1D {
-    let mut h = Hist::reg(1, 0.0, 1.0).double().named(name);
+    let mut h = Hist::reg(1, 0.0, 1.0).double().to_root().named(name);
     h.fill_weight(0.5, content);
     h
 }

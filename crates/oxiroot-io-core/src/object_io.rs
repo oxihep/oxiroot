@@ -27,6 +27,7 @@ use crate::{Compression, FileReader};
 /// let h = Hist1D::read_root(&f, "h")?;               // any of TH1D/F/I/S/C/L
 /// let s = Hist1D::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
 /// ```
+/// use oxiroot_hist::ToRoot;
 pub trait ReadRoot: Sized {
     /// Read the object stored under key `name` in the file's top directory.
     fn read_root(file: &FileReader, name: &str) -> Result<Self>;

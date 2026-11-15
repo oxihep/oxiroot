@@ -78,16 +78,18 @@ const DIRS_DH: [f64; 2] = [2.0, 4.0];
 const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 
 fn canonical_hist() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
+    // Filled as an oxihist histogram and converted afterwards, so ROOT and
+    // uproot reading it checks the oxihist → ROOT conversion end to end.
+    let mut h = Hist::reg(4, 0.0, 4.0).name("h").title("interop").double();
     // Fill bin i (0-based) with i+1 entries at its center, giving contents
-    // [1, 2, 3, 4] without relying on direct field mutation.
+    // [1, 2, 3, 4].
     for (i, &count) in HIST_BINS.iter().enumerate() {
         let center = i as f64 + 0.5;
         for _ in 0..(count as usize) {
             h.fill(center);
         }
     }
-    h
+    h.to_root()
 }
 
 /// A `TH1D` with `contents.len()` unit bins over `[0, n)` whose in-range bin `i`
@@ -95,8 +97,9 @@ fn canonical_hist() -> Hist1D {
 /// multi-object / append fixtures.
 fn hist(name: &str, contents: &[f64]) -> Hist1D {
     let n = contents.len() as i32;
-    let mut h = Hist::reg(n, 0.0, n as f64)
+    let mut h = Hist::reg(n as usize, 0.0, n as f64)
         .double()
+        .to_root()
         .named(name)
         .titled("interop");
     for (i, &c) in contents.iter().enumerate() {
@@ -178,6 +181,10 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     let f = FileReader::open(dir.join("oracle_hist.root"))?;
     let h = Hist1D::read_root(&f, "h")?;
     assert_close("hist bin contents", h.values(), &HIST_BINS);
+    // The same histogram read straight into oxihist (ROOT → oxihist).
+    let oh =
+        oxiroot::hist::oxihist::Histogram::<oxiroot::hist::oxihist::Weight, 1>::read_root(&f, "h")?;
+    assert_close("hist via oxihist", &oh.values(false), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
 
     // TTree written by the oracle (both ROOT C++ and uproot produce it).

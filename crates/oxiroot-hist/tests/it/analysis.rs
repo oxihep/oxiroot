@@ -1,6 +1,7 @@
 //! Histogram-analysis accessors checked against compiled ROOT C++ output on
 //! `fixtures/analysis.root` (the `h` parabola, `g` its perturbed copy).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist1D, ReadRoot};
@@ -69,7 +70,7 @@ fn kolmogorov_test_matches_root() {
 #[test]
 fn comparison_tests_reject_mismatched_binning() {
     let a = h("h");
-    let other = Hist::reg(10, 0.0, 10.0).double().named("x"); // different binning
+    let other = Hist::reg(10, 0.0, 10.0).double().to_root().named("x"); // different binning
     assert!(a.chi2_test(&other).is_err());
     assert!(a.kolmogorov_test(&other).is_err());
 }

@@ -1,6 +1,7 @@
 //! #3: serializing a `TH2D` reproduces ROOT's object bytes exactly, and a
 //! create→fill→save→read cycle round-trips through our own reader.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist2D, ReadRoot, WriteRoot};
@@ -35,6 +36,7 @@ fn create_fill_save_round_trips() {
     let mut h = Hist::reg(3, 0.0, 3.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h2")
         .titled("filled");
     h.fill(0.5, 0.5); // (binx=1, biny=1)

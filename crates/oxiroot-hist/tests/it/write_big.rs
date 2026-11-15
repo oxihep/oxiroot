@@ -4,13 +4,18 @@
 //! key path is exercised without producing a 2 GiB file; the result must read
 //! back through our own reader with every object intact.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FileWriter, Hist, Hist1D, Hist2D, ReadRoot};
 use oxiroot_io_core::FileReader;
 
 fn th1(name: &str) -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named(name).titled("1-D");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .named(name)
+        .titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
         h.fill(x);
     }
@@ -24,6 +29,7 @@ fn big_container_flat_round_trips() {
     let mut h2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("hxy")
         .titled("2-D");
     h2.fill(0.5, 0.5);

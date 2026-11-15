@@ -4,6 +4,7 @@
 //! round-trips its own writes; ROOT C++ and uproot read oxiroot's output
 //! (checked out of band).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FileWriter, Hist, Hist1D, ListKind, ObjList, ObjString, Parameter, ReadRoot};
@@ -39,7 +40,7 @@ fn reads_root_written_list_and_array() {
 
 #[test]
 fn round_trips_list_and_array_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     h.fill(0.5);
     let list = ObjList::list()
         .named("mylist")
@@ -48,8 +49,8 @@ fn round_trips_list_and_array_through_oxiroot() {
         .add(&Parameter::f64("lumi", 12.5));
     let arr = ObjList::array()
         .named("myarr")
-        .add(&Hist::reg(3, 0.0, 3.0).double().named("a0"))
-        .add(&Hist::reg(3, 0.0, 3.0).double().named("a1"));
+        .add(&Hist::reg(3, 0.0, 3.0).double().to_root().named("a0"))
+        .add(&Hist::reg(3, 0.0, 3.0).double().to_root().named("a1"));
 
     let out = std::env::temp_dir().join("oxiroot_objlist_rt.root");
     FileWriter::create(&out)

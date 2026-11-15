@@ -47,7 +47,8 @@ const SET_B_3D: [Point3; 4] = [
 fn empty_2d() -> Profile2D {
     Hist::reg(3, 0.0, 3.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p2")
 }
 
@@ -55,7 +56,8 @@ fn empty_3d() -> Profile3D {
     Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p3")
 }
 
@@ -146,7 +148,7 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     let out_a = dir.join(format!("oxiroot_pskip_out_a_{tag}.root"));
     let out_b = dir.join(format!("oxiroot_pskip_out_b_{tag}.root"));
 
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     h.fill(0.5);
     let p2 = profile_2d(&[&SET_A_2D]);
     let mut broken = p2.clone();
@@ -197,11 +199,13 @@ fn a_binning_mismatch_names_the_key() {
     let out = dir.join(format!("oxiroot_pmis_out_{tag}.root"));
     Hist::reg(4, 0.0, 4.0)
         .double()
+        .to_root()
         .named("pt")
         .write_root(&f1, Compression::None)
         .unwrap();
     Hist::reg(5, 0.0, 4.0)
         .double()
+        .to_root()
         .named("pt")
         .write_root(&f2, Compression::None)
         .unwrap();
