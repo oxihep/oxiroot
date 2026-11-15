@@ -29,24 +29,23 @@ oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.3.0" }
 oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.3.0" }
 oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.3.0" }
 oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.3.0" }
-oxiroot-stat = { path = "crates/oxiroot-stat", version = "0.3.0" }
-oxiroot-particle = { path = "crates/oxiroot-particle", version = "0.3.0" }
-oxiroot-formula = { path = "crates/oxiroot-formula", version = "0.3.0" }
-oxiroot-fit = { path = "crates/oxiroot-fit", version = "0.3.0" }
-oxiroot-plot = { path = "crates/oxiroot-plot", version = "0.3.0" }
-oxiroot-rex = { path = "crates/oxiroot-rex", version = "0.3.0" }
 # The facade's batteries-included defaults are for applications; the in-repo
 # consumer (the CLI) opts in to what it needs. Default features must be turned
 # off here: a member's own `default-features = false` is ignored for an
 # inherited dependency.
 oxiroot = { path = "crates/oxiroot", version = "0.3.0", default-features = false }
-# `oxiroot_rex::font::backend::ttf_parser::TtfMathFont` exposes `ttf_parser`
-# types (`Face`, `GlyphId`, `cff::Matrix`), so oxiroot-plot and oxiroot-rex must
-# resolve the same version.
-ttf-parser = "0.25"
-minuit2 = "0.5"
-argmin = { version = "0.11", default-features = false }
-argmin-math = { version = "0.5", features = ["vec"] }
+# The oxihep crates that moved out of this workspace, each in its own repository
+# (github.com/oxihep). Until they are on crates.io they are git dependencies,
+# pinned to a release tag; `version` is kept so the switch is dropping
+# `git`/`tag`. Every crate here must name the same tag as oxifit and oxiplot do
+# for their own dependencies (oxistats, oxifit), so Cargo resolves one copy.
+oxistats = { git = "https://github.com/oxihep/oxistats", tag = "v0.1.0", version = "0.1.0" }
+oxiparticle = { git = "https://github.com/oxihep/oxiparticle", tag = "v0.1.0", version = "0.1.0" }
+oxifit = { git = "https://github.com/oxihep/oxifit", tag = "v0.1.0", version = "0.1.0" }
+oxifit-formula = { git = "https://github.com/oxihep/oxifit", tag = "v0.1.0", version = "0.1.0" }
+# Default features off: the crates that implement its data traits need none, and
+# the facade's `plot` feature turns PNG output and TeX math back on.
+oxiplot = { git = "https://github.com/oxihep/oxiplot", tag = "v0.1.0", version = "0.1.0", default-features = false }
 bytes = "1"
 # Pure-Rust blocking HTTP client (rustls, no OpenSSL), for the optional `http`
 # remote-read feature. `default-features = false` drops gzip transfer decoding,

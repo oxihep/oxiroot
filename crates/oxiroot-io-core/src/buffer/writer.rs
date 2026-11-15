@@ -85,35 +85,91 @@ impl WBuffer {
         self.buf.extend_from_slice(b);
     }
 
-    num_writer!(/// Append a big-endian `u16`.
-        be_u16, u16, to_be_bytes);
-    num_writer!(/// Append a big-endian `u32`.
-        be_u32, u32, to_be_bytes);
-    num_writer!(/// Append a big-endian `u64`.
-        be_u64, u64, to_be_bytes);
-    num_writer!(/// Append a big-endian `i16`.
-        be_i16, i16, to_be_bytes);
-    num_writer!(/// Append a big-endian `i32`.
-        be_i32, i32, to_be_bytes);
-    num_writer!(/// Append a big-endian `i64`.
-        be_i64, i64, to_be_bytes);
-    num_writer!(/// Append a big-endian `f32`.
-        be_f32, f32, to_be_bytes);
-    num_writer!(/// Append a big-endian `f64`.
-        be_f64, f64, to_be_bytes);
+    num_writer!(
+        /// Append a big-endian `u16`.
+        be_u16,
+        u16,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `u32`.
+        be_u32,
+        u32,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `u64`.
+        be_u64,
+        u64,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `i16`.
+        be_i16,
+        i16,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `i32`.
+        be_i32,
+        i32,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `i64`.
+        be_i64,
+        i64,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `f32`.
+        be_f32,
+        f32,
+        to_be_bytes
+    );
+    num_writer!(
+        /// Append a big-endian `f64`.
+        be_f64,
+        f64,
+        to_be_bytes
+    );
 
-    num_writer!(/// Append a little-endian `u16`.
-        le_u16, u16, to_le_bytes);
-    num_writer!(/// Append a little-endian `u32`.
-        le_u32, u32, to_le_bytes);
-    num_writer!(/// Append a little-endian `u64`.
-        le_u64, u64, to_le_bytes);
-    num_writer!(/// Append a little-endian `i64`.
-        le_i64, i64, to_le_bytes);
-    num_writer!(/// Append a little-endian `f32`.
-        le_f32, f32, to_le_bytes);
-    num_writer!(/// Append a little-endian `f64`.
-        le_f64, f64, to_le_bytes);
+    num_writer!(
+        /// Append a little-endian `u16`.
+        le_u16,
+        u16,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `u32`.
+        le_u32,
+        u32,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `u64`.
+        le_u64,
+        u64,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `i64`.
+        le_i64,
+        i64,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `f32`.
+        le_f32,
+        f32,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `f64`.
+        le_f64,
+        f64,
+        to_le_bytes
+    );
 
     /// Append a ROOT-encoded string (1-byte length, or `0xFF` + big-endian
     /// `u32` length, then the UTF-8 bytes).

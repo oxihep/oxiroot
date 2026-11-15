@@ -1,6 +1,6 @@
 //! Fitting for histograms and graphs.
 //!
-//! The fitting engine lives in the standalone [`oxiroot_fit`] crate, which
+//! The fitting engine lives in the standalone [`oxifit`] crate, which
 //! works on any 1-D data. This module just teaches it to read a
 //! [`Hist1D`] and a [`Graph`] by implementing [`FitData`], so the `.fit(...)`
 //! methods (from [`FitExt`]) work directly:
@@ -12,10 +12,10 @@
 //! println!("mean = {} ± {}", fit.params[1], fit.errors[1]);
 //! ```
 //!
-//! Behind the `fit` feature (it pulls in `oxiroot-fit` → the pure-Rust Minuit2
-//! port). The whole `oxiroot-fit` surface is re-exported here for convenience.
+//! Behind the `fit` feature (it pulls in `oxifit` → the pure-Rust Minuit2
+//! port). The whole `oxifit` surface is re-exported here for convenience.
 
-pub use oxiroot_fit::{
+pub use oxifit::{
     FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points,
 };
 

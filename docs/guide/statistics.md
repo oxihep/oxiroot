@@ -20,7 +20,7 @@ let z = Normal::standard().ppf(0.975); // 1.959963984540054  (scipy.stats.norm.p
 let (t, p) = ttest_1samp(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], 4.0);
 ```
 
-It is also published on its own as the [`oxiroot-stat`](https://crates.io/crates/oxiroot-stat)
+It is also published on its own as the [`oxistats`](https://github.com/oxihep/oxistats)
 crate if you want the numerics without the rest of oxiroot.
 
 Everything is at `oxiroot::stat`, as above:
@@ -211,7 +211,7 @@ fn correlate(path: &str) -> oxiroot::Result<f64> {
 }
 ```
 
-Depending on `oxiroot-stat` and `oxiroot-io-core` directly instead of the
+Depending on `oxistats` and `oxiroot-io-core` directly instead of the
 facade, turn on io-core's `stat` feature for this conversion.
 
 ## Hypothesis tests

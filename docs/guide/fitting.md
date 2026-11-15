@@ -2,7 +2,7 @@
 
 Parametric curve fitting for **any 1-D data** — not just histograms — backed by
 a pure-Rust port of [Minuit2](https://crates.io/crates/minuit2), the minimizer
-ROOT uses. This page covers the standalone `oxiroot-fit` crate, the `FitData` /
+ROOT uses. This page covers the standalone `oxifit` crate, the `FitData` /
 `FitExt` abstraction, building models, choosing a cost and minimizer, and
 reading back results.
 
@@ -39,7 +39,7 @@ your own type to fit anything.
 !!! note
     `FitExt` is in scope via `oxiroot::prelude::*`. If you import individual
     items instead, bring it in with `use oxiroot::fit::FitExt;` (or
-    `use oxiroot_fit::FitExt;`).
+    `use oxifit::FitExt;`).
 
 ## A first fit
 
@@ -323,7 +323,7 @@ if fit.valid {
 
 !!! note
     The χ²-survival function behind `p_value` lives in the dependency-free
-    `oxiroot-stat` leaf crate, shared with the histogram comparison tests.
+    `oxistats` leaf crate, shared with the histogram comparison tests.
     A `Chi2` fit drops empty points and a fixed parameter does not count toward
     `ndf`, so reduced-χ² and p-values reflect only what actually entered the fit.
 

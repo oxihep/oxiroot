@@ -13,12 +13,12 @@ description = "ROOT parametric functions (TF1/TF2/TF3) evaluated in pure Rust, w
 [dependencies]
 oxiroot-hist = { workspace = true }
 oxiroot-io-core = { workspace = true }
-oxiroot-formula = { workspace = true }
-oxiroot-fit = { workspace = true, optional = true }
+oxifit-formula = { workspace = true }
+oxifit = { workspace = true, optional = true }
 
 [features]
-# Opt-in fitting: `TF1::to_model` turns a function into an `oxiroot_fit::Model`.
-fit = ["dep:oxiroot-fit"]
+# Opt-in fitting: `TF1::to_model` turns a function into an `oxifit::Model`.
+fit = ["dep:oxifit"]
 
 [package.metadata.docs.rs]
 all-features = true

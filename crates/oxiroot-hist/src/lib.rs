@@ -38,6 +38,8 @@ mod hist1d;
 mod hist2d;
 mod hist3d;
 mod multierrorgraph;
+#[cfg(feature = "plot")]
+mod plot;
 mod polyhist;
 mod profile1d;
 mod profile2d;
