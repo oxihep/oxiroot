@@ -34,7 +34,10 @@ fn threaded_fill_matches_serial() {
             });
         }
     });
-    assert_eq!(acc.num_slots(), 4, "one copy per worker thread");
+    // At most one copy per worker: a thread that starts after another has
+    // exited may take over the exited thread's copy (and keep its fills).
+    let slots = acc.num_slots();
+    assert!((1..=4).contains(&slots), "{slots} copies for 4 workers");
     let got = acc.merge().expect("identical binning");
 
     // Bin contents and entry count are exact regardless of fill/merge order.

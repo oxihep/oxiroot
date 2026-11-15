@@ -7,6 +7,17 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
+  and a public `StreamerRegistry::from_infos` for hand-built registries.
+- **`ThreadedHist` got slower as threads were added.** Every fill took a
+  shared read lock to find the thread's copy. The copies now live in
+  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
+  13.5 s before, 26 ms now.
+- **`fill_par` cloned the template once per rayon split.** It now fills a few
+  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
+
 ### Changed
 
 - **Breaking: `oxiroot::Error` is the facade's own error type**, with variants
@@ -24,14 +35,6 @@ change the API.
   `Histogram` is oxihist's histogram (what the `Hist` builder makes).
   `ThreadedHist` and `Mergeable` accept oxihist histograms too, so
   `ThreadedHist::new(Hist::reg(..).int64())` works from the prelude.
-
-### Added
-
-- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
-  and a public `StreamerRegistry::from_infos` for hand-built registries.
-
-### Changed
-
 - Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
   decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
   written with each codec read back in ROOT 6.40 unchanged.
@@ -117,6 +120,18 @@ change the API.
 
 ### Fixed
 
+- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
+  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
+- **Reading objects from a subdirectory re-read its key list each time, and
+  every object read re-parsed the file's streamer info.** `FileReader` now
+  reads each subdirectory once and parses the streamer info once: 3 000
+  objects from one subdirectory take 13 ms instead of 425 ms.
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
 - **Decompression is bounded by the block's declared size.** zstd, zlib and
   LZMA blocks used to decode in full and be checked afterwards, so a small
   crafted block could expand into gigabytes before being rejected. Decoding

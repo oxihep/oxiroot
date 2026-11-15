@@ -39,6 +39,12 @@ pub struct FileReader {
     size: u64,
     header: FileHeader,
     root_dir: Directory,
+    /// The parsed streamer info, read once: every object read needs it, and
+    /// decompressing and parsing it again each time dominated small reads.
+    registry: std::sync::OnceLock<StreamerRegistry>,
+    /// Subdirectories already read, by path: reading N objects from one
+    /// subdirectory used to fetch and parse its key list N times.
+    dirs: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<Directory>>>,
 }
 
 impl std::fmt::Debug for FileReader {
@@ -127,6 +133,8 @@ impl FileReader {
             size,
             header,
             root_dir,
+            registry: std::sync::OnceLock::new(),
+            dirs: std::sync::Mutex::default(),
         })
     }
 
@@ -160,11 +168,39 @@ impl FileReader {
     /// `TDirectoryFile` (the class official ROOT C++ records on disk), so
     /// subdirectories of ROOT-written files are navigable.
     pub fn subdir(&self, path: &str) -> Result<Directory> {
+        Ok((*self.subdir_cached(path)?).clone())
+    }
+
+    /// [`subdir`](Self::subdir), read once per path and then shared.
+    fn subdir_cached(&self, path: &str) -> Result<std::sync::Arc<Directory>> {
+        let norm: String = path
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+        let cache = |d| {
+            self.dirs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(d)
+                .cloned()
+        };
+        if let Some(dir) = cache(&norm) {
+            return Ok(dir);
+        }
         let mut current: Option<Directory> = None;
-        for part in path.split('/').filter(|p| !p.is_empty()) {
+        for part in norm.split('/').filter(|p| !p.is_empty()) {
             current = Some(self.read_subdir(current.as_ref(), part)?);
         }
-        current.ok_or_else(|| Error::InvalidInput(format!("empty subdirectory path {path:?}")))
+        let dir = std::sync::Arc::new(
+            current
+                .ok_or_else(|| Error::InvalidInput(format!("empty subdirectory path {path:?}")))?,
+        );
+        self.dirs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(norm, std::sync::Arc::clone(&dir));
+        Ok(dir)
     }
 
     /// Read the subdirectory `name` directly inside `parent` (or the root
@@ -194,7 +230,7 @@ impl FileReader {
     /// length (`fKeyLen`), needed to resolve object-reference back-references in
     /// streamed objects (e.g. `PolyHist`'s bins) read from a subdirectory.
     pub fn object_in_keyed(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>, usize)> {
-        let dir = self.subdir(subdir)?;
+        let dir = self.subdir_cached(subdir)?;
         let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
             what: "key",
             name: format!("{}/{name}", subdir.trim_end_matches('/')),
@@ -234,10 +270,14 @@ impl FileReader {
     /// Parse the file's `TStreamerInfo` records (at `fSeekInfo`) into a registry
     /// describing every class stored in the file.
     pub fn streamer_registry(&self) -> Result<StreamerRegistry> {
-        let Some((object, keylen)) = self.streamer_info_decompressed()? else {
-            return Ok(StreamerRegistry::default());
+        if let Some(reg) = self.registry.get() {
+            return Ok(reg.clone());
+        }
+        let reg = match self.streamer_info_decompressed()? {
+            Some((object, keylen)) => parse_streamer_info(&object, keylen)?,
+            None => StreamerRegistry::default(),
         };
-        parse_streamer_info(&object, keylen)
+        Ok(self.registry.get_or_init(|| reg).clone())
     }
 
     /// Each class's streamer info as the file stores it, element bodies included,
