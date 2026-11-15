@@ -133,6 +133,20 @@ pub fn read_column(
             )));
         }
     }
+    // The variable-width reals carry their width in the header; outside the
+    // ranges ROOT writes, the shifts that decode them would overflow.
+    let variable_range = match column_type {
+        Real32Trunc => Some(10..=31),
+        Real32Quant => Some(1..=32),
+        _ => None,
+    };
+    if let Some(range) = variable_range {
+        if !range.contains(&bits) {
+            return Err(Error::Format(format!(
+                "column {column_type:?}: bits_on_storage {bits} outside {range:?}"
+            )));
+        }
+    }
     match column_type {
         Bit => {
             let mut out = Vec::new();
@@ -379,6 +393,31 @@ mod tests {
     use crate::envelope::Locator;
     use crate::pagelist::PageInfo;
     use oxiroot_io_core::BytesSource;
+
+    /// A forged width for the variable-width reals is an error, not a shift
+    /// overflow while decoding.
+    #[test]
+    fn read_column_rejects_out_of_range_real32_widths() {
+        let src = BytesSource::new(vec![0u8; 64]);
+        for (ty, bits) in [
+            (ColumnType::Real32Trunc, 0),
+            (ColumnType::Real32Trunc, 9),
+            (ColumnType::Real32Trunc, 33),
+            (ColumnType::Real32Trunc, 64),
+            (ColumnType::Real32Quant, 0),
+            (ColumnType::Real32Quant, 33),
+            (ColumnType::Real32Quant, 64),
+        ] {
+            assert!(
+                matches!(
+                    read_column(&src, ty, bits, &[], Some((0.0, 1.0))),
+                    Err(Error::Format(_))
+                ),
+                "{ty:?} with {bits} bits"
+            );
+        }
+        assert!(read_column(&src, ColumnType::Real32Trunc, 16, &[], None).is_ok());
+    }
 
     #[test]
     fn read_column_rejects_bits_type_mismatch() {

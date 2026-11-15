@@ -56,6 +56,8 @@ bytes = "1"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 proptest = "1"
 clap = { version = "4", features = ["derive"] }
+# Per-thread storage without a shared lock (ThreadedHist).
+thread_local = "1.1"
 
 [profile.release]
 opt-level = 3

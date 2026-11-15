@@ -7,6 +7,17 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
+  and a public `StreamerRegistry::from_infos` for hand-built registries.
+- **`ThreadedHist` got slower as threads were added.** Every fill took a
+  shared read lock to find the thread's copy. The copies now live in
+  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
+  13.5 s before, 26 ms now.
+- **`fill_par` cloned the template once per rayon split.** It now fills a few
+  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
+
 ### Changed
 
 - **Breaking: `FileReader::open_mmap` is `unsafe`, and `mmap` is no longer a
@@ -15,14 +26,6 @@ change the API.
   function. Call it as `unsafe { FileReader::open_mmap(path) }` with the
   `mmap` feature enabled, or use `FileReader::open_ranged`, which reads lazily
   with no such contract.
-
-### Added
-
-- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
-  and a public `StreamerRegistry::from_infos` for hand-built registries.
-
-### Changed
-
 - Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
   decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
   written with each codec read back in ROOT 6.40 unchanged.
@@ -108,6 +111,18 @@ change the API.
 
 ### Fixed
 
+- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
+  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
+- **Reading objects from a subdirectory re-read its key list each time, and
+  every object read re-parsed the file's streamer info.** `FileReader` now
+  reads each subdirectory once and parses the streamer info once: 3 000
+  objects from one subdirectory take 13 ms instead of 425 ms.
+- **Decompression is bounded by the block's declared size.** zstd, zlib and
+  LZMA blocks used to decode in full and be checked afterwards, so a small
+  crafted block could expand into gigabytes before being rejected. Decoding
+  now stops one byte past the declared size (at most 16 MiB per block), and
+  LZ4 uses the decoder entry point that reports a too-small output as an error
+  instead of panicking.
 - **Decompression is bounded by the block's declared size.** zstd, zlib and
   LZMA blocks used to decode in full and be checked afterwards, so a small
   crafted block could expand into gigabytes before being rejected. Decoding
@@ -123,6 +138,20 @@ change the API.
   and reads at most the length requested, and frame data is read as it arrives
   instead of into a buffer sized by the frame header, so a server announcing
   2 GB cannot make the client allocate it.
+- **Crafted files that used to panic or abort now return errors:**
+  - a TTree basket key whose `fKeyLen` runs past the probed bytes (an
+    out-of-bounds slice);
+  - object and version byte counts that end outside the buffer or before the
+    header (checked once in `TagReader::read_header` and
+    `RBuffer::read_version`, so collections and `TMap` entries no longer slice
+    with them);
+  - collection and `TMap` entry counts, and string-vector branch counts, that
+    reserved memory for every claimed entry before reading any (now clamped to
+    what the buffer can hold);
+  - an RNTuple deferred column starting at an absurd element index (capped at
+    65 536 elements per entry, and allocated fallibly);
+  - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
+    writes (10–31 and 1–32).
 
 ## [0.3.0] — 2026-09-24
 

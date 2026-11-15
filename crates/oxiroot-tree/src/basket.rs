@@ -81,6 +81,14 @@ impl Basket {
         let _flag = r.u8()?;
 
         let key_len = key_len as usize;
+        // The key header just parsed lies inside fKeyLen; a shorter fKeyLen
+        // would make the payload overlap it.
+        if key_len < r.pos() {
+            return Err(Error::Format(format!(
+                "basket fKeyLen {key_len} is shorter than its {}-byte key header",
+                r.pos()
+            )));
+        }
         let nbytes = nbytes.unsigned_abs() as usize;
         let on_disk = nbytes
             .checked_sub(key_len)
@@ -93,6 +101,9 @@ impl Basket {
         let record_end = key_len + on_disk;
         let raw: Vec<u8> = if record_end <= head.len() {
             head[key_len..record_end].to_vec()
+        } else if key_len >= head.len() {
+            // The payload starts past the probe window: fetch it whole.
+            file.read_at(seek + key_len as u64, on_disk)?.to_vec()
         } else {
             let have = head.len();
             let tail = file.read_at(seek + have as u64, record_end - have)?;

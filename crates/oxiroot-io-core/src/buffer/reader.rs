@@ -259,11 +259,21 @@ impl<'a> RBuffer<'a> {
         if word & K_BYTE_COUNT_MASK != 0 {
             let byte_count = word & !K_BYTE_COUNT_MASK;
             let version = self.be_u16()?;
+            // The byte count comes from the file: the record must end inside
+            // the buffer and after its own version field.
+            let end = start + 4 + byte_count as usize;
+            if end > self.len() || end < self.pos {
+                return Err(Error::Format(format!(
+                    "version byte count ends at {end}, outside {}..={}",
+                    self.pos,
+                    self.len()
+                )));
+            }
             Ok(VersionHeader {
                 version,
                 byte_count: Some(byte_count),
                 start,
-                end: Some(start + 4 + byte_count as usize),
+                end: Some(end),
             })
         } else {
             // No byte count: rewind, the first two bytes were the version.
