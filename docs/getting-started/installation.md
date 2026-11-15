@@ -6,21 +6,21 @@ crates pulled in automatically.
 
 ## Add the dependency
 
-oxiroot is on crates.io. It is pre-1.0 (`0.1`), so the API may still change
-between minor versions. Pull in everything through the **facade**, or just the
+oxiroot is not on crates.io yet: depend on it from GitHub. It is pre-1.0, so
+the API may still change between versions. Pull in everything through the **facade**, or just the
 one crate you need — the histogram, tree, and RNTuple crates are independent, so
 a histogram-only project never compiles the others.
 
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple — through the facade:
-oxiroot = "0.3"
+oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 
-# …or depend on just one crate:
-oxiroot-hist      = "0.3"  # histograms + graphs
-oxiroot-hist-func = "0.3"  # Func1D/Func2D/Func3D
-oxiroot-tree      = "0.3"  # TTree
-oxiroot-rntuple   = "0.3"  # RNTuple
+# …or depend on just one crate (Cargo finds it in the repository):
+oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot" }  # Func1D/Func2D/Func3D
+oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot" }  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:
@@ -43,15 +43,15 @@ just the lean, pure-Rust format core.
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
-| `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |
+| `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`, from [oxiplot](https://github.com/oxihep/oxiplot)); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |
 
 ```toml
 [dependencies]
 # Batteries-included — fitting, plotting, mmap, and argmin all on:
-oxiroot = "0.3"
+oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 
 # …or the lean format core only (drops the extra dependencies):
-# oxiroot = { version = "0.3", default-features = false }
+# oxiroot = { git = "https://github.com/oxihep/oxiroot", default-features = false }
 ```
 
 !!! tip "Leaner builds"

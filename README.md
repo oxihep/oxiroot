@@ -11,6 +11,16 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
 > The name is *ROOT + oxide* — Rust is oxidized iron.
 
+oxiroot is the ROOT-file part of the [oxihep](https://github.com/oxihep)
+family, the way uproot is in Scikit-HEP: histograms come from
+[oxihist](https://github.com/oxihep/oxihist), plots from
+[oxiplot](https://github.com/oxihep/oxiplot), fits from
+[oxifit](https://github.com/oxihep/oxifit), statistics from
+[oxistats](https://github.com/oxihep/oxistats) and particle data from
+[oxiparticle](https://github.com/oxihep/oxiparticle). The `oxiroot` crate
+re-exports all of them, so one dependency gives you the lot; see
+[the family](#the-oxihep-family) below.
+
 ## Highlights
 
 - 🦀 **Pure Rust** — the on-disk format reimplemented from the official specs.
@@ -97,25 +107,26 @@ by oxiroot open in official ROOT and uproot, and oxiroot reads files they write.
 
 ## Quick start
 
-Pull in everything through the facade, or just the part you need: the
-histogram, tree, and RNTuple crates are independent, so a histogram-only project
-never compiles the others.
+oxiroot is not on crates.io yet, so depend on it from GitHub. Pull in
+everything through the facade, or just the part you need: the histogram, tree,
+and RNTuple crates are independent, so a histogram-only project never compiles
+the others.
 
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
 # the facade. Fitting, plotting, mmap and argmin are ON BY DEFAULT, so nothing
 # extra to enable (add `features = ["rayon"]` for the parallel helpers):
-oxiroot = "0.3"
+oxiroot = { git = "https://github.com/oxihep/oxiroot" }
 
 # …leaner, just the format core (drops the fitting/plotting/mmap deps):
-# oxiroot = { version = "0.3", default-features = false }
+# oxiroot = { git = "https://github.com/oxihep/oxiroot", default-features = false }
 
-# …or depend on just one crate:
-oxiroot-hist      = "0.3"  # histograms + graphs
-oxiroot-hist-func = "0.3"  # Func1D/Func2D/Func3D
-oxiroot-tree      = "0.3"  # TTree
-oxiroot-rntuple   = "0.3"  # RNTuple
+# …or depend on just one crate (Cargo finds it in the repository):
+oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot" }  # Func1D/Func2D/Func3D
+oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot" }  # RNTuple
 ```
 
 ```rust
@@ -912,6 +923,24 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 The facade is batteries-included: everything marked ✅ is on by default. For a
 lean, pure-Rust format core with a minimal dependency set, opt out with
 `default-features = false` and re-enable what you need.
+
+## The oxihep family
+
+Rust crates for high-energy physics, split the way Python's
+[Scikit-HEP](https://scikit-hep.org) is. Each works on its own; oxiroot
+re-exports the others, so the `oxiroot` crate alone gives you all of them.
+
+| Crate | What it does | Python counterpart | In oxiroot |
+| --- | --- | --- | --- |
+| **oxiroot** (this repository) | Read and write ROOT files: `TTree`, RNTuple, ROOT histograms and graphs | uproot | — |
+| [oxihist](https://github.com/oxihep/oxihist) | Histograms: typed axes, weighted and profile storages | boost-histogram, hist | `Hist`, `oxiroot::hist::oxihist` |
+| [oxiplot](https://github.com/oxihep/oxiplot) | Plotting to SVG/PNG/PDF with an mplhep look | matplotlib, mplhep | `oxiroot::plot` (`plot` feature) |
+| [oxifit](https://github.com/oxihep/oxifit) | Curve fitting with Minuit2, and a `TFormula` engine | iminuit | `oxiroot::fit` (`fit` feature) |
+| [oxistats](https://github.com/oxihep/oxistats) | Statistics, HEP lineshapes and intervals | scipy.stats, hepstats | `oxiroot::stat` |
+| [oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data and ID decoding | particle | `oxiroot::particle` |
+
+None of them is on crates.io yet; oxiroot depends on each through GitHub,
+pinned to a release tag.
 
 ## Build & test
 
