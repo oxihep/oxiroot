@@ -11,15 +11,15 @@ change the API.
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
   and a public `StreamerRegistry::from_infos` for hand-built registries.
-- **`ThreadedHist` got slower as threads were added.** Every fill took a
-  shared read lock to find the thread's copy. The copies now live in
-  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
-  13.5 s before, 26 ms now.
-- **`fill_par` cloned the template once per rayon split.** It now fills a few
-  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
 
 ### Changed
 
+- **Breaking: `FileReader::open_mmap` is `unsafe`, and `mmap` is no longer a
+  default feature of `oxiroot`.** Its contract (the file must not change while
+  mapped, or the result is undefined behaviour) was only in prose, on a safe
+  function. Call it as `unsafe { FileReader::open_mmap(path) }` with the
+  `mmap` feature enabled, or use `FileReader::open_ranged`, which reads lazily
+  with no such contract.
 - **Breaking: `oxiroot::Error` is the facade's own error type**, with variants
   `Root` (the ROOT-side `oxiroot::file::Error`), `Stat`, `Formula`, `Hist` and
   `Plot`. `?` still works across the whole API in a function returning
@@ -120,6 +120,12 @@ change the API.
 
 ### Fixed
 
+- **`ThreadedHist` got slower as threads were added.** Every fill took a
+  shared read lock to find the thread's copy. The copies now live in
+  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
+  13.5 s before, 26 ms now.
+- **`fill_par` cloned the template once per rayon split.** It now fills a few
+  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
 - **`SparseHist::fill` scanned every filled cell.** It now finds the cell
   through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
 - **Reading objects from a subdirectory re-read its key list each time, and

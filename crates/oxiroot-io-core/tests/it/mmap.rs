@@ -16,7 +16,9 @@ fn fixture(name: &str) -> PathBuf {
 fn open_mmap_matches_open() {
     let path = fixture("th1d_uncompressed.root");
     let owned = FileReader::open(&path).expect("open");
-    let mapped = FileReader::open_mmap(&path).expect("open_mmap");
+    // SAFETY: the fixture is not modified while it is mapped.
+    #[allow(unsafe_code)]
+    let mapped = unsafe { FileReader::open_mmap(&path) }.expect("open_mmap");
 
     assert_eq!(mapped.size(), owned.size(), "same length");
     let whole = |f: &FileReader| f.read_at(0, f.size() as usize).expect("read whole");
