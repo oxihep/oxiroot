@@ -51,7 +51,7 @@ moment loop is needed.
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let mut peak = Hist::reg(60, 80.0, 100.0).double().named("mass");
+let mut peak = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass");
 peak.sumw2(); // track per-bin errors for the chi-square
 for _ in 0..10_000 {
     peak.fill(/* sample */ 91.2);

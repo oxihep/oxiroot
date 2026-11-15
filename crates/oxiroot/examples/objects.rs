@@ -22,6 +22,7 @@ fn main() -> oxiroot::Result<()> {
     // --- The data: a tiny histogram, as an analysis would produce. -------------
     let mut mass = Hist::reg(20, 80.0, 100.0)
         .double()
+        .to_root()
         .named("mass")
         .titled("di-muon mass [GeV]");
     for &(x, w) in &[(90.9, 1.0), (91.2, 1.2), (91.4, 0.9), (92.0, 1.0)] {

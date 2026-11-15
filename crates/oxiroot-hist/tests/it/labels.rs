@@ -1,5 +1,6 @@
 //! Read alphanumeric (labelled) histogram axes (`Axis::fLabels`).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist1D, ReadRoot};
@@ -54,6 +55,7 @@ fn writes_and_round_trips_labels() {
     // Build a labelled histogram from scratch.
     let mut h = Hist::reg(3, 0.0, 3.0)
         .double()
+        .to_root()
         .named("cuts")
         .titled("selection");
     h.xaxis.set_label(1, "trigger");

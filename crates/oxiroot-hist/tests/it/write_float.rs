@@ -2,12 +2,17 @@
 //! through our own reader. The files in /tmp are also checked by uproot/ROOT C++
 //! in the interop job.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn th1f_write_read_round_trips() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h1").titled("float");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .named("h1")
+        .titled("float");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
@@ -30,6 +35,7 @@ fn th2f_write_read_round_trips() {
     let mut h = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h2")
         .titled("float2");
     h.fill(0.5, 0.5);
@@ -53,6 +59,7 @@ fn th3f_write_read_round_trips() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h3")
         .titled("float3");
     h.fill(0.5, 0.5, 0.5);

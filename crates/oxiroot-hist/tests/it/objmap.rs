@@ -4,6 +4,7 @@
 //! output (checked out of band). uproot has no `TMap` model, so an `ObjMap` is not
 //! readable there — a uproot limitation that ROOT's own maps share.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{FileWriter, Hist, Hist1D, ObjMap, ObjString, Parameter, ReadRoot};
@@ -41,7 +42,7 @@ fn reads_root_written_map() {
 
 #[test]
 fn round_trips_map_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     h.fill(0.5);
     let map = ObjMap::new()
         .named("meta")

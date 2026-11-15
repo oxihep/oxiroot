@@ -1,6 +1,7 @@
 //! #3: a `Profile1D` survives write→read against real ROOT-produced data, and a
 //! create→fill→save→read cycle round-trips through our own reader.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Profile1D, ReadRoot, WriteRoot};
@@ -29,7 +30,8 @@ fn round_trips_real_root_tprofile() {
 fn create_fill_save_round_trips() {
     // Reproduce the fixture's fills: 4 bins over [0,4], profiling y vs x.
     let mut h = Hist::reg(4, 0.0, 4.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p")
         .titled("profile");
     h.fill(0.5, 20.0);

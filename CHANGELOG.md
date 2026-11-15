@@ -9,6 +9,23 @@ change the API.
 
 ### Changed
 
+- **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, a new
+  ROOT-free histogram library modelled on boost-histogram and scikit-hep `hist`
+  (category and boolean axes, `Double`/`Int64`/`Weight`/`Mean`/`WeightedMean`
+  storages, projections, rebinning). oxiroot converts its histograms to and from
+  ROOT's, the way uproot does for `hist`: `ToRoot::to_root()` /
+  `to_root_as(BinContentType)` / `write_root`, and `Hist1D::to_hist()` /
+  `FromRoot::read_root` for the way back (all six of `Hist1D`/`2D`/`3D` and
+  `Profile1D`/`2D`/`3D`).
+
+  **Breaking:** oxiroot's own `Hist` builder is gone; `Hist` is now oxihist's.
+  Add `.to_root()` after the storage: `Hist::reg(50, 0.0, 100.0).weight()` →
+  `Hist::reg(50, 0.0, 100.0).weight().to_root()`. `.profile()` is now
+  `.mean().to_root()`, and `.float()`/`.int32()`/`.int16()`/`.int8()` are
+  `.double().to_root_as(BinContentType::F32)` (`I32`, `I16`, `I8`). Bin counts
+  are `usize`. `Build1D`/`Build2D`/`Build3D` are now `Build1`/`Build2`/`Build3`.
+  `Random` is oxihist's (same generator, same draws).
+
 - **The crates that are not about ROOT moved to their own repositories** in the
   [oxihep](https://github.com/oxihep) organization, the way Python's Scikit-HEP
   splits uproot, hist, mplhep and particle. Each kept its history:

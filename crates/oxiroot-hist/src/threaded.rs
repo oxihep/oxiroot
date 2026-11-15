@@ -107,10 +107,11 @@ impl Mergeable for Parameter {
 /// never contended.)
 ///
 /// ```
+/// use oxiroot_hist::ToRoot;
 /// use oxiroot_hist::{Hist, ThreadedHist};
 ///
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
+/// let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("h"));
 ///
 /// std::thread::scope(|s| {
 ///     for chunk in data.chunks(data.len().div_ceil(4)) {
@@ -150,8 +151,9 @@ impl<H: Mergeable> ThreadedHist<H> {
     /// a whole batch under a single slot acquisition:
     ///
     /// ```
+    /// use oxiroot_hist::ToRoot;
     /// # use oxiroot_hist::{Hist, ThreadedHist};
-    /// # let hist = ThreadedHist::new(Hist::reg(10, 0.0, 1.0).double().named("h"));
+    /// # let hist = ThreadedHist::new(Hist::reg(10, 0.0, 1.0).double().to_root().named("h"));
     /// hist.with_local(|h| {
     ///     for x in [0.1, 0.2, 0.3] {
     ///         h.fill(x);
@@ -280,10 +282,11 @@ impl ThreadedHist<Profile3D> {
 /// histogram, or `|h, ev| h.fill_weight(ev.x, ev.w)`.
 ///
 /// ```
+/// use oxiroot_hist::ToRoot;
 /// # #[cfg(feature = "rayon")] {
 /// use oxiroot_hist::{fill_par, Hist};
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let template = Hist::reg(100, 0.0, 100.0).double().named("h");
+/// let template = Hist::reg(100, 0.0, 100.0).double().to_root().named("h");
 /// let hist = fill_par(&template, &data, |h, &x| h.fill(x));
 /// assert_eq!(hist.entries, 1000.0);
 /// # }

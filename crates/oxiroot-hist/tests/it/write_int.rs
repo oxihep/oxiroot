@@ -2,11 +2,16 @@
 //! then read back through our own reader. The /tmp files are also checked by
 //! uproot/ROOT C++ when run by hand.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
 fn filled_th1() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("int");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .named("h")
+        .titled("int");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
@@ -54,6 +59,7 @@ fn th2i_th3i_round_trip() {
     let mut h2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h2")
         .titled("i2");
     h2.fill(0.5, 0.5);
@@ -71,6 +77,7 @@ fn th2i_th3i_round_trip() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h3")
         .titled("i3");
     h3.fill(0.5, 0.5, 0.5);

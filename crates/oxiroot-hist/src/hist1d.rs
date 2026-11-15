@@ -144,7 +144,7 @@ impl Hist1D {
 
     /// Change the on-disk bin content type of an existing histogram — the
     /// post-construction counterpart of the builder's storage finalizers. Build
-    /// with a given type via [`Hist::reg(...).float()`](crate::Hist) (→ `TH1F`),
+    /// with a given type via [`Hist::reg(...).double().to_root_as(crate::BinContentType::F32)`](crate::Hist) (→ `TH1F`),
     /// `.int32()` (→ `TH1I`), …; use this to retype a histogram you already
     /// filled or read back. Bin contents stay `f64` in memory and are narrowed
     /// only at write time.

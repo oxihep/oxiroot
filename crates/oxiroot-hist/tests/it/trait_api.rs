@@ -2,13 +2,18 @@
 //! correct ROOT class for each bin content type (so ROOT compatibility is preserved)
 //! and round-trip through a real file.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{
     BinContentType, Compression, FileWriter, Hist, Hist1D, Hist2D, Profile1D, ReadRoot, WriteRoot,
 };
 use oxiroot_io_core::FileReader;
 
 fn sample() -> Hist1D {
-    let mut h = Hist::reg(10, 0.0, 10.0).double().named("h").titled("title");
+    let mut h = Hist::reg(10, 0.0, 10.0)
+        .double()
+        .to_root()
+        .named("h")
+        .titled("title");
     h.sumw2();
     for i in 0..10 {
         h.fill_weight(i as f64 + 0.5, (i + 1) as f64);
@@ -58,9 +63,13 @@ fn float_precision_round_trips_as_th1f() {
 fn write_root_file_handles_heterogeneous_objects() {
     // The new multi-object writer takes any mix of writable types via &dyn —
     // not just Hist1D/Hist2D/Hist3D as the old Hist enum did.
-    let h1 = Hist::reg(5, 0.0, 5.0).double().named("h1");
-    let h2 = Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h2");
-    let p = Hist::reg(5, 0.0, 5.0).profile().named("p");
+    let h1 = Hist::reg(5, 0.0, 5.0).double().to_root().named("h1");
+    let h2 = Hist::reg(4, 0.0, 4.0)
+        .reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .named("h2");
+    let p = Hist::reg(5, 0.0, 5.0).mean().to_root().named("p");
     let path = std::env::temp_dir().join("oxiroot_traitapi_multi.root");
     FileWriter::create(&path)
         .add(&h1)

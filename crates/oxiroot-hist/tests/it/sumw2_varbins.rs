@@ -1,6 +1,7 @@
 //! Item 2: weighted per-bin errors (Sumw2) and variable bin edges, round-tripped
 //! through our reader (and, separately, validated in official ROOT).
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
@@ -10,6 +11,7 @@ use oxiroot_io_core::FileReader;
 fn weighted_sumw2_round_trips() {
     let mut h = Hist::reg(3, 0.0, 3.0)
         .double()
+        .to_root()
         .named("hw")
         .titled("weighted");
     h.sumw2(); // enable per-bin error tracking before filling
@@ -35,7 +37,11 @@ fn weighted_sumw2_round_trips() {
 #[test]
 fn variable_bins_round_trip() {
     let edges = [0.0, 1.0, 4.0, 10.0]; // 3 bins: [0,1) [1,4) [4,10)
-    let mut h = Hist::var(&edges).double().named("hv").titled("var");
+    let mut h = Hist::var(&edges)
+        .double()
+        .to_root()
+        .named("hv")
+        .titled("var");
     h.fill(0.5); // bin 1
     h.fill(2.0); // bin 2
     h.fill(3.9); // bin 2

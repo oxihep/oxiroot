@@ -96,11 +96,11 @@ impl PointData for Graph {
 mod tests {
     use oxiplot::{Axes, Hist1dData, Hist2dData, PointData};
 
-    use crate::{Graph, Hist};
+    use crate::{Graph, Hist, ToRoot};
 
     #[test]
     fn hist1d_exposes_in_range_bins_and_errors() {
-        let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+        let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
         h.sumw2();
         h.fill(-1.0); // underflow: not drawn
         h.fill_weight(1.5, 4.0);
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn profile_draws_its_bin_means() {
-        let mut p = Hist::reg(2, 0.0, 2.0).profile().named("p");
+        let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
         p.fill(0.5, 1.0);
         p.fill(0.5, 3.0);
         assert_eq!(Hist1dData::values(&p)[0], 2.0);
@@ -119,7 +119,11 @@ mod tests {
 
     #[test]
     fn hist2d_grid_is_indexed_x_then_y() {
-        let mut h = Hist::reg(2, 0.0, 2.0).reg(3, 0.0, 3.0).double().named("h2");
+        let mut h = Hist::reg(2, 0.0, 2.0)
+            .reg(3, 0.0, 3.0)
+            .double()
+            .to_root()
+            .named("h2");
         h.fill_weight(1.5, 0.5, 7.0);
         let grid = h.grid();
         assert_eq!((grid.len(), grid[0].len()), (2, 3));
@@ -142,17 +146,23 @@ mod tests {
 
     #[test]
     fn time_axes_carry_their_format() {
-        let mut h = Hist::reg(24, 0.0, 86_400.0).double().named("rate");
+        let mut h = Hist::reg(24, 0.0, 86_400.0)
+            .double()
+            .to_root()
+            .named("rate");
         h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
         assert_eq!(
             Hist1dData::x_time_format(&h).as_deref(),
             Some("%H:%M%F2024-01-01 00:00:00")
         );
-        let plain = Hist::reg(4, 0.0, 4.0).double().named("plain");
+        let plain = Hist::reg(4, 0.0, 4.0).double().to_root().named("plain");
         assert_eq!(Hist1dData::x_time_format(&plain), None);
 
         // A graph takes it from its display frame, as ROOT stores it.
-        let mut frame = Hist::reg(2, 0.0, 7200.0).float().named("Graph");
+        let mut frame = Hist::reg(2, 0.0, 7200.0)
+            .double()
+            .to_root_as(crate::BinContentType::F32)
+            .named("Graph");
         frame.xaxis.set_time_format("%H:%M");
         let mut g = Graph::new(vec![0.0, 3600.0], vec![1.0, 2.0]).unwrap();
         g.histogram = Some(frame);
@@ -161,11 +171,15 @@ mod tests {
 
     #[test]
     fn every_type_renders() {
-        let mut h = Hist::reg(10, 0.0, 10.0).double().named("h");
+        let mut h = Hist::reg(10, 0.0, 10.0).double().to_root().named("h");
         h.fill(3.0);
-        let mut p = Hist::reg(10, 0.0, 10.0).profile().named("p");
+        let mut p = Hist::reg(10, 0.0, 10.0).mean().to_root().named("p");
         p.fill(3.0, 1.0);
-        let h2 = Hist::reg(4, 0.0, 1.0).reg(4, 0.0, 1.0).double().named("h2");
+        let h2 = Hist::reg(4, 0.0, 1.0)
+            .reg(4, 0.0, 1.0)
+            .double()
+            .to_root()
+            .named("h2");
         let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0]).unwrap();
 
         let mut ax = Axes::new();

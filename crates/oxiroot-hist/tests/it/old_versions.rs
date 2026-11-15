@@ -11,6 +11,7 @@
 //! members removed, stored with streamer info that describes the old version,
 //! as the ROOT release that used it would have written them.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D, WriteRoot};
 use oxiroot_io_core::streamer_gen::{any, base, basic, Cls, El};
 use oxiroot_io_core::{write_named, Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
@@ -228,7 +229,7 @@ fn read_back<T: ReadRoot>(old: &OldObject, version: u16) -> Result<T, Error> {
 
 #[test]
 fn every_streamed_tprofile_version_reads() {
-    let mut p = Hist::reg(4, 0.0, 4.0).profile().named("p");
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().named("p");
     p.fill(0.5, 1.0);
     p.fill(0.5, 3.0);
     p.fill_weight(1.5, 2.0, 2.0); // a weight: fBinSumw2 is tracked
@@ -251,7 +252,11 @@ fn every_streamed_tprofile_version_reads() {
 
 #[test]
 fn every_streamed_tprofile2d_version_reads() {
-    let mut p = Hist::reg(2, 0.0, 2.0).reg(3, 0.0, 3.0).profile().named("p");
+    let mut p = Hist::reg(2, 0.0, 2.0)
+        .reg(3, 0.0, 3.0)
+        .mean()
+        .to_root()
+        .named("p");
     p.fill(0.5, 0.5, 10.0);
     p.fill(0.5, 0.5, 20.0);
     p.fill_weight(1.5, 2.5, 5.0, 0.5);
@@ -274,7 +279,8 @@ fn every_streamed_tprofile3d_version_reads() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p");
     p.fill(0.5, 0.5, 0.5, 10.0);
     p.fill_weight(1.5, 1.5, 1.5, 7.0, 3.0);
@@ -293,7 +299,7 @@ fn every_streamed_tprofile3d_version_reads() {
 
 #[test]
 fn profiles_older_than_streamer_info_are_an_error() {
-    let p1 = Hist::reg(2, 0.0, 2.0).profile().named("p");
+    let p1 = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
     let old = downgrade(&TPROFILE, p1.to_root_bytes(), 0, 1);
     let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile1D>(&old, 1) else {
         panic!("TProfile v1 read");
@@ -303,7 +309,8 @@ fn profiles_older_than_streamer_info_are_an_error() {
     let p3 = Hist::reg(1, 0.0, 1.0)
         .reg(1, 0.0, 1.0)
         .reg(1, 0.0, 1.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p");
     let old = downgrade(&TPROFILE3D, p3.to_root_bytes(), 0, 5);
     let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile3D>(&old, 5) else {
@@ -330,7 +337,11 @@ fn profiles_older_than_streamer_info_are_an_error() {
 fn a_root_1_th2d_is_an_error() {
     // Class version 1 had no Hist2D record: the Hist1D base, the bins, then the Hist2D
     // members. Read as the later layout it would be garbage.
-    let h = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().named("p");
+    let h = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .named("p");
     let mut bytes = h.to_root_bytes();
     bytes[4..6].copy_from_slice(&1u16.to_be_bytes());
     let old = OldObject {

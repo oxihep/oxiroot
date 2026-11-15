@@ -8,6 +8,7 @@
 //! filling one with all of their data. Every value below is a small dyadic
 //! rational, so that equality is exact whatever order the sums happen in.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Hist, Mergeable, Profile1D, Profile2D, Profile3D, ThreadedHist};
 use oxiroot_io_core::Error;
 
@@ -52,7 +53,8 @@ const SET_B_3D: [Point3; 4] = [
 fn empty_2d() -> Profile2D {
     Hist::reg(3, 0.0, 3.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p2")
 }
 
@@ -60,7 +62,8 @@ fn empty_3d() -> Profile3D {
     Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p3")
 }
 
@@ -172,7 +175,7 @@ fn scaled_3d_add_scales_its_extra_moments() {
 fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
     let mut p = profile_2d(&[&SET_A_2D]);
     let before = p.clone();
-    let other = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).profile(); // 2 x-bins, not 3
+    let other = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).mean().to_root(); // 2 x-bins, not 3
     assert!(matches!(
         p.add(&other, 1.0),
         Err(Error::BinningMismatch { .. })
@@ -183,7 +186,8 @@ fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
     let other3 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(3, 0.0, 3.0) // z differs
-        .profile();
+        .mean()
+        .to_root();
     assert!(q.add(&other3, 1.0).is_err());
     assert_eq!(q, profile_3d(&[&SET_A_3D]));
 }
@@ -193,10 +197,10 @@ fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
 /// receiving array silently dropped the other profile's values.
 #[test]
 fn an_empty_value_squared_array_is_treated_as_zeros() {
-    let mut a = Hist::reg(2, 0.0, 2.0).profile();
+    let mut a = Hist::reg(2, 0.0, 2.0).mean().to_root();
     a.fill(0.5, 2.0);
     a.sumy2.clear(); // as stored by a file that omitted it
-    let mut b = Hist::reg(2, 0.0, 2.0).profile();
+    let mut b = Hist::reg(2, 0.0, 2.0).mean().to_root();
     b.fill(0.5, 3.0);
 
     a.add(&b, 1.0).unwrap();
@@ -204,7 +208,7 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
     assert_eq!(a.sumy2[1], 9.0, "b's Σw·y² must survive the merge");
 
     // And an empty array on the other side adds nothing.
-    let mut c = Hist::reg(2, 0.0, 2.0).profile();
+    let mut c = Hist::reg(2, 0.0, 2.0).mean().to_root();
     c.fill(0.5, 2.0);
     let mut d: Profile1D = c.clone();
     d.sumy2.clear();
@@ -273,9 +277,9 @@ fn threaded_unit_fill_shortcuts_exist_for_2d_and_3d() {
 
 #[test]
 fn subtracting_a_1d_profile_follows_root() {
-    let mut a = Hist::reg(2, 0.0, 2.0).profile();
+    let mut a = Hist::reg(2, 0.0, 2.0).mean().to_root();
     a.fill(0.5, 1.0);
-    let mut b = Hist::reg(2, 0.0, 2.0).profile();
+    let mut b = Hist::reg(2, 0.0, 2.0).mean().to_root();
     b.fill(0.5, 1.0);
     b.fill(0.5, 1.0);
 
@@ -295,7 +299,7 @@ fn subtracting_a_1d_profile_follows_root() {
 
 #[test]
 fn subtracting_a_profile_from_itself_keeps_its_weights() {
-    let mut p = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).profile();
+    let mut p = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).mean().to_root();
     p.fill(0.5, 0.5, 1.0);
     p.fill(0.5, 0.5, 3.0);
     let cell = 1 + 4;

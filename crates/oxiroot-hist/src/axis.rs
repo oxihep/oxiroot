@@ -214,8 +214,9 @@ impl Axis {
     /// read the axis back as a time axis.
     ///
     /// ```
+    /// use oxiroot_hist::ToRoot;
     /// # use oxiroot_hist::Hist;
-    /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().named("rate");
+    /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().named("rate");
     /// h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
     /// assert!(h.xaxis.time_display);
     /// ```

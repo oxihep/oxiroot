@@ -14,7 +14,7 @@
 //! use oxiroot::prelude::*;
 //!
 //! // Fill and save a histogram (the Hist builder; `weight()` tracks Sumw2).
-//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight();
+//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight().to_root();
 //! h.fill_weight(42.0, 1.5);
 //! h.write_root("out.root", Compression::Zstd(5))?; // WriteRoot trait
 //!
@@ -152,10 +152,10 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     pub use oxiroot_hist::{
-        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, Graph, Graph2D,
-        GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack, Histogram,
-        KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
-        Profile3D, Random, SparseBin, SparseHist, ThreadedHist,
+        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, FromRoot, Graph,
+        Graph2D, GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
+        Histogram, KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D,
+        Profile2D, Profile3D, Random, SparseBin, SparseHist, ThreadedHist, ToRoot,
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};

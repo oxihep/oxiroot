@@ -133,6 +133,7 @@ fn fit_crystal_ball() {
 
     let mut peak = Hist::reg(80, 75.0, 100.0)
         .double()
+        .to_root()
         .named("cb_mass")
         .titled("mass with a low-side tail [GeV]");
     peak.sumw2(); // per-bin errors for the chi-square

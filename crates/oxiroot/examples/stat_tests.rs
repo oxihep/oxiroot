@@ -87,8 +87,9 @@ fn main() -> Result<(), StatError> {
     // (chi2, p) with k−1 degrees of freedom; a large p means "consistent with
     // the expected shape".
     let (lo, hi, nbins) = (-3.0, 3.0, 6usize);
-    let mut hist = Hist::reg(nbins as i32, lo, hi)
+    let mut hist = Hist::reg(nbins, lo, hi)
         .double()
+        .to_root()
         .named("control")
         .titled("control sample");
     for &v in &control {

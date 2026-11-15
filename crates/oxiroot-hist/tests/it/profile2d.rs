@@ -1,5 +1,6 @@
 //! Profile2D: read a ROOT-written fixture, and self-round-trip a written one.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Profile2D, ReadRoot, WriteRoot};
@@ -25,7 +26,8 @@ fn reads_root_written_tprofile2d() {
 fn tprofile2d_round_trips() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p2")
         .titled("prof");
     p.fill(0.5, 0.5, 10.0);

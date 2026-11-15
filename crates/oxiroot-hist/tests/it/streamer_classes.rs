@@ -2,6 +2,7 @@
 //! (`WriteRoot::streamer_classes`), and a file embeds exactly what its objects
 //! bring — for types defined outside this workspace too.
 
+use oxiroot_hist::ToRoot;
 use oxiroot_hist::{
     hist_streamer_classes, Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist,
     HistStack, ObjList, ObjString, Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot,
@@ -64,7 +65,7 @@ fn registry(path: &std::path::Path) -> StreamerRegistry {
 #[test]
 fn a_foreign_class_is_described_wherever_it_is_stored() {
     let dir = std::env::temp_dir();
-    let mut h = Hist::reg(2, 0.0, 2.0).double().named("h");
+    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().named("h");
     h.fill(0.5);
 
     let top = dir.join("oxiroot_sc_top.root");
@@ -156,9 +157,9 @@ fn a_collection_read_back_still_describes_its_members() {
 /// The histogram-family objects, each holding what it can hold: labels, bins,
 /// functions, members.
 fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
-    let mut h = Hist::reg(3, 0.0, 3.0).double().named("h");
+    let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("h");
     h.xaxis.set_label(1, "a");
-    let p = Hist::reg(2, 0.0, 2.0).profile().named("p");
+    let p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
     let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);
     let mut sp = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
@@ -171,9 +172,12 @@ fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
         .unwrap()
         .named("g")
         .with_function(line);
-    let st = HistStack::new()
-        .named("st")
-        .add(Hist::reg(2, 0.0, 2.0).float().named("m"));
+    let st = HistStack::new().named("st").add(
+        Hist::reg(2, 0.0, 2.0)
+            .double()
+            .to_root_as(oxiroot_hist::BinContentType::F32)
+            .named("m"),
+    );
     let mg = GraphStack::new().named("mg").add(g.clone());
     vec![
         ("h", Box::new(h)),

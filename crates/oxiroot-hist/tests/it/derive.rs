@@ -2,6 +2,7 @@
 //! contents, that moment sums propagate (so `mean`/`std_dev` stay correct), and
 //! that the derived `Hist1D`s round-trip through write→read.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
@@ -9,7 +10,7 @@ use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn rebin_sums_groups_and_keeps_moments() {
-    let mut h = Hist::reg(6, 0.0, 6.0).double().named("h");
+    let mut h = Hist::reg(6, 0.0, 6.0).double().to_root().named("h");
     for (bin, n) in (1..=6).enumerate() {
         for _ in 0..n {
             h.fill(bin as f64 + 0.5); // bin `bin+1` gets `n` entries → contents [1..6]
@@ -31,7 +32,7 @@ fn rebin_sums_groups_and_keeps_moments() {
 
 #[test]
 fn cumulative_forward_and_backward() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     for (bin, n) in [(0, 1), (1, 2), (2, 3), (3, 4)] {
         for _ in 0..n {
             h.fill(bin as f64 + 0.5);
@@ -43,7 +44,11 @@ fn cumulative_forward_and_backward() {
 
 fn sample_th2() -> Hist2D {
     // 2x2 over [0,2)². Cells (ix,iy): (1,1)=1,(1,2)=1,(2,1)=3,(2,2)=0.
-    let mut h = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().named("h");
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .named("h");
     h.fill(0.5, 0.5);
     h.fill(0.5, 1.5);
     for _ in 0..3 {
@@ -100,7 +105,11 @@ fn profile_x_means_per_x_bin() {
 
 #[test]
 fn rebin2d_sums_blocks_and_keeps_moments() {
-    let mut h = Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).double().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .named("h");
     h.fill(0.5, 0.5); // cell (1,1) → block (1,1)
     h.fill(2.5, 2.5); // cell (3,3) → block (2,2)
     for _ in 0..2 {
@@ -121,6 +130,7 @@ fn rebin3d_sums_blocks() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h");
     h.fill(0.5, 0.5, 0.5); // cell (1,1,1)
     for _ in 0..5 {
@@ -148,6 +158,7 @@ fn th3_projection_to_th1_and_th2() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
+        .to_root()
         .named("h");
     h.fill(0.5, 0.5, 0.5); // (1,1,1)
     h.fill(0.5, 0.5, 1.5); // (1,1,2)

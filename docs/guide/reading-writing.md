@@ -23,7 +23,7 @@ without file/key framing). Anything readable implements `ReadRoot`, giving it
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
 h.fill(42.0);
 
 // Write a single object as a complete ROOT file …
@@ -47,7 +47,7 @@ let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
 !!! note "Names belong to the file, not the object"
     A histogram is just data. It carries a name only when you persist it —
     `.named("pt")` sets the file key, `.titled(...)` the ROOT title. Construct
-    with `Hist::reg(nbins, lo, hi).double()` and any number of unnamed or same-named
+    with `Hist::reg(nbins, lo, hi).double().to_root()` and any number of unnamed or same-named
     objects can coexist in memory; the name matters only at write time. See
     [Histograms](histograms.md) for the construction model.
 
@@ -149,7 +149,7 @@ takes any `&dyn WriteRoot`, `dir` opens a subdirectory, and `write` commits with
 a chosen compression.
 
 ```rust
-let prof = Hist::reg(5, 0.0, 5.0).profile().named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).mean().to_root().named("prof").titled("<pt> per region");
 let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
 
 FileWriter::create("out.root")
@@ -247,8 +247,8 @@ name is also an error. Different subdirectories are independent namespaces, so
 the same name in two directories is fine.
 
 ```rust
-let a = Hist::reg(10, 0.0, 1.0).double().named("h");
-let b = Hist::reg(10, 0.0, 1.0).double().named("h");
+let a = Hist::reg(10, 0.0, 1.0).double().to_root().named("h");
+let b = Hist::reg(10, 0.0, 1.0).double().to_root().named("h");
 let err = FileWriter::create("dup.root").add(&a).add(&b).write(Compression::None);
 assert!(err.is_err()); // Error::DuplicateName { name: "h", .. }
 ```

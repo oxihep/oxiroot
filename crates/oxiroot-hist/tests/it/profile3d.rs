@@ -1,5 +1,6 @@
 //! Profile3D: read a ROOT-written fixture (`p3` in tprofile2d.root) + round-trip.
 
+use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
 use oxiroot_hist::{Hist, Profile3D, ReadRoot, WriteRoot};
@@ -27,7 +28,8 @@ fn tprofile3d_round_trips() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("p3");
     p.fill(0.5, 0.5, 0.5, 10.0);
     p.fill(0.5, 0.5, 0.5, 20.0); // cell(1,1,1) mean 15

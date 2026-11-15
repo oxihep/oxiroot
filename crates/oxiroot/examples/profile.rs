@@ -42,7 +42,8 @@ fn main() -> oxiroot::Result<()> {
     // A profile has the same shape as a Hist1D (bins in x), but each bin stores the
     // running mean of y and the count needed for its error on the mean.
     let mut prof = Hist::reg(10, 0.0, 10.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("resp")
         .titled("detector response vs true energy");
 
@@ -107,7 +108,8 @@ fn main() -> oxiroot::Result<()> {
     // gives two axes, then `.profile()` makes it a Profile2D.
     let mut prof2d = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
-        .profile()
+        .mean()
+        .to_root()
         .named("surface")
         .titled("mean z over (x, y)");
 

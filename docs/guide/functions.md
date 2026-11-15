@@ -129,7 +129,7 @@ graph, or point set:
 
 ```rust
 use oxiroot::prelude::*;
-let mut h = Hist::reg(60, 80.0, 100.0).double().named("mass");
+let mut h = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass");
 // … fill h …
 let model = Model::from_formula("peak", "gaus(0) + pol1(3)")?
     .with_params(vec![100.0, 91.0, 2.5, 10.0, 0.0]);
