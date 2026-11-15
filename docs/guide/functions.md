@@ -9,7 +9,7 @@ uproot read what oxiroot writes and vice versa.
 The functions live in the `oxiroot-hist-func` crate and are re-exported as
 `oxiroot::hist::{Func1D, Func2D, Func3D}` and in the prelude. The expression engine
 behind them is the dependency-free
-[`oxiroot-formula`](../reference/crates.md) crate; the same engine powers
+[`oxifit-formula`](../reference/crates.md) crate; the same engine powers
 [`Model::from_formula`](fitting.md) so any formula is also fittable.
 
 ## Building and evaluating

@@ -12,9 +12,10 @@ description = "Classic ROOT histograms, profiles and graphs (TH1/TH2/TH3/TProfil
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
-oxiroot-stat = { workspace = true }
+oxistats = { workspace = true }
 rayon = { version = "1", optional = true }
-oxiroot-fit = { workspace = true, optional = true }
+oxifit = { workspace = true, optional = true }
+oxiplot = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Collections and files in the tests hold matrices next to histograms.
@@ -26,10 +27,15 @@ oxiroot-linalg = { workspace = true }
 # accumulator (std::thread based) is always available.
 rayon = ["dep:rayon"]
 # Opt-in fitting: implements `FitData` for `TH1`/`TGraph` (so `h.fit(&model)`
-# works) and re-exports the fitting types from `oxiroot-fit`, which carries the
+# works) and re-exports the fitting types from `oxifit`, which carries the
 # Minuit2 minimizer. Off by default to keep the core dependency-light.
 # (`TF1::to_model` is behind the `fit` feature of `oxiroot-hist-func`.)
-fit = ["dep:oxiroot-fit"]
+fit = ["dep:oxifit"]
+# Opt-in plotting: implements oxiplot's data traits (`Hist1dData`,
+# `Hist2dData`, `PointData`) for `Hist1D`, `Profile1D`, `Hist2D` and `Graph`,
+# so `Axes::hist(&h)` draws them. Brings in oxiplot without its default
+# features; the `oxiroot` facade's `plot` feature turns PNG and TeX math on.
+plot = ["dep:oxiplot"]
 
 [package.metadata.docs.rs]
 all-features = true

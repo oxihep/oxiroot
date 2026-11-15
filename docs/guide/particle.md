@@ -3,8 +3,8 @@
 `oxiroot::particle` is a Rust take on
 [scikit-hep `particle`](https://github.com/scikit-hep/particle): decode a PDG
 Monte Carlo particle ID, and look particles up in a bundled PDG table for their
-mass, width, lifetime, and quantum numbers. It is a dependency-free leaf crate
-(`oxiroot-particle`), always available — no feature flag.
+mass, width, lifetime, and quantum numbers. It is the dependency-free
+[`oxiparticle`](https://github.com/oxihep/oxiparticle) crate, always available — no feature flag.
 
 There are two pieces: [`PdgId`](../api/oxiroot/particle/struct.PdgId.html), which
 decodes an ID purely from its digits, and

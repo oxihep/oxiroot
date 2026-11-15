@@ -124,39 +124,119 @@ impl<'a> RBuffer<'a> {
         Ok(self.array::<1>()?[0] as i8)
     }
 
-    num_reader!(/// Read a big-endian `u16`.
-        be_u16, u16, from_be_bytes, 2);
-    num_reader!(/// Read a big-endian `u32`.
-        be_u32, u32, from_be_bytes, 4);
-    num_reader!(/// Read a big-endian `u64`.
-        be_u64, u64, from_be_bytes, 8);
-    num_reader!(/// Read a big-endian `i16`.
-        be_i16, i16, from_be_bytes, 2);
-    num_reader!(/// Read a big-endian `i32`.
-        be_i32, i32, from_be_bytes, 4);
-    num_reader!(/// Read a big-endian `i64`.
-        be_i64, i64, from_be_bytes, 8);
-    num_reader!(/// Read a big-endian `f32`.
-        be_f32, f32, from_be_bytes, 4);
-    num_reader!(/// Read a big-endian `f64`.
-        be_f64, f64, from_be_bytes, 8);
+    num_reader!(
+        /// Read a big-endian `u16`.
+        be_u16,
+        u16,
+        from_be_bytes,
+        2
+    );
+    num_reader!(
+        /// Read a big-endian `u32`.
+        be_u32,
+        u32,
+        from_be_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a big-endian `u64`.
+        be_u64,
+        u64,
+        from_be_bytes,
+        8
+    );
+    num_reader!(
+        /// Read a big-endian `i16`.
+        be_i16,
+        i16,
+        from_be_bytes,
+        2
+    );
+    num_reader!(
+        /// Read a big-endian `i32`.
+        be_i32,
+        i32,
+        from_be_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a big-endian `i64`.
+        be_i64,
+        i64,
+        from_be_bytes,
+        8
+    );
+    num_reader!(
+        /// Read a big-endian `f32`.
+        be_f32,
+        f32,
+        from_be_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a big-endian `f64`.
+        be_f64,
+        f64,
+        from_be_bytes,
+        8
+    );
 
-    num_reader!(/// Read a little-endian `u16`.
-        le_u16, u16, from_le_bytes, 2);
-    num_reader!(/// Read a little-endian `u32`.
-        le_u32, u32, from_le_bytes, 4);
-    num_reader!(/// Read a little-endian `u64`.
-        le_u64, u64, from_le_bytes, 8);
-    num_reader!(/// Read a little-endian `i16`.
-        le_i16, i16, from_le_bytes, 2);
-    num_reader!(/// Read a little-endian `i32`.
-        le_i32, i32, from_le_bytes, 4);
-    num_reader!(/// Read a little-endian `i64`.
-        le_i64, i64, from_le_bytes, 8);
-    num_reader!(/// Read a little-endian `f32`.
-        le_f32, f32, from_le_bytes, 4);
-    num_reader!(/// Read a little-endian `f64`.
-        le_f64, f64, from_le_bytes, 8);
+    num_reader!(
+        /// Read a little-endian `u16`.
+        le_u16,
+        u16,
+        from_le_bytes,
+        2
+    );
+    num_reader!(
+        /// Read a little-endian `u32`.
+        le_u32,
+        u32,
+        from_le_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a little-endian `u64`.
+        le_u64,
+        u64,
+        from_le_bytes,
+        8
+    );
+    num_reader!(
+        /// Read a little-endian `i16`.
+        le_i16,
+        i16,
+        from_le_bytes,
+        2
+    );
+    num_reader!(
+        /// Read a little-endian `i32`.
+        le_i32,
+        i32,
+        from_le_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a little-endian `i64`.
+        le_i64,
+        i64,
+        from_le_bytes,
+        8
+    );
+    num_reader!(
+        /// Read a little-endian `f32`.
+        le_f32,
+        f32,
+        from_le_bytes,
+        4
+    );
+    num_reader!(
+        /// Read a little-endian `f64`.
+        le_f64,
+        f64,
+        from_le_bytes,
+        8
+    );
 
     /// Read a ROOT-encoded string: a 1-byte length, or `0xFF` followed by a
     /// big-endian `u32` length, then that many UTF-8 bytes.

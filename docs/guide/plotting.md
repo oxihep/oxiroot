@@ -23,11 +23,10 @@ oxiroot = "0.3"
     and text is reduced to glyph outlines, so the SVG is self-contained. `$…$`
     labels are typeset as real LaTeX math by the pure-Rust
     [ReX](https://github.com/KenyC/ReX) TeX engine into the same IR. ReX is not
-    on crates.io, so a trimmed copy is vendored in the workspace and published
-    as `oxiroot-rex`.
+    on crates.io, so oxiplot vendors a trimmed copy as `oxiplot-tex`.
 
 !!! tip "An SVG/PDF-only build"
-    PNG output (`png`) and TeX math (`math`) are features of `oxiroot-plot`, both
+    PNG output (`png`) and TeX math (`math`) are features of `oxiplot`, both
     on by default. Depend on it with `default-features = false` to drop the
     rasterizer, the TeX engine and the math font: SVG and PDF still render, `$…$`
     labels are laid out as plain text, and asking for a PNG returns an error that
@@ -35,7 +34,7 @@ oxiroot = "0.3"
 
     ```toml
     [dependencies]
-    oxiroot-plot = { version = "0.3", default-features = false }
+    oxiplot = { git = "https://github.com/oxihep/oxiplot", default-features = false }
     ```
 
 ## API conventions
@@ -175,7 +174,7 @@ ax.save("fit.png")?;
 
 ![A histogram with a fitted Gaussian curve overlaid](../images/plot-fit.png){ width="65%" }
 
-`ax.model`/`ax.model_with` need the **`fit` feature** (they pull `oxiroot-fit`);
+`ax.model`/`ax.model_with` need the **`fit` feature** (they pull `oxifit`);
 the closure-based `ax.function`/`ax.function_with` are always available and work
 for the same purpose (`ax.function(|x| fitted.eval(x), 50.0..130.0)`).
 

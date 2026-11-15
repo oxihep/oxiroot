@@ -4,10 +4,10 @@
 //! Both need a special function ROOT pulls from its math library — the
 //! chi-square survival function (the complemented incomplete gamma `igamc`) and
 //! `TMath::KolmogorovProb` — supplied by the dependency-free
-//! [`oxiroot_stat`](oxiroot_stat) crate (shared with `oxiroot-fit`).
+//! [`oxistats`](oxistats) crate (shared with `oxifit`).
 
 use oxiroot_io_core::{Error, Result};
-use oxiroot_stat::{chi_square_prob, kolmogorov_prob};
+use oxistats::{chi_square_prob, kolmogorov_prob};
 
 use crate::hist1d::Hist1D;
 

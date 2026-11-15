@@ -1,5 +1,5 @@
 //! ROOT's parametric functions `TF1`/`TF2`/`TF3` — here [`Func1D`], [`Func2D`]
-//! and [`Func3D`] — backed by the [`oxiroot_formula`] expression engine.
+//! and [`Func3D`] — backed by the [`oxifit_formula`] expression engine.
 //!
 //! A function is a formula (`"[0]*sin([1]*x)"`, `"gaus"`, `"expo"`, `"pol2"`, …),
 //! its parameter values, and a range. It evaluates in pure Rust ([`eval`](Func1D::eval),
@@ -22,7 +22,7 @@
 //! `oxiroot::hist::{Func1D, Func2D, Func3D}` and in its prelude.
 //!
 //! Features:
-//! - `fit`: `Func1D::to_model`, which turns a function into an `oxiroot_fit::Model`.
+//! - `fit`: `Func1D::to_model`, which turns a function into an `oxifit::Model`.
 
 mod func;
 mod io;

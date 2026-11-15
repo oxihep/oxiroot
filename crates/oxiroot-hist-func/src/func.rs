@@ -1,7 +1,7 @@
 //! The function types: [`Func1D`], [`Func2D`] and [`Func3D`], their evaluation, and the
 //! shared [`FuncCore`] (name, formula, parameters, fit metadata).
 
-use oxiroot_formula::{derivative, integrate, Formula};
+use oxifit_formula::{derivative, integrate, Formula};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
 
@@ -241,7 +241,7 @@ impl Func1D {
 
 #[cfg(feature = "fit")]
 impl Func1D {
-    /// Convert to a fittable [`Model`](oxiroot_fit::Model), seeded with this
+    /// Convert to a fittable [`Model`](oxifit::Model), seeded with this
     /// function's current parameters — so `data.fit(&tf1.to_model())` fits data
     /// to this function's shape. Requires the `fit` feature.
     ///
@@ -251,14 +251,14 @@ impl Func1D {
     /// otherwise, as for a read function whose title is free text, from the
     /// canonical `[pN]` formula.
     #[must_use]
-    pub fn to_model(&self) -> oxiroot_fit::Model {
+    pub fn to_model(&self) -> oxifit::Model {
         let formula = self.core.formula.clone();
         let names: Vec<String> = match Formula::parse(self.title()) {
             Ok(title) if title.npar() == formula.npar() => title.param_names().to_vec(),
             _ => formula.param_names().to_vec(),
         };
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        oxiroot_fit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
+        oxifit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
             formula.eval1(x, p)
         })
     }

@@ -13,7 +13,8 @@ description = "Pure-Rust IO for the CERN ROOT file format (RNTuple + classic his
 
 [dependencies]
 # `stat` and `formula`: statistics and formula errors convert into
-# `oxiroot::Error`, so `?` works across the whole API.
+# `oxiroot::Error`, so `?` works across the whole API (`plot` adds plotting
+# errors under the `plot` feature).
 oxiroot-io-core = { workspace = true, features = ["stat", "formula"] }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
@@ -21,10 +22,10 @@ oxiroot-hist = { workspace = true }
 oxiroot-hist-func = { workspace = true }
 oxiroot-linalg = { workspace = true }
 oxiroot-tree = { workspace = true }
-oxiroot-stat = { workspace = true }
-oxiroot-particle = { workspace = true }
-oxiroot-fit = { workspace = true, optional = true }
-oxiroot-plot = { workspace = true, optional = true }
+oxistats = { workspace = true }
+oxiparticle = { workspace = true }
+oxifit = { workspace = true, optional = true }
+oxiplot = { workspace = true, optional = true }
 
 [features]
 # Batteries-included: the facade turns on fitting (Minuit2 plus the argmin
@@ -44,17 +45,24 @@ xrootd = ["oxiroot-io-core/xrootd"]
 # Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
 # the parallel TTree reads (`TreeReader::read_branch_par` and friends).
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
-# Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxiroot-fit` engine,
+# Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxifit` engine,
 # the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works, and
 # `TF1::to_model`. When the `plot` feature is also on, this lights up
 # `Axes::model` (fit-curve overlay).
-fit = ["oxiroot-hist/fit", "oxiroot-hist-func/fit", "dep:oxiroot-fit", "oxiroot-plot?/fit"]
+fit = ["oxiroot-hist/fit", "oxiroot-hist-func/fit", "dep:oxifit", "oxiplot?/fit"]
 # Also build the gradient-free Nelder–Mead (`argmin`) minimizer backend.
-argmin = ["fit", "oxiroot-fit/argmin"]
+argmin = ["fit", "oxifit/argmin"]
 # Enable plotting (`oxiroot::plot`): render TH1/TH2/TGraph/TProfile to SVG/PNG
-# with a matplotlib-like API and mplhep style. Pulls tiny-skia, ab_glyph, and
-# the ReX TeX engine (vendored as oxiroot-rex) for `$…$` math labels.
-plot = ["dep:oxiroot-plot"]
+# with a matplotlib-like API and mplhep style, through the `oxiplot` crate.
+# Pulls tiny-skia, ab_glyph, and the ReX TeX engine (oxiplot-tex) for `$…$`
+# math labels.
+plot = [
+  "dep:oxiplot",
+  "oxiplot/png",
+  "oxiplot/math",
+  "oxiroot-hist/plot",
+  "oxiroot-io-core/plot",
+]
 
 # Build docs.rs with every feature so fitting, the argmin backend, rayon, and
 # mmap all appear in the rendered API reference.

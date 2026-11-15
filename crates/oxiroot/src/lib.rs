@@ -97,36 +97,36 @@ pub mod tree {
 /// `ndtri`), distributions (`Normal`/`StudentT`/`ChiSquared`/`FisherF`),
 /// descriptive stats (`skew`, `kurtosis`, `sem`, …), correlation (`pearsonr`,
 /// `spearmanr`), and hypothesis tests (`ttest_ind`, `normaltest`) — from
-/// `oxiroot-stat`, verified against `scipy.stats`.
+/// `oxistats`, verified against `scipy.stats`.
 pub mod stat {
-    pub use oxiroot_stat::*;
+    pub use oxistats::*;
 }
 
-/// PDG particle data — the [`PdgId`](oxiroot_particle::PdgId) Monte Carlo
+/// PDG particle data — the [`PdgId`](oxiparticle::PdgId) Monte Carlo
 /// numbering-scheme decoder (is it a lepton? meson? baryon? its charge/spin/quark
-/// content) plus a bundled [`Particle`](oxiroot_particle::Particle) table (mass,
-/// width, lifetime, quantum numbers). From `oxiroot-particle`, a Rust take on
+/// content) plus a bundled [`Particle`](oxiparticle::Particle) table (mass,
+/// width, lifetime, quantum numbers). From `oxiparticle`, a Rust take on
 /// scikit-hep `particle` and verified against it.
 pub mod particle {
-    pub use oxiroot_particle::*;
+    pub use oxiparticle::*;
 }
 
 /// Curve fitting for any 1-D data — histograms, graphs, or custom points (from
-/// `oxiroot-fit`). The [`FitData`](oxiroot_fit::FitData) trait + the blanket
-/// [`FitExt`](oxiroot_fit::FitExt) give `data.fit(&model)` to every dataset;
+/// `oxifit`). The [`FitData`](oxifit::FitData) trait + the blanket
+/// [`FitExt`](oxifit::FitExt) give `data.fit(&model)` to every dataset;
 /// `hist`'s `Hist1D`/`Graph` implement `FitData` (under the `fit` feature).
 #[cfg(feature = "fit")]
 pub mod fit {
-    pub use oxiroot_fit::*;
+    pub use oxifit::*;
 }
 
 /// Plotting — render histograms and graphs to SVG/PNG with a matplotlib-like
-/// API and an mplhep histogram style (from `oxiroot-plot`). `Axes::hist`/
+/// API and an mplhep histogram style (from `oxiplot`). `Axes::hist`/
 /// `errorbar`/`hist2d` draw `Hist1D`/`Graph`/`Hist2D`; `$…$` labels are typeset as
 /// LaTeX math. Enabled by the `plot` feature.
 #[cfg(feature = "plot")]
 pub mod plot {
-    pub use oxiroot_plot::*;
+    pub use oxiplot::*;
 }
 
 /// The common types and functions for reading and writing ROOT files.
@@ -146,7 +146,7 @@ pub mod prelude {
     pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
 
     #[cfg(feature = "fit")]
-    pub use oxiroot_fit::{
+    pub use oxifit::{
         FitData, FitExt, FitMethod, FitOptions, FitResult, Loss, Minimizer, Model, Point, Points,
     };
     #[cfg(feature = "rayon")]

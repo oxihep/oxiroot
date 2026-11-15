@@ -77,7 +77,7 @@ fn to_model_keeps_the_names_of_a_shortcut_formula() {
         .unwrap()
         .with_params(vec![2.0, 0.5, 1.5]);
     let model = f.to_model();
-    let expected = oxiroot_fit::Model::from_formula("g", "gaus").unwrap();
+    let expected = oxifit::Model::from_formula("g", "gaus").unwrap();
     assert_eq!(model.param_names, expected.param_names);
     assert_eq!(model.eval(0.25), f.eval(0.25));
 }

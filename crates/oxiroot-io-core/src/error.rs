@@ -148,14 +148,14 @@ pub enum Error {
         message: String,
     },
     /// A statistics function rejected its input (converted from
-    /// [`oxiroot_stat::StatError`]; the `stat` feature).
+    /// [`oxistats::StatError`]; the `stat` feature).
     #[cfg(feature = "stat")]
-    Stat(oxiroot_stat::StatError),
-    /// A formula did not parse (converted from [`oxiroot_formula::ParseError`];
+    Stat(oxistats::StatError),
+    /// A formula did not parse (converted from [`oxifit_formula::ParseError`];
     /// the `formula` feature).
     #[cfg(feature = "formula")]
-    Formula(oxiroot_formula::ParseError),
-    /// Building or saving a figure failed (converted from `oxiroot_plot::Error`,
+    Formula(oxifit_formula::ParseError),
+    /// Building or saving a figure failed (converted from `oxiplot::Error`,
     /// whose I/O errors become [`Error::Io`]); the message says why.
     Plot(String),
 }
@@ -298,16 +298,40 @@ pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -
 }
 
 #[cfg(feature = "stat")]
-impl From<oxiroot_stat::StatError> for Error {
-    fn from(e: oxiroot_stat::StatError) -> Self {
+impl From<oxistats::StatError> for Error {
+    fn from(e: oxistats::StatError) -> Self {
         Error::Stat(e)
     }
 }
 
 #[cfg(feature = "formula")]
-impl From<oxiroot_formula::ParseError> for Error {
-    fn from(e: oxiroot_formula::ParseError) -> Self {
+impl From<oxifit_formula::ParseError> for Error {
+    fn from(e: oxifit_formula::ParseError) -> Self {
         Error::Formula(e)
+    }
+}
+
+/// With the `plot` feature, plotting errors convert into this error, so `?`
+/// works in a function returning `oxiroot::Result` that both reads files and
+/// saves figures. I/O errors keep their kind ([`Error::Io`]) and length
+/// mismatches stay [`Error::LengthMismatch`]; the others become [`Error::Plot`]
+/// with the plotting error's message.
+#[cfg(feature = "plot")]
+impl From<oxiplot::Error> for Error {
+    fn from(e: oxiplot::Error) -> Self {
+        match e {
+            oxiplot::Error::Io(e) => Error::from(e),
+            oxiplot::Error::LengthMismatch {
+                what,
+                expected,
+                found,
+            } => Error::LengthMismatch {
+                what: what.to_string(),
+                expected,
+                found,
+            },
+            other => Error::Plot(other.to_string()),
+        }
     }
 }
 

@@ -289,7 +289,7 @@ cargo run -p oxiroot --example analysis
 
 ### Fitting (`oxiroot::fit`, `fit` feature)
 
-Fitting lives in its **own crate** (`oxiroot-fit`), so it works on **any 1-D
+Fitting lives in its **own crate** ([`oxifit`](https://github.com/oxihep/oxifit)), so it works on **any 1-D
 data**, not just histograms. A dataset implements the `FitData` trait (yielding
 `(x, y, σ)` points) and the blanket `FitExt` gives it `.fit(&model)`. `Hist1D` and
 `Graph` implement `FitData` out of the box, and `Points` (or your own `FitData`
@@ -302,7 +302,7 @@ fixing, and a data-driven seed. The fit returns the
 parameters, parabolic errors, optional asymmetric MINOS errors and covariance
 matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
 `p_value()`). The χ² survival function it shares with the comparison tests lives
-in the dependency-free `oxiroot-stat` crate.
+in the dependency-free `oxistats` crate.
 
 Two minimizer backends are selectable via `FitOptions::minimizer(...)`: the
 default `Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD — ROOT's algorithm,
@@ -398,7 +398,7 @@ g.write_root("gfit.root", Compression::None)?;
 - **Standalone `Func1D`/`Func2D`/`Func3D` keys** — real ROOT function objects (each
   embedding a `TFormula`), built from a formula and a range and read/written like
   any other object. `Func1D::new("f", "[0]*sin([1]*x)", 0.0, 6.3)?.with_params(...)`.
-- **A real `TFormula` expression engine** ([`oxiroot-formula`], a dependency-free
+- **A real `TFormula` expression engine** ([`oxifit-formula`], a dependency-free
   crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
   operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
   with or without a `TMath::` prefix), comparisons/`?:`, and ROOT's `gaus`/`expo`/
@@ -412,7 +412,7 @@ g.write_root("gfit.root", Compression::None)?;
   and re-evaluate** all three.
 - See the [`functions` example](crates/oxiroot/examples/functions.rs).
 
-[`oxiroot-formula`]: crates/oxiroot-formula
+[`oxifit-formula`]: https://github.com/oxihep/oxifit
 
 ### Persistable objects (`oxiroot::hist`)
 
@@ -569,8 +569,8 @@ backend-independent draw IR fans out to a [`tiny-skia`](https://crates.io/crates
 raster (PNG) and a hand-written SVG, so the two outputs share identical geometry.
 The default font is the bundled **STIX Two** (a LaTeX-like serif), and `$…$`
 labels are typeset as real LaTeX math by the pure-Rust
-[ReX](https://github.com/KenyC/ReX) TeX engine (vendored in-tree as
-`oxiroot-rex`) into the same IR.
+[ReX](https://github.com/KenyC/ReX) TeX engine (vendored in
+[oxiplot](https://github.com/oxihep/oxiplot) as `oxiplot-tex`) into the same IR.
 
 <p align="center">
   <img src="docs/images/plot-mass.png" alt="Z to mu mu candidates: filled MC template with data points overlaid, matplotlib look" width="46%">
@@ -870,21 +870,27 @@ on, so nothing extra is needed.
 
 | Crate | Purpose |
 |-------|---------|
-| `oxiroot` | Facade: `prelude` + re-exports of the library crates below (not `oxiroot-formula`, the internal `oxiroot-rex`, or the CLI) |
+| `oxiroot` | Facade: `prelude` + re-exports of the library crates below and of the oxihep crates (not the CLI) |
 | `oxiroot-io-core` | `TFile` container, buffer primitives, streamer + object-reference engine, the `WriteRoot`/`ReadRoot` object framework, `Error` |
 | `oxiroot-compress` | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | `oxiroot-rntuple` | RNTuple reader/writer (spec v1.0.0.0) |
 | `oxiroot-hist` | Histograms, profiles, `Efficiency`/`SparseHist`/`PolyHist`, and the `Graph` family |
 | `oxiroot-hist-func` | `Func1D`/`Func2D`/`Func3D` parametric functions, with ROOT read/write |
-| `oxiroot-formula` | Dependency-free `TFormula` expression engine behind the functions and formula fits |
 | `oxiroot-linalg` | ROOT linear-algebra objects — `Vector`/`Matrix`/`SymMatrix` (`TVectorD`/`TMatrixD`/`TMatrixDSym`) |
 | `oxiroot-tree` | Classic `TTree` read/write |
-| `oxiroot-fit` | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`); `fit` feature |
-| `oxiroot-stat` | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) |
-| `oxiroot-particle` | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) |
-| `oxiroot-plot` | Matplotlib-style SVG/PNG plotting for histograms and graphs; `plot` feature |
-| `oxiroot-rex` | Internal: the vendored ReX TeX math layout engine used by `oxiroot-plot` |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
+
+The parts that are not about ROOT live in their own repositories in the
+[oxihep](https://github.com/oxihep) organization, the way Python's Scikit-HEP
+splits uproot, hist, mplhep and particle. The facade re-exports each one, so the
+`oxiroot::…` paths are unchanged:
+
+| Crate | Repository | Purpose | In oxiroot |
+|-------|------------|---------|------------|
+| `oxistats` | [oxihep/oxistats](https://github.com/oxihep/oxistats) | Dependency-free statistics — special functions, distributions, descriptive stats, correlation & tests (verified vs `scipy.stats`) | `oxiroot::stat` |
+| `oxiparticle` | [oxihep/oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data — the numbering-scheme decoder + a bundled particle table (verified vs scikit-hep `particle`) | `oxiroot::particle` |
+| `oxifit`, `oxifit-formula` | [oxihep/oxifit](https://github.com/oxihep/oxifit) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`), and the `TFormula` expression engine behind the functions and formula fits | `oxiroot::fit` (`fit` feature) |
+| `oxiplot`, `oxiplot-tex` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Matplotlib-style SVG/PNG/PDF plotting, and the vendored ReX TeX engine for its math labels | `oxiroot::plot` (`plot` feature) |
 
 Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
@@ -978,6 +984,6 @@ the `plot` feature renders the data, it does not (de)serialize ROOT graphics.
 
 ## License
 
-Licensed under the [MIT License](LICENSE). `crates/oxiroot-particle` and
-`crates/oxiroot-rex` contain third-party code under their own notices (see each
-crate's `LICENSE-3rdparty`), and the bundled fonts carry their own licences.
+Licensed under the [MIT License](LICENSE). The oxiparticle and oxiplot-tex
+dependencies contain third-party code under their own notices (see each crate's
+`LICENSE-3rdparty`), and oxiplot's bundled fonts carry their own licences.

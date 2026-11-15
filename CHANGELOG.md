@@ -9,6 +9,31 @@ change the API.
 
 ### Changed
 
+- **The crates that are not about ROOT moved to their own repositories** in the
+  [oxihep](https://github.com/oxihep) organization, the way Python's Scikit-HEP
+  splits uproot, hist, mplhep and particle. Each kept its history:
+
+  | was | is | repository |
+  |---|---|---|
+  | `oxiroot-stat` | `oxistats` | [oxihep/oxistats](https://github.com/oxihep/oxistats) |
+  | `oxiroot-particle` | `oxiparticle` | [oxihep/oxiparticle](https://github.com/oxihep/oxiparticle) |
+  | `oxiroot-fit`, `oxiroot-formula` | `oxifit`, `oxifit-formula` | [oxihep/oxifit](https://github.com/oxihep/oxifit) |
+  | `oxiroot-plot`, `oxiroot-rex` | `oxiplot`, `oxiplot-tex` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) |
+
+  Through the facade nothing changes: `oxiroot::stat`, `oxiroot::particle`,
+  `oxiroot::fit` and `oxiroot::plot` re-export the new crates, and the `fit`
+  and `plot` features work as before. Code that named the old crates directly
+  switches to the new names (`oxiroot_stat::` → `oxistats::`, and so on). Until
+  the new crates are published they are git dependencies pinned to their
+  `v0.1.0` tags.
+- **oxiplot no longer depends on oxiroot.** It plots anything that implements
+  its `Hist1dData`/`Hist2dData`/`PointData` traits; `oxiroot-hist` now
+  implements them for `Hist1D`, `Profile1D`, `Hist2D` and `Graph` behind a new
+  `plot` feature, and `From<oxiplot::Error> for oxiroot::Error` moved into
+  `oxiroot-io-core` (its new `plot` feature). The facade's `plot` feature turns
+  both on. oxiplot also gained `Binned1D`/`Binned2D`/`Points` for plotting plain
+  arrays.
+
 - **Types are named as Rust, not as C++: the `T` prefix is gone.** The workspace
   followed ROOT's C++ convention only halfway — the IO layer was already
   idiomatic (`FileReader`, `TreeReader`, `Directory`, `Value`) while the data
