@@ -176,7 +176,10 @@ impl<H: Mergeable> ThreadedHist<H> {
         f(&mut slot.borrow_mut())
     }
 
-    /// Number of threads that have filled so far (diagnostic).
+    /// The number of per-thread copies made so far: at most one per thread
+    /// that filled. A thread started after another has exited may reuse the
+    /// exited thread's copy, which keeps that thread's fills, so the merged
+    /// result is unaffected.
     pub fn num_slots(&self) -> usize {
         self.count.load(Ordering::Relaxed)
     }
