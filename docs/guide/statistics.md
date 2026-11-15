@@ -37,7 +37,7 @@ Everything is at `oxiroot::stat`, as above:
 | Resampling | seeded percentile `bootstrap_ci` |
 
 Every value in the examples below is the number scipy returns for the same
-input — the [test suite](https://github.com/mathieuouillon/oxiroot) pins them
+input — the [test suite](https://github.com/oxihep/oxiroot) pins them
 against scipy 1.18.
 
 ## Special functions

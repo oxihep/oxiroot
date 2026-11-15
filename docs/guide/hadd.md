@@ -119,4 +119,4 @@ every object ROOT merges comes out the same, key by key (`fixtures/hadd_*.root`,
 from `scripts/gen_hadd_inputs.cpp`). The concatenated tree matches
 entry-for-entry, and the merged RNTuple is read back by both uproot and ROOT
 C++'s `RNTupleReader`.
-See the [`merge` example](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/merge.rs).
+See the [`merge` example](https://github.com/oxihep/oxiroot/blob/main/crates/oxiroot/examples/merge.rs).

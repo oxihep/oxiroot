@@ -187,7 +187,7 @@ oxiroot = { version = "*", features = ["rayon"] }
 | `Mergeable::merge_all` | You already have a collection of compatible histograms to combine (in-memory `hadd`). |
 
 A full runnable example lives at
-[`crates/oxiroot/examples/threaded.rs`](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/threaded.rs)
+[`crates/oxiroot/examples/threaded.rs`](https://github.com/oxihep/oxiroot/blob/main/crates/oxiroot/examples/threaded.rs)
 (`cargo run -p oxiroot --example threaded`).
 
 ## See also

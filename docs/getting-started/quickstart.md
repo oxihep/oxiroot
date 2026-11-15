@@ -66,7 +66,7 @@ let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entri
 
 ## Run the worked example
 
-The [`analysis` example](https://github.com/mathieuouillon/oxiroot/blob/main/crates/oxiroot/examples/analysis.rs)
+The [`analysis` example](https://github.com/oxihep/oxiroot/blob/main/crates/oxiroot/examples/analysis.rs)
 is an end-to-end mini analysis — weighted/variable-bin histograms →
 scale/merge/normalize → per-region subdirectories → a columnar event dataset →
 read-back:

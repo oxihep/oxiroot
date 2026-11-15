@@ -267,7 +267,7 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/mathieuouillon/oxiroot/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/mathieuouillon/oxiroot/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/mathieuouillon/oxiroot/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/mathieuouillon/oxiroot/releases/tag/v0.1.0
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/oxihep/oxiroot/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/oxihep/oxiroot/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/oxihep/oxiroot/releases/tag/v0.1.0
