@@ -230,7 +230,7 @@ signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
 
 `h[cell]` reads a bin content by flat cell index (`0` is the first under/overflow
 cell, x varies fastest); `for &c in &h` iterates every cell. The shared
-`Histogram` trait abstracts over `Hist1D`/`Hist2D`/`Hist3D` with `contents()`,
+`RootHistogram` trait abstracts over `Hist1D`/`Hist2D`/`Hist3D` with `contents()`,
 `entries()`, `sum()` (every cell, flow included), and `is_empty()`. Every
 histogram implements `Display` for a one-line summary.
 
@@ -238,7 +238,7 @@ histogram implements `Display` for a one-line summary.
 use oxiroot::prelude::*;
 
 let bin2 = h[2];        // Index: content of cell 2
-let total = h.sum();    // Histogram trait: every cell, flow included
+let total = h.sum();    // RootHistogram trait: every cell, flow included
 println!("{h}");        // e.g. TH1D "pt": 100 bins [0, 100), entries=4096
 ```
 

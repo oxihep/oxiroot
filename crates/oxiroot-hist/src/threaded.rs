@@ -318,3 +318,62 @@ where
             },
         )
 }
+
+/// oxihist histograms (what the `Hist` builder makes) merge and fill through
+/// this `ThreadedHist` too, so the prelude's `ThreadedHist` works with them.
+impl<S: oxihist::Storage, const D: usize> Mergeable for oxihist::Histogram<S, D> {
+    fn merge(&mut self, other: &Self) -> Result<()> {
+        self.add(other).map_err(oxiroot_io_core::Error::other)
+    }
+}
+
+impl<S: oxihist::CountStorage> ThreadedHist<oxihist::Histogram<S, 1>> {
+    /// Fill `x` into this thread's copy.
+    ///
+    /// # Panics
+    ///
+    /// If `x` does not fit the axis.
+    pub fn fill<'a>(&self, x: impl Into<oxihist::Value<'a>>) {
+        let x = x.into();
+        self.with_local(|h| h.fill(x));
+    }
+
+    /// Fill `x` with weight `w` into this thread's copy.
+    ///
+    /// # Panics
+    ///
+    /// If `x` does not fit the axis.
+    pub fn fill_weight<'a>(&self, x: impl Into<oxihist::Value<'a>>, w: f64) {
+        let x = x.into();
+        self.with_local(|h| h.fill_weight(x, w));
+    }
+}
+
+impl<S: oxihist::CountStorage> ThreadedHist<oxihist::Histogram<S, 2>> {
+    /// Fill `(x, y)` into this thread's copy.
+    ///
+    /// # Panics
+    ///
+    /// If a value does not fit its axis.
+    pub fn fill<'a>(&self, x: impl Into<oxihist::Value<'a>>, y: impl Into<oxihist::Value<'a>>) {
+        let (x, y) = (x.into(), y.into());
+        self.with_local(|h| h.fill(x, y));
+    }
+}
+
+impl<S: oxihist::CountStorage> ThreadedHist<oxihist::Histogram<S, 3>> {
+    /// Fill `(x, y, z)` into this thread's copy.
+    ///
+    /// # Panics
+    ///
+    /// If a value does not fit its axis.
+    pub fn fill<'a>(
+        &self,
+        x: impl Into<oxihist::Value<'a>>,
+        y: impl Into<oxihist::Value<'a>>,
+        z: impl Into<oxihist::Value<'a>>,
+    ) {
+        let (x, y, z) = (x.into(), y.into(), z.into());
+        self.with_local(|h| h.fill(x, y, z));
+    }
+}

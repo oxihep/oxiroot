@@ -240,7 +240,7 @@ cargo run -p oxiroot --example analysis
 - Arithmetic with `Sumw2` error propagation: `scale` (also `h *= c` / `h * c`),
   `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
   `integral`. Bins read by cell index (`h[bin]`) or iterator (`for &c in &h`);
-  a shared `Histogram` trait (`contents`/`entries`/`sum`) abstracts over `Hist1D/2/3`,
+  a shared `RootHistogram` trait (`contents`/`entries`/`sum`) abstracts over `Hist1D/2/3`,
   and every type implements `Display` for a one-line summary.
 - Statistics & shape accessors: `mean`/`std_dev`, `maximum`/`minimum`/
   `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,

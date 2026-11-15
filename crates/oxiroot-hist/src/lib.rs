@@ -68,7 +68,7 @@ pub use efficiency::Efficiency;
 pub use hist1d::Hist1D;
 pub use hist2d::Hist2D;
 pub use hist3d::Hist3D;
-pub use ops::Histogram;
+pub use ops::RootHistogram;
 /// The ROOT-free histogram library these types convert to and from.
 pub use oxihist;
 pub use oxihist::Random;

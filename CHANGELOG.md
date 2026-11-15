@@ -7,6 +7,24 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `oxiroot::Error` is the facade's own error type**, with variants
+  `Root` (the ROOT-side `oxiroot::file::Error`), `Stat`, `Formula`, `Hist` and
+  `Plot`. `?` still works across the whole API in a function returning
+  `oxiroot::Result`. Code that matched ROOT-side variants on `oxiroot::Error`
+  matches `oxiroot::file::Error` instead (or `Error::Root(..)` /
+  `err.as_root()`), and plotting errors keep their own structure
+  (`Error::Plot(oxiplot::Error::..)`) instead of a message.
+- **Breaking: `oxiroot-io-core` no longer depends on oxistats, oxifit-formula
+  or oxiplot.** Its `stat`, `formula` and `plot` features and its `Stat`,
+  `Formula` and `Plot` error variants are gone; a new `Error::Other` (built with
+  `Error::other`) carries an error from another crate whole.
+- **Breaking: the `Histogram` trait is now `RootHistogram`**, and the prelude's
+  `Histogram` is oxihist's histogram (what the `Hist` builder makes).
+  `ThreadedHist` and `Mergeable` accept oxihist histograms too, so
+  `ThreadedHist::new(Hist::reg(..).int64())` works from the prelude.
+
 ### Added
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
