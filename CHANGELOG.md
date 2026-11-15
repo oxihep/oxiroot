@@ -7,6 +7,23 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Recursion driven by file or server data is bounded.** The TTree streamer
+  walker now stops at `MAX_STREAMER_DEPTH` (64) base-class levels, like the
+  generic object reader already did; a class listing itself as its own base
+  used to overflow the stack. The XRootD client honours at most 30 `kXR_wait`
+  replies while opening a file (it used to recurse once per reply).
+- **XRootD responses are capped.** Control requests may return at most 64 KiB
+  and reads at most the length requested, and frame data is read as it arrives
+  instead of into a buffer sized by the frame header, so a server announcing
+  2 GB cannot make the client allocate it.
+
+### Added
+
+- `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
+  and a public `StreamerRegistry::from_infos` for hand-built registries.
+
 ### Changed
 
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, a new

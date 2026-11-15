@@ -57,6 +57,12 @@ mod value;
 
 pub use buffer::{CountToken, Patch, RBuffer, VersionHeader, WBuffer, K_BYTE_COUNT_MASK};
 pub use compression::Compression;
+
+/// The deepest nesting of streamed objects and base classes a reader follows.
+/// Streamer info comes from the file, so a class that lists itself as its own
+/// base (or a long chain) must end in an error, not a stack overflow. Every
+/// streamer walker in the workspace uses this limit.
+pub const MAX_STREAMER_DEPTH: usize = 64;
 pub use error::{decompress_payload, Error, Result};
 #[cfg(feature = "mmap")]
 pub use file::MmapSource;
