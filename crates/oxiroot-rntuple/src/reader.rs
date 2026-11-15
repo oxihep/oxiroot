@@ -203,7 +203,28 @@ impl NtupleReader {
         // defaults so the column lines up. (A normal collection child column has
         // no such index and is legitimately shorter than the entry count.)
         match descriptor.first_element_index {
-            Some(first) if first > 0 => Ok(backfill_leading(values, first as usize)),
+            Some(first) if first > 0 => {
+                // `first` comes from the header. A deferred column cannot start
+                // past every element its field could hold: cap it at a generous
+                // number of elements per entry before allocating that many
+                // defaults (and allocate fallibly, below).
+                let limit = self
+                    .num_entries()
+                    .max(1)
+                    .saturating_mul(MAX_ELEMENTS_PER_ENTRY);
+                let first = u64::try_from(first)
+                    .ok()
+                    .filter(|&f| f <= limit)
+                    .and_then(|f| usize::try_from(f).ok())
+                    .ok_or_else(|| {
+                        Error::Format(format!(
+                            "deferred column {column_index} starts at element {first}, \
+                             beyond {limit} for {} entries",
+                            self.num_entries()
+                        ))
+                    })?;
+                backfill_leading(values, first)
+            }
             _ => Ok(values),
         }
     }
@@ -574,16 +595,23 @@ fn is_late_field(type_name: &str) -> bool {
 /// late-added (schema-extension) column does not cover. Numerics default to `0`
 /// and bools to `false` (an `Index*` offset of `0` is an empty collection),
 /// matching how ROOT defaults entries written before the field was added.
-fn backfill_leading(values: ColumnValues, k: usize) -> ColumnValues {
+fn backfill_leading(values: ColumnValues, k: usize) -> Result<ColumnValues> {
     use ColumnValues::*;
     macro_rules! pre {
         ($variant:ident, $v:ident, $default:expr) => {{
-            let mut out = vec![$default; k];
+            let mut out = Vec::new();
+            out.try_reserve_exact(k.saturating_add($v.len()))
+                .map_err(|_| {
+                    Error::Format(format!(
+                        "cannot allocate {k} leading defaults for a deferred column"
+                    ))
+                })?;
+            out.resize(k, $default);
             out.extend($v);
             $variant(out)
         }};
     }
-    match values {
+    Ok(match values {
         Bits(v) => pre!(Bits, v, false),
         Bytes(v) => pre!(Bytes, v, 0),
         I8(v) => pre!(I8, v, 0),
@@ -597,12 +625,32 @@ fn backfill_leading(values: ColumnValues, k: usize) -> ColumnValues {
         F32(v) => pre!(F32, v, 0.0),
         F64(v) => pre!(F64, v, 0.0),
         Switch(v) => pre!(Switch, v, (0u64, 0u32)),
-    }
+    })
 }
+
+/// The most elements per entry a deferred (schema-extension) column may claim
+/// to start after. Generous for nested collections; it exists to reject a
+/// forged `first_element_index` before allocating defaults for it.
+const MAX_ELEMENTS_PER_ENTRY: u64 = 1 << 16;
 
 fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let win = file
         .read_at(seek, nbytes as usize)
         .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
     decompress_payload(&win, len as usize, what)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Leading defaults for a deferred column are allocated fallibly: an
+    /// impossible count is an error, not an abort.
+    #[test]
+    fn backfill_of_an_impossible_length_is_an_error() {
+        let huge = usize::MAX / 2;
+        assert!(backfill_leading(ColumnValues::U64(vec![1]), huge).is_err());
+        let ok = backfill_leading(ColumnValues::U64(vec![7]), 2).unwrap();
+        assert!(matches!(ok, ColumnValues::U64(v) if v == vec![0, 0, 7]));
+    }
 }
