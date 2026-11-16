@@ -114,6 +114,7 @@ The canonical round-trip driver lives in
 [`examples/interop.rs`](../api/oxiroot/index.html) and uses only the public API.
 The write side composes a histogram, an RNTuple, and a `TTree`:
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 

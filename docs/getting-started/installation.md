@@ -45,6 +45,8 @@ just the lean, pure-Rust format core.
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`, from [oxiplot](https://github.com/oxihep/oxiplot)); adds `tiny-skia`/`ab_glyph` and the ReX TeX engine. |
+| `http` | — | Remote reads over HTTP(S) range requests (`FileReader::open_url` with `http://` or `https://`); adds `ureq`. |
+| `xrootd` | — | Remote reads over the XRootD protocol (`FileReader::open_url` with `root://`), pure Rust, `unix` auth for public files. |
 
 ```toml
 [dependencies]

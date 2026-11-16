@@ -151,6 +151,7 @@ match &g.errors {
         println!("asymmetric y errors: low={ey_low:?}, high={ey_high:?}");
     }
     GraphErrors::None => println!("no error bars"),
+    _ => println!("another error layout"), // GraphErrors is #[non_exhaustive]
 }
 ```
 

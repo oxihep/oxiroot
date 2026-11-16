@@ -232,6 +232,12 @@ jobs:
       - name: Build the docs, denying broken links
         run: cargo doc --locked --no-deps --all-features --workspace
 
+      - name: Compile every Rust snippet of the guides and the README
+        # Each page's blocks compile together, in order, against the facade
+        # with all features. A block that is a fragment on purpose is marked
+        # with `<!-- fragment -->` on the line before its fence.
+        run: python3 scripts/check_guide_snippets.py
+
   package:
     name: package (dry run)
     runs-on: ubuntu-latest
