@@ -37,6 +37,13 @@ on-disk format and is intentionally out of scope.)
     conversion table](../api/oxiroot_hist/index.html) lists how each axis and
     storage maps onto ROOT's classes.
 
+    Some oxihist features have no ROOT counterpart and do not survive a round
+    trip: an `Integer` axis reads back as a `Regular` one, an `IntCategory` or
+    `Boolean` axis as a `StrCategory` one, and an axis's growth flag and name
+    are dropped (its label is kept). `to_root()` panics on the rare histogram
+    ROOT cannot hold at all (an axis of more than `i32::MAX` bins);
+    `try_to_root()` returns that as an error instead.
+
 ## Construction without names
 
 A histogram is just data: a binning and its contents. Unlike ROOT, oxiroot never

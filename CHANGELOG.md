@@ -14,6 +14,13 @@ change the API.
 
 ### Changed
 
+- The oxihep dependencies move to oxifit/oxifit-formula v0.1.1, oxiplot
+  v0.1.1 and oxihist v0.2.0.
+- `ToRoot` gains `try_to_root` and `try_to_root_as`, which return an error
+  for a histogram ROOT cannot hold (an axis of more than `i32::MAX` bins, or
+  an axis kind it does not know, since oxihist's `AxisKind` is now
+  non-exhaustive). `to_root` and `to_root_as` keep their signatures and panic
+  in those cases; `write_root` returns the error.
 - **Breaking: `FileReader::open_mmap` is `unsafe`, and `mmap` is no longer a
   default feature of `oxiroot`.** Its contract (the file must not change while
   mapped, or the result is undefined behaviour) was only in prose, on a safe
@@ -120,6 +127,10 @@ change the API.
 
 ### Fixed
 
+- **A category axis with no categories yet wrote an inconsistent ROOT
+  histogram**: one bin on the axis but contents sized for none, with the
+  overflow landing in the in-range bin. It now writes one empty bin and puts
+  the overflow in ROOT's overflow cell.
 - **`SparseHist::fill` scanned every filled cell.** It now finds the cell
   through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
 - **Reading objects from a subdirectory re-read its key list each time, and
@@ -183,6 +194,9 @@ change the API.
 - The crate-layout page lists oxihist; the installation page documents the
   `http` and `xrootd` features; rustdoc no longer names the removed
   `.profile()` and `.int32()` builder calls.
+- The bridge's lossy cases (Integer and category axes, growth, axis names,
+  `fEntries`) are listed in the `convert` module docs and the histograms
+  guide, and covered by tests.
 
 ## [0.3.0] — 2026-09-24
 
