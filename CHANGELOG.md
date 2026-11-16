@@ -143,6 +143,9 @@ change the API.
 
 ### Fixed
 
+- Math subscripts in plot labels sat lower than the font asks: oxiplot read
+  the wrong MATH constant. The oxihep dependencies move to oxiplot v0.2.1
+  and oxihist v0.4.1, which fix it.
 - **A category axis with no categories yet wrote an inconsistent ROOT
   histogram**: one bin on the axis but contents sized for none, with the
   overflow landing in the in-range bin. It now writes one empty bin and puts
