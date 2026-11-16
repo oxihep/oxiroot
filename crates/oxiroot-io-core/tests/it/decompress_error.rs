@@ -4,7 +4,7 @@
 use std::error::Error as _;
 
 use oxiroot_compress::{Algorithm, CompressError};
-use oxiroot_io_core::{decompress_payload, Error};
+use oxiroot_io_core::{Error, decompress_payload};
 
 #[test]
 fn an_unknown_codec_is_a_matchable_error() {

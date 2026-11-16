@@ -3,13 +3,13 @@
 use std::collections::{HashMap, HashSet};
 
 use clap::Args as ClapArgs;
+use oxiroot::FileReader;
 use oxiroot::file::Key;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::TreeReader;
-use oxiroot::FileReader;
 
 use crate::json::Json;
-use crate::util::{classify, parse_spec, CmdResult, Kind, Table};
+use crate::util::{CmdResult, Kind, Table, classify, parse_spec};
 
 /// Arguments for `oxroot ls`.
 #[derive(ClapArgs)]
@@ -149,18 +149,17 @@ fn collect(
         if recursive
             && depth < MAX_DEPTH
             && matches!(key.class_name.as_str(), "TDirectory" | "TDirectoryFile")
+            && let Ok(sub) = file.subdir(&full)
         {
-            if let Ok(sub) = file.subdir(&full) {
-                collect(
-                    file,
-                    &full,
-                    &sub.keys,
-                    want_entries,
-                    recursive,
-                    depth + 1,
-                    rows,
-                );
-            }
+            collect(
+                file,
+                &full,
+                &sub.keys,
+                want_entries,
+                recursive,
+                depth + 1,
+                rows,
+            );
         }
     }
 }

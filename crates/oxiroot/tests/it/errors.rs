@@ -3,7 +3,7 @@
 
 use std::error::Error as _;
 
-use oxiroot::stat::{pearsonr, StatError};
+use oxiroot::stat::{StatError, pearsonr};
 
 fn correlate(x: &[f64], y: &[f64]) -> oxiroot::Result<f64> {
     let (r, _) = pearsonr(x, y)?;

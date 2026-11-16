@@ -5,7 +5,7 @@
 //! contents are streamed inline — just a count and the values, no header.
 
 use oxiroot_io_core::{
-    read_named, skip_versioned, Error, FileReader, RBuffer, Result, VersionHeader,
+    Error, FileReader, RBuffer, Result, VersionHeader, read_named, skip_versioned,
 };
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
 // here so the histogram modules keep addressing them as `crate::base::…`.

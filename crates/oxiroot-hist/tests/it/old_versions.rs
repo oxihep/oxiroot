@@ -13,8 +13,8 @@
 
 use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D, WriteRoot};
-use oxiroot_io_core::streamer_gen::{any, base, basic, Cls, El};
-use oxiroot_io_core::{write_named, Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
+use oxiroot_io_core::streamer_gen::{Cls, El, any, base, basic};
+use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer, write_named};
 
 // --- Axis -------------------------------------------------------------------
 

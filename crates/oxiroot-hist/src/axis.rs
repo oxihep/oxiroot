@@ -1,6 +1,6 @@
 //! `Axis` — a histogram axis.
 
-use oxiroot_io_core::{read_named, read_object_base, skip_versioned, Error, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result, read_named, read_object_base, skip_versioned};
 
 use crate::base::end_record;
 

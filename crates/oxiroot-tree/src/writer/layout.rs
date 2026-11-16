@@ -1,8 +1,8 @@
 //! How a [`Branch`] lays out on disk: its leaf type, entry count, count
 //! branch and the bytes of its baskets.
 
-use super::branch::{vec_row_lengths, Branch, BranchKind};
 use super::NESTED_NOT_WRITABLE;
+use super::branch::{Branch, BranchKind, vec_row_lengths};
 use crate::value::BranchValues;
 
 /// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
@@ -165,7 +165,7 @@ impl Branch {
     pub(super) fn is_jagged(&self) -> bool {
         use BranchValues::*;
         macro_rules! jag {
-            ($r:expr) => {{
+            ($r:expr_2021) => {{
                 let n = $r.first().map_or(0, Vec::len);
                 $r.iter().any(|x| x.len() != n)
             }};
@@ -215,7 +215,7 @@ impl Branch {
     fn row_lengths(&self) -> Vec<i32> {
         use BranchValues::*;
         macro_rules! lens {
-            ($r:expr) => {
+            ($r:expr_2021) => {
                 $r.iter().map(|x| x.len() as i32).collect()
             };
         }
@@ -273,7 +273,7 @@ impl Branch {
         let mut data = Vec::new();
         let mut offsets = vec![0u32];
         macro_rules! emit {
-            ($rows:expr, $w:expr, $conv:expr) => {{
+            ($rows:expr_2021, $w:expr_2021, $conv:expr_2021) => {{
                 for row in $rows {
                     let n = row.len() as u32;
                     let bc = (6 + n * $w) | 0x4000_0000;
@@ -312,7 +312,7 @@ impl Branch {
             return (data, Some(offsets));
         }
         macro_rules! be {
-            ($v:expr, $w:expr) => {{
+            ($v:expr_2021, $w:expr_2021) => {{
                 let mut out = Vec::with_capacity($v.len() * $w);
                 for x in $v {
                     out.extend_from_slice(&x.to_be_bytes());
@@ -321,7 +321,7 @@ impl Branch {
             }};
         }
         macro_rules! be_rows {
-            ($r:expr, $w:expr) => {{
+            ($r:expr_2021, $w:expr_2021) => {{
                 let mut out = Vec::new();
                 for row in $r {
                     for x in row {

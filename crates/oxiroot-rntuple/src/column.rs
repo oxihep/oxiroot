@@ -107,7 +107,7 @@ impl ColumnType {
             other => {
                 return Err(Error::Unsupported(format!(
                     "unknown RNTuple column type {other:#x}"
-                )))
+                )));
             }
         })
     }

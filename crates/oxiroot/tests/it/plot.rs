@@ -40,10 +40,11 @@ fn facade_plots_a_histogram_to_every_format() {
 
     let svg = ax.to_svg_string();
     assert!(svg.starts_with("<svg") && svg.ends_with("</svg>"));
-    assert!(ax
-        .to_png_bytes(SaveOpts::new())
-        .unwrap()
-        .starts_with(b"\x89PNG"));
+    assert!(
+        ax.to_png_bytes(SaveOpts::new())
+            .unwrap()
+            .starts_with(b"\x89PNG")
+    );
     assert!(ax.to_pdf_bytes().starts_with(b"%PDF-1.4"));
 
     // And through a real file (format chosen by extension).

@@ -133,7 +133,7 @@ fn reads_root_graph_histogram() {
         .expect("graph carries an fHistogram display frame");
     assert_eq!(h.class_name(), "TH1F"); // ROOT's fHistogram is a TH1F
     assert_eq!(h.xaxis.nbins, 100); // ROOT's default frame binning
-                                    // The plain graphs in graphs.root were never drawn, so they have no frame.
+    // The plain graphs in graphs.root were never drawn, so they have no frame.
     let g0 = Graph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
     assert!(g0.histogram.is_none());
 }

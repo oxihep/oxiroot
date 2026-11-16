@@ -13,7 +13,7 @@ use std::path::Path;
 
 use std::io::Cursor;
 
-use crate::error::{decompress_payload, Error, Result};
+use crate::error::{Error, Result, decompress_payload};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use crate::streamer_gen::Cls;
 use crate::{Compression, FileReader};

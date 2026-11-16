@@ -1,7 +1,7 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
 
 use oxiroot_io_core::{
-    read_named, read_object_base, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
+    Error, RBuffer, Result, StreamerElement, StreamerRegistry, read_named, read_object_base,
 };
 
 /// A scalar or array member captured while walking a class's streamer elements.
@@ -218,7 +218,7 @@ fn read_base(
 
 #[cfg(test)]
 mod tests {
-    use super::{member_int, walk_members, MemberVal, Members};
+    use super::{MemberVal, Members, member_int, walk_members};
     use oxiroot_io_core::RBuffer;
     use oxiroot_io_core::Result;
     use oxiroot_io_core::{StreamerElement, StreamerRegistry};

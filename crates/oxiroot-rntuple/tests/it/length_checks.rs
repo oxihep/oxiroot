@@ -3,7 +3,7 @@
 //! writing a file whose columns do not match its entry count.
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_rntuple::{write_rntuple_file, Column, Field, FieldValues, NtupleReader};
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader, write_rntuple_file};
 
 fn write(fields: &[Field]) -> oxiroot_io_core::Result<()> {
     let path = std::env::temp_dir().join("oxiroot_rntuple_length_checks.root");

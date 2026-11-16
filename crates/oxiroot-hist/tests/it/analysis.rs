@@ -79,7 +79,7 @@ fn comparison_tests_reject_mismatched_binning() {
 fn weighted_chi2_tests_match_root() {
     use oxiroot_hist::Chi2TestKind::*;
     let (a, b) = (h("hw1"), h("hw2")); // weighted histograms (Sumw2 populated)
-                                       // ROOT Chi2TestX reference values.
+    // ROOT Chi2TestX reference values.
     let uu = a.chi2_test_with(&b, UnweightedUnweighted).unwrap();
     let uw = a.chi2_test_with(&b, UnweightedWeighted).unwrap();
     let ww = a.chi2_test_with(&b, WeightedWeighted).unwrap();

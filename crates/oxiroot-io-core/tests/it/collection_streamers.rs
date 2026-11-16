@@ -2,10 +2,10 @@
 //! its members — and for the classes they depend on — so that, written again,
 //! it still describes members of classes this crate knows nothing about.
 
-use oxiroot_io_core::streamer_gen::{any, base, basic, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, any, base, basic};
 use oxiroot_io_core::{
-    write_named, Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot,
-    StreamerInfo, WBuffer, WriteRoot,
+    Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot, StreamerInfo,
+    WBuffer, WriteRoot, write_named,
 };
 
 /// An object of a class only this test knows: `MyEvent` (version 3), a `Named`
@@ -145,11 +145,7 @@ fn two_versions_of_a_class_are_both_described() {
             "MyHit".to_string()
         }
         fn root_name(&self) -> &str {
-            if self.0 == 1 {
-                "old"
-            } else {
-                "new"
-            }
+            if self.0 == 1 { "old" } else { "new" }
         }
         fn root_title(&self) -> &str {
             ""

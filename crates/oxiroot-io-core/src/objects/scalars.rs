@@ -3,12 +3,12 @@
 //! own keys. Both read and write byte-for-byte as ROOT serializes them, so ROOT
 //! and uproot read what oxiroot writes and vice versa.
 
+use crate::FileReader;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
-use crate::object_io::{object_bytes_any, ReadRoot, WriteRoot};
+use crate::object_io::{ReadRoot, WriteRoot, object_bytes_any};
 use crate::streamer::{read_object_base, write_object_base};
-use crate::streamer_gen::{base, basic, strf, Cls};
-use crate::FileReader;
+use crate::streamer_gen::{Cls, base, basic, strf};
 
 /// `fBits` ROOT writes for a `Parameter`'s embedded `TObject` (`ObjString`'s is
 /// `0`). Cosmetic, but matched so written files equal ROOT's byte-for-byte.
@@ -199,7 +199,7 @@ impl Parameter {
                     "cannot add a TParameter<{}> to a TParameter<{}>",
                     b.type_name(),
                     a.type_name()
-                )))
+                )));
             }
         };
         Ok(())
@@ -258,7 +258,7 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
         other => {
             return Err(Error::Unsupported(format!(
                 "TParameter element type {other:?} is not supported"
-            )))
+            )));
         }
     };
     Ok(Parameter {

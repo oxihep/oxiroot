@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use crate::buffer::{RBuffer, K_BYTE_COUNT_MASK};
+use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer};
 use crate::error::{Error, Result};
 
 const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
@@ -85,14 +85,14 @@ impl TagReader {
     /// buffer's errors if the header is truncated.
     pub fn read_header(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
         let header = self.read_header_unchecked(r)?;
-        if let Some(end) = header.end {
-            if end > r.len() || end < r.pos() {
-                return Err(Error::Format(format!(
-                    "object byte count ends at {end}, outside {}..={}",
-                    r.pos(),
-                    r.len()
-                )));
-            }
+        if let Some(end) = header.end
+            && (end > r.len() || end < r.pos())
+        {
+            return Err(Error::Format(format!(
+                "object byte count ends at {end}, outside {}..={}",
+                r.pos(),
+                r.len()
+            )));
         }
         Ok(header)
     }

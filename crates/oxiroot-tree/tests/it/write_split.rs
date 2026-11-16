@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_tree::{write_tree_file, Branch, BranchValues, SplitMember, TreeReader};
+use oxiroot_tree::{Branch, BranchValues, SplitMember, TreeReader, write_tree_file};
 
 fn split_branch() -> Branch {
     // Mirrors `fixtures/tree_split.root`: Hit = {float x; float y; int id;}.

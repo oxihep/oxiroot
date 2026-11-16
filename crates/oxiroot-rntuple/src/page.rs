@@ -5,7 +5,7 @@
 //! byte-transposed back ("unsplit"), then signed-integer columns are
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
-use oxiroot_io_core::{decompress_payload, ByteSource, Error, Result};
+use oxiroot_io_core::{ByteSource, Error, Result, decompress_payload};
 
 use crate::column::ColumnType;
 use crate::pagelist::PageInfo;
@@ -126,12 +126,12 @@ pub fn read_column(
     // Reject a header whose declared bit width contradicts the column type
     // before it is used to size pages — otherwise a hostile `bits_on_storage`
     // (e.g. 0 or 64 for an Int32 column) panics in the decode below.
-    if let Some(expected) = column_type.storage_bits() {
-        if bits != expected {
-            return Err(Error::Format(format!(
-                "column {column_type:?}: bits_on_storage {bits}, expected {expected}"
-            )));
-        }
+    if let Some(expected) = column_type.storage_bits()
+        && bits != expected
+    {
+        return Err(Error::Format(format!(
+            "column {column_type:?}: bits_on_storage {bits}, expected {expected}"
+        )));
     }
     // The variable-width reals carry their width in the header; outside the
     // ranges ROOT writes, the shifts that decode them would overflow.
@@ -140,12 +140,12 @@ pub fn read_column(
         Real32Quant => Some(1..=32),
         _ => None,
     };
-    if let Some(range) = variable_range {
-        if !range.contains(&bits) {
-            return Err(Error::Format(format!(
-                "column {column_type:?}: bits_on_storage {bits} outside {range:?}"
-            )));
-        }
+    if let Some(range) = variable_range
+        && !range.contains(&bits)
+    {
+        return Err(Error::Format(format!(
+            "column {column_type:?}: bits_on_storage {bits} outside {range:?}"
+        )));
     }
     match column_type {
         Bit => {

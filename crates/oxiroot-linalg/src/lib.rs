@@ -10,10 +10,10 @@
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
-use oxiroot_io_core::streamer_gen::{base, basic, basicptr, basicptr_in, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, base, basic, basicptr, basicptr_in};
 use oxiroot_io_core::{
-    object_bytes_any, read_object_base, write_object_base, Error, FileReader, FromMember, RBuffer,
-    ReadRoot, Result, WBuffer, WriteRoot,
+    Error, FileReader, FromMember, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
+    read_object_base, write_object_base,
 };
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default

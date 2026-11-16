@@ -1,8 +1,8 @@
 //! Decoding branch data: from basket payloads to [`BranchValues`] columns.
 
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry, K_BYTE_COUNT_MASK};
+use oxiroot_io_core::{Error, FileReader, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerRegistry};
 
-use super::members::{walk_members, MemberVal, Members};
+use super::members::{MemberVal, Members, walk_members};
 use super::parse::skip_object;
 use super::{Branch, ObjectMember};
 use crate::basket::Basket;
@@ -352,7 +352,7 @@ fn chunk_regions(baskets: &[Basket], stride: usize) -> Vec<&[u8]> {
 /// Decode `bytes` as a contiguous big-endian array of `leaf`-typed scalars.
 pub(super) fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues> {
     macro_rules! be {
-        ($variant:ident, $ty:ty, $w:expr) => {{
+        ($variant:ident, $ty:ty, $w:expr_2021) => {{
             let mut v = Vec::with_capacity(bytes.len() / $w);
             for c in bytes.chunks_exact($w) {
                 v.push(<$ty>::from_be_bytes(c.try_into().unwrap()));
@@ -380,7 +380,7 @@ pub(super) fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues
 /// one inner vector per entry.
 fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
     macro_rules! be {
-        ($variant:ident, $ty:ty, $w:expr) => {{
+        ($variant:ident, $ty:ty, $w:expr_2021) => {{
             let mut out = Vec::with_capacity(regions.len());
             for r in regions {
                 let mut g = Vec::with_capacity(r.len() / $w);

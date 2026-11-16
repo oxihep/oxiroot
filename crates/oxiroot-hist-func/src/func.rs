@@ -1,7 +1,7 @@
 //! The function types: [`Func1D`], [`Func2D`] and [`Func3D`], their evaluation, and the
 //! shared [`FuncCore`] (name, formula, parameters, fit metadata).
 
-use oxifit_formula::{derivative, integrate, Formula};
+use oxifit_formula::{Formula, derivative, integrate};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
 

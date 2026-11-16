@@ -94,7 +94,7 @@ impl Acc {
                 return Err(Error::Unsupported(format!(
                     "streamer member {:?} has unsupported type code {other} ({})",
                     el.name, el.type_name
-                )))
+                )));
             }
         })
     }

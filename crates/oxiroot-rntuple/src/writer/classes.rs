@@ -1,6 +1,6 @@
 //! The streamer classes an RNTuple's record fields need, and their checksums.
 
-use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, basic, streamer_info_list};
 
 use super::fields::{Column, Field};
 use crate::anchor::anchor_streamer_class;
@@ -68,15 +68,15 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
                         .map(|(_, ty, size, type_name)| basic(name, ty, size, type_name))
                 })
                 .collect();
-            if let Some(elements) = elements {
-                if !classes.iter().any(|c| c.name == type_name.as_str()) {
-                    classes.push(Cls {
-                        name: type_name.into(),
-                        version: 1,
-                        checksum: class_checksum(type_name, members),
-                        elements,
-                    });
-                }
+            if let Some(elements) = elements
+                && !classes.iter().any(|c| c.name == type_name.as_str())
+            {
+                classes.push(Cls {
+                    name: type_name.into(),
+                    version: 1,
+                    checksum: class_checksum(type_name, members),
+                    elements,
+                });
             }
         }
         Column::Record(members) => {

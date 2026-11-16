@@ -3,8 +3,8 @@
 
 use std::io::Cursor;
 
-use oxiroot_io_core::streamer_gen::{basic, streamer_info_list, Cls};
-use oxiroot_io_core::{compress_if_smaller, Compression, ContainerWriter, DirId, FileReader, Key};
+use oxiroot_io_core::streamer_gen::{Cls, basic, streamer_info_list};
+use oxiroot_io_core::{Compression, ContainerWriter, DirId, FileReader, Key, compress_if_smaller};
 
 /// Build a file in the small form (`big = false`) or the big form.
 fn build(
@@ -141,10 +141,12 @@ fn threshold_picks_the_form_from_the_finished_size() {
             .map(drop)
     };
     let small = ContainerWriter::build("t.root", Compression::None, u64::MAX, layout).unwrap();
-    assert!(!FileReader::from_bytes(small.clone())
-        .unwrap()
-        .header()
-        .is_big());
+    assert!(
+        !FileReader::from_bytes(small.clone())
+            .unwrap()
+            .header()
+            .is_big()
+    );
     let at_size =
         ContainerWriter::build("t.root", Compression::None, small.len() as u64, layout).unwrap();
     assert_eq!(

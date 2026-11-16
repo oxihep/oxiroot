@@ -6,7 +6,7 @@ use std::path::Path;
 
 use oxiroot_io_core::{Compression, ContainerWriter, DirId, Error, Result};
 
-use super::baskets::{chunk_values, write_basket, BasketRec};
+use super::baskets::{BasketRec, chunk_values, write_basket};
 use super::branch::{Branch, BranchKind};
 use super::layout::Kind;
 use super::serialize::build_tree_object;
@@ -217,7 +217,7 @@ impl<W: Write + Seek> TreeWriter<W> {
             Some(prev) if *prev != sig => {
                 return Err(Error::SchemaChanged {
                     detail: "this batch's branch schema differs from the first batch's".into(),
-                })
+                });
             }
             Some(_) => {}
             None => {

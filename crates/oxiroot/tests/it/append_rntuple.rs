@@ -4,8 +4,8 @@
 //! and the appended histogram read back (separately verified against ROOT C++
 //! and uproot).
 
-use oxiroot::prelude::*;
 use oxiroot::FileReader;
+use oxiroot::prelude::*;
 
 #[test]
 fn appends_a_histogram_to_an_rntuple_file() {

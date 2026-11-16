@@ -86,7 +86,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
                         return Err(Error::InvalidInput(format!(
                             "{what}: variant tag {k} but only {} alternatives",
                             alternatives.len()
-                        )))
+                        )));
                     }
                 }
             }

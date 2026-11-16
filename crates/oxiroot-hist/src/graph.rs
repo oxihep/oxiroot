@@ -12,10 +12,10 @@
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
 use oxiroot_io_core::{
-    read_named, read_object_base, skip_versioned, Error, FileReader, RBuffer, Result,
+    Error, FileReader, RBuffer, Result, read_named, read_object_base, skip_versioned,
 };
 
-use crate::base::{bin_content_type_of, check_len, object_bytes_any, BinContentType};
+use crate::base::{BinContentType, bin_content_type_of, check_len, object_bytes_any};
 use crate::hist1d::Hist1D;
 
 /// Error bars attached to a graph's points.

@@ -5,12 +5,12 @@
 //! (skipped via its byte count); the inline `TArray` holds the
 //! `(nx+2)*(ny+2)*(nz+2)` cells with x fastest, then y, then z.
 
-use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
 
 use crate::axis::Axis;
 use crate::base::{
-    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
-    read_tarray, read_th1_base, unsupported_version, BinContentType,
+    BinContentType, bin_content_type_of, cell_count, check_cells, histogram_object,
+    histogram_object_in, read_tarray, read_th1_base, unsupported_version,
 };
 
 /// A 3-D classic histogram (`TH3D` or `TH3F`); contents are widened to `f64`.
@@ -68,8 +68,8 @@ pub struct Hist3D {
 impl Hist3D {
     pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist3D> {
         let th3x = r.read_version()?; // TH3x wrapper
-                                      // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
-                                      // Hist3D members, with no Hist3D record of their own.
+        // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
+        // Hist3D members, with no Hist3D record of their own.
         if th3x.version < 2 {
             return Err(unsupported_version("TH3", th3x.version));
         }

@@ -4,10 +4,10 @@
 
 use oxiroot_hist::ToRoot;
 use oxiroot_hist::{
-    hist_streamer_classes, Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist,
-    HistStack, ObjList, ObjString, Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot,
+    Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist, HistStack, ObjList, ObjString,
+    Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot, hist_streamer_classes,
 };
-use oxiroot_io_core::streamer_gen::{base, basic, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, base, basic};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.

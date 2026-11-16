@@ -129,10 +129,8 @@ impl ByteSource for HttpSource {
             })?;
 
         let cacheable = len <= CACHE_MAX_ENTRY;
-        if cacheable {
-            if let Some(hit) = self.cache.lock().unwrap().get(&(offset, len)).cloned() {
-                return Ok(hit);
-            }
+        if cacheable && let Some(hit) = self.cache.lock().unwrap().get(&(offset, len)).cloned() {
+            return Ok(hit);
         }
         let bytes = self.fetch(offset, len)?;
         if cacheable {

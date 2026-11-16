@@ -5,15 +5,15 @@ use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::Path;
 
-use crate::error::{decompress_payload, Error, Result};
-use crate::object_io::{record_of, ObjectRecord, StreamerSet, WriteInto, WriteRoot};
-use crate::streamer_gen::StreamerInfoList;
 use crate::Compression;
+use crate::error::{Error, Result, decompress_payload};
+use crate::object_io::{ObjectRecord, StreamerSet, WriteInto, WriteRoot, record_of};
+use crate::streamer_gen::StreamerInfoList;
 
 use super::container::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use super::key::Key;
-use super::reader::split_cycle;
 use super::reader::FileReader;
+use super::reader::split_cycle;
 
 /// One key in a directory being built: a streamed object, or a multi-record
 /// object laid out when the file is written.

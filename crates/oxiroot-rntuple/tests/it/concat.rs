@@ -1,6 +1,6 @@
 //! Concatenating RNTuples with [`concat_ntuples`] — the `hadd` building block.
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{concat_ntuples, Field, FieldValues, Ntuple, NtupleReader};
+use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader, concat_ntuples};
 
 /// Write `fields` as RNTuple `ntpl` to a fresh temp file and reopen it.
 fn write_open(tag: &str, fields: Vec<Field>) -> FileReader {

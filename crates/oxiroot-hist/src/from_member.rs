@@ -5,10 +5,10 @@
 
 use oxiroot_io_core::{FromMember, Result};
 
-use crate::graph::{decode_tgraph, Graph};
-use crate::hist1d::{decode_th1, Hist1D};
-use crate::hist2d::{decode_th2, Hist2D};
-use crate::hist3d::{decode_th3, Hist3D};
+use crate::graph::{Graph, decode_tgraph};
+use crate::hist1d::{Hist1D, decode_th1};
+use crate::hist2d::{Hist2D, decode_th2};
+use crate::hist3d::{Hist3D, decode_th3};
 
 impl FromMember for Hist1D {
     fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {

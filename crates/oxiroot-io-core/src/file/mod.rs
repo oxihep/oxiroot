@@ -16,13 +16,13 @@ mod xrootd;
 
 pub(crate) use container::STREAMER_INFO_KEY_LEN;
 pub use container::{
-    compress_if_smaller, ContainerWriter, DirId, DATIME, FILE_VERSION, KSTART_BIG_FILE,
+    ContainerWriter, DATIME, DirId, FILE_VERSION, KSTART_BIG_FILE, compress_if_smaller,
 };
 pub use directory::Directory;
-pub use free::{read_free, FreeSegment};
-pub use header::{FileHeader, Uuid, BIG_FILE_VERSION, MAGIC};
+pub use free::{FreeSegment, read_free};
+pub use header::{BIG_FILE_VERSION, FileHeader, MAGIC, Uuid};
 pub use key::{Datime, Key};
-pub use reader::{find_key, split_cycle, FileReader};
+pub use reader::{FileReader, find_key, split_cycle};
 #[cfg(feature = "mmap")]
 pub use source::MmapSource;
 pub use source::{ByteSource, BytesSource, FileSource};

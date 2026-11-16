@@ -10,16 +10,16 @@
 
 use std::ops::Range;
 
+use crate::FileReader;
 use crate::buffer::K_BYTE_COUNT_MASK;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object::TagReader;
-use crate::object_io::{object_bytes_any_keyed, ReadRoot, StreamerSet, WriteRoot};
+use crate::object_io::{ReadRoot, StreamerSet, WriteRoot, object_bytes_any_keyed};
 use crate::streamer::{read_object_base, write_object_any, write_object_base};
-use crate::streamer_gen::{collect_stored, Cls};
-use crate::FileReader;
+use crate::streamer_gen::{Cls, collect_stored};
 
-use super::scalars::{decode_tobjstring, decode_tparameter, member_classes, ObjString, Parameter};
+use super::scalars::{ObjString, Parameter, decode_tobjstring, decode_tparameter, member_classes};
 
 /// Whether an [`ObjList`] serializes as a `TList` (ordered, with per-element
 /// options) or a `TObjArray` (an indexed array).
@@ -237,7 +237,7 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<(String, Ve
                 name: String::new(),
                 found: other.to_string(),
                 expected: "TList or TObjArray".to_string(),
-            })
+            });
         }
     };
     let mut r = RBuffer::new(object);

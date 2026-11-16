@@ -7,8 +7,8 @@ use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    bin_content_type_of, cell_count, check_cells, check_len, histogram_object, histogram_object_in,
-    read_th1_object, BinContentType,
+    BinContentType, bin_content_type_of, cell_count, check_cells, check_len, histogram_object,
+    histogram_object_in, read_th1_object,
 };
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
@@ -328,11 +328,7 @@ impl Hist1D {
         (0..vals.len())
             .map(|i| {
                 let w = edges[i + 1] - edges[i];
-                if w == 0.0 {
-                    0.0
-                } else {
-                    vals[i] / (w * total)
-                }
+                if w == 0.0 { 0.0 } else { vals[i] / (w * total) }
             })
             .collect()
     }

@@ -4,12 +4,12 @@
 //! the Hist3D `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
-use oxiroot_io_core::{skip_versioned, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
 
 use crate::axis::Axis;
 use crate::base::{
-    cell_count, check_cells, end_record, object_bytes, object_bytes_in, read_tarray, read_th1_base,
-    unsupported_version, BinContentType,
+    BinContentType, cell_count, check_cells, end_record, object_bytes, object_bytes_in,
+    read_tarray, read_th1_base, unsupported_version,
 };
 use crate::profile1d::ErrorMode;
 
@@ -224,11 +224,7 @@ impl Profile3D {
                             .map(|iz| {
                                 let cell = ix + sx * (iy + sy * iz);
                                 let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                                if e != 0.0 {
-                                    self.sums[cell] / e
-                                } else {
-                                    0.0
-                                }
+                                if e != 0.0 { self.sums[cell] / e } else { 0.0 }
                             })
                             .collect()
                     })

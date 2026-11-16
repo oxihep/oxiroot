@@ -9,8 +9,8 @@
 //! ```
 
 use oxiroot::stat::{
-    describe, iqr, kurtosis, median, median_abs_deviation, moment, quantile, sem, skew, zscore,
-    ChiSquared, Normal, StudentT,
+    ChiSquared, Normal, StudentT, describe, iqr, kurtosis, median, median_abs_deviation, moment,
+    quantile, sem, skew, zscore,
 };
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no

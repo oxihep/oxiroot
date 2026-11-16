@@ -2,10 +2,10 @@
 //! `Func2D`/`Func3D` object bodies around the shared `Func1D` record, and the
 //! `TStreamerInfo`s a file storing them embeds.
 
-use oxiroot_hist::{hist_streamer_classes, GraphFunction};
-use oxiroot_io_core::streamer_gen::{any, base, basic, objanyptr, objptr, stl, strf, Cls};
+use oxiroot_hist::{GraphFunction, hist_streamer_classes};
+use oxiroot_io_core::streamer_gen::{Cls, any, base, basic, objanyptr, objptr, stl, strf};
 use oxiroot_io_core::{
-    object_bytes_any, Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
+    Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
 };
 
 use crate::func::{Func1D, Func2D, Func3D, FuncCore};

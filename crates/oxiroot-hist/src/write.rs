@@ -7,7 +7,7 @@
 use std::sync::LazyLock;
 
 use oxiroot_io_core::streamer_gen::{Cls, StreamerInfoList};
-use oxiroot_io_core::{write_named, write_object_base, ObjString, WBuffer};
+use oxiroot_io_core::{ObjString, WBuffer, write_named, write_object_base};
 // The object framework (the `WriteRoot` trait and `FileWriter`) lives
 // in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.
@@ -111,7 +111,7 @@ impl_write_root_hist!(
 /// its members' types do not name (`$holds`), and the bin labels of its axes
 /// (`$axis`).
 macro_rules! impl_write_root_fixed {
-    ($ty:ty, $class:expr, $bytes:ident, [$($holds:expr),*], [$($axis:ident),*]) => {
+    ($ty:ty, $class:expr_2021, $bytes:ident, [$($holds:expr_2021),*], [$($axis:ident),*]) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
                 $class.to_string()
@@ -975,7 +975,7 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &MultiErrorGraph) {
     write_basic_array(w, &g.ex_high, n); // fExH
     write_vector_tarrayd(w, &g.ey_low, n); // fEyL
     write_vector_tarrayd(w, &g.ey_high, n); // fEyH
-                                            // fAttFill: fFillColor, fFillStyle (ROOT's per-layer defaults 19 / 1001).
+    // fAttFill: fFillColor, fFillStyle (ROOT's per-layer defaults 19 / 1001).
     write_memberwise_att(w, 2, layers, &[19, 1001]);
     // fAttLine: fLineColor, fLineStyle, fLineWidth (defaults 1 / 1 / 1).
     write_memberwise_att(w, 2, layers, &[1, 1, 1]);

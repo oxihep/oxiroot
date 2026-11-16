@@ -95,14 +95,12 @@ fn handle(stream: TcpStream, data: &[u8], stats: &Mutex<Stats>) {
             if h == "\r\n" || h == "\n" {
                 break;
             }
-            if let Some(v) = h.to_ascii_lowercase().strip_prefix("range:") {
-                if let Some(spec) = v.trim().strip_prefix("bytes=") {
-                    if let Some((a, b)) = spec.trim().split_once('-') {
-                        if let (Ok(a), Ok(b)) = (a.trim().parse(), b.trim().parse()) {
-                            range = Some((a, b));
-                        }
-                    }
-                }
+            if let Some(v) = h.to_ascii_lowercase().strip_prefix("range:")
+                && let Some(spec) = v.trim().strip_prefix("bytes=")
+                && let Some((a, b)) = spec.trim().split_once('-')
+                && let (Ok(a), Ok(b)) = (a.trim().parse(), b.trim().parse())
+            {
+                range = Some((a, b));
             }
         }
 

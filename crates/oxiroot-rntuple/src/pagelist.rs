@@ -6,7 +6,7 @@
 
 use oxiroot_io_core::{RBuffer, Result};
 
-use crate::envelope::{read_frame, read_locator, Locator};
+use crate::envelope::{Locator, read_frame, read_locator};
 
 /// Summary of one cluster: where its entries start and how many it holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

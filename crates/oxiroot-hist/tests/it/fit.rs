@@ -22,8 +22,8 @@ fn rel_close(a: f64, b: f64, tol: f64) -> bool {
 #[test]
 fn gaussian_fit_matches_root() {
     let hg = read("hg"); // const=1000, mean=0.5, sigma=1.3 gaussian (integer bins)
-                         // The fixture sets bin contents directly (no fills), so its moment sums are
-                         // zero; estimate the initial mean/sigma from the contents instead.
+    // The fixture sets bin contents directly (no fills), so its moment sums are
+    // zero; estimate the initial mean/sigma from the contents instead.
     let n = hg.xaxis.nbins.max(0) as usize;
     let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
     let mean: f64 = (1..=n)

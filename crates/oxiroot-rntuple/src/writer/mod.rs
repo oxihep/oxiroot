@@ -14,8 +14,8 @@ use std::path::Path;
 
 use oxiroot_io_core::streamer_gen::Cls;
 use oxiroot_io_core::{
-    compress_if_smaller, Compression, ContainerWriter, DirId, Error, Result, WriteInto,
-    KSTART_BIG_FILE,
+    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, WriteInto,
+    compress_if_smaller,
 };
 
 use crate::anchor::ANCHOR_CLASS;
@@ -33,7 +33,7 @@ use envelopes::{
     build_page_list_offsets,
 };
 pub use fields::{Column, Field};
-use lower::{lower, ColumnPlan, FieldPlan};
+use lower::{ColumnPlan, FieldPlan, lower};
 pub use streaming::NtupleWriter;
 
 const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;

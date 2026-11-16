@@ -89,4 +89,4 @@ pub use threaded::fill_par;
 pub use threaded::{
     Mergeable, ThreadedFill1, ThreadedFill2, ThreadedFill3, ThreadedFill4, ThreadedHist,
 };
-pub use write::{hist_streamer_classes, FileWriter, SubdirWriter, WriteRoot};
+pub use write::{FileWriter, SubdirWriter, WriteRoot, hist_streamer_classes};

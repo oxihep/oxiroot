@@ -24,6 +24,6 @@ pub use merge::{append_trees, concat_trees};
 pub use reader::{Friend, TreeIndex, TreeReader};
 pub use value::{BranchValues, Jagged, LeafType};
 pub use writer::{
-    tree_file_bytes, write_tree_file, write_tree_file_baskets, Branch, SplitMember, Tree,
-    TreeWriter,
+    Branch, SplitMember, Tree, TreeWriter, tree_file_bytes, write_tree_file,
+    write_tree_file_baskets,
 };
