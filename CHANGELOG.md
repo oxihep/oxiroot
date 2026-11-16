@@ -14,6 +14,10 @@ change the API.
 
 ### Changed
 
+- The oxihep dependencies move to oxiplot v0.2.0 and oxihist v0.4.0. oxiplot
+  now reads fonts with skrifa instead of the unmaintained ttf-parser and
+  ab_glyph, so the RUSTSEC-2026-0192 advisory ignore is removed. Plots
+  render the same.
 - **Breaking: one `ThreadedHist` for oxihist and oxiroot.** `ThreadedHist`,
   `Mergeable` and `fill_par` are now oxihist's (oxihist 0.3.0), re-exported
   here; the copy in oxiroot-hist is gone. oxiroot implements `Mergeable` for
