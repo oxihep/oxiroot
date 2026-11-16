@@ -479,7 +479,7 @@ impl std::fmt::Display for Hist3D {
 /// [`Hist1D`]/[`Hist2D`]/[`Hist3D`] so generic code can work over any of them. (The
 /// mutating ops — `scale`/`add`/`integral` — stay inherent per type, since each
 /// also updates its own moment sums and dimension-specific in-range cells.)
-pub trait Histogram {
+pub trait RootHistogram {
     /// All bin contents including under/overflow, flat (x fastest).
     fn contents(&self) -> &[f64];
     /// Number of fills (`fEntries`).
@@ -496,7 +496,7 @@ pub trait Histogram {
 
 macro_rules! impl_histogram {
     ($ty:ty) => {
-        impl Histogram for $ty {
+        impl RootHistogram for $ty {
             fn contents(&self) -> &[f64] {
                 &self.contents
             }

@@ -13,9 +13,12 @@ fn correlate(x: &[f64], y: &[f64]) -> oxiroot::Result<f64> {
 #[test]
 fn statistics_errors_convert() {
     let err = correlate(&[1.0, 2.0, 3.0], &[1.0, 2.0]).unwrap_err();
-    assert_eq!(
-        err,
-        oxiroot::Error::Stat(StatError::LengthMismatch { left: 3, right: 2 })
+    assert!(
+        matches!(
+            err,
+            oxiroot::Error::Stat(StatError::LengthMismatch { left: 3, right: 2 })
+        ),
+        "{err:?}"
     );
     assert_eq!(
         err.to_string(),
@@ -48,21 +51,23 @@ fn plotting_errors_convert() {
         Ok(())
     }
     let dir = std::env::temp_dir();
-    // An unknown extension is a plotting error, carried with its message.
+    // An unknown extension is a plotting error, kept whole.
     let err = save(&dir.join("oxiroot_errors_test.bmp")).unwrap_err();
-    assert_eq!(
-        err,
-        oxiroot::Error::Plot("unknown image format `bmp` (use a .png, .svg, or .pdf path)".into())
+    assert!(
+        matches!(err, oxiroot::Error::Plot(oxiroot::plot::Error::UnknownFormat(ref e)) if e == "bmp"),
+        "{err:?}"
+    );
+    assert!(
+        err.to_string()
+            .starts_with("plotting: unknown image format"),
+        "{err}"
     );
     // An I/O failure keeps its kind.
     let err = save(&dir.join("oxiroot-no-such-dir/x/y.svg")).unwrap_err();
     assert!(
         matches!(
             err,
-            oxiroot::Error::Io {
-                kind: std::io::ErrorKind::NotFound,
-                ..
-            }
+            oxiroot::Error::Plot(oxiroot::plot::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound
         ),
         "{err:?}"
     );
@@ -73,12 +78,34 @@ fn plotting_errors_convert() {
         oxiroot::plot::Axes::new().plot(&[0.0, 1.0], &[0.0])?;
         Ok(())
     }
-    assert_eq!(
-        line().unwrap_err(),
-        oxiroot::Error::LengthMismatch {
-            what: "plot ys".into(),
-            expected: 2,
-            found: 1
-        }
+    let err = line().unwrap_err();
+    assert!(
+        matches!(
+            err,
+            oxiroot::Error::Plot(oxiroot::plot::Error::LengthMismatch {
+                what: "plot ys",
+                expected: 2,
+                found: 1
+            })
+        ),
+        "{err:?}"
     );
+}
+
+/// The prelude's `ThreadedHist` takes what the prelude's `Hist` builder makes
+/// (review finding 1B H5: this did not compile).
+#[test]
+fn prelude_threaded_hist_takes_builder_histograms() {
+    use oxiroot::prelude::*;
+    let acc = ThreadedHist::new(Hist::reg(10, 0.0, 10.0).int64());
+    std::thread::scope(|s| {
+        for t in 0..3 {
+            let acc = &acc;
+            s.spawn(move || (0..100).for_each(|i| acc.fill(f64::from((i + t) % 10))));
+        }
+    });
+    let h: Histogram<oxiroot::hist::oxihist::Int64, 1> = acc.merge().unwrap();
+    assert_eq!(h.sum(true), 300);
+    let root = h.to_root();
+    assert_eq!(root.entries, 300.0);
 }

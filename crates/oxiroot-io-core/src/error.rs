@@ -147,17 +147,46 @@ pub enum Error {
         /// The rendered error message.
         message: String,
     },
-    /// A statistics function rejected its input (converted from
-    /// [`oxistats::StatError`]; the `stat` feature).
-    #[cfg(feature = "stat")]
-    Stat(oxistats::StatError),
-    /// A formula did not parse (converted from [`oxifit_formula::ParseError`];
-    /// the `formula` feature).
-    #[cfg(feature = "formula")]
-    Formula(oxifit_formula::ParseError),
-    /// Building or saving a figure failed (converted from `oxiplot::Error`,
-    /// whose I/O errors become [`Error::Io`]); the message says why.
-    Plot(String),
+    /// An error from another crate (statistics, formulas, plotting,
+    /// histograms, …), kept whole: [`source`](std::error::Error::source) and
+    /// [`downcast_ref`](Error::downcast_ref) give it back. Build one with
+    /// [`Error::other`], e.g. `.map_err(oxiroot::Error::other)?`.
+    Other(External),
+}
+
+/// An error from outside this crate, held by [`Error::Other`]. Shared (so the
+/// error stays `Clone`) and compared by message.
+#[derive(Clone)]
+pub struct External(std::sync::Arc<dyn std::error::Error + Send + Sync + 'static>);
+
+impl fmt::Debug for External {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&*self.0, f)
+    }
+}
+
+impl PartialEq for External {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0) || self.0.to_string() == other.0.to_string()
+    }
+}
+
+impl Eq for External {}
+
+impl Error {
+    /// Wrap an error from another crate (see [`Error::Other`]).
+    pub fn other(error: impl std::error::Error + Send + Sync + 'static) -> Error {
+        Error::Other(External(std::sync::Arc::new(error)))
+    }
+
+    /// The wrapped error, if this is an [`Error::Other`] holding a `T`.
+    #[must_use]
+    pub fn downcast_ref<T: std::error::Error + 'static>(&self) -> Option<&T> {
+        match self {
+            Error::Other(External(e)) => e.downcast_ref::<T>(),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -235,11 +264,7 @@ impl fmt::Display for Error {
                  address (2 GiB); write it in the 64-bit form"
             ),
             Error::Io { message, .. } => write!(f, "I/O error: {message}"),
-            #[cfg(feature = "stat")]
-            Error::Stat(e) => write!(f, "statistics: {e}"),
-            #[cfg(feature = "formula")]
-            Error::Formula(e) => write!(f, "invalid formula: {e}"),
-            Error::Plot(message) => write!(f, "plotting: {message}"),
+            Error::Other(External(e)) => fmt::Display::fmt(e, f),
         }
     }
 }
@@ -270,10 +295,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Decompress { source, .. } => Some(source),
-            #[cfg(feature = "stat")]
-            Error::Stat(e) => Some(e),
-            #[cfg(feature = "formula")]
-            Error::Formula(e) => Some(e),
+            Error::Other(External(e)) => Some(&**e),
             _ => None,
         }
     }
@@ -295,44 +317,6 @@ pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -
         context: what.to_string(),
         source,
     })
-}
-
-#[cfg(feature = "stat")]
-impl From<oxistats::StatError> for Error {
-    fn from(e: oxistats::StatError) -> Self {
-        Error::Stat(e)
-    }
-}
-
-#[cfg(feature = "formula")]
-impl From<oxifit_formula::ParseError> for Error {
-    fn from(e: oxifit_formula::ParseError) -> Self {
-        Error::Formula(e)
-    }
-}
-
-/// With the `plot` feature, plotting errors convert into this error, so `?`
-/// works in a function returning `oxiroot::Result` that both reads files and
-/// saves figures. I/O errors keep their kind ([`Error::Io`]) and length
-/// mismatches stay [`Error::LengthMismatch`]; the others become [`Error::Plot`]
-/// with the plotting error's message.
-#[cfg(feature = "plot")]
-impl From<oxiplot::Error> for Error {
-    fn from(e: oxiplot::Error) -> Self {
-        match e {
-            oxiplot::Error::Io(e) => Error::from(e),
-            oxiplot::Error::LengthMismatch {
-                what,
-                expected,
-                found,
-            } => Error::LengthMismatch {
-                what: what.to_string(),
-                expected,
-                found,
-            },
-            other => Error::Plot(other.to_string()),
-        }
-    }
 }
 
 impl From<std::io::Error> for Error {

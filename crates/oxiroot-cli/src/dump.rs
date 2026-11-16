@@ -2,8 +2,8 @@
 
 use clap::Args as ClapArgs;
 use oxiroot::hist::{
-    Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, Histogram, ObjString, ParamValue,
-    Parameter, Profile1D, ReadRoot,
+    Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, ObjString, ParamValue, Parameter,
+    Profile1D, ReadRoot, RootHistogram,
 };
 use oxiroot::ntuple::{FieldValues, NtupleReader};
 use oxiroot::tree::{BranchValues, TreeReader};
@@ -196,10 +196,10 @@ fn read_obj<T: ReadRoot>(
     subdir: Option<&str>,
     name: &str,
 ) -> oxiroot::Result<T> {
-    match subdir {
-        None => T::read_root(file, name),
-        Some(dir) => T::read_root_in(file, dir, name),
-    }
+    Ok(match subdir {
+        None => T::read_root(file, name)?,
+        Some(dir) => T::read_root_in(file, dir, name)?,
+    })
 }
 
 /// Print a single scalar value, as JSON `{name, value}` or `name = value`.

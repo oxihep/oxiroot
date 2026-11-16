@@ -46,7 +46,7 @@ fn main() -> oxiroot::Result<()> {
         "pt: {} entries, integral {:.2}, all-cell sum {:.2}, bin-2 = {:.2} ± {:.2}",
         pt.entries,
         pt.integral(), // in-range bins only
-        pt.sum(),      // Histogram trait: every cell, flow included
+        pt.sum(),      // RootHistogram trait: every cell, flow included
         pt[2],         // Index: bin content by cell index
         pt.bin_error(2),
     );

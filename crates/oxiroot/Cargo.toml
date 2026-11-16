@@ -12,10 +12,11 @@ categories = ["science", "parser-implementations", "encoding"]
 description = "Pure-Rust IO for the CERN ROOT file format (RNTuple + classic histograms)"
 
 [dependencies]
-# `stat` and `formula`: statistics and formula errors convert into
-# `oxiroot::Error`, so `?` works across the whole API (`plot` adds plotting
-# errors under the `plot` feature).
-oxiroot-io-core = { workspace = true, features = ["stat", "formula"] }
+oxiroot-io-core = { workspace = true }
+# Their error types are variants of `oxiroot::Error`, so `?` works across the
+# whole API.
+oxifit-formula = { workspace = true }
+oxihist = { workspace = true }
 oxiroot-compress = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
@@ -29,11 +30,12 @@ oxiplot = { workspace = true, optional = true }
 
 [features]
 # Batteries-included: the facade turns on fitting (Minuit2 plus the argmin
-# Nelder–Mead backend), plotting, and the mmap read path by default. Opt out of
+# Nelder–Mead backend) and plotting by default. `mmap` is opt-in: its
+# `open_mmap` is `unsafe` (the file must not change while mapped). Opt out of
 # the extra dependencies with `default-features = false`, then re-enable what you
 # need. `rayon` is opt-in, so a library never spawns threads its user did not ask
 # for.
-default = ["fit", "plot", "mmap", "argmin"]
+default = ["fit", "plot", "argmin"]
 # Enable the memory-mapped read path (`FileReader::open_mmap`).
 mmap = ["oxiroot-io-core/mmap"]
 # Enable remote reads over HTTP(S) byte-range requests (`FileReader::open_url`). Opt
@@ -61,7 +63,6 @@ plot = [
   "oxiplot/png",
   "oxiplot/math",
   "oxiroot-hist/plot",
-  "oxiroot-io-core/plot",
 ]
 
 # Build docs.rs with every feature so fitting, the argmin backend, rayon, and
