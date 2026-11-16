@@ -1,6 +1,6 @@
 //! Write a flat tree, read it back through our own reader.
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{write_tree_file, Branch, BranchValues, TreeReader};
+use oxiroot_tree::{Branch, BranchValues, TreeReader, write_tree_file};
 
 #[test]
 fn write_then_read_roundtrips() {

@@ -5,7 +5,7 @@ use std::io::{Seek, Write};
 use std::path::Path;
 
 use oxiroot_io_core::{
-    compress_if_smaller, Compression, ContainerWriter, DirId, Error, Result, KSTART_BIG_FILE,
+    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, compress_if_smaller,
 };
 
 use super::classes::ntuple_streamer_info;
@@ -13,7 +13,7 @@ use super::envelopes::{
     build_anchor, build_footer, build_header, check_page_limits, envelope, list_frame, record_frame,
 };
 use super::fields::Field;
-use super::lower::{lower, ColumnPlan, FieldPlan};
+use super::lower::{ColumnPlan, FieldPlan, lower};
 use super::offset;
 use crate::anchor::ANCHOR_CLASS;
 
@@ -183,7 +183,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
             Some(false) => {
                 return Err(Error::SchemaChanged {
                     detail: "this batch's field schema differs from the first batch's".into(),
-                })
+                });
             }
             None => {
                 // First batch fixes the schema and writes the header.

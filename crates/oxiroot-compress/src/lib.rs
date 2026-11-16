@@ -172,7 +172,7 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
         other => {
             return Err(CompressError::Codec(format!(
                 "encoding algorithm {other} is not supported"
-            )))
+            )));
         }
     };
 

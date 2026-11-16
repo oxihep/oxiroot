@@ -2,8 +2,8 @@
 
 use oxiroot_io_core::{RBuffer, Result};
 
-use crate::envelope::{read_feature_flags, read_frame, read_locator, Locator};
-use crate::header::{read_column_list, read_field_list, ColumnDescriptor, FieldDescriptor};
+use crate::envelope::{Locator, read_feature_flags, read_frame, read_locator};
+use crate::header::{ColumnDescriptor, FieldDescriptor, read_column_list, read_field_list};
 
 /// A cluster group: a contiguous range of entries whose page locations live in
 /// one page-list envelope.

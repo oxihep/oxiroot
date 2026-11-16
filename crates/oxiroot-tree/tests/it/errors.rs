@@ -2,7 +2,7 @@
 //! branch, and a key holding another class.
 
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
-use oxiroot_tree::{tree_file_bytes, Branch, TreeReader};
+use oxiroot_tree::{Branch, TreeReader, tree_file_bytes};
 
 #[test]
 fn a_missing_tree_or_branch_is_not_found() {

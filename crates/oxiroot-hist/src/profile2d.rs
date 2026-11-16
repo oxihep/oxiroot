@@ -8,8 +8,8 @@ use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    cell_count, check_cells, end_record, in_range_sum, object_bytes, object_bytes_in, read_tarray,
-    read_th1_base, unsupported_version, BinContentType,
+    BinContentType, cell_count, check_cells, end_record, in_range_sum, object_bytes,
+    object_bytes_in, read_tarray, read_th1_base, unsupported_version,
 };
 use crate::profile1d::ErrorMode;
 
@@ -178,11 +178,7 @@ impl Profile2D {
                     .map(|iy| {
                         let cell = ix + stride * iy;
                         let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                        if e != 0.0 {
-                            self.sums[cell] / e
-                        } else {
-                            0.0
-                        }
+                        if e != 0.0 { self.sums[cell] / e } else { 0.0 }
                     })
                     .collect()
             })

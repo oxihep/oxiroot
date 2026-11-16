@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{write_tree_file_baskets, Branch, TreeReader};
+use oxiroot_tree::{Branch, TreeReader, write_tree_file_baskets};
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(

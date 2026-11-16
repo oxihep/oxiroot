@@ -26,7 +26,7 @@ pub use oxiroot_io_core::Compression;
 // emits 1.0.1.0 frames). Reading and writing go through `NtupleReader` and the
 // writer types; the anchor, header and footer types stay public for schema
 // introspection.
-pub use anchor::{RNTupleAnchor, ANCHOR_CLASS};
+pub use anchor::{ANCHOR_CLASS, RNTupleAnchor};
 pub use column::ColumnType;
 pub use envelope::Locator;
 pub use field::FieldValues;
@@ -35,4 +35,4 @@ pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
 pub use merge::{append_ntuples, concat_ntuples};
 pub use page::ColumnValues;
 pub use reader::NtupleReader;
-pub use writer::{rntuple_file_bytes, write_rntuple_file, Column, Field, Ntuple, NtupleWriter};
+pub use writer::{Column, Field, Ntuple, NtupleWriter, rntuple_file_bytes, write_rntuple_file};

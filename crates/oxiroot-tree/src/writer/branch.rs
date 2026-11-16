@@ -1,7 +1,7 @@
 //! The branches a caller builds: [`Branch`] and its constructors, and the
 //! members of a split `std::vector<MyStruct>` branch ([`SplitMember`]).
 
-use oxiroot_io_core::streamer_gen::{basic, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, basic};
 use oxiroot_io_core::{Error, Result};
 
 use crate::value::BranchValues;
@@ -236,7 +236,7 @@ pub(super) fn member_type_info(values: &BranchValues) -> (i32, &'static str, i32
 pub(super) fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
     use BranchValues::*;
     macro_rules! lens {
-        ($r:expr) => {
+        ($r:expr_2021) => {
             $r.iter().map(|x| x.len() as i32).collect()
         };
     }

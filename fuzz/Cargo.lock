@@ -89,6 +89,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -136,15 +142,15 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.11.7"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13591d77a9b6d941f7e6fcade7f9dfd9e801308752bde50c0a9bb5852778c22c"
+checksum = "f56455fff36934a9500d69062aec1c77037179b6f0669e4d5d6b72b84722d6a3"
 
 [[package]]
 name = "lzma-rust2"
-version = "0.16.5"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca93e534d1142d1d0dcca6d25fe302508a5dfb40b302802904577725ea0b695b"
+checksum = "ef1d73c59a56771343712b22ea5615092c612c16ba291c0979e3105dfeec4890"
 dependencies = [
  "sha2",
 ]
@@ -160,13 +166,17 @@ dependencies = [
 
 [[package]]
 name = "oxifit-formula"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.1.0#c844d84e67355712e6d5bc391e4235e2ff33c5fe"
+version = "0.1.1"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad6f1f3dcb29ab6a2642"
 
 [[package]]
 name = "oxihist"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.1.0#15deeca00b91f3389689b18159bbf9aab0a9dc2b"
+version = "0.4.3"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.4.3#0ca106fc6d51af2f886b121ae7bd751294916d5d"
+dependencies = [
+ "foldhash",
+ "thread_local",
+]
 
 [[package]]
 name = "oxiroot-compress"
@@ -199,6 +209,7 @@ dependencies = [
  "oxihist",
  "oxiroot-io-core",
  "oxistats",
+ "thread_local",
 ]
 
 [[package]]
@@ -246,9 +257,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "ruzstd"
-version = "0.8.3"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
 dependencies = [
  "twox-hash",
 ]
@@ -269,6 +280,15 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "thread_local"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "twox-hash"

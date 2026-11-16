@@ -831,10 +831,10 @@ fn write(dir: &Path) {
 }
 
 fn count_cases(m: &J) -> usize {
-    if let J::Obj(fields) = m {
-        if let Some((_, J::Arr(c))) = fields.iter().find(|(k, _)| *k == "cases") {
-            return c.len();
-        }
+    if let J::Obj(fields) = m
+        && let Some((_, J::Arr(c))) = fields.iter().find(|(k, _)| *k == "cases")
+    {
+        return c.len();
     }
     0
 }

@@ -14,6 +14,10 @@ change the API.
 
 ### Changed
 
+- **Rust 1.100 and edition 2024.** The minimum supported Rust version
+  (`rust-version`) moves from 1.95 to 1.100, the current stable release that
+  CI already builds with, and the crates move to the 2024 edition (migrated
+  with `cargo fix --edition`; formatting follows the 2024 style).
 - oxihist v0.4.3: category, integer and boolean axes fill 2–3× faster (the
   `fill` bench's 20 string categories: 69 → 125 M fills/s).
 - oxihist v0.4.2: the `Hist` builder's histograms fill numbers on regular

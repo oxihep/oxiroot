@@ -72,7 +72,7 @@ to a new Rust:
 1. Bump `RUST_STABLE` in a PR.
 2. Fix what the new lints and rustfmt report in the same PR.
 
-The minimum supported Rust version (1.95, `rust-version` in every manifest) is
+The minimum supported Rust version (1.100, `rust-version` in every manifest) is
 checked by the `msrv` job.
 
 ## When `main` is red

@@ -10,17 +10,17 @@
 
 use std::ops::Range;
 
-use oxiroot_io_core::streamer_gen::{base, basic, objptr, Cls};
+use oxiroot_io_core::streamer_gen::{Cls, base, basic, objptr};
 use oxiroot_io_core::{
-    read_object_base, write_named, write_object_any, write_object_base, Error, FileReader, RBuffer,
-    Result, StreamerSet, TagReader, WBuffer, K_BYTE_COUNT_MASK,
+    Error, FileReader, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerSet, TagReader, WBuffer,
+    read_object_base, write_named, write_object_any, write_object_base,
 };
 
 use crate::base::object_bytes_any_keyed;
-use crate::graph::{decode_tgraph, Graph};
-use crate::hist1d::{decode_th1, Hist1D};
+use crate::graph::{Graph, decode_tgraph};
+use crate::hist1d::{Hist1D, decode_th1};
 use crate::threaded::Mergeable;
-use crate::write::{hist_streamer_classes, WriteRoot};
+use crate::write::{WriteRoot, hist_streamer_classes};
 
 const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
 const K_CLASS_MASK: u32 = 0x8000_0000;

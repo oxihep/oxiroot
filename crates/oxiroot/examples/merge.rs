@@ -12,7 +12,7 @@
 //! hadd merged.root run1.root run2.root
 //! ```
 
-use oxiroot::hadd::{merge_files, Merger};
+use oxiroot::hadd::{Merger, merge_files};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {

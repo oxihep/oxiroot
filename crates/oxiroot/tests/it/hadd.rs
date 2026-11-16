@@ -1,5 +1,5 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
-use oxiroot::hadd::{merge_files, MergeKind, Merger};
+use oxiroot::hadd::{MergeKind, Merger, merge_files};
 use oxiroot::prelude::*;
 
 fn tmp(name: &str) -> std::path::PathBuf {

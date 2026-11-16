@@ -9,7 +9,7 @@
 //! a meson? its charge?), and look particles up in the bundled PDG table for
 //! their mass, width, lifetime, and quantum numbers.
 
-use oxiroot::particle::{literals, Particle, PdgId};
+use oxiroot::particle::{Particle, PdgId, literals};
 
 fn main() {
     // --- 1. Decode PDG IDs straight from their digits — no table needed. ------

@@ -56,7 +56,7 @@ mod error;
 
 pub use error::{Error, Result};
 #[doc(inline)]
-pub use oxiroot_io_core::{read_object, Compression, FileReader, Value};
+pub use oxiroot_io_core::{Compression, FileReader, Value, read_object};
 
 /// The ROOT file container and the object framework: reading and writing files,
 /// keys and directories, streamer info, and the traits objects implement
@@ -146,7 +146,7 @@ pub mod prelude {
         ParamValue, Parameter, ReadRoot, SubdirWriter, WriteInto, WriteRoot,
     };
 
-    pub use crate::hadd::{merge_files, MergeKind, MergeReport, Merger};
+    pub use crate::hadd::{MergeKind, MergeReport, Merger, merge_files};
 
     #[cfg(feature = "fit")]
     pub use oxifit::{
@@ -168,11 +168,11 @@ pub mod prelude {
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
     pub use oxiroot_rntuple::{
-        write_rntuple_file, Column, Field, FieldValues, Ntuple, NtupleReader, NtupleWriter,
+        Column, Field, FieldValues, Ntuple, NtupleReader, NtupleWriter, write_rntuple_file,
     };
 
     pub use oxiroot_tree::{
-        write_tree_file, write_tree_file_baskets, Branch, BranchValues, ChainReader, EntryList,
-        Friend, Jagged, LeafType, SplitMember, Tree, TreeIndex, TreeReader, TreeWriter,
+        Branch, BranchValues, ChainReader, EntryList, Friend, Jagged, LeafType, SplitMember, Tree,
+        TreeIndex, TreeReader, TreeWriter, write_tree_file, write_tree_file_baskets,
     };
 }

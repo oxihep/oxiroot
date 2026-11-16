@@ -9,7 +9,7 @@
 //! ROOT, uproot, and this crate).
 
 use oxiroot_io_core::streamer_gen::{
-    any, base, basic, basicptr, object, objptr, streamer_info_list, strf, Cls,
+    Cls, any, base, basic, basicptr, object, objptr, streamer_info_list, strf,
 };
 
 /// A `TLeaf<T>` subclass: the `TLeaf` base then `fMinimum`/`fMaximum` of the

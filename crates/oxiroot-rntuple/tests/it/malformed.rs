@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{concat_ntuples, NtupleReader};
+use oxiroot_rntuple::{NtupleReader, concat_ntuples};
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(

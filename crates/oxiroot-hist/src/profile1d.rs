@@ -13,8 +13,8 @@ use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    cell_count, check_cells, end_record, in_range_sum, object_bytes, object_bytes_in, read_tarray,
-    read_th1_object, unsupported_version, BinContentType,
+    BinContentType, cell_count, check_cells, end_record, in_range_sum, object_bytes,
+    object_bytes_in, read_tarray, read_th1_object, unsupported_version,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared

@@ -3,7 +3,7 @@
 use clap::Args as ClapArgs;
 
 use crate::json::Json;
-use crate::util::{compression_label, parse_spec, root_version, CmdResult};
+use crate::util::{CmdResult, compression_label, parse_spec, root_version};
 
 /// Arguments for `oxroot stat`.
 #[derive(ClapArgs)]

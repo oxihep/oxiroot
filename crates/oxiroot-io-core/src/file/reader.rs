@@ -9,14 +9,14 @@ use std::path::Path;
 use bytes::Bytes;
 
 use super::directory::Directory;
-use super::free::{read_free, FreeSegment};
+use super::free::{FreeSegment, read_free};
 use super::header::FileHeader;
 use super::key::Key;
 use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
-use crate::error::{decompress_payload, Error, Result};
+use crate::error::{Error, Result, decompress_payload};
 use crate::read_object::read_object;
-use crate::streamer_info::{parse_stored_infos, parse_streamer_info, StoredInfo, StreamerRegistry};
+use crate::streamer_info::{StoredInfo, StreamerRegistry, parse_stored_infos, parse_streamer_info};
 use crate::value::Value;
 
 /// Bytes fetched from the start of the file to parse its header. The TFile

@@ -14,7 +14,7 @@ use std::path::Path;
 
 use oxiroot_io_core::streamer_gen::Cls;
 use oxiroot_io_core::{
-    Compression, ContainerWriter, DirId, Error, Result, WriteInto, KSTART_BIG_FILE,
+    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, WriteInto,
 };
 
 use crate::value::BranchValues;
@@ -25,9 +25,9 @@ mod layout;
 mod serialize;
 mod streaming;
 
-use baskets::{write_branch_baskets, BasketRec};
-use branch::{check_split_members, split_class};
+use baskets::{BasketRec, write_branch_baskets};
 pub use branch::{Branch, SplitMember};
+use branch::{check_split_members, split_class};
 use serialize::build_tree_object;
 pub use streaming::TreeWriter;
 

@@ -54,7 +54,9 @@ macro_rules! impl_mergeable {
         }
     )+};
 }
-impl_mergeable!(Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D, PolyHist, SparseHist);
+impl_mergeable!(
+    Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D, PolyHist, SparseHist
+);
 
 impl Mergeable for Efficiency {
     type Error = Error;

@@ -2,7 +2,7 @@
 //! graph's `fFunctions` entries and the standalone `Func1D`/`Func2D`/`Func3D` keys (in
 //! `oxiroot-hist-func`) share.
 
-use oxiroot_io_core::{read_named, skip_versioned, write_named, RBuffer, Result, WBuffer};
+use oxiroot_io_core::{RBuffer, Result, WBuffer, read_named, skip_versioned, write_named};
 
 use crate::graph::GraphFunction;
 use crate::write::write_object_ptr;
@@ -173,7 +173,7 @@ fn write_tformula_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32) {
     w.string(&f.formula); // fFormula (in [pN] form)
     w.be_i32(ndim); // fNdim
     w.be_i32(0); // fNumber
-                 // fLinearParts: an empty objectwise vector<TObject*>.
+    // fLinearParts: an empty objectwise vector<TObject*>.
     let lp = w.reserve(4);
     let start = w.len();
     w.be_i16(0x000a); // streamer version

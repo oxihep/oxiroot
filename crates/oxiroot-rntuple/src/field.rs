@@ -242,7 +242,7 @@ impl FieldValues {
     pub fn append(&mut self, other: FieldValues) -> Result<()> {
         use FieldValues::*;
         macro_rules! join {
-            ($a:expr, $variant:ident) => {
+            ($a:expr_2021, $variant:ident) => {
                 match other {
                     $variant(b) => {
                         $a.extend(b);
@@ -291,8 +291,8 @@ impl FieldValues {
 fn fv_mismatch(expected: &str) -> Error {
     Error::SchemaChanged {
         detail: format!(
-        "cannot concatenate RNTuple fields of different types (expected another {expected} field)"
-    ),
+            "cannot concatenate RNTuple fields of different types (expected another {expected} field)"
+        ),
     }
 }
 
@@ -355,12 +355,12 @@ pub(crate) fn scalar(values: ColumnValues) -> Result<FieldValues> {
         ColumnValues::Bytes(_) => {
             return Err(Error::Unsupported(
                 "byte-typed scalar fields are not supported".into(),
-            ))
+            ));
         }
         ColumnValues::Switch(_) => {
             return Err(Error::Format(
                 "a Switch column is not a scalar leaf (it belongs to a variant)".into(),
-            ))
+            ));
         }
     })
 }

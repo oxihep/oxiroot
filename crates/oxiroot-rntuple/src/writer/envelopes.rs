@@ -46,7 +46,7 @@ pub(super) fn list_frame(items: &[Vec<u8>]) -> Vec<u8> {
 fn field_record(f: &FieldPlan) -> Vec<u8> {
     let mut r = Vec::new();
     r.extend_from_slice(&0u32.to_le_bytes()); // field version
-                                              // A checksummed (user-class) field records type version -1.
+    // A checksummed (user-class) field records type version -1.
     let type_version = if f.type_checksum.is_some() {
         CHECKSUM_TYPE_VERSION
     } else {
@@ -60,7 +60,7 @@ fn field_record(f: &FieldPlan) -> Vec<u8> {
     r.extend_from_slice(&rstr(&f.type_name));
     r.extend_from_slice(&rstr("")); // type alias
     r.extend_from_slice(&rstr("")); // description
-                                    // Flag-gated trailers (reader order: array, projection source, checksum).
+    // Flag-gated trailers (reader order: array, projection source, checksum).
     if let Some(size) = f.array_size {
         r.extend_from_slice(&size.to_le_bytes());
     }

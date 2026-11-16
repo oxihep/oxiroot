@@ -1,13 +1,13 @@
 //! `oxroot show` — the structure of a `TTree` or RNTuple.
 
 use clap::Args as ClapArgs;
+use oxiroot::FileReader;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::{BranchValues, LeafType, TreeReader};
-use oxiroot::FileReader;
 
 use crate::json::Json;
 use crate::util::{
-    classify, leaf_type_name, locate_class, parse_spec, split_obj, CmdResult, Kind, Table,
+    CmdResult, Kind, Table, classify, leaf_type_name, locate_class, parse_spec, split_obj,
 };
 
 /// Arguments for `oxroot show`.

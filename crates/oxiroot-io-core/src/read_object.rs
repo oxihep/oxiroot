@@ -690,16 +690,16 @@ fn memberwise_columns<'a>(
 ) -> Option<(&'a str, Vec<(String, Column<'a>)>)> {
     // A `pair` carries no streamer info of its own; its members are its two
     // template arguments.
-    if let Some(("pair", args)) = template_parts(elem_type) {
-        if let [first, second] = args.as_slice() {
-            return Some((
-                "pair",
-                vec![
-                    ("first".to_string(), Column::Typed(first)),
-                    ("second".to_string(), Column::Typed(second)),
-                ],
-            ));
-        }
+    if let Some(("pair", args)) = template_parts(elem_type)
+        && let [first, second] = args.as_slice()
+    {
+        return Some((
+            "pair",
+            vec![
+                ("first".to_string(), Column::Typed(first)),
+                ("second".to_string(), Column::Typed(second)),
+            ],
+        ));
     }
     let info = if version > 0 {
         reg.get_at(elem_type, version)?

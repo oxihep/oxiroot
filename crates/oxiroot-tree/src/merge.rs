@@ -165,7 +165,7 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
     use BranchValues::*;
     // A `Vec*` variant with all three flavours available.
     macro_rules! vec3 {
-        ($v:expr, $fixed:ident, $jagged:ident, $stl:ident) => {
+        ($v:expr_2021, $fixed:ident, $jagged:ident, $stl:ident) => {
             match flavor {
                 Flavor::Fixed => Ok(Branch::$fixed(name, $v)),
                 Flavor::Jagged => Ok(Branch::$jagged(name, $v)),

@@ -15,13 +15,13 @@
 use std::borrow::Cow;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
+use crate::Compression;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
-use crate::streamer_gen::{append_streamer_infos, streamer_info_list, Cls};
-use crate::streamer_info::{parse_streamer_info, StreamerRegistry};
-use crate::Compression;
+use crate::streamer_gen::{Cls, append_streamer_infos, streamer_info_list};
+use crate::streamer_info::{StreamerRegistry, parse_streamer_info};
 
-use super::header::{Uuid, BIG_FILE_VERSION, MAGIC};
+use super::header::{BIG_FILE_VERSION, MAGIC, Uuid};
 use super::key::{Datime, Key};
 use super::reader::FileReader;
 
@@ -767,12 +767,19 @@ impl<W: Write + Seek> ContainerWriter<W> {
     fn patch_header(&mut self, end: u64) -> Result<()> {
         // Offsets of fEND, fSeekFree, fNbytesFree, nfree, fNbytesName, fSeekInfo
         // and fNbytesInfo.
-        let [p_end, p_seek_free, p_nbytes_free, p_nfree, p_nbytes_name, p_seek_info, p_nbytes_info] =
-            if self.big {
-                [12, 20, 28, 32, 36, 45, 53]
-            } else {
-                [12, 16, 20, 24, 28, 37, 41]
-            };
+        let [
+            p_end,
+            p_seek_free,
+            p_nbytes_free,
+            p_nfree,
+            p_nbytes_name,
+            p_seek_info,
+            p_nbytes_info,
+        ] = if self.big {
+            [12, 20, 28, 32, 36, 45, 53]
+        } else {
+            [12, 16, 20, 24, 28, 37, 41]
+        };
         self.patch_seek(p_end, end)?;
         // The free-segment list is not maintained, so declare it empty.
         self.patch_seek(p_seek_free, 0)?;
@@ -1054,11 +1061,7 @@ fn seek_value(w: &mut WBuffer, v: u64, big: bool) {
 /// Size of a `TDirectory` record, UUID included: 48 bytes in the small form and
 /// 60 in the big form.
 fn dir_record_len(big: bool) -> u32 {
-    if big {
-        60
-    } else {
-        48
-    }
+    if big { 60 } else { 48 }
 }
 
 /// Write a `TDirectory` record with empty `fNbytesKeys` and `fSeekKeys`, which

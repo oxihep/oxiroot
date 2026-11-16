@@ -55,7 +55,7 @@ pub mod streamer_gen;
 mod streamer_info;
 mod value;
 
-pub use buffer::{CountToken, Patch, RBuffer, VersionHeader, WBuffer, K_BYTE_COUNT_MASK};
+pub use buffer::{CountToken, K_BYTE_COUNT_MASK, Patch, RBuffer, VersionHeader, WBuffer};
 pub use compression::Compression;
 
 /// The deepest nesting of streamed objects and base classes a reader follows.
@@ -63,27 +63,26 @@ pub use compression::Compression;
 /// base (or a long chain) must end in an error, not a stack overflow. Every
 /// streamer walker in the workspace uses this limit.
 pub const MAX_STREAMER_DEPTH: usize = 64;
-pub use error::{decompress_payload, Error, External, Result};
+pub use error::{Error, External, Result, decompress_payload};
 #[cfg(feature = "mmap")]
 pub use file::MmapSource;
 #[cfg(feature = "xrootd")]
 pub use file::XrootdSource;
 pub use file::{
-    compress_if_smaller, find_key, read_free, split_cycle, ByteSource, BytesSource,
-    ContainerWriter, Datime, DirId, Directory, FileHeader, FileReader, FileSource, FileWriter,
-    FreeSegment, Key, SubdirWriter, Uuid, BIG_FILE_VERSION, DATIME, FILE_VERSION, KSTART_BIG_FILE,
-    MAGIC,
+    BIG_FILE_VERSION, ByteSource, BytesSource, ContainerWriter, DATIME, Datime, DirId, Directory,
+    FILE_VERSION, FileHeader, FileReader, FileSource, FileWriter, FreeSegment, KSTART_BIG_FILE,
+    Key, MAGIC, SubdirWriter, Uuid, compress_if_smaller, find_key, read_free, split_cycle,
 };
 pub use object::{ObjectRef, RecordHeader, TagReader};
 pub use object_io::{
-    object_bytes_any, object_bytes_any_keyed, record_of, ObjectRecord, ReadRoot, StreamerSet,
-    WriteInto, WriteRoot,
+    ObjectRecord, ReadRoot, StreamerSet, WriteInto, WriteRoot, object_bytes_any,
+    object_bytes_any_keyed, record_of,
 };
 pub use objects::{FromMember, ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter};
 pub use read_object::read_object;
 pub use streamer::{
-    read_named, read_object_base, skip_versioned, write_named, write_object_any, write_object_base,
-    Named, ObjectBase,
+    Named, ObjectBase, read_named, read_object_base, skip_versioned, write_named, write_object_any,
+    write_object_base,
 };
-pub use streamer_info::{parse_streamer_info, StreamerElement, StreamerInfo, StreamerRegistry};
+pub use streamer_info::{StreamerElement, StreamerInfo, StreamerRegistry, parse_streamer_info};
 pub use value::Value;

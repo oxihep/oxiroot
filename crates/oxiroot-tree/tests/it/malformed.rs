@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{concat_trees, TreeReader};
+use oxiroot_tree::{TreeReader, concat_trees};
 
 /// Fixtures spanning the supported branch layouts, with their tree name.
 const FIXTURES: &[(&str, &str)] = &[

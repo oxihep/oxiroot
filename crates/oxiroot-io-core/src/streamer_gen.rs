@@ -16,11 +16,11 @@
 
 use std::borrow::Cow;
 
-use crate::buffer::{Patch, RBuffer, WBuffer, K_BYTE_COUNT_MASK};
+use crate::buffer::{K_BYTE_COUNT_MASK, Patch, RBuffer, WBuffer};
 use crate::error::Result;
 use crate::file::STREAMER_INFO_KEY_LEN;
 use crate::streamer::{read_object_base, write_named, write_object_base};
-use crate::streamer_info::{parse_stored_infos, StoredInfo};
+use crate::streamer_info::{StoredInfo, parse_stored_infos};
 
 /// ROOT `fType` codes for an object/string member and the base-class slots.
 const K_TOBJECT: i32 = 66;

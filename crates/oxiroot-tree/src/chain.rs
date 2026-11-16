@@ -97,7 +97,7 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
                              (got {:?})",
                                 other.leaf_type()
                             ),
-                        })
+                        });
                     }
                 }
             }
@@ -150,7 +150,7 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
                              (got {:?})",
                                 other.leaf_type()
                             ),
-                        })
+                        });
                     }
                 }
             }

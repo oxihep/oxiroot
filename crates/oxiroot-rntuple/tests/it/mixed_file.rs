@@ -72,11 +72,12 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
             .unwrap(),
         FieldValues::I32(vec![4, 5])
     );
-    assert!(f
-        .streamer_registry()
-        .unwrap()
-        .get("ROOT::RNTuple")
-        .is_some());
+    assert!(
+        f.streamer_registry()
+            .unwrap()
+            .get("ROOT::RNTuple")
+            .is_some()
+    );
 }
 
 #[test]

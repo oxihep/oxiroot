@@ -8,8 +8,8 @@ use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    bin_content_type_of, cell_count, check_cells, histogram_object, histogram_object_in,
-    read_tarray, read_th1_base, unsupported_version, BinContentType,
+    BinContentType, bin_content_type_of, cell_count, check_cells, histogram_object,
+    histogram_object_in, read_tarray, read_th1_base, unsupported_version,
 };
 
 /// A 2-D classic histogram (`TH2D` or `TH2F`); contents are widened to `f64`.
@@ -59,8 +59,8 @@ pub struct Hist2D {
 impl Hist2D {
     pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist2D> {
         let th2x = r.read_version()?; // TH2x wrapper
-                                      // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
-                                      // Hist2D members, with no Hist2D record of their own.
+        // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
+        // Hist2D members, with no Hist2D record of their own.
         if th2x.version < 2 {
             return Err(unsupported_version("TH2", th2x.version));
         }

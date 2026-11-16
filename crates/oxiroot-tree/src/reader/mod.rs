@@ -13,7 +13,7 @@
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::{
-    decompress_payload, find_key, Error, FileReader, Key, Result, StreamerElement,
+    Error, FileReader, Key, Result, StreamerElement, decompress_payload, find_key,
 };
 
 use crate::value::{BranchValues, Jagged, LeafType};
@@ -23,7 +23,7 @@ mod members;
 mod parse;
 mod types;
 
-use decode::{decode_baskets, decode_scalar, entry_regions, read_baskets, slice_values, Decode};
+use decode::{Decode, decode_baskets, decode_scalar, entry_regions, read_baskets, slice_values};
 use parse::read_tree;
 
 /// Reads a `TTree` from a [`FileReader`]. Opening parses the tree's name, entry

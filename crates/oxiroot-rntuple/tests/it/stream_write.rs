@@ -125,9 +125,10 @@ fn write_batch_rejects_changed_schema() {
     );
 
     // A different field count is likewise rejected.
-    assert!(w
-        .write_batch(&[Field::i32("x", vec![7]), Field::f64("z", vec![1.0])])
-        .is_err());
+    assert!(
+        w.write_batch(&[Field::i32("x", vec![7]), Field::f64("z", vec![1.0])])
+            .is_err()
+    );
 }
 
 #[test]

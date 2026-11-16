@@ -199,7 +199,7 @@ fn root_axis(a: &oxihist::Axis, name: &str) -> Result<Axis> {
         other => {
             return Err(Error::InvalidInput(format!(
                 "no ROOT axis for the oxihist axis kind {other:?}"
-            )))
+            )));
         }
     };
     ax.title.clone_from(&a.label);
@@ -359,7 +359,7 @@ fn cells<S: Storage, const D: usize>(
 }
 
 macro_rules! count_to_root {
-    ($s:ty, $d:literal, $root:ty, |$h:ident, $c:ident, $axes:ident| $build:expr) => {
+    ($s:ty, $d:literal, $root:ty, |$h:ident, $c:ident, $axes:ident| $build:expr_2021) => {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
@@ -517,7 +517,7 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
 }
 
 macro_rules! mean_to_root {
-    ($s:ty, $d:tt, $root:ty, |$c:ident, $axes:ident| $build:expr) => {
+    ($s:ty, $d:tt, $root:ty, |$c:ident, $axes:ident| $build:expr_2021) => {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
@@ -1001,10 +1001,12 @@ mod tests {
         let file = FileReader::open(&path).unwrap();
         let back = Histogram::<Weight, 2>::read_root(&file, "h2").unwrap();
         assert_eq!(back, h);
-        assert!(Hist::reg(1, 0.0, 1.0)
-            .weight()
-            .write_root(&path, Compression::None)
-            .is_err());
+        assert!(
+            Hist::reg(1, 0.0, 1.0)
+                .weight()
+                .write_root(&path, Compression::None)
+                .is_err()
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

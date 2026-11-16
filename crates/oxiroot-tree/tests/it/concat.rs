@@ -1,6 +1,6 @@
 //! Concatenating trees with [`concat_trees`] — the `hadd` building block.
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{concat_trees, write_tree_file, Branch, BranchValues, Tree, TreeReader};
+use oxiroot_tree::{Branch, BranchValues, Tree, TreeReader, concat_trees, write_tree_file};
 
 /// Write `branches` as tree `Events` to a fresh temp file and reopen it.
 fn write_open(tag: &str, branches: Vec<Branch>) -> (FileReader, &'static str) {

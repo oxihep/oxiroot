@@ -8,7 +8,7 @@
 //! fKeyLen`); for variable-length branches `[border, fObjLen)` is the
 //! `fEntryOffset` array.
 
-use oxiroot_io_core::{decompress_payload, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, decompress_payload};
 
 /// Key version at or above which a `Key` uses 64-bit seek pointers.
 const KEY_BIG_VERSION: u16 = 1000;

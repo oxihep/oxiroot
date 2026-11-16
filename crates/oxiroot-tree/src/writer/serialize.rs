@@ -4,15 +4,15 @@
 use std::collections::HashMap;
 
 use oxiroot_io_core::{
-    write_named, write_object_base, CountToken, Key, Patch, WBuffer, K_BYTE_COUNT_MASK,
+    CountToken, K_BYTE_COUNT_MASK, Key, Patch, WBuffer, write_named, write_object_base,
 };
 
 use super::baskets::BasketRec;
 use super::branch::{
-    class_checksum, member_type_info, vec_row_lengths, Branch, BranchKind, SplitMember,
+    Branch, BranchKind, SplitMember, class_checksum, member_type_info, vec_row_lengths,
 };
 use super::layout::Kind;
-use super::{LeafRefs, K_MAP_OFFSET, OBJ_BITS};
+use super::{K_MAP_OFFSET, LeafRefs, OBJ_BITS};
 
 /// Write a byte-counted att base (`TAttLine`/`Fill`/`Marker`).
 fn write_attline(w: &mut WBuffer) {

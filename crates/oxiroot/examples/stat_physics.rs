@@ -9,8 +9,8 @@
 //! ```
 
 use oxiroot::stat::{
-    clopper_pearson, combine_measurements, feldman_cousins, poisson_conf_interval, poisson_sf,
-    significance_from_pvalue, weighted_mean, wilson_interval, StatError,
+    StatError, clopper_pearson, combine_measurements, feldman_cousins, poisson_conf_interval,
+    poisson_sf, significance_from_pvalue, weighted_mean, wilson_interval,
 };
 
 fn main() -> Result<(), StatError> {

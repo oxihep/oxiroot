@@ -32,8 +32,8 @@ fn main() {
 #[cfg(feature = "plot")]
 fn main() -> oxiroot::Result<()> {
     use oxiroot::plot::{
-        ratio_subplots, Axes, Color, ErrorbarOpts, FontSet, Hist2dOpts, HistOpts, HistType,
-        SaveOpts, Style,
+        Axes, Color, ErrorbarOpts, FontSet, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
+        ratio_subplots,
     };
     use oxiroot::prelude::*;
 
@@ -145,11 +145,7 @@ fn main() -> oxiroot::Result<()> {
         .zip(&dy)
         .map(|(&x, &y)| {
             let c = bin_content(x);
-            if c > 0.0 {
-                y / c
-            } else {
-                1.0
-            }
+            if c > 0.0 { y / c } else { 1.0 }
         })
         .collect();
     let ratio_ey: Vec<f64> = dx
@@ -157,11 +153,7 @@ fn main() -> oxiroot::Result<()> {
         .zip(&dy)
         .map(|(&x, &y)| {
             let c = bin_content(x);
-            if c > 0.0 {
-                y.sqrt() / c
-            } else {
-                0.0
-            }
+            if c > 0.0 { y.sqrt() / c } else { 0.0 }
         })
         .collect();
     let rgraph = Graph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey)?.named("r");

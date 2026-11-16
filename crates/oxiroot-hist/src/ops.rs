@@ -646,7 +646,7 @@ impl Graph {
                     "cannot append a {} to a {}: they carry different error bars",
                     other.class_name(),
                     self.class_name()
-                )))
+                )));
             }
         }
         self.x.extend_from_slice(&other.x);

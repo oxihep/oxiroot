@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::{object_bytes_any, Compression, FileReader, ReadRoot, WriteRoot};
+use oxiroot_io_core::{Compression, FileReader, ReadRoot, WriteRoot, object_bytes_any};
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
 fn fixture() -> FileReader {

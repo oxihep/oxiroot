@@ -26,7 +26,7 @@
 //! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
 use oxiroot_io_core::{
-    read_object_base, skip_versioned, Error, FileReader, RBuffer, Result, TagReader,
+    Error, FileReader, RBuffer, Result, TagReader, read_object_base, skip_versioned,
 };
 
 use crate::axis::Axis;

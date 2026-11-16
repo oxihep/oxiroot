@@ -2,7 +2,7 @@
 //! RNTuple, field or column, a key holding another class, and corrupt data.
 
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
-use oxiroot_rntuple::{rntuple_file_bytes, Field, NtupleReader};
+use oxiroot_rntuple::{Field, NtupleReader, rntuple_file_bytes};
 
 fn bytes() -> Vec<u8> {
     let fields = [Field::f64("x", vec![1.0, 2.0, 3.0])];

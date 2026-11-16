@@ -7,7 +7,7 @@
 //! for the rest (an empty `fFunctions`, like [`Graph`](crate::Graph)); the
 //! `fHistogram` display frame is transient in ROOT and not persisted.
 
-use oxiroot_io_core::{read_named, skip_versioned, Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, read_named, skip_versioned};
 
 use crate::base::{check_len, object_bytes_any};
 

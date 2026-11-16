@@ -2,11 +2,11 @@
 //! aliases.
 
 use oxiroot_io_core::{
-    read_named, read_object_base, Error, RBuffer, Result, StreamerElement, StreamerRegistry,
-    TagReader, K_BYTE_COUNT_MASK,
+    Error, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerElement, StreamerRegistry, TagReader,
+    read_named, read_object_base,
 };
 
-use super::members::{member_int, member_str, walk_members, Members};
+use super::members::{Members, member_int, member_str, walk_members};
 use super::types::{
     member_leaf_type, parse_nested_vector_elem, parse_vector_elem, streamer_type_to_leaf,
 };
@@ -453,11 +453,11 @@ fn read_branch_element(
             class: "TBranchElement".to_string(),
         })?;
     let _vh = r.read_version()?; // TBranchElement — the object's own version
-                                 // Walk the TBranchElement elements: the first is the `TBranch` base (read
-                                 // in place via its own streamer info, capturing the basket locators and the
-                                 // sub-branches), then fClassName/fType/fStreamerType. We stop after
-                                 // fStreamerType — fMaximum/fBranchCount* are not needed and would mean
-                                 // streaming object pointers.
+    // Walk the TBranchElement elements: the first is the `TBranch` base (read
+    // in place via its own streamer info, capturing the basket locators and the
+    // sub-branches), then fClassName/fType/fStreamerType. We stop after
+    // fStreamerType — fMaximum/fBranchCount* are not needed and would mean
+    // streaming object pointers.
     let (out, sub, _leaves) =
         read_tbranch_base(r, tags, diag, reg, &info.elements, "fStreamerType")?;
 
@@ -613,10 +613,10 @@ fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Leaf>> {
     let mut leaves = Vec::new();
     for _ in 0..size {
         let header = tags.read_header(r)?;
-        if let Some(class) = header.class_name.clone() {
-            if let Some(leaf) = read_leaf(r, &class)? {
-                leaves.push(leaf);
-            }
+        if let Some(class) = header.class_name.clone()
+            && let Some(leaf) = read_leaf(r, &class)?
+        {
+            leaves.push(leaf);
         }
         if let Some(end) = header.end {
             r.seek(end)?;
@@ -636,8 +636,8 @@ fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
     let offset = r.be_i32()?; // fOffset
     r.u8()?; // fIsRange
     let unsigned = r.u8()? != 0; // fIsUnsigned
-                                 // fLeafCount, fMinimum, fMaximum follow; we skip to the leaf's end via the
-                                 // caller's byte count.
+    // fLeafCount, fMinimum, fMaximum follow; we skip to the leaf's end via the
+    // caller's byte count.
     Ok(LeafType::from_leaf(class, unsigned).map(|leaf_type| Leaf {
         name: named.name,
         title: named.title,

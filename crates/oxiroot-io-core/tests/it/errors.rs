@@ -2,8 +2,8 @@
 //! holding another class, invalid input and an unsupported URL scheme.
 
 use oxiroot_io_core::{
-    object_bytes_any, Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue,
-    Parameter, ReadRoot,
+    Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue, Parameter,
+    ReadRoot, object_bytes_any,
 };
 
 /// A file with a string `s` and a list `l` at the top, and a string `t` in the

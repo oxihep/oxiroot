@@ -10,7 +10,7 @@ use oxiroot::tree::{BranchValues, TreeReader};
 use oxiroot::{FileReader, Value};
 
 use crate::json::Json;
-use crate::util::{classify, locate_class, parse_spec, split_obj, CmdResult, Kind, Table};
+use crate::util::{CmdResult, Kind, Table, classify, locate_class, parse_spec, split_obj};
 
 /// Arguments for `oxroot dump`.
 #[derive(ClapArgs)]
@@ -558,7 +558,7 @@ fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
 fn branch_cell(values: &BranchValues, i: usize) -> String {
     use BranchValues::*;
     macro_rules! scalar {
-        ($v:expr) => {
+        ($v:expr_2021) => {
             $v.get(i).map(ToString::to_string).unwrap_or_default()
         };
     }
@@ -596,7 +596,7 @@ fn branch_cell(values: &BranchValues, i: usize) -> String {
 fn field_cell(values: &FieldValues, i: usize) -> String {
     use FieldValues::*;
     macro_rules! scalar {
-        ($v:expr) => {
+        ($v:expr_2021) => {
             $v.get(i).map(ToString::to_string).unwrap_or_default()
         };
     }

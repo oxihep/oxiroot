@@ -10,7 +10,7 @@
 //! yet expanded.
 
 use oxiroot_io_core::{
-    decompress_payload, read_named, read_object_base, Error, FileReader, RBuffer, Result, TagReader,
+    Error, FileReader, RBuffer, Result, TagReader, decompress_payload, read_named, read_object_base,
 };
 
 /// Entries per `TEntryListBlock` window (ROOT's `TEntryListBlock::kBlockSize`).

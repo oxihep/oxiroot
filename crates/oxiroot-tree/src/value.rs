@@ -255,7 +255,7 @@ impl BranchValues {
     pub fn append(&mut self, other: BranchValues) -> Result<()> {
         use BranchValues::*;
         macro_rules! join {
-            ($a:expr, $variant:ident) => {
+            ($a:expr_2021, $variant:ident) => {
                 match other {
                     $variant(b) => {
                         $a.extend(b);

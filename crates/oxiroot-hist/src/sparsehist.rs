@@ -8,10 +8,10 @@
 //! stride is `2^Σ_{e<d} bits[e]`), packed big-endian into
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
-use oxiroot_io_core::{read_named, read_object_base, FileReader, RBuffer, Result};
+use oxiroot_io_core::{FileReader, RBuffer, Result, read_named, read_object_base};
 
 use crate::axis::Axis;
-use crate::base::{check_len, object_bytes, object_bytes_in, read_tarray, BinContentType};
+use crate::base::{BinContentType, check_len, object_bytes, object_bytes_in, read_tarray};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
 /// content.

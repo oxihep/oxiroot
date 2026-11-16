@@ -47,12 +47,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use oxiroot_io_core::{Compression, Error, FileReader, Result, KSTART_BIG_FILE};
+use oxiroot_io_core::{Compression, Error, FileReader, KSTART_BIG_FILE, Result};
 
 mod histograms;
-pub use histograms::{merge_histogram_files, HistMergeOutcome};
-use oxiroot_rntuple::{append_ntuples, concat_ntuples, NtupleReader, NtupleWriter, ANCHOR_CLASS};
-use oxiroot_tree::{append_trees, concat_trees, TreeReader, TreeWriter};
+pub use histograms::{HistMergeOutcome, merge_histogram_files};
+use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader, NtupleWriter, append_ntuples, concat_ntuples};
+use oxiroot_tree::{TreeReader, TreeWriter, append_trees, concat_trees};
 
 /// Inputs larger than this in total are merged straight into the 64-bit
 /// container form; smaller ones switch to it only if the output turns out not to

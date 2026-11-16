@@ -8,9 +8,9 @@
 //! cargo run -p oxiroot --example inspect
 //! ```
 
+use oxiroot::Value;
 use oxiroot::file::Key;
 use oxiroot::prelude::*;
-use oxiroot::Value;
 
 /// A ROOT `TDirectory` can appear on disk under either class name (the in-memory
 /// class oxiroot writes vs. the on-disk class official ROOT C++ records).

@@ -2,11 +2,11 @@
 
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::{compress_if_smaller, ContainerWriter, DirId, Key, Result, WBuffer, DATIME};
+use oxiroot_io_core::{ContainerWriter, DATIME, DirId, Key, Result, WBuffer, compress_if_smaller};
 
-use super::branch::{vec_row_lengths, Branch, BranchKind};
-use super::layout::Kind;
 use super::NESTED_NOT_WRITABLE;
+use super::branch::{Branch, BranchKind, vec_row_lengths};
+use super::layout::Kind;
 use crate::value::BranchValues;
 
 /// One basket's recorded location, for the branch metadata.
@@ -122,7 +122,7 @@ fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
 pub(super) fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
     use BranchValues::*;
     macro_rules! sl {
-        ($variant:ident, $v:expr) => {{
+        ($variant:ident, $v:expr_2021) => {{
             let end = (start + len).min($v.len());
             let s = start.min(end);
             $variant($v[s..end].to_vec())

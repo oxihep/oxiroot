@@ -1,6 +1,6 @@
 # Installation
 
-oxiroot is pure Rust. It needs a **Rust 1.95+** toolchain and nothing else — no
+oxiroot is pure Rust. It needs a **Rust 1.100+** toolchain and nothing else — no
 libROOT, no Python, no system libraries. All compression codecs are pure-Rust
 crates pulled in automatically.
 

@@ -230,7 +230,7 @@ jobs:
           command: check advisories bans sources
 
   msrv:
-    name: minimum Rust version (1.95)
+    name: minimum Rust version (1.100)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -238,7 +238,7 @@ jobs:
       - name: Install the workspace's declared rust-version
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.95"
+          toolchain: "1.100"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

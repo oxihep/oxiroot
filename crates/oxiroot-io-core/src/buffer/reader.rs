@@ -292,13 +292,13 @@ impl<'a> RBuffer<'a> {
     ///
     /// A no-op when the header carried no byte count.
     pub fn check_byte_count(&self, vh: &VersionHeader) -> Result<()> {
-        if let Some(end) = vh.end {
-            if self.pos != end {
-                return Err(Error::ByteCountMismatch {
-                    expected: end,
-                    got: self.pos,
-                });
-            }
+        if let Some(end) = vh.end
+            && self.pos != end
+        {
+            return Err(Error::ByteCountMismatch {
+                expected: end,
+                got: self.pos,
+            });
         }
         Ok(())
     }

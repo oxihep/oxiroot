@@ -1,14 +1,14 @@
 //! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
-use oxiroot_io_core::{decompress_payload, find_key, Error, FileReader, Result};
+use oxiroot_io_core::{Error, FileReader, Result, decompress_payload, find_key};
 
-use crate::anchor::{RNTupleAnchor, ANCHOR_CLASS};
-use crate::envelope::{read_envelope, ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST};
+use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
+use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
 use crate::field::{self, FieldValues};
 use crate::footer::Footer;
 use crate::header::{Header, StructRole};
-use crate::page::{read_column, ColumnValues};
+use crate::page::{ColumnValues, read_column};
 use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 
 /// Reads an RNTuple from a [`FileReader`]. Opening verifies the anchor and
@@ -379,7 +379,7 @@ impl NtupleReader {
                 let bytes = match self.read_column(file, char_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
-                        return Err(Error::Format(format!("string chars decoded as {other:?}")))
+                        return Err(Error::Format(format!("string chars decoded as {other:?}")));
                     }
                 };
                 field::strings(&offsets, &bytes)
@@ -387,10 +387,10 @@ impl NtupleReader {
             StructRole::Leaf => {
                 // A `std::atomic<T>` (and similar transparent wrappers) is a Leaf
                 // with no column of its own that delegates to a single child leaf.
-                if columns.is_empty() {
-                    if let Some(&child) = self.child_fields(field_idx).first() {
-                        return self.read_field_tree(file, child);
-                    }
+                if columns.is_empty()
+                    && let Some(&child) = self.child_fields(field_idx).first()
+                {
+                    return self.read_field_tree(file, child);
                 }
                 let ci = *columns
                     .first()
@@ -452,7 +452,7 @@ impl NtupleReader {
                     other => {
                         return Err(Error::Format(format!(
                             "streamer field bytes decoded as {other:?}"
-                        )))
+                        )));
                     }
                 };
                 let registry = file.streamer_registry()?;
@@ -479,7 +479,7 @@ impl NtupleReader {
                     other => {
                         return Err(Error::Format(format!(
                             "variant switch column decoded as {other:?}"
-                        )))
+                        )));
                     }
                 };
                 let children = self.child_fields(field_idx);
@@ -571,7 +571,7 @@ impl NtupleReader {
                 other => {
                     return Err(Error::Format(format!(
                         "expected index offsets, got {other:?}"
-                    )))
+                    )));
                 }
             };
             // Offsets are decoded from the file; use wrapping arithmetic (as
@@ -598,7 +598,7 @@ fn is_late_field(type_name: &str) -> bool {
 fn backfill_leading(values: ColumnValues, k: usize) -> Result<ColumnValues> {
     use ColumnValues::*;
     macro_rules! pre {
-        ($variant:ident, $v:ident, $default:expr) => {{
+        ($variant:ident, $v:ident, $default:expr_2021) => {{
             let mut out = Vec::new();
             out.try_reserve_exact(k.saturating_add($v.len()))
                 .map_err(|_| {

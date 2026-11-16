@@ -1,7 +1,7 @@
 # oxiroot
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.100+](https://img.shields.io/badge/rust-1.100%2B-orange.svg)](https://www.rust-lang.org)
 [![No libROOT](https://img.shields.io/badge/dependency-no%20libROOT-success.svg)](#)
 
 Pure-Rust IO for the [CERN ROOT](https://root.cern) file format — **read and
