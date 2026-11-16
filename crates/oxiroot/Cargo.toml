@@ -65,6 +65,22 @@ plot = [
   "oxiroot-hist/plot",
 ]
 
+[dev-dependencies]
+# Benchmarks only (`cargo bench -p oxiroot`); no plots, so no plotters.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "fill"
+harness = false
+
+[[bench]]
+name = "read"
+harness = false
+
+[[bench]]
+name = "decompress"
+harness = false
+
 # Build docs.rs with every feature so fitting, the argmin backend, rayon, and
 # mmap all appear in the rendered API reference.
 [package.metadata.docs.rs]

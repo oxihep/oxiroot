@@ -110,6 +110,37 @@ jobs:
       - name: Test with all features
         run: cargo test --locked --workspace --all-features
 
+  bench:
+    name: benchmarks
+    # Compile-only on PRs, so the benches keep building. The weekly run
+    # measures them and keeps criterion's report as an artifact; shared
+    # runners are too noisy to gate on the numbers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the benches
+        run: cargo bench --locked -p oxiroot --no-run
+
+      - name: Run the benches (weekly)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: cargo bench --locked -p oxiroot -- --warm-up-time 1 --measurement-time 3
+
+      - name: Keep the criterion report
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: criterion
+          path: target/criterion
+
   features:
     name: feature combinations
     runs-on: ubuntu-latest

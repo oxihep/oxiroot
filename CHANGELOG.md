@@ -185,6 +185,21 @@ change the API.
   - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
     writes (10–31 and 1–32).
 
+### Testing
+
+- Criterion benchmarks in `crates/oxiroot/benches`: `fill` (ROOT and oxihist
+  histograms, `ThreadedHist` on 1 and 4 threads), `read` (TTree flat and
+  jagged branches, an RNTuple, 500 histograms by key) and `decompress`
+  (compress and decompress 4 MiB under each codec). Run them with
+  `cargo bench -p oxiroot`; CI builds them on every PR and runs them weekly,
+  keeping criterion's report.
+- The ROOT C++ and uproot interop jobs read 2-D and 3-D histograms, a
+  profile and a 1000-bin histogram written under each of zlib, LZ4, Zstd and
+  LZMA. The ROOT job uses a pinned image (6.38.00) on PRs.
+- CI runs on macOS too; a weekly run tests the latest stable Rust and ROOT
+  and fuzzes every target for two minutes with a 2 GB memory limit. Jobs
+  get a read-only token, and a new push cancels a PR's previous run.
+
 ### Documentation
 
 - Every Rust snippet of the guides and the README now compiles in CI
@@ -197,15 +212,6 @@ change the API.
 - The bridge's lossy cases (Integer and category axes, growth, axis names,
   `fEntries`) are listed in the `convert` module docs and the histograms
   guide, and covered by tests.
-
-### Testing
-
-- The ROOT C++ and uproot interop jobs read 2-D and 3-D histograms, a
-  profile and a 1000-bin histogram written under each of zlib, LZ4, Zstd and
-  LZMA. The ROOT job uses a pinned image (6.38.00) on PRs.
-- CI runs on macOS too; a weekly run tests the latest stable Rust and ROOT
-  and fuzzes every target for two minutes with a 2 GB memory limit. Jobs
-  get a read-only token, and a new push cancels a PR's previous run.
 
 ## [0.3.0] — 2026-09-24
 
