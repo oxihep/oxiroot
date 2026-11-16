@@ -271,6 +271,7 @@ cargo run -p oxiroot --example analysis
   `TThreadedObject<Hist1D>`: share `&hist`, call `hist.fill(x)` from any thread —
   each thread transparently gets its own copy — then `hist.merge()` combines them
   exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
+  <!-- fragment -->
   ```rust
   let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("h"));
   std::thread::scope(|s| for chunk in data.chunks(n) {
@@ -286,6 +287,7 @@ cargo run -p oxiroot --example analysis
 - Write one object with `h.write_root(path, compression)`. For several objects,
   subdirectories, or appending, use `FileWriter` — one entry point for
   all file composition:
+  <!-- fragment -->
   ```rust
   FileWriter::create("out.root")
       .add(&h)                            // any &dyn WriteRoot: hist, profile, graph…
@@ -333,10 +335,12 @@ feature**, `Minimizer::NelderMead` — a gradient-free simplex from the
 [`argmin`](https://crates.io/crates/argmin) crate (parameter errors from a
 numerical Hessian; no MINOS), a handy independent cross-check.
 
+<!-- fragment -->
 ```rust
 let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMead));
 ```
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*; // the `fit` feature is on by default
 
@@ -611,6 +615,7 @@ labels are typeset as real LaTeX math by the pure-Rust
 
 <sub>All figures are produced by `cargo run -p oxiroot --example plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("CMS", "Preliminary")`).</sub>
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::{Axes, HistType, HistOpts, ErrorbarOpts, Hist2dOpts, Color};
 use oxiroot::prelude::*; // the `plot` feature is on by default

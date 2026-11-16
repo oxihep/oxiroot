@@ -120,6 +120,12 @@ change the API.
 
 ### Fixed
 
+- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
+  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
+- **Reading objects from a subdirectory re-read its key list each time, and
+  every object read re-parsed the file's streamer info.** `FileReader` now
+  reads each subdirectory once and parses the streamer info once: 3 000
+  objects from one subdirectory take 13 ms instead of 425 ms.
 - **`ThreadedHist` got slower as threads were added.** Every fill took a
   shared read lock to find the thread's copy. The copies now live in
   thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
@@ -167,6 +173,16 @@ change the API.
     65 536 elements per entry, and allocated fallibly);
   - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
     writes (10–31 and 1–32).
+
+### Documentation
+
+- Every Rust snippet of the guides and the README now compiles in CI
+  (`scripts/check_guide_snippets.py`, 129 blocks on 18 pages). Fixed the
+  snippets that had drifted: the `Func1D` import in the plotting guide, the
+  error match in the reading guide, the non-exhaustive `GraphErrors` match.
+- The crate-layout page lists oxihist; the installation page documents the
+  `http` and `xrootd` features; rustdoc no longer names the removed
+  `.profile()` and `.int32()` builder calls.
 
 ## [0.3.0] — 2026-09-24
 

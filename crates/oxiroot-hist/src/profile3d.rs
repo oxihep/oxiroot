@@ -85,7 +85,7 @@ impl Profile3D {
 
     /// Create an empty `Profile3D` with uniform x/y/z bins and no t
     /// restriction. Internal primitive behind the public builder:
-    /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).profile()`.
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).mean().to_root()`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         nx: i32,

@@ -247,6 +247,7 @@ let fit = peak.fit_opts(&model, &opts);
 `fit_into` writes the fitted parameters back into the model so it evaluates the
 fitted curve afterwards:
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 

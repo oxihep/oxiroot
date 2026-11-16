@@ -98,6 +98,7 @@ a closure on the calling thread's copy (creating it on first use). Use it to
 reach any histogram method, or to fold a whole batch under a single slot
 acquisition instead of one per value:
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
@@ -113,8 +114,10 @@ hist.with_local(|h| {
 ### Diagnostics
 
 `num_slots()` reports how many threads have created a private copy so far —
-useful for confirming the work actually spread across the pool:
+useful for confirming the work actually spread across the pool (call it
+before `merge`, which consumes the wrapper):
 
+<!-- fragment -->
 ```rust
 println!("filled across {} thread-local copies", hist.num_slots());
 ```
@@ -137,6 +140,7 @@ Its `Mergeable::merge_all` folds an iterator of histograms into one — an in-me
 equivalent of ROOT's `hadd`. It returns `Ok(None)` for an empty iterator, or the
 binning-mismatch error from the first incompatible pair:
 
+<!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
 
