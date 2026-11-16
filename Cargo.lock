@@ -747,8 +747,8 @@ dependencies = [
 
 [[package]]
 name = "oxifit"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.1.0#c844d84e67355712e6d5bc391e4235e2ff33c5fe"
+version = "0.1.1"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad6f1f3dcb29ab6a2642"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -759,17 +759,18 @@ dependencies = [
 
 [[package]]
 name = "oxifit-formula"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.1.0#c844d84e67355712e6d5bc391e4235e2ff33c5fe"
+version = "0.1.1"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad6f1f3dcb29ab6a2642"
 
 [[package]]
 name = "oxihist"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.1.0#15deeca00b91f3389689b18159bbf9aab0a9dc2b"
+version = "0.2.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.2.0#d48e4fed6460d1361216206ba3a8054a44d42220"
 dependencies = [
  "oxifit",
  "oxiplot",
  "rayon",
+ "thread_local",
 ]
 
 [[package]]
@@ -779,8 +780,8 @@ source = "git+https://github.com/oxihep/oxiparticle?tag=v0.1.0#61ca817e2a2bff1d9
 
 [[package]]
 name = "oxiplot"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.1.0#8a4fd94619262702872f3cdb8801e6bb0a00ac7d"
+version = "0.1.1"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.1.1#1c5a61cedc8bb4bfe28f2ca9fee9df80262ffa83"
 dependencies = [
  "ab_glyph",
  "oxifit",
@@ -791,8 +792,8 @@ dependencies = [
 
 [[package]]
 name = "oxiplot-tex"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.1.0#8a4fd94619262702872f3cdb8801e6bb0a00ac7d"
+version = "0.1.1"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.1.1#1c5a61cedc8bb4bfe28f2ca9fee9df80262ffa83"
 dependencies = [
  "ttf-parser",
 ]
