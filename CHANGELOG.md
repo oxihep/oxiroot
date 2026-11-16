@@ -14,6 +14,9 @@ change the API.
 
 ### Changed
 
+- oxihist v0.4.2: the `Hist` builder's histograms fill numbers on regular
+  and variable axes 2–3× faster, on par with `Hist1D` (the `fill` bench:
+  185 → 762 M fills/s).
 - The oxihep dependencies move to oxiplot v0.2.0 and oxihist v0.4.0. oxiplot
   now reads fonts with skrifa instead of the unmaintained ttf-parser and
   ab_glyph, so the RUSTSEC-2026-0192 advisory ignore is removed. Plots
