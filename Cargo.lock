@@ -887,7 +887,7 @@ source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad
 [[package]]
 name = "oxihist"
 version = "0.3.0"
-source = "git+https://github.com/oxihep/oxihist?branch=threaded%2Fshared-core#3e2326be50119040c2a051f1496b1d11dc6bd3dc"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.3.0#d354a87438cdf16e5e9cc32592c6001973e7b9b2"
 dependencies = [
  "oxifit",
  "oxiplot",
