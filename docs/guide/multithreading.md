@@ -76,20 +76,23 @@ no shared lock and fills scale with the number of threads: 24 M fills of a
 | `fill_weight(..., w)` | Fill the calling thread's copy with weight `w`. |
 | `with_local(\|h\| ...)` | Run a closure on the calling thread's copy — reach any method, or batch a whole loop under one slot acquisition. |
 | `num_slots()` | Number of threads that have filled so far (diagnostic). |
-| `merge()` | Consume the accumulator, returning the combined histogram (`Result<H>`). |
+| `merge()` | Consume the accumulator, returning the combined histogram (`Result<H, H::Error>`). |
 
 The `fill` / `fill_weight` convenience methods are provided for every
 fillable type — `Hist1D`, `Hist2D`, `Hist3D` and the three profiles — with the matching
-arity:
+arity. `ThreadedHist` itself is oxihist's (the same accumulator fills oxihist
+histograms), so for ROOT types these methods come from four traits, by the
+number of values a fill takes. The prelude brings them in; without it, import
+the one you fill through:
 
-| Type | `fill` | `fill_weight` |
-| --- | --- | --- |
-| `ThreadedHist<Hist1D>` | `fill(x)` | `fill_weight(x, w)` |
-| `ThreadedHist<Hist2D>` | `fill(x, y)` | `fill_weight(x, y, w)` |
-| `ThreadedHist<Hist3D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
-| `ThreadedHist<Profile1D>` | `fill(x, y)` | `fill_weight(x, y, w)` |
-| `ThreadedHist<Profile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` |
-| `ThreadedHist<Profile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` |
+| Type | `fill` | `fill_weight` | Trait |
+| --- | --- | --- | --- |
+| `ThreadedHist<Hist1D>` | `fill(x)` | `fill_weight(x, w)` | `ThreadedFill1` |
+| `ThreadedHist<Hist2D>` | `fill(x, y)` | `fill_weight(x, y, w)` | `ThreadedFill2` |
+| `ThreadedHist<Hist3D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` | `ThreadedFill3` |
+| `ThreadedHist<Profile1D>` | `fill(x, y)` | `fill_weight(x, y, w)` | `ThreadedFill2` |
+| `ThreadedHist<Profile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` | `ThreadedFill3` |
+| `ThreadedHist<Profile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` | `ThreadedFill4` |
 
 ### `with_local`
 

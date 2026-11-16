@@ -205,6 +205,8 @@ impl HistStack {
 }
 
 impl Mergeable for HistStack {
+    type Error = oxiroot_io_core::Error;
+
     /// Merge the stacks' histograms by name, as ROOT's `HistStack::Merge` and
     /// `hadd` do: a histogram both stacks hold is summed, one only `other`
     /// holds is appended.

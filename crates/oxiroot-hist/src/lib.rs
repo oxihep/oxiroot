@@ -86,5 +86,7 @@ pub use read::ReadRoot;
 pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
-pub use threaded::{Mergeable, ThreadedHist};
+pub use threaded::{
+    Mergeable, ThreadedFill1, ThreadedFill2, ThreadedFill3, ThreadedFill4, ThreadedHist,
+};
 pub use write::{hist_streamer_classes, FileWriter, SubdirWriter, WriteRoot};

@@ -161,7 +161,8 @@ pub mod prelude {
         Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, FromRoot, Graph,
         Graph2D, GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
         KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
-        Profile3D, Random, RootHistogram, SparseBin, SparseHist, ThreadedHist, ToRoot,
+        Profile3D, Random, RootHistogram, SparseBin, SparseHist, ThreadedFill1, ThreadedFill2,
+        ThreadedFill3, ThreadedFill4, ThreadedHist, ToRoot,
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};

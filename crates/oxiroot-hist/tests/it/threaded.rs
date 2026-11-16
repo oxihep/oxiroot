@@ -3,7 +3,7 @@
 //! moment sums to rounding, since summation order differs).
 
 use oxiroot_hist::ToRoot;
-use oxiroot_hist::{Hist, Hist1D, Mergeable, ThreadedHist};
+use oxiroot_hist::{Hist, Hist1D, Mergeable, ThreadedFill1, ThreadedFill2, ThreadedHist};
 
 fn data() -> Vec<f64> {
     // Deterministic, varied, all in-range over [0, 100).
