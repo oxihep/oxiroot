@@ -33,13 +33,27 @@
 //! | `StrCategory`, `IntCategory`, `Boolean` axis | a labelled axis, one bin per category |
 //! | histogram name / title, axis label | `fName` / `fTitle`, the axis title |
 //!
+//! # What does not survive the trip
+//!
 //! ROOT always has both flow bins; an oxihist axis without one leaves it empty.
 //! ROOT's summary moments (`fTsumw`, `fTsumwx`, …) are recomputed from the bin
 //! centers, and `fEntries` is the sum of the bin values, as uproot does: oxihist
 //! does not count fills. Reading back gives `Regular`, `Variable` or
 //! `StrCategory` axes (a labelled axis's underflow bin is dropped, since a
 //! category axis has none), [`Weight`] storage for histograms and
-//! [`WeightedMean`] for profiles.
+//! [`WeightedMean`] for profiles. So, read back:
+//!
+//! - an `Integer` axis is a `Regular` one with the same bins;
+//! - an `IntCategory` or `Boolean` axis is a `StrCategory` one over its labels;
+//! - an axis's growth flag and its [`name`](oxihist::Axis::name) are gone (ROOT
+//!   axes are always `xaxis`/`yaxis`/`zaxis`), only its label is kept;
+//! - a category axis with no categories yet is written as one empty, unlabelled
+//!   ROOT bin, and comes back as a one-bin `Regular` axis over `[0, 1)`;
+//! - the fill count is not kept, since `fEntries` is written as the sum of the
+//!   bin values.
+//!
+//! [`ToRoot::try_to_root`] refuses what ROOT cannot hold at all: an axis with
+//! more than `i32::MAX` bins, or an axis kind this version does not know.
 //!
 //! A profile's sums convert exactly, but the two libraries put different error
 //! bars on them: ROOT's error on a bin mean uses the population spread
@@ -66,24 +80,60 @@ pub trait ToRoot {
     type Root: WriteRoot;
 
     /// The ROOT histogram, as a `TH1D`/`TH2D`/`TH3D` (`TH1L`/… for [`Int64`]
+    /// storage) or a profile, stored with the given bin content type (`TH1F`
+    /// for [`BinContentType::F32`], …; profiles have no content type, so it is
+    /// ignored for them).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if an axis has more than `i32::MAX` bins, or is
+    /// of a kind this version cannot map (oxihist's `AxisKind` is
+    /// non-exhaustive).
+    fn try_to_root_as(&self, content: BinContentType) -> Result<Self::Root>;
+
+    /// [`try_to_root_as`](ToRoot::try_to_root_as) with the storage's own
+    /// content type.
+    ///
+    /// # Errors
+    ///
+    /// As [`try_to_root_as`](ToRoot::try_to_root_as).
+    fn try_to_root(&self) -> Result<Self::Root>;
+
+    /// The ROOT histogram, as a `TH1D`/`TH2D`/`TH3D` (`TH1L`/… for [`Int64`]
     /// storage) or a profile.
+    ///
+    /// # Panics
+    ///
+    /// If ROOT cannot hold the histogram; see
+    /// [`try_to_root`](ToRoot::try_to_root), which returns the error instead.
     #[must_use]
-    fn to_root(&self) -> Self::Root;
+    fn to_root(&self) -> Self::Root {
+        self.try_to_root().unwrap_or_else(|e| panic!("{e}"))
+    }
 
     /// Like [`to_root`](ToRoot::to_root), stored with the given bin content
     /// type (`TH1F` for [`BinContentType::F32`], …). Profiles have no content
     /// type, so it is ignored for them.
+    ///
+    /// # Panics
+    ///
+    /// As [`to_root`](ToRoot::to_root).
     #[must_use]
-    fn to_root_as(&self, content: BinContentType) -> Self::Root;
+    fn to_root_as(&self, content: BinContentType) -> Self::Root {
+        self.try_to_root_as(content)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
 
     /// Write the histogram, under its name, as the only object of a new ROOT
     /// file at `path`.
     ///
     /// # Errors
     ///
-    /// If the histogram has no name, or the file cannot be written.
+    /// If ROOT cannot hold the histogram (see
+    /// [`try_to_root`](ToRoot::try_to_root)), it has no name, or the file
+    /// cannot be written.
     fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        self.to_root().write_root(path, compression)
+        self.try_to_root()?.write_root(path, compression)
     }
 }
 
@@ -107,28 +157,62 @@ pub trait FromRoot: Sized {
 
 // --- axes -------------------------------------------------------------------
 
+/// The number of in-range bins the ROOT axis for `a` has: its size, but at
+/// least one (a category axis with no categories yet still needs a bin).
+fn root_nbins(a: &oxihist::Axis) -> usize {
+    a.size().max(1)
+}
+
+/// `n` as a ROOT bin count.
+fn root_count(n: usize) -> Result<i32> {
+    i32::try_from(n).map_err(|_| {
+        Error::InvalidInput(format!(
+            "an axis of {n} bins does not fit a ROOT axis (at most i32::MAX)"
+        ))
+    })
+}
+
 /// The ROOT axis for an oxihist axis.
-fn root_axis(a: &oxihist::Axis, name: &str) -> Axis {
-    let labelled = |labels: Vec<String>| {
+fn root_axis(a: &oxihist::Axis, name: &str) -> Result<Axis> {
+    let labelled = |labels: Vec<String>| -> Result<Axis> {
         let n = labels.len().max(1);
-        let mut ax = Axis::new(name, n as i32, 0.0, n as f64);
+        let mut ax = Axis::new(name, root_count(n)?, 0.0, n as f64);
         for (i, l) in labels.iter().enumerate() {
             ax.set_label(i + 1, l);
         }
-        ax
+        Ok(ax)
     };
     let mut ax = match a.kind() {
-        AxisKind::Regular { bins, lo, hi } => Axis::new(name, *bins as i32, *lo, *hi),
-        AxisKind::Variable { edges } => Axis::variable(name, edges),
-        AxisKind::Integer { lo, hi } => Axis::new(name, (hi - lo) as i32, *lo as f64, *hi as f64),
-        AxisKind::StrCategory { categories, .. } => labelled(categories.clone()),
-        AxisKind::IntCategory { categories, .. } => {
-            labelled(categories.iter().map(ToString::to_string).collect())
+        AxisKind::Regular { bins, lo, hi } => Axis::new(name, root_count(*bins)?, *lo, *hi),
+        AxisKind::Variable { edges } => {
+            root_count(edges.len().saturating_sub(1))?;
+            Axis::variable(name, edges)
         }
-        AxisKind::Boolean => labelled(vec!["false".into(), "true".into()]),
+        AxisKind::Integer { lo, hi } => {
+            Axis::new(name, root_count(a.size())?, *lo as f64, *hi as f64)
+        }
+        AxisKind::StrCategory { categories, .. } => labelled(categories.clone())?,
+        AxisKind::IntCategory { categories, .. } => {
+            labelled(categories.iter().map(ToString::to_string).collect())?
+        }
+        AxisKind::Boolean => labelled(vec!["false".into(), "true".into()])?,
+        other => {
+            return Err(Error::InvalidInput(format!(
+                "no ROOT axis for the oxihist axis kind {other:?}"
+            )))
+        }
     };
     ax.title.clone_from(&a.label);
-    ax
+    Ok(ax)
+}
+
+/// The ROOT axes for a histogram's axes.
+fn root_axes(axes: &[oxihist::Axis]) -> Result<Vec<Axis>> {
+    ["xaxis", "yaxis", "zaxis"]
+        .iter()
+        .zip(axes)
+        .map(|(n, a)| root_axis(a, n))
+        .collect()
 }
 
 /// The oxihist axis for a ROOT axis.
@@ -149,12 +233,21 @@ fn hist_axis(a: &Axis) -> Result<oxihist::Axis> {
 }
 
 /// The ROOT cell (flow bins included, first axis fastest) of oxihist bin
-/// `idx`, for axes of `nbins`.
-fn root_cell(idx: &[isize], nbins: &[usize]) -> usize {
+/// `idx`, for oxihist axes of `sizes` written as ROOT axes of `nbins`
+/// in-range bins (`nbins[k] >= sizes[k]`; they differ for an empty category
+/// axis, whose overflow must still land in ROOT's overflow cell).
+fn root_cell(idx: &[isize], sizes: &[usize], nbins: &[usize]) -> usize {
     let mut cell = 0;
     let mut stride = 1;
-    for (&i, &n) in idx.iter().zip(nbins) {
-        cell += (i + 1) as usize * stride;
+    for ((&i, &size), &n) in idx.iter().zip(sizes).zip(nbins) {
+        let r = if i < 0 {
+            0
+        } else if i as usize >= size {
+            n + 1
+        } else {
+            i as usize + 1
+        };
+        cell += r * stride;
         stride *= n + 2;
     }
     cell
@@ -199,6 +292,9 @@ impl RootCount for Weight {
 
 /// A histogram's cells and summary moments, in ROOT's layout.
 struct Cells {
+    /// The oxihist axis sizes.
+    sizes: Vec<usize>,
+    /// The ROOT axes' in-range bin counts.
     nbins: Vec<usize>,
     contents: Vec<f64>,
     sumw2: Vec<f64>,
@@ -217,10 +313,12 @@ fn cells<S: Storage, const D: usize>(
     value: impl Fn(&S::Bin) -> f64,
     var: impl Fn(&S::Bin) -> f64,
 ) -> Cells {
-    let nbins: Vec<usize> = h.axes().iter().map(oxihist::Axis::size).collect();
+    let sizes: Vec<usize> = h.axes().iter().map(oxihist::Axis::size).collect();
+    let nbins: Vec<usize> = h.axes().iter().map(root_nbins).collect();
     let centers: Vec<Vec<f64>> = h.axes().iter().map(oxihist::Axis::centers).collect();
     let ncells: usize = nbins.iter().map(|n| n + 2).product();
     let mut c = Cells {
+        sizes: sizes.clone(),
         nbins: nbins.clone(),
         contents: vec![0.0; ncells],
         sumw2: vec![0.0; ncells],
@@ -233,13 +331,13 @@ fn cells<S: Storage, const D: usize>(
     };
     for (idx, b) in h.iter(true) {
         let (w, v) = (value(b), var(b));
-        let cell = root_cell(&idx, &nbins);
+        let cell = root_cell(&idx, &sizes, &nbins);
         c.contents[cell] = w;
         c.sumw2[cell] = v;
         c.entries += w;
         let in_range = idx
             .iter()
-            .zip(&nbins)
+            .zip(&sizes)
             .all(|(&i, &n)| i >= 0 && (i as usize) < n);
         if !in_range {
             continue;
@@ -265,18 +363,14 @@ macro_rules! count_to_root {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
-            fn to_root(&self) -> $root {
-                self.to_root_as(<$s as RootCount>::CONTENT)
+            fn try_to_root(&self) -> Result<$root> {
+                self.try_to_root_as(<$s as RootCount>::CONTENT)
             }
 
-            fn to_root_as(&self, content: BinContentType) -> $root {
+            fn try_to_root_as(&self, content: BinContentType) -> Result<$root> {
                 let $h = self;
+                let $axes = root_axes(self.axes())?;
                 let $c = cells(self, <$s>::value, <$s>::variance);
-                let $axes: Vec<Axis> = ["xaxis", "yaxis", "zaxis"]
-                    .iter()
-                    .zip(self.axes())
-                    .map(|(n, a)| root_axis(a, n))
-                    .collect();
                 let mut r: $root = $build;
                 r.name.clone_from(&$h.name);
                 r.title.clone_from(&$h.title);
@@ -289,7 +383,7 @@ macro_rules! count_to_root {
                 if <$s as RootCount>::SUMW2 {
                     r.sumw2 = $c.sumw2;
                 }
-                r.with_bin_content_type(content)
+                Ok(r.with_bin_content_type(content))
             }
         }
     };
@@ -400,7 +494,7 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
     let mut weighted = false;
     for (idx, b) in h.iter(true) {
         let (_, w2, sum, sum2) = S::parts(b);
-        let cell = root_cell(&idx, &p.cells.nbins);
+        let cell = root_cell(&idx, &p.cells.sizes, &p.cells.nbins);
         p.sums[cell] = sum;
         p.sumy2[cell] = sum2;
         if let Some(w2) = w2 {
@@ -409,7 +503,7 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
         }
         let in_range = idx
             .iter()
-            .zip(&p.cells.nbins)
+            .zip(&p.cells.sizes)
             .all(|(&i, &n)| i >= 0 && (i as usize) < n);
         if in_range {
             p.swy += sum;
@@ -427,14 +521,10 @@ macro_rules! mean_to_root {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
-            fn to_root(&self) -> $root {
+            fn try_to_root(&self) -> Result<$root> {
+                let $axes = root_axes(self.axes())?;
                 let p = profile_cells(self);
                 let $c = &p.cells;
-                let $axes: Vec<Axis> = ["xaxis", "yaxis", "zaxis"]
-                    .iter()
-                    .zip(self.axes())
-                    .map(|(n, a)| root_axis(a, n))
-                    .collect();
                 let mut r: $root = $build;
                 r.name.clone_from(&self.name);
                 r.title.clone_from(&self.title);
@@ -449,11 +539,11 @@ macro_rules! mean_to_root {
                     r.bin_sumw2 = w2;
                 }
                 mean_to_root!(@moments $d, r, p, $c);
-                r
+                Ok(r)
             }
 
-            fn to_root_as(&self, _content: BinContentType) -> $root {
-                self.to_root()
+            fn try_to_root_as(&self, _content: BinContentType) -> Result<$root> {
+                self.try_to_root()
             }
         }
     };
@@ -829,6 +919,75 @@ mod tests {
         let r = m.to_root();
         assert!(r.bin_sumw2.is_empty());
         assert_eq!(r.to_hist().unwrap().value([0]), Some(2.0));
+    }
+
+    #[test]
+    fn empty_category_axis_keeps_root_layout_consistent() {
+        // No categories yet: ROOT still gets one (empty) bin, and the overflow
+        // lands in ROOT's overflow cell, not in that bin.
+        let empty: [&str; 0] = [];
+        let mut h = Hist::str_cat(&empty).name("c").weight();
+        h.fill("ee"); // overflow: the axis does not grow
+        let r = h.try_to_root().unwrap();
+        assert_eq!(r.xaxis.nbins, 1);
+        assert_eq!(r.contents, vec![0.0, 0.0, 1.0]);
+        assert_eq!(r.sumw2.len(), r.contents.len());
+        assert_eq!((r.tsumw, r.entries), (0.0, 1.0));
+        // Read back, it is a one-bin regular axis with the overflow kept.
+        let back = r.to_hist().unwrap();
+        assert_eq!(back.axis(0).size(), 1);
+        assert_eq!(back.value([1]), Some(1.0));
+
+        let mut p = Hist::str_cat(&empty).reg(2, 0.0, 2.0).mean();
+        p.fill_sample("x", 0.5, 3.0);
+        let r = p.try_to_root().unwrap();
+        assert_eq!(r.sums.len(), 3 * 4);
+        assert_eq!(r.sums[2 + 3], 3.0); // x overflow (cell 2), y bin 1 (stride 3)
+    }
+
+    #[test]
+    fn lossy_axis_features_are_dropped_as_documented() {
+        // Integer → Regular over the same bins.
+        let mut h = Hist::int(-2, 3).weight();
+        h.fill(0);
+        let back = h.to_root().to_hist().unwrap();
+        assert!(matches!(
+            back.axis(0).kind(),
+            AxisKind::Regular { bins: 5, lo, hi } if *lo == -2.0 && *hi == 3.0
+        ));
+        assert_eq!(back.value([2]), Some(1.0));
+
+        // IntCategory → StrCategory over the labels; growth and the axis name
+        // are not kept, the label is.
+        let mut h = Hist::int_cat(&[11, 13])
+            .growth()
+            .axis_name("pdg")
+            .label("PDG id")
+            .weight();
+        h.fill(13);
+        let back = h.to_root().to_hist().unwrap();
+        match back.axis(0).kind() {
+            AxisKind::StrCategory { categories, growth } => {
+                assert_eq!(categories, &["11".to_owned(), "13".to_owned()]);
+                assert!(!growth);
+            }
+            other => panic!("expected a string category axis, got {other:?}"),
+        }
+        assert_eq!(back.axis(0).label, "PDG id");
+        assert_ne!(back.axis(0).name, "pdg");
+        assert_eq!(back.value([1]), Some(1.0));
+
+        // fEntries is the sum of the bin values, not the fill count.
+        let mut h = Hist::reg(2, 0.0, 2.0).weight();
+        h.fill_weight(0.5, 2.5);
+        assert_eq!(h.to_root().entries, 2.5);
+    }
+
+    #[test]
+    fn bin_counts_beyond_i32_are_refused() {
+        assert!(root_count(i32::MAX as usize).is_ok());
+        let e = root_count(i32::MAX as usize + 1).unwrap_err();
+        assert!(e.to_string().contains("i32::MAX"), "{e}");
     }
 
     #[test]
