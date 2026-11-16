@@ -803,6 +803,8 @@ name = "oxiroot"
 version = "0.3.0"
 dependencies = [
  "oxifit",
+ "oxifit-formula",
+ "oxihist",
  "oxiparticle",
  "oxiplot",
  "oxiroot-compress",
@@ -865,10 +867,7 @@ version = "0.3.0"
 dependencies = [
  "bytes",
  "memmap2",
- "oxifit-formula",
- "oxiplot",
  "oxiroot-compress",
- "oxistats",
  "proptest",
  "ureq",
 ]

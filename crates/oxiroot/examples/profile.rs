@@ -105,7 +105,7 @@ fn main() -> oxiroot::Result<()> {
     // --- A 2-D profile: mean z over an (x, y) grid. ----------------------------
     // Same idea, one dimension up. Each (x, y) cell holds the mean of a third
     // quantity z; here z is a smooth surface plus scatter. `.reg(...).reg(...)`
-    // gives two axes, then `.profile()` makes it a Profile2D.
+    // gives two axes, then `.mean().to_root()` makes it a Profile2D.
     let mut prof2d = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
         .mean()

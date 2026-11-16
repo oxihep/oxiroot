@@ -8,8 +8,8 @@ you use.
 The pieces that are not about ROOT live in their own repositories in the
 [oxihep](https://github.com/oxihep) organization, the way Python's Scikit-HEP
 splits uproot, hist, mplhep and particle. The facade re-exports them too, so
-`oxiroot::stat`, `oxiroot::particle`, `oxiroot::fit` and `oxiroot::plot` work as
-before.
+`oxiroot::stat`, `oxiroot::particle`, `oxiroot::fit`, `oxiroot::plot` and the
+`Hist` builder (oxihist) work as before.
 
 | Crate | Purpose |
 |-------|---------|
@@ -33,6 +33,7 @@ before.
 | `oxifit-formula` | [oxihep/oxifit](https://github.com/oxihep/oxifit) | Dependency-free `TFormula` expression engine: parse, evaluate, integrate, differentiate | behind `Func1D` and `Model::from_formula` |
 | `oxiplot` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Matplotlib-style SVG/PNG/PDF plotting; draws anything implementing its data traits, which `Hist1D`/`Hist2D`/`Profile1D`/`Graph` do | `oxiroot::plot` (`plot` feature) |
 | `oxiplot-tex` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Internal: the vendored ReX TeX math layout engine used by `oxiplot` | — |
+| `oxihist` | [oxihep/oxihist](https://github.com/oxihep/oxihist) | ROOT-free N-axis histograms (`Histogram<S, D>`): regular, variable, integer and category axes, five storages, growth, threaded and parallel fill | the `Hist` builder; `.to_root()` / `FromRoot` convert to and from `Hist1D`/`Hist2D`/`Hist3D` and profiles |
 
 ## Dependency graph
 

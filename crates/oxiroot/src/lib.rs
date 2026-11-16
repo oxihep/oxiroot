@@ -52,8 +52,11 @@
 //! [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file) modules expose
 //! everything else.
 
+mod error;
+
+pub use error::{Error, Result};
 #[doc(inline)]
-pub use oxiroot_io_core::{read_object, Compression, Error, FileReader, Result, Value};
+pub use oxiroot_io_core::{read_object, Compression, FileReader, Value};
 
 /// The ROOT file container and the object framework: reading and writing files,
 /// keys and directories, streamer info, and the traits objects implement
@@ -151,11 +154,14 @@ pub mod prelude {
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
+    /// The ROOT-free histogram the `Hist` builder makes (from oxihist);
+    /// `.to_root()` turns it into a `Hist1D`/`Hist2D`/…
+    pub use oxiroot_hist::oxihist::Histogram;
     pub use oxiroot_hist::{
         Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, FromRoot, Graph,
         Graph2D, GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
-        Histogram, KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D,
-        Profile2D, Profile3D, Random, SparseBin, SparseHist, ThreadedHist, ToRoot,
+        KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
+        Profile3D, Random, RootHistogram, SparseBin, SparseHist, ThreadedHist, ToRoot,
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};

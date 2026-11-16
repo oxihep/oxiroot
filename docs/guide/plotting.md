@@ -86,6 +86,7 @@ builder for control over the type, error bars, color, fill, and legend label.
 | `Errorbar` | Markers at bin centers with error bars (data-point look) |
 | `Band` | Shaded `y ± yerr` uncertainty band |
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::{Axes, HistType, HistOpts, Color};
 
@@ -110,6 +111,7 @@ zero, the mplhep convention.
 points; `profile` draws a `Profile1D` at bin centers. `ErrorbarOpts` controls the
 marker, color, caps, and an optional connecting line.
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::{Axes, ErrorbarOpts, Color};
 
@@ -124,6 +126,7 @@ ax.legend();
 `hist2d`/`hist2d_with` render a `Hist2D` as a `pcolormesh`-style color grid with a
 colorbar, using the real matplotlib `viridis`/`plasma` colormaps.
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::{Axes, Hist2dOpts, Colormap};
 
@@ -154,7 +157,7 @@ smooth line — the way to overlay an analytic curve on a histogram. To overlay 
 ```rust
 use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType};
 use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
-use oxiroot::fit::Func1D;
+use oxiroot::hist::Func1D;
 
 // Fit a Gaussian to the histogram, then overlay the fitted curve.
 let model = Model::gaussian("gaus").estimate_from(&h);
@@ -236,6 +239,7 @@ A `GridSpec` arranges several panels with custom row/column ratios. Use
 `GridSpec` and pass it to `subplots_grid_with`. Fill the returned axes, then hand
 them back to the figure.
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::subplots_grid;
 
@@ -259,6 +263,7 @@ the union of both panels'.
 
 ![A filled MC histogram with data points over a data/MC ratio panel](../images/plot-ratio.png){ width="65%" }
 
+<!-- fragment -->
 ```rust
 use oxiroot::plot::{ratio_subplots, HistOpts, HistType, ErrorbarOpts, Color};
 
