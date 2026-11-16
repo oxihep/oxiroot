@@ -77,7 +77,7 @@ jobs:
     # The mmap path, file locking and path handling differ from Linux.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the pinned stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -97,7 +97,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the latest stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -299,7 +299,7 @@ jobs:
 
       - name: Keep any crash input
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts
