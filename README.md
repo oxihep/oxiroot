@@ -931,7 +931,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
-| `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `ab_glyph`, and the ReX TeX engine. |
+| `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `skrifa`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`FileReader::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`FileReader::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
 

@@ -84,7 +84,7 @@ All pure Rust — the no-libROOT promise holds end to end:
 - [`bytes`](https://crates.io/crates/bytes) — zero-copy byte ranges behind the reader
 - [`ureq`](https://crates.io/crates/ureq) — HTTP(S) client (rustls) for remote range reads (with the `http` feature)
 - [ReX](https://github.com/KenyC/ReX) — TeX math layout (with the `plot` feature); not on crates.io, so a trimmed copy is vendored as `oxiplot-tex` (MIT, see its `LICENSE-3rdparty`)
-- [`ttf-parser`](https://crates.io/crates/ttf-parser), [`ab_glyph`](https://crates.io/crates/ab_glyph), [`tiny-skia`](https://crates.io/crates/tiny-skia) — font parsing, text outlines and PNG rasterization (with the `plot` feature)
+- [`skrifa`](https://crates.io/crates/skrifa), [`tiny-skia`](https://crates.io/crates/tiny-skia) — font parsing and glyph outlines, and PNG rasterization (with the `plot` feature)
 
 ## API reference
 
