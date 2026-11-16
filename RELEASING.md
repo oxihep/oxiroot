@@ -82,6 +82,11 @@ checked by the `msrv` job.
 - **Find the cause first:** your change, or the world moving? A world-moving
   example is a new toolchain, a new ROOT image in the interop job, or a yanked
   crate. Re-run the last green commit's CI to tell them apart.
+- **The weekly run** (Mondays, also startable by hand) tests the latest
+  stable Rust and the latest ROOT image, and fuzzes each target for two
+  minutes. It never gates a PR. When it fails, bump `RUST_STABLE` or the
+  pinned ROOT image in a PR that fixes what broke, or file the fuzz crash
+  (its input is kept as the run's `fuzz-artifacts`).
 - **Fix forward in a PR,** or revert the offending merge with `git revert`.
   Never force-push `main`.
 
