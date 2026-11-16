@@ -63,7 +63,7 @@ pub use compression::Compression;
 /// base (or a long chain) must end in an error, not a stack overflow. Every
 /// streamer walker in the workspace uses this limit.
 pub const MAX_STREAMER_DEPTH: usize = 64;
-pub use error::{decompress_payload, Error, Result};
+pub use error::{decompress_payload, Error, External, Result};
 #[cfg(feature = "mmap")]
 pub use file::MmapSource;
 #[cfg(feature = "xrootd")]

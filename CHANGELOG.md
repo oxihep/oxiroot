@@ -11,12 +11,6 @@ change the API.
 
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
   and a public `StreamerRegistry::from_infos` for hand-built registries.
-- **`ThreadedHist` got slower as threads were added.** Every fill took a
-  shared read lock to find the thread's copy. The copies now live in
-  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
-  13.5 s before, 26 ms now.
-- **`fill_par` cloned the template once per rayon split.** It now fills a few
-  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
 
 ### Changed
 
@@ -26,6 +20,21 @@ change the API.
   function. Call it as `unsafe { FileReader::open_mmap(path) }` with the
   `mmap` feature enabled, or use `FileReader::open_ranged`, which reads lazily
   with no such contract.
+- **Breaking: `oxiroot::Error` is the facade's own error type**, with variants
+  `Root` (the ROOT-side `oxiroot::file::Error`), `Stat`, `Formula`, `Hist` and
+  `Plot`. `?` still works across the whole API in a function returning
+  `oxiroot::Result`. Code that matched ROOT-side variants on `oxiroot::Error`
+  matches `oxiroot::file::Error` instead (or `Error::Root(..)` /
+  `err.as_root()`), and plotting errors keep their own structure
+  (`Error::Plot(oxiplot::Error::..)`) instead of a message.
+- **Breaking: `oxiroot-io-core` no longer depends on oxistats, oxifit-formula
+  or oxiplot.** Its `stat`, `formula` and `plot` features and its `Stat`,
+  `Formula` and `Plot` error variants are gone; a new `Error::Other` (built with
+  `Error::other`) carries an error from another crate whole.
+- **Breaking: the `Histogram` trait is now `RootHistogram`**, and the prelude's
+  `Histogram` is oxihist's histogram (what the `Hist` builder makes).
+  `ThreadedHist` and `Mergeable` accept oxihist histograms too, so
+  `ThreadedHist::new(Hist::reg(..).int64())` works from the prelude.
 - Codec crates upgraded: ruzstd 0.9.1 (fixing RUSTSEC-2026-0344, a
   decompression bomb inside ruzstd), lz4_flex 0.14, lzma-rust2 0.25. Files
   written with each codec read back in ROOT 6.40 unchanged.
@@ -111,6 +120,12 @@ change the API.
 
 ### Fixed
 
+- **`ThreadedHist` got slower as threads were added.** Every fill took a
+  shared read lock to find the thread's copy. The copies now live in
+  thread-local storage (the `thread_local` crate). 24 M fills with 12 threads:
+  13.5 s before, 26 ms now.
+- **`fill_par` cloned the template once per rayon split.** It now fills a few
+  chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
 - **`SparseHist::fill` scanned every filled cell.** It now finds the cell
   through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
 - **Reading objects from a subdirectory re-read its key list each time, and

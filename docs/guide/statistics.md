@@ -211,8 +211,10 @@ fn correlate(path: &str) -> oxiroot::Result<f64> {
 }
 ```
 
-Depending on `oxistats` and `oxiroot-io-core` directly instead of the
-facade, turn on io-core's `stat` feature for this conversion.
+The conversion lives in the `oxiroot` facade, whose `Error` gathers every
+crate's errors. Code that depends on `oxistats` and `oxiroot-io-core` directly,
+without the facade, wraps the statistics error instead:
+`.map_err(oxiroot_io_core::Error::other)?`.
 
 ## Hypothesis tests
 
