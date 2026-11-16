@@ -890,9 +890,10 @@ source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad
 
 [[package]]
 name = "oxihist"
-version = "0.4.2"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.4.2#4a33ca536e0b80e6675860376a48c109f0349bfb"
+version = "0.4.3"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.4.3#0ca106fc6d51af2f886b121ae7bd751294916d5d"
 dependencies = [
+ "foldhash",
  "oxifit",
  "oxiplot",
  "rayon",
