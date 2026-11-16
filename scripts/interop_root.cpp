@@ -12,6 +12,9 @@
 //     tv = double[3] fixed array, ts = string, tj = jagged double,
 //     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
 //     (Hit = {float x; float y; int id;}) read as th.x/th.y/th.id.
+//   - rust_codec_<zlib|lz4|zstd|lzma>.root: TH1D "h", TH2D "h2", TH3D "h3",
+//     TProfile "p" and a 1000-bin TH1D "big", under every codec (see
+//     check_codec_file).
 
 #include <cmath>
 #include <cstdint>
@@ -23,6 +26,9 @@
 
 #include <TFile.h>
 #include <TH1D.h>
+#include <TH2D.h>
+#include <TH3D.h>
+#include <TProfile.h>
 #include <TTree.h>
 #include <TTreeReader.h>
 #include <TTreeReaderArray.h>
@@ -89,6 +95,49 @@ static TH1D make_hist(const char *name, const std::vector<double> &contents) {
 
 static std::string join(const char *dir, const char *file) {
     return std::string(dir) + "/" + file;
+}
+
+static void near(double got, double want, const std::string &what) {
+    if (std::fabs(got - want) > 1e-9)
+        fail(what + ": got " + std::to_string(got) + ", want " + std::to_string(want));
+}
+
+// One file of the codec matrix: every object must decompress and hold the
+// canonical values (matching matrix_hists in interop.rs).
+static void check_codec_file(const char *dir, const char *codec) {
+    std::string file = std::string("rust_codec_") + codec + ".root";
+    TFile *f = TFile::Open(join(dir, file.c_str()).c_str());
+    if (!f || f->IsZombie())
+        fail("cannot open " + file);
+    check_hist(dynamic_cast<TH1D *>(f->Get("h")), file + " h",
+               std::vector<double>(HIST_BINS, HIST_BINS + 4));
+    auto *h2 = dynamic_cast<TH2D *>(f->Get("h2"));
+    if (!h2)
+        fail(file + ": missing TH2D h2");
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j)
+            near(h2->GetBinContent(i + 1, j + 1), 1 + i + 3 * j, file + " h2");
+    auto *h3 = dynamic_cast<TH3D *>(f->Get("h3"));
+    if (!h3)
+        fail(file + ": missing TH3D h3");
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k)
+                near(h3->GetBinContent(i + 1, j + 1, k + 1), 1 + i + 2 * j + 4 * k,
+                     file + " h3");
+    auto *p = dynamic_cast<TProfile *>(f->Get("p"));
+    if (!p)
+        fail(file + ": missing TProfile p");
+    near(p->GetBinContent(1), 2.0, file + " p mean 1");
+    near(p->GetBinContent(2), 5.0, file + " p mean 2");
+    near(p->GetBinEntries(1), 2.0, file + " p entries 1");
+    near(p->GetBinEntries(2), 1.0, file + " p entries 2");
+    auto *big = dynamic_cast<TH1D *>(f->Get("big"));
+    if (!big || big->GetNbinsX() != 1000)
+        fail(file + ": missing 1000-bin TH1D big");
+    for (int i = 0; i < 1000; ++i)
+        near(big->GetBinContent(i + 1), i % 7, file + " big");
+    f->Close();
 }
 
 static void write_oracle(const char *dir) {
@@ -302,8 +351,11 @@ static void read_rust(const char *dir) {
         check_hist(dynamic_cast<TH1D *>(f->Get("ah")), "rust append ah", APPEND_AH);
         f->Close();
     }
+    for (const char *codec : {"zlib", "lz4", "zstd", "lzma"})
+        check_codec_file(dir, codec);
     std::printf("ROOT C++ read Rust hist + RNTuple + TTree (incl. split "
-                "std::vector<Hit>) + multi/subdir + append — values match\n");
+                "std::vector<Hit>) + multi/subdir + append + 2-D/3-D/profile "
+                "under every codec — values match\n");
 }
 
 int main(int argc, char **argv) {

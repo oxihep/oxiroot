@@ -168,6 +168,15 @@ change the API.
   - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
     writes (10–31 and 1–32).
 
+### Testing
+
+- The ROOT C++ and uproot interop jobs read 2-D and 3-D histograms, a
+  profile and a 1000-bin histogram written under each of zlib, LZ4, Zstd and
+  LZMA. The ROOT job uses a pinned image (6.38.00) on PRs.
+- CI runs on macOS too; a weekly run tests the latest stable Rust and ROOT
+  and fuzzes every target for two minutes with a 2 GB memory limit. Jobs
+  get a read-only token, and a new push cancels a PR's previous run.
+
 ## [0.3.0] — 2026-09-24
 
 A release about reading what a ROOT file actually holds, and about finishing the

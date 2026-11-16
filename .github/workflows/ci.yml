@@ -4,6 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly: the latest stable Rust, the latest ROOT image, and a short fuzz
+  # campaign. Never gates a PR; a failure here is a heads-up to act on.
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+# Read-only token: no job writes to the repository.
+permissions:
+  contents: read
+
+# A new push to a PR cancels its previous run; main runs every push.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,6 +71,44 @@ jobs:
           cargo run --locked -q -p oxiroot --example tree
           cargo run --locked -q -p oxiroot --example rntuple_nested
           cargo run --locked -q -p oxiroot --example plot --features plot,fit
+
+  macos:
+    name: test (macOS)
+    # The mmap path, file locking and path handling differ from Linux.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test with all features
+        run: cargo test --locked --workspace --all-features
+
+  latest-stable:
+    name: latest stable Rust (weekly)
+    # The pinned toolchain keeps PRs reproducible; this catches what the next
+    # bump will bring (new lints, deprecations) before it is due.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the latest stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Clippy with all features
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test with all features
+        run: cargo test --locked --workspace --all-features
 
   features:
     name: feature combinations
@@ -224,9 +276,28 @@ jobs:
 
       - name: Build fuzz targets
         working-directory: fuzz
-        # Compile-only: a real campaign runs out of band, but this keeps the
-        # harness from rotting against API changes.
+        # Compile-only on every PR: keeps the harness from rotting against API
+        # changes. The weekly run below fuzzes for real.
         run: cargo +nightly fuzz build
+
+      - name: Fuzz each target for 2 minutes (weekly)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: fuzz
+        # -rss_limit_mb turns an unbounded allocation (a length field taken on
+        # trust) into a reported crash instead of an OOM-killed runner.
+        run: |
+          set -euo pipefail
+          for target in $(cargo +nightly fuzz list); do
+            cargo +nightly fuzz run "$target" -- -max_total_time=120 -rss_limit_mb=2048
+          done
+
+      - name: Keep any crash input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
 
   interop-uproot:
     name: interop (uproot)
@@ -253,7 +324,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install uproot
-        run: pip install uproot numpy awkward
+        # lz4 + xxhash and zstandard let uproot read the LZ4 and Zstd files.
+        run: pip install uproot numpy awkward lz4 xxhash zstandard
 
       - name: Build interop driver
         run: cargo build --locked -p oxiroot --example interop
@@ -276,10 +348,11 @@ jobs:
     # Rust reads (the subdirectory via read_root_in), and Rust writes a histogram
     # + RNTuple + TTree + a FileWriter-built multi-object/subdirectory file + an
     # appended file that ROOT C++ reads. The TTree covers scalar, fixed array,
-    # string, jagged, and std::vector branches both ways. Pin the image tag if
-    # upstream RNTuple format drift is a concern.
+    # string, jagged, and std::vector branches both ways, and 2-D/3-D histograms
+    # and a profile under every codec. PRs use a pinned image, so a new ROOT
+    # release cannot break them; the weekly run uses the latest one.
     runs-on: ubuntu-latest
-    container: rootproject/root:latest
+    container: rootproject/root:${{ github.event_name == 'schedule' && 'latest' || '6.38.00-ubuntu25.10' }}
     # The container runs as root; align HOME with root's actual home so rustup
     # doesn't mistake the GitHub-set HOME for a sudo invocation, and so the
     # toolchain it installs is found by later steps. Applies to every step.

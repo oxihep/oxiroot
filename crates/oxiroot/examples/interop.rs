@@ -18,6 +18,13 @@
 //!     = [10,11].
 //!   - rust_append.root (FileWriter create then open/append, Rust → oracle):
 //!     TH1D "bh" = [3,1] written first, TH1D "ah" = [4] appended afterwards.
+//!   - rust_codec_<zlib|lz4|zstd|lzma>.root (Rust → oracle), one file per
+//!     codec, each holding: the canonical TH1D "h"; a TH2D "h2" of 3×2 unit
+//!     bins over [0,3)×[0,2) with in-range bin (i, j) = 1 + i + 3j; a TH3D
+//!     "h3" of 2×2×2 unit bins with bin (i, j, k) = 1 + i + 2j + 4k; a
+//!     TProfile "p" of 2 unit bins with means [2, 5] from entries [2, 1]; and
+//!     a TH1D "big" of 1000 unit bins with bin i = i % 7, large enough that
+//!     every codec really compresses it.
 //!   - oracle_dirs.root (oracle → Rust, read via read_root + read_root_in):
 //!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
 //!     = [3,6,9].
@@ -108,6 +115,51 @@ fn hist(name: &str, contents: &[f64]) -> Hist1D {
     h
 }
 
+/// The codecs of the matrix, by file-name suffix.
+const CODECS: [(&str, Compression); 4] = [
+    ("zlib", Compression::Zlib(6)),
+    ("lz4", Compression::Lz4(4)),
+    ("zstd", Compression::Zstd(5)),
+    ("lzma", Compression::Lzma(6)),
+];
+
+/// The 2-D, 3-D, profile and large histograms of the codec matrix.
+fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
+    let mut h2 = Hist::reg(3, 0.0, 3.0)
+        .reg(2, 0.0, 2.0)
+        .weight()
+        .to_root()
+        .named("h2");
+    for i in 0..3 {
+        for j in 0..2 {
+            h2.fill_weight(i as f64 + 0.5, j as f64 + 0.5, (1 + i + 3 * j) as f64);
+        }
+    }
+    let mut h3 = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .weight()
+        .to_root()
+        .named("h3");
+    for i in 0..2 {
+        for j in 0..2 {
+            for k in 0..2 {
+                let w = (1 + i + 2 * j + 4 * k) as f64;
+                h3.fill_weight(i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5, w);
+            }
+        }
+    }
+    let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+    p.fill(0.5, 1.0);
+    p.fill(0.5, 3.0);
+    p.fill(1.5, 5.0);
+    let mut big = Hist::reg(1000, 0.0, 1000.0).double().to_root().named("big");
+    for i in 0..1000 {
+        big.fill_weight(i as f64 + 0.5, (i % 7) as f64);
+    }
+    (h2, h3, p, big)
+}
+
 fn write(dir: &Path) -> oxiroot::Result<()> {
     let h = canonical_hist();
     h.write_root(dir.join("rust_hist.root"), Compression::None)?;
@@ -168,9 +220,21 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         .add(&hist("ah", &APPEND_AH))
         .write(Compression::None)?;
 
+    // rust_codec_*.root — the same objects under every codec.
+    let (h2, h3, p, big) = matrix_hists();
+    for (name, codec) in CODECS {
+        FileWriter::create(dir.join(format!("rust_codec_{name}.root")))
+            .add(&h)
+            .add(&h2)
+            .add(&h3)
+            .add(&p)
+            .add(&big)
+            .write(codec)?;
+    }
+
     println!(
         "wrote rust_hist.root + rust_ntuple.root + rust_tree.root + rust_multi.root \
-         + rust_append.root to {}",
+         + rust_append.root + rust_codec_{{zlib,lz4,zstd,lzma}}.root to {}",
         dir.display()
     );
     Ok(())

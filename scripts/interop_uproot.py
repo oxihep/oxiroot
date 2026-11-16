@@ -132,9 +132,35 @@ def read(d: str) -> None:
     if ah != APPEND_AH:
         _fail(f"rust append ah: got {ah}, want {APPEND_AH}")
 
+    # rust_codec_*.root — the same objects under every codec (lz4 needs the
+    # lz4 and xxhash packages, zstd the zstandard package).
+    for codec in ("zlib", "lz4", "zstd", "lzma"):
+        name = f"rust_codec_{codec}.root"
+        cf = uproot.open(os.path.join(d, name))
+        if list(cf["h"].values()) != HIST_BINS:
+            _fail(f"{name} h: got {list(cf['h'].values())}")
+        h2 = cf["h2"].values()
+        for i in range(3):
+            for j in range(2):
+                if h2[i][j] != 1 + i + 3 * j:
+                    _fail(f"{name} h2[{i}][{j}] = {h2[i][j]}")
+        h3 = cf["h3"].values()
+        for i in range(2):
+            for j in range(2):
+                for k in range(2):
+                    if h3[i][j][k] != 1 + i + 2 * j + 4 * k:
+                        _fail(f"{name} h3[{i}][{j}][{k}] = {h3[i][j][k]}")
+        p = cf["p"]
+        if list(p.values()) != [2.0, 5.0] or list(p.counts(flow=False)) != [2.0, 1.0]:
+            _fail(f"{name} p: means {list(p.values())}, entries {list(p.counts(flow=False))}")
+        big = list(cf["big"].values())
+        if big != [float(i % 7) for i in range(1000)]:
+            _fail(f"{name} big: values differ")
+
     print(
         "uproot read Rust hist + RNTuple + TTree (incl. split vector<Hit>) "
-        "+ multi/nested subdirs + append — values match"
+        "+ multi/nested subdirs + append + 2-D/3-D/profile under every codec "
+        "— values match"
     )
 
 
