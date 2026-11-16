@@ -128,11 +128,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build the benches
-        run: cargo bench --locked -p oxiroot --no-run
+        run: cargo bench --locked -p oxiroot --bench fill --bench read --bench decompress --no-run
 
       - name: Run the benches (weekly)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: cargo bench --locked -p oxiroot -- --warm-up-time 1 --measurement-time 3
+        # The benches by name: a bare `cargo bench -p oxiroot` also runs the
+        # library's libtest harness, which rejects criterion's options.
+        run: cargo bench --locked -p oxiroot --bench fill --bench read --bench decompress -- --warm-up-time 1 --measurement-time 3
 
       - name: Keep the criterion report
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

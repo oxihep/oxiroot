@@ -78,6 +78,14 @@ no ROOT or Python required.
 For a full cross-language interop check against official ROOT (C++) **and**
 uproot in both directions, see the [interop guide](../guide/interop.md).
 
+Criterion benchmarks for filling, reading and (de)compression live in
+`crates/oxiroot/benches`; see [Performance](../reference/performance.md):
+
+```sh
+cargo bench -p oxiroot --bench fill --bench read --bench decompress
+```
+
+
 ## Next
 
 → **[Quick start](quickstart.md)** — write and read a histogram, a `TTree`, and

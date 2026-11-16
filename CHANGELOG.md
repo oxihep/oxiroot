@@ -148,6 +148,9 @@ change the API.
 
 ### Fixed
 
+- The weekly CI run named no bench targets, so `cargo bench -p oxiroot`
+  also ran the libtest harness, which rejects criterion's options. It now
+  runs `--bench fill --bench read --bench decompress`.
 - Math subscripts in plot labels sat lower than the font asks: oxiplot read
   the wrong MATH constant. The oxihep dependencies move to oxiplot v0.2.1
   and oxihist v0.4.1, which fix it.
@@ -209,6 +212,26 @@ change the API.
   - `Real32Trunc`/`Real32Quant` columns with a bit width outside what ROOT
     writes (10–31 and 1–32).
 
+### Documentation
+
+- A Performance reference page with the criterion numbers for filling,
+  reading and (de)compression, and how to run the benches (also in the README
+  and the installation page).
+- The multithreading guide describes `Mergeable` as it is now: oxihist's
+  trait with its own error type, implemented for every mergeable ROOT type
+  (not `Parameter`), and shared with oxihist histograms.
+- The plotting guide says fonts are read with skrifa.
+- Every Rust snippet of the guides and the README now compiles in CI
+  (`scripts/check_guide_snippets.py`, 129 blocks on 18 pages). Fixed the
+  snippets that had drifted: the `Func1D` import in the plotting guide, the
+  error match in the reading guide, the non-exhaustive `GraphErrors` match.
+- The crate-layout page lists oxihist; the installation page documents the
+  `http` and `xrootd` features; rustdoc no longer names the removed
+  `.profile()` and `.int32()` builder calls.
+- The bridge's lossy cases (Integer and category axes, growth, axis names,
+  `fEntries`) are listed in the `convert` module docs and the histograms
+  guide, and covered by tests.
+
 ### Testing
 
 - Criterion benchmarks in `crates/oxiroot/benches`: `fill` (ROOT and oxihist
@@ -223,19 +246,6 @@ change the API.
 - CI runs on macOS too; a weekly run tests the latest stable Rust and ROOT
   and fuzzes every target for two minutes with a 2 GB memory limit. Jobs
   get a read-only token, and a new push cancels a PR's previous run.
-
-### Documentation
-
-- Every Rust snippet of the guides and the README now compiles in CI
-  (`scripts/check_guide_snippets.py`, 129 blocks on 18 pages). Fixed the
-  snippets that had drifted: the `Func1D` import in the plotting guide, the
-  error match in the reading guide, the non-exhaustive `GraphErrors` match.
-- The crate-layout page lists oxihist; the installation page documents the
-  `http` and `xrootd` features; rustdoc no longer names the removed
-  `.profile()` and `.int32()` builder calls.
-- The bridge's lossy cases (Integer and category axes, growth, axis names,
-  `fEntries`) are listed in the `convert` module docs and the histograms
-  guide, and covered by tests.
 
 ## [0.3.0] — 2026-09-24
 

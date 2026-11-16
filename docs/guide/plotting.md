@@ -307,7 +307,11 @@ directly (and the same three methods exist on `Figure`).
 
 The default font is **STIX Two** — a LaTeX-like serif (STIX Two Text) paired with
 STIX Two Math for the `$…$` spans — so plots have a publication look out of the
-box, with text and math sharing one typeface. Both faces are bundled (OFL).
+box, with text and math sharing one typeface. Both faces are bundled (OFL), and
+every font is read in pure Rust with [skrifa](https://crates.io/crates/skrifa)
+(Google Fonts' fontations): glyph outlines, metrics and the OpenType MATH
+table that places `$…$` sub- and superscripts, fractions and big delimiters
+the way the font asks.
 
 <figure markdown="span">
   ![The same histogram rendered with STIX Two and with DejaVu Sans](../images/plot-font-stix.png){ width="49%" }

@@ -46,6 +46,7 @@ nav = [
   ] },
   { "Reference" = [
     { "Crate layout" = "reference/crates.md" },
+    { "Performance" = "reference/performance.md" },
     { "API reference (rustdoc)" = "api/oxiroot/index.html" },
   ] },
 ]
