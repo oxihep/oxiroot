@@ -133,11 +133,27 @@ println!("filled across {} thread-local copies", hist.num_slots());
 
 ## The `Mergeable` trait
 
-`merge()` is built on the `Mergeable` trait, implemented for `Hist1D`, `Hist2D`, `Hist3D`,
-`Profile1D`, `Profile2D` and `Profile3D`. `Mergeable::merge(&mut self, other)` is the bin-by-bin combine of
-`add(other, 1.0)`; it returns
-[`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self` unchanged)
-when the binnings differ.
+`merge()` is built on the `Mergeable` trait. `ThreadedHist`, `Mergeable` and
+`fill_par` are [oxihist](https://github.com/oxihep/oxihist)'s, shared by both
+crates: the trait has its own `Error` type, so each implementation reports
+errors its own way, and the same accumulator fills oxihist histograms (what
+`Hist` builds before `.to_root()`) and ROOT ones.
+
+oxiroot implements it for:
+
+| Type | `merge` |
+| --- | --- |
+| `Hist1D`, `Hist2D`, `Hist3D`, `Profile1D`, `Profile2D`, `Profile3D`, `PolyHist`, `SparseHist` | `add(other, 1.0)`: contents, `Sumw2`, entries and moment sums |
+| `Efficiency` | adds the passed and total histograms |
+| `Graph` | appends `other`'s points, as `hadd` does |
+| `HistStack` | merges the stacked histograms by name |
+
+For these, the error is `oxiroot::file::Error`:
+[`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self`
+unchanged) when the binnings differ. For oxihist histograms it is
+`oxihist::Error`; both convert into `oxiroot::Error`, so `?` works either way.
+A `TParameter` is not a histogram and is not `Mergeable`; `Parameter::add`
+sums two (which is what `hadd` does).
 
 Its `Mergeable::merge_all` folds an iterator of histograms into one — an in-memory
 equivalent of ROOT's `hadd`. It returns `Ok(None)` for an empty iterator, or the

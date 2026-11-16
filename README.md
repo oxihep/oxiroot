@@ -954,6 +954,13 @@ malformed-input hardening. CI additionally round-trips every type both ways
 against official ROOT (C++) and uproot — Rust writes files they read, and reads
 files they write.
 
+Criterion benchmarks for filling, reading and (de)compression (numbers on the
+[Performance](https://oxihep.github.io/oxiroot/reference/performance/) page):
+
+```sh
+cargo bench -p oxiroot --bench fill --bench read --bench decompress
+```
+
 ### Full local interop check
 
 For a comprehensive cross-language check on your own machine (not CI), run:
