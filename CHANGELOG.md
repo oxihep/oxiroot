@@ -14,6 +14,8 @@ change the API.
 
 ### Changed
 
+- oxihist v0.4.3: category, integer and boolean axes fill 2–3× faster (the
+  `fill` bench's 20 string categories: 69 → 125 M fills/s).
 - oxihist v0.4.2: the `Hist` builder's histograms fill numbers on regular
   and variable axes 2–3× faster, on par with `Hist1D` (the `fill` bench:
   185 → 762 M fills/s).
