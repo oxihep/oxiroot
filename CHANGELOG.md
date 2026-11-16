@@ -14,6 +14,18 @@ change the API.
 
 ### Changed
 
+- **Breaking: one `ThreadedHist` for oxihist and oxiroot.** `ThreadedHist`,
+  `Mergeable` and `fill_par` are now oxihist's (oxihist 0.3.0), re-exported
+  here; the copy in oxiroot-hist is gone. oxiroot implements `Mergeable` for
+  its ROOT types with `oxiroot::file::Error` as the error, so `merge` and
+  `merge_all` work as before. `ThreadedHist<Hist1D>::fill` and friends now
+  come from four traits, `ThreadedFill1` to `ThreadedFill4` (by the number of
+  values a fill takes), which are in the prelude; code that imports
+  `oxiroot_hist::ThreadedHist` directly also imports the trait it fills
+  through.
+- **Breaking: `Parameter` is no longer `Mergeable`** (it is not a
+  histogram, and the trait now lives in oxihist). `Parameter::add` sums two
+  values, which is what `hadd` still does.
 - The oxihep dependencies move to oxifit/oxifit-formula v0.1.1, oxiplot
   v0.1.1 and oxihist v0.2.0.
 - `ToRoot` gains `try_to_root` and `try_to_root_as`, which return an error

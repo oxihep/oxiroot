@@ -147,7 +147,10 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
     // be read, the whole key is skipped with the reason, as `copied!` does, so
     // one unreadable object neither aborts the merge nor leaves a partial sum.
     macro_rules! summed {
-        ($T:ty) => {{
+        ($T:ty) => {
+            summed!($T, Mergeable::merge)
+        };
+        ($T:ty, $merge:path) => {{
             let mut acc: Option<$T> = None;
             let mut unreadable = None;
             for (i, f) in contributors.iter().enumerate() {
@@ -165,9 +168,9 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
                 };
                 match acc.as_mut() {
                     None => acc = Some(h),
-                    // Through `Mergeable`, so a type that cannot be merged
-                    // cannot be routed here.
-                    Some(a) => a.merge(&h).map_err(|e| with_key(name, e))?,
+                    // Through `Mergeable` (or the named merge), so a type that
+                    // cannot be merged cannot be routed here.
+                    Some(a) => $merge(a, &h).map_err(|e| with_key(name, e))?,
                 }
             }
             match (unreadable, acc) {
@@ -208,7 +211,8 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
         "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => summed!(Graph),
         "THStack" => summed!(HistStack),
         c if c.starts_with("THnSparse") => summed!(SparseHist),
-        c if c.starts_with("TParameter") => summed!(Parameter),
+        // A parameter is not a histogram, so it is not `Mergeable`: add values.
+        c if c.starts_with("TParameter") => summed!(Parameter, Parameter::add),
         // Copied from the first file: ROOT's hadd does not merge these either.
         // It writes one key per input instead, which oxiroot cannot do, since
         // it rejects two objects of the same name in one directory.

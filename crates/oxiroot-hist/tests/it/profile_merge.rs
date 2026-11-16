@@ -9,7 +9,9 @@
 //! rational, so that equality is exact whatever order the sums happen in.
 
 use oxiroot_hist::ToRoot;
-use oxiroot_hist::{Hist, Mergeable, Profile1D, Profile2D, Profile3D, ThreadedHist};
+use oxiroot_hist::{
+    Hist, Mergeable, Profile1D, Profile2D, Profile3D, ThreadedFill3, ThreadedFill4, ThreadedHist,
+};
 use oxiroot_io_core::Error;
 
 // --------------------------------------------------------------------- data
