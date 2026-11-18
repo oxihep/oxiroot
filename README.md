@@ -878,6 +878,8 @@ on, so nothing extra is needed.
 | **Start here** | |
 | [`analysis`](crates/oxiroot/examples/analysis.rs) | End-to-end mini analysis: weighted/variable-bin histograms → scale/merge/normalize → subdirectories → a columnar dataset → read-back |
 | [`inspect`](crates/oxiroot/examples/inspect.rs) | Introspect *any* ROOT file you did not write — a programmatic `oxroot ls` |
+| [`dimuon_analysis`](crates/oxiroot/examples/dimuon_analysis.rs) | A NanoAOD-style analysis: jagged muon branches → opposite-sign pairs → invariant mass → Z fit (Voigt + continuum) → plot → saved histogram |
+| [`open_data_zee`](crates/oxiroot/examples/open_data_zee.rs) | Real data over the network: Z → ee from a 966 MB ATLAS open-data sample streamed with `root://` (needs `--features xrootd`) |
 | **Statistics** — `oxiroot::stat` | |
 | [`stat_intro`](crates/oxiroot/examples/stat_intro.rs) | Descriptive stats + the `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions and confidence intervals |
 | [`stat_tests`](crates/oxiroot/examples/stat_tests.rs) | Hypothesis tests (t-test, Mann–Whitney, KS), correlation (Pearson/Spearman), goodness-of-fit, normality |

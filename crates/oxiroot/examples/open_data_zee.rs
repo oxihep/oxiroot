@@ -1,0 +1,145 @@
+//! Real data, read over the network: the Z boson in ATLAS open data.
+//!
+//! Streams a 966 MB ATLAS open-data simulation sample (Z → ee) from CERN's
+//! public EOS server over `root://`, without downloading it: only the
+//! branches read, for the entries read, cross the network (batched with
+//! XRootD vector reads). Selects events with exactly two opposite-charge
+//! electrons, builds their invariant mass from the four-momenta, fits the Z
+//! peak, and plots it. Needs the network and the
+//! `xrootd` feature:
+//!
+//! ```sh
+//! cargo run --release -p oxiroot --features xrootd --example open_data_zee
+//! ```
+
+#[cfg(not(all(feature = "xrootd", feature = "fit", feature = "plot")))]
+fn main() {
+    eprintln!("this example needs the `xrootd` feature: --features xrootd");
+}
+
+#[cfg(all(feature = "xrootd", feature = "fit", feature = "plot"))]
+fn main() -> oxiroot::Result<()> {
+    use oxiroot::fit::{FitMethod, FitOptions, Model};
+    use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
+    use oxiroot::prelude::*;
+    use oxiroot::tree::BranchValues;
+
+    const URL: &str = "root://eospublic.cern.ch//eos/opendata/atlas/OutreachDatasets/\
+                       2016-07-29/MC/mc_147770.Zee.root";
+    let entries = 200_000;
+
+    let start = std::time::Instant::now();
+    let file = FileReader::open_url(URL)?;
+    let tree = TreeReader::open(&file, "mini")?;
+    println!(
+        "opened {:.0} MB file, tree `mini` with {} entries, in {:.1?}",
+        file.size() as f64 / 1e6,
+        tree.num_entries(),
+        start.elapsed()
+    );
+
+    // Lepton four-momenta (MeV), charge and type, for the first entries.
+    let read = |name: &str| tree.read_branch_range(&file, name, 0, entries);
+    let floats = |v: BranchValues| match v {
+        BranchValues::VecF32(v) => v,
+        other => panic!("expected a float array, got {:?}", other.leaf_type()),
+    };
+    let pt = floats(read("lep_pt")?);
+    let eta = floats(read("lep_eta")?);
+    let phi = floats(read("lep_phi")?);
+    let energy = floats(read("lep_E")?);
+    let charge = floats(read("lep_charge")?);
+    let BranchValues::VecU32(kind) = read("lep_type")? else {
+        panic!("lep_type is an unsigned int array");
+    };
+    println!(
+        "read 6 lepton branches for {entries} entries in {:.1?}",
+        start.elapsed()
+    );
+
+    // Exactly two electrons (|PDG ID| 11), opposite charge, pT > 25 GeV.
+    let mut mass = Hist::reg(50, 66.0, 116.0)
+        .double()
+        .to_root()
+        .named("m_ee")
+        .titled("dielectron mass");
+    mass.sumw2();
+    for i in 0..pt.len() {
+        if kind[i].len() != 2 || kind[i].iter().any(|&t| t != 11) || charge[i][0] == charge[i][1] {
+            continue;
+        }
+        if pt[i].iter().any(|&p| p < 25e3) {
+            continue;
+        }
+        // Sum the four-momenta: (E, px, py, pz) from (E, pT, η, φ).
+        let (mut e, mut px, mut py, mut pz) = (0.0, 0.0, 0.0, 0.0);
+        for k in 0..2 {
+            let p = f64::from(pt[i][k]);
+            e += f64::from(energy[i][k]);
+            px += p * f64::from(phi[i][k]).cos();
+            py += p * f64::from(phi[i][k]).sin();
+            pz += p * f64::from(eta[i][k]).sinh();
+        }
+        mass.fill((e * e - px * px - py * py - pz * pz).max(0.0).sqrt() / 1e3);
+    }
+    println!("{:.0} selected Z → ee candidates", mass.integral());
+
+    // Electrons radiate (bremsstrahlung, final-state photons), so the peak
+    // has a long low-mass tail that a simple lineshape does not follow. The
+    // usual quick look fits a Gaussian to the core of the peak only, in a
+    // window around its maximum, which measures the peak position and the
+    // core resolution.
+    let peak_bin = (0..mass.values().len())
+        .max_by(|&a, &b| mass.values()[a].total_cmp(&mass.values()[b]))
+        .expect("bins");
+    let peak = 66.5 + peak_bin as f64;
+    let model = Model::gaussian("core").with_params(vec![mass.values()[peak_bin], peak, 2.5]);
+    let opts = FitOptions::new()
+        .method(FitMethod::Likelihood)
+        .range(peak - 3.5, peak + 3.5);
+    let fit = mass.fit_opts(&model, &opts);
+    println!(
+        "core fit in [{:.1}, {:.1}] GeV: peak {:.2} ± {:.2} GeV, resolution {:.2} ± {:.2} GeV, χ²/ndf = {:.1}/{}",
+        peak - 3.5,
+        peak + 3.5,
+        fit.params[1],
+        fit.errors[1],
+        fit.params[2],
+        fit.errors[2],
+        fit.chi2,
+        fit.ndf
+    );
+    let tail: f64 = mass.values()[..(peak_bin - 8)].iter().sum();
+    println!(
+        "{:.0} % of the candidates sit more than 8 GeV below the peak: the radiative tail.",
+        100.0 * tail / mass.integral()
+    );
+    println!("(The PDG Z mass is 91.19 GeV; comparing this peak in data and simulation is how");
+    println!(" the electron energy scale is calibrated.)");
+
+    let fitted = model.with_params(fit.params.clone());
+    let mut ax = Axes::with_style(Style::mplhep());
+    ax.hist_with(
+        &mass,
+        HistOpts::new()
+            .histtype(HistType::Errorbar)
+            .color(Color::BLACK)
+            .label("ATLAS open data (sim.)"),
+    );
+    ax.model_with(
+        &fitted,
+        (peak - 3.5)..(peak + 3.5),
+        CurveOpts::new()
+            .color(Color::hex("#bd1f01"))
+            .label("Gaussian core fit"),
+    );
+    ax.xlabel("$m_{ee}$ [GeV]")
+        .ylabel("Events / GeV")
+        .hep_label("Demo", "ATLAS open data")
+        .hep_rhs("$\\sqrt{s} = 8$ TeV")
+        .legend();
+    let path = std::env::temp_dir().join("open_data_zee.png");
+    ax.save(&path)?;
+    println!("plot: {}  (total {:.1?})", path.display(), start.elapsed());
+    Ok(())
+}

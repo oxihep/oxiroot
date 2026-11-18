@@ -9,6 +9,9 @@ change the API.
 
 ### Added
 
+- Examples `dimuon_analysis` (a NanoAOD-style toy analysis from jagged
+  muon branches to a fitted, plotted Z peak) and `open_data_zee` (Z → ee from
+  ATLAS open data streamed over `root://`, with the `xrootd` feature).
 - `oxiroot_io_core::MAX_STREAMER_DEPTH`, the limit every streamer walker uses,
   and a public `StreamerRegistry::from_infos` for hand-built registries.
 
