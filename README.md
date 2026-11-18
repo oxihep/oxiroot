@@ -989,10 +989,10 @@ Pre-1.0: the API may still change between minor versions. The full list,
 with what "done" means for each item, is in [ROADMAP.md](ROADMAP.md). In
 short:
 
-- **Next:** hosted API docs for every repo, and category axes in oxihist's
-  plots. The other small items (oxihist and oxifit validation, oxistats
-  examples, oxiplot stacks, category axes, heatmap images, golden tests)
-  are done on `main`.
+- **Next:** category axes in oxihist's plots. The other small items
+  (oxihist and oxifit validation, oxistats examples, oxiplot stacks,
+  category axes, heatmap images, golden tests, hosted API docs for every
+  repo) are done on `main`.
 - **Then:**
   - remote reads with fewer round trips (XRootD `kXR_readv`, HTTP
     multi-range), and XRootD GSI/X.509 and token auth;

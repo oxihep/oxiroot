@@ -53,14 +53,14 @@ Small, independent fixes, each a PR in one repo.
   - golden-image tests;
   - a narrow axis gets at least two ticks.
 
-These are on each repo's `main`, not yet in a release.
+- **Hosted API docs** for oxihist, oxiplot, oxifit, oxistats and
+  oxiparticle, deployed to each repo's GitHub Pages on every push to
+  `main` (e.g. <https://oxihep.github.io/oxiplot/>).
+
+The code changes are on each repo's `main`, not yet in a release.
 
 ### Still open
 
-- **Hosted API docs for every repo.** A workflow that deploys `cargo doc`
-  to each repo's GitHub Pages is ready in a PR per repo. It needs Pages
-  enabled (source: GitHub Actions) in each repo's settings before it can
-  deploy.
 - **oxihist category axes in plots.** oxihist's `plot` feature should
   implement oxiplot's new `Hist1dData::x_labels` for string and integer
   category axes, once a release of oxiplot carries it.
