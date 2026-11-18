@@ -114,6 +114,12 @@ reads — a single `TTree` branch fetches just its baskets, an RNTuple field jus
 its pages. Opening parses only the header, directory, key list, and streamer
 info (a few small ranges).
 
+Over a network each range costs a round trip, so a branch's baskets and a
+column's pages are fetched in batches rather than one by one: over `root://`
+one vector read (`kXR_readv`) carries up to 1024 of them, and over HTTP up to
+eight range requests run at once. A batch holds at most 32 MiB, so reading a
+large branch keeps memory bounded. Nothing changes in the code that reads.
+
 `open_url` dispatches on the URL scheme:
 
 - `http://` / `https://` — the `http` feature (adds the pure-Rust `ureq`/rustls

@@ -50,13 +50,20 @@ fn uncompressed_size(bits: u16, n: usize) -> usize {
     (n as u64 * bits as u64).div_ceil(8).min(usize::MAX as u64) as usize
 }
 
+/// The file range one page occupies: its bytes, plus the 8-byte checksum
+/// after them when it has one.
+fn page_range(page: &PageInfo) -> (u64, usize) {
+    let size = page.locator.size as usize;
+    let total = if page.has_checksum { size + 8 } else { size };
+    (page.locator.offset, total)
+}
+
 /// Fetch and decompress one page, verifying its XXH3-64 checksum if present.
 /// Only the page's own bytes (plus the 8-byte trailing checksum) are read, so a
 /// column reads just its pages over a remote source.
 fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<Vec<u8>> {
-    let off = page.locator.offset;
+    let (off, total) = page_range(page);
     let size = page.locator.size as usize;
-    let total = if page.has_checksum { size + 8 } else { size };
     let win = file.read_at(off, total)?;
     let compressed = &win[..size];
 
@@ -147,6 +154,10 @@ pub fn read_column(
             "column {column_type:?}: bits_on_storage {bits} outside {range:?}"
         )));
     }
+    // Announce the pages, so a remote file fetches them in batches rather
+    // than a round trip each (the ranges `read_page_bytes` asks for).
+    let ranges: Vec<(u64, usize)> = pages.iter().map(page_range).collect();
+    file.plan_reads(&ranges);
     match column_type {
         Bit => {
             let mut out = Vec::new();

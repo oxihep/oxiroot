@@ -8,6 +8,7 @@ mod header;
 #[cfg(feature = "http")]
 mod http;
 mod key;
+mod readahead;
 mod reader;
 mod source;
 mod writer;

@@ -71,6 +71,21 @@ pub(super) fn read_baskets(
             .and_then(|&b| (b > 0).then_some(b as usize))
     };
 
+    // Announce the baskets of known size, so a remote file fetches them in
+    // batches instead of a round trip each. The ranges are exactly the ones
+    // `Basket::read` asks for.
+    let indices: Vec<usize> = indices.collect();
+    let planned: Vec<(u64, usize)> = indices
+        .iter()
+        .filter_map(|&i| {
+            let seek = seek_of(i).ok()?;
+            let avail = file.size().saturating_sub(seek);
+            bytes_of(i).map(|n| (seek, (n as u64).min(avail) as usize))
+        })
+        .collect();
+    file.plan_reads(&planned);
+    let indices = indices.into_iter();
+
     match decode {
         // Stops at the first error.
         Decode::Serial => indices
