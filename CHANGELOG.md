@@ -14,6 +14,12 @@ change the API.
 
 ### Changed
 
+- **Plotting uses oxiplot 0.4.0, oxihist 0.6.1 and oxifit 0.1.2.** New:
+  stacked histograms (`Axes::hist_stack`), category axes (oxihist category
+  histograms label their bins), large heatmaps drawn as one image, SVGs
+  sized in points. oxihist validates deserialised histograms; oxifit's
+  Nelder–Mead fallback is valid only when it converged. The plotting guide
+  covers stacks and category axes.
 - **Plotting uses oxiplot 0.3.1** (and oxihist 0.5.1, which builds on it).
   New: log axes (`Axes::xscale`/`yscale` with `Scale::Log`), legend
   placement (`legend()` now avoids the data; `legend_loc(Loc)` pins it),

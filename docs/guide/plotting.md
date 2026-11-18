@@ -109,6 +109,31 @@ weighted or background-subtracted one) extends below zero. Limits you set with
 `xlim`/`ylim` always win, whether set before or after plotting. Bins holding
 NaN or ±∞ are drawn empty rather than breaking the plot.
 
+### Stacks
+
+`hist_stack` draws histograms that share a binning on top of each other, as
+mplhep's `histplot(stack=True)` does: layers are given bottom to top, filled
+by default, and the legend lists them top to bottom. Layers of a different
+binning are refused with an error.
+
+<!-- fragment -->
+```rust
+use oxiroot::plot::{Axes, HistOpts, HistType, StackOpts, Color};
+
+let mut ax = Axes::new();
+ax.hist_stack_with(&[&dy, &ttbar, &signal], StackOpts::new().labels(["DY", "$t\\bar{t}$", "signal"]))?;
+ax.hist_with(&total, HistOpts::new().histtype(HistType::Band).color(Color::BLACK).label("stat. unc."));
+ax.legend();
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+### Category axes
+
+A histogram whose bins are categories names them on the plot: each bin is
+labelled at its centre instead of with numeric ticks. oxihist histograms over
+a string, integer-category or boolean axis do this on their own; from plain
+arrays, use `Binned1D::categories(&["ee", "μμ", "eμ"], counts)`.
+
 ## Graphs and profiles
 
 `errorbar` draws a `Graph` (plain, symmetric, or asymmetric errors) as data
@@ -185,6 +210,10 @@ rather than painted the colormap's lowest color, and they are excluded from the
 autoscale, so the color range spans only the bins that hold data. This is the
 ROOT `COLZ` / matplotlib `cmin` convention; with a transparent background the
 empty cells become transparent.
+
+A large heatmap (64 × 64 bins or more, regular bins on linear axes) is drawn
+as one image, a pixel per bin with no smoothing, so a fine 2-D histogram stays
+a small SVG or PDF; smaller or variable-width grids draw a rectangle per bin.
 
 ## Overlaying a fitted curve
 
@@ -348,8 +377,8 @@ ax.save_with("plot.png", SaveOpts::new().transparent())?;
 ```
 
 SVG and PDF are resolution-independent; DPI only affects the PNG raster. A PDF
-page is the figure's size in points (6.4 × 4.8 in by default) at any DPI, so
-text keeps its point size. `PdfPages` collects several figures, or single axes
+page, and an SVG's stated size, are the figure's size in points (6.4 × 4.8 in
+by default) at any DPI, so text keeps its point size. `PdfPages` collects several figures, or single axes
 with `add_axes`, into one multi-page PDF. To render without touching the
 filesystem, `ax.to_svg_string()`,
 `ax.to_png_bytes(SaveOpts::new())`, and `ax.to_pdf_bytes()` return the bytes
