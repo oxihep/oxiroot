@@ -985,34 +985,27 @@ Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
 
 ## Roadmap
 
-Pre-1.0: the API may still change between minor versions. On the list —
-each item targets the same bar as what
-already ships: byte-level round-trips verified against both ROOT and uproot.
-Grouped by the ROOT feature each fills.
+Pre-1.0: the API may still change between minor versions. The full list,
+with what "done" means for each item, is in [ROADMAP.md](ROADMAP.md). In
+short:
 
-- **RNTuple**
-  - **A ROOT-C++-confirmed `std::map` write** — oxiroot already writes a
-    spec-compliant `std::map` RNTuple that uproot reads and oxiroot round-trips
-    (`Field::map`; see the `assoc` tests). Confirming a *ROOT-C++* round-trip is
-    blocked because ROOT 6.40's `std::map` collection proxy is non-functional in
-    the test build — it can neither create nor read a `std::map` RNTuple field —
-    so this needs a ROOT install with the `std::map` dictionary loaded to verify.
-- **Remote reads** — richer XRootD auth (**GSI / X.509** and **token / ZTN**) for
-  access-controlled data. The `root://` transport ships today (`FileReader::open_url`,
-  the `xrootd` feature) with `unix` auth for public data, alongside HTTP(S) range
-  reads (the `http` feature).
-- **`TFile` container**
-- **`RDataFrame`-style analysis** *(far future)* — a lazy, columnar analysis
-  front-end (`Define` / `Filter` / `Histo1D` / `Sum`, executed in one pass over a
-  `TTree` or RNTuple, parallelised across clusters) built on the existing readers.
-  This is a compute engine, not IO — a large, separate undertaking — so it sits
-  well beyond the current milestones, but it is the natural cap on the stack once
-  the IO layer is complete. (`RNTupleProcessor`, ROOT's RNTuple-native iteration,
-  is the same shape and would share the machinery.)
+- **Next:**
+  - validation gaps in oxihist (deserialisation, wide integer axes) and
+    oxifit (Nelder–Mead convergence);
+  - stacked histograms and categorical axes in oxiplot;
+  - hosted API docs for every repo.
+- **Then:**
+  - remote reads with fewer round trips (XRootD `kXR_readv`, HTTP
+    multi-range), and XRootD GSI/X.509 and token auth;
+  - a ROOT-C++-confirmed RNTuple `std::map`;
+  - error-contract and lint clean-ups.
+- **Toward 1.0:** an API review, then publishing to crates.io.
+- **Far future:** an `RDataFrame`-style lazy analysis front-end.
 
-Out of scope: ROOT 7 `RHist` (no persistable on-disk format — its `Streamer`
-throws); and reading/writing ROOT's own graphics objects (`TCanvas`, `TPad`, …) —
-the `plot` feature (oxiplot) renders the data, it does not (de)serialize ROOT graphics.
+Out of scope:
+- ROOT 7 `RHist`, which has no persistable on-disk format;
+- ROOT's graphics objects (`TCanvas`, `TPad`, …). The `plot` feature renders
+  the data; it does not (de)serialise ROOT graphics.
 
 ## License
 
