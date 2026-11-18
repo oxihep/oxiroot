@@ -613,7 +613,7 @@ labels are typeset as real LaTeX math by the pure-Rust
   <img src="docs/images/plot-ratio.png" alt="A main panel over a data/MC ratio panel sharing the x-axis" width="46%">
 </p>
 
-<sub>All figures are produced by `cargo run -p oxiroot --example plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("CMS", "Preliminary")`).</sub>
+<sub>All figures are produced by `cargo run -p oxiroot --example plot` (PNG, SVG **and** PDF). Left: the plain matplotlib look (fancybox legend, STIX serif, LaTeX labels). Right: the HEP-publication look (`Style::mplhep()` + `ax.hep_label("Demo", "Simulation")`).</sub>
 
 <!-- fragment -->
 ```rust
@@ -654,7 +654,8 @@ ax2.save("heatmap.svg")?;
 - **Publication-ready out of the box** — a matplotlib `fancybox` (rounded) legend,
   the STIX serif used by LaTeX, and [`Style::mplhep()`](https://scikit-hep.org/mplhep/)
   for the HEP look (in-pointing minor ticks on all four sides, a heavier frame).
-  `ax.hep_label("CMS", "Preliminary")` adds the bold experiment label, and
+  `ax.hep_label("Demo", "Simulation")` adds the bold experiment label (put a
+  collaboration's name there only on its own results), and
   `ax.hep_rhs("138 fb$^{-1}$ (13 TeV)")` the luminosity/energy above the frame.
 - **Overlay a fit** — `ax.function(|x| …, x0..x1)` draws any closure as a smooth
   curve; with the `fit` feature, `ax.model(&model, x0..x1)` overlays a fitted

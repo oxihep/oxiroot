@@ -13,7 +13,7 @@
 //!    LaTeX axis label (the default matplotlib look). Also saved at 220 DPI.
 //! 2. `mplhep` — the same histogram as a step staircase with error bars in the
 //!    mplhep style (in-pointing ticks, minors, all four sides), with a bold
-//!    `CMS Preliminary` experiment label and luminosity/energy above the frame,
+//!    `Demo Simulation` experiment-style label and luminosity/energy above the frame,
 //!    a fitted Gaussian, and a ROOT-style fit stat box (with the `fit` feature).
 //! 3. `heatmap` — a 2-D Hist2D as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
@@ -82,10 +82,12 @@ fn main() -> oxiroot::Result<()> {
     println!("wrote {} (220 dpi)", out.join("mass_hi.png").display());
 
     // --- 2. The same histogram as a step + error bars, mplhep style, with a
-    //        CMS experiment label and luminosity/energy above the frame. ---
+    //        an experiment-style label and luminosity/energy above the frame.
+    //        A collaboration's name belongs only on its own results, so a
+    //        demo uses a neutral one. ---
     let mut hep = Axes::with_style(Style::mplhep());
     hep.hist_with(&mc, HistOpts::new().yerr().label("MC"));
-    hep.hep_label("CMS", "Preliminary")
+    hep.hep_label("Demo", "Simulation")
         .hep_rhs("138 fb$^{-1}$ (13 TeV)");
     hep.xlabel("$m_{\\mu\\mu}$ [GeV]");
     hep.ylabel("Events / 2 GeV");
