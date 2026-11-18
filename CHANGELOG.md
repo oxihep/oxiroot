@@ -26,6 +26,11 @@ change the API.
   `batches_reads` and `plan_reads`, all with defaults, so existing sources
   keep working.
 
+- **Sampling shares oxihist's `BinnedSampler`.** `Hist1D::fill_random` and
+  `fill_random_fn` used their own copy of the inverse-CDF code; they now use
+  oxihist 0.6.2's `BinnedSampler`, as `get_random` and `Func1D::get_random`
+  already used its `Random::sample_binned`. The draws are unchanged. Plotting
+  uses oxiplot 0.4.2 (`Error::Io` reports its cause through `source()`).
 - **Plotting uses oxiplot 0.4.0, oxihist 0.6.1 and oxifit 0.1.2.** New:
   stacked histograms (`Axes::hist_stack`), category axes (oxihist category
   histograms label their bins), large heatmaps drawn as one image, SVGs

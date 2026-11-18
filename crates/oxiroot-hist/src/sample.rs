@@ -1,7 +1,8 @@
 //! Histogram sampling and smoothing: draw random values from a histogram's or
 //! a closure's distribution (`Hist1D::GetRandom` / `FillRandom`) and smooth a
-//! histogram (`Hist1D::Smooth`). [`Random::sample_binned`] is the shared
-//! inverse-CDF draw, also used by `Func1D::get_random` in `oxiroot-hist-func`.
+//! histogram (`Hist1D::Smooth`). The inverse-CDF draw is oxihist's
+//! [`BinnedSampler`] (and [`Random::sample_binned`] for one draw), shared with
+//! oxihist's own histograms and `Func1D::get_random` in `oxiroot-hist-func`.
 //!
 //! Sampling needs a uniform random source. oxiroot has no global RNG (no
 //! `gRandom`), so a small dependency-free [`Random`] is provided; seed it for
@@ -18,55 +19,9 @@
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
 
-use oxihist::Random;
+use oxihist::{BinnedSampler, Random};
 
 use crate::hist1d::Hist1D;
-
-/// The normalized cumulative of `weights` (one entry per bin): `cdf[0] = 0`,
-/// `cdf[k] = Σ weights[..k] / total`, length `weights.len() + 1`. `None` if the
-/// total is not a positive, finite number (nothing to sample).
-fn build_cdf(weights: &[f64]) -> Option<Vec<f64>> {
-    let mut cdf = vec![0.0; weights.len() + 1];
-    let mut acc = 0.0;
-    for (i, &w) in weights.iter().enumerate() {
-        acc += w;
-        cdf[i + 1] = acc;
-    }
-    if !(acc.is_finite() && acc > 0.0) {
-        return None;
-    }
-    for c in &mut cdf {
-        *c /= acc;
-    }
-    Some(cdf)
-}
-
-/// Inverse-transform sample: given a normalized `cdf` (length `nbins + 1`) and
-/// the `nbins + 1` bin `edges`, map a uniform `r ∈ [0, 1)` to an `x`, linearly
-/// interpolating within the chosen bin (ROOT's `GetRandom`).
-fn sample_cdf(cdf: &[f64], edges: &[f64], r: f64) -> f64 {
-    let nbins = cdf.len() - 1;
-    // First index k with cdf[k] > r (so the drawn bin is k, 1..=nbins).
-    let mut lo = 1;
-    let mut hi = nbins;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        if cdf[mid] <= r {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    let k = lo;
-    let (c0, c1) = (cdf[k - 1], cdf[k]);
-    let low = edges[k - 1];
-    let width = edges[k] - edges[k - 1];
-    if c1 > c0 {
-        low + (r - c0) / (c1 - c0) * width
-    } else {
-        low + 0.5 * width
-    }
-}
 
 impl Hist1D {
     /// Draw a random `x` from the histogram's distribution (ROOT's `GetRandom`):
@@ -86,10 +41,9 @@ impl Hist1D {
     /// Fill this histogram with `n` values drawn from `source`'s distribution
     /// (ROOT's `FillRandom(Hist1D*, n)`). Efficient: the cumulative is built once.
     pub fn fill_random(&mut self, source: &Hist1D, n: usize, rng: &mut Random) {
-        let edges = source.xaxis.edges();
-        if let Some(cdf) = build_cdf(source.values()) {
+        if let Some(sampler) = BinnedSampler::new(source.values(), &source.xaxis.edges()) {
             for _ in 0..n {
-                self.fill(sample_cdf(&cdf, &edges, rng.uniform()));
+                self.fill(sampler.sample(rng));
             }
         }
     }
@@ -102,10 +56,9 @@ impl Hist1D {
         let weights: Vec<f64> = (1..=nbins)
             .map(|b| f(self.xaxis.bin_center(b)).max(0.0))
             .collect();
-        let edges = self.xaxis.edges();
-        if let Some(cdf) = build_cdf(&weights) {
+        if let Some(sampler) = BinnedSampler::new(&weights, &self.xaxis.edges()) {
             for _ in 0..n {
-                self.fill(sample_cdf(&cdf, &edges, rng.uniform()));
+                self.fill(sampler.sample(rng));
             }
         }
     }

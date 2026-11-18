@@ -45,10 +45,10 @@ oxifit = { git = "https://github.com/oxihep/oxifit", tag = "v0.1.2", version = "
 oxifit-formula = { git = "https://github.com/oxihep/oxifit", tag = "v0.1.2", version = "0.1.2" }
 # Default features off: the crates that implement its data traits need none, and
 # the facade's `plot` feature turns PNG output and TeX math back on.
-oxiplot = { git = "https://github.com/oxihep/oxiplot", tag = "v0.4.0", version = "0.4.0", default-features = false }
+oxiplot = { git = "https://github.com/oxihep/oxiplot", tag = "v0.4.2", version = "0.4.2", default-features = false }
 # The ROOT-free histogram library; oxiroot-hist converts its histograms to and
 # from ROOT's.
-oxihist = { git = "https://github.com/oxihep/oxihist", tag = "v0.6.1", version = "0.6.1" }
+oxihist = { git = "https://github.com/oxihep/oxihist", tag = "v0.6.2", version = "0.6.2" }
 bytes = "1"
 # Pure-Rust blocking HTTP client (rustls, no OpenSSL), for the optional `http`
 # remote-read feature. `default-features = false` drops gzip transfer decoding,
