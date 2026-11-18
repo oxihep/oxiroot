@@ -890,8 +890,8 @@ source = "git+https://github.com/oxihep/oxifit?tag=v0.1.1#726fe49eda7201c98d76ad
 
 [[package]]
 name = "oxihist"
-version = "0.4.3"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.4.3#0ca106fc6d51af2f886b121ae7bd751294916d5d"
+version = "0.5.1"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.5.1#28c92bd72e59ecf31e40d96739d06aa80f88f540"
 dependencies = [
  "foldhash",
  "oxifit",
@@ -907,8 +907,8 @@ source = "git+https://github.com/oxihep/oxiparticle?tag=v0.1.0#61ca817e2a2bff1d9
 
 [[package]]
 name = "oxiplot"
-version = "0.2.1"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.2.1#a5a53030717cdeeaa8c2e1390c5c11bb15e39774"
+version = "0.3.1"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.3.1#4ca07579aa925eb01bcccfdbe4a2363dd8b76669"
 dependencies = [
  "oxifit",
  "oxiplot-tex",
@@ -918,8 +918,8 @@ dependencies = [
 
 [[package]]
 name = "oxiplot-tex"
-version = "0.2.1"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.2.1#a5a53030717cdeeaa8c2e1390c5c11bb15e39774"
+version = "0.3.1"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.3.1#4ca07579aa925eb01bcccfdbe4a2363dd8b76669"
 dependencies = [
  "skrifa",
 ]

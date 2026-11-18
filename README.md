@@ -645,8 +645,11 @@ ax2.save("heatmap.svg")?;
   switches to a log / symlog color scale with a decade colorbar, like matplotlib's
   `LogNorm`/`SymLogNorm`), `plot`, `function` (overlay any
   analytic or fitted curve), `grid`, `xlabel`/`ylabel`/`title`, `xlim`/`ylim`
-  (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), and `legend`. The `*_with`
-  methods take an options builder; the bare ones use defaults.
+  (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), log axes
+  (`ax.yscale(Scale::Log)`, decade ticks labelled 10ᵏ), and `legend`, placed
+  where it hides the least data (matplotlib's `loc="best"`) or pinned with
+  `legend_loc(Loc::…)`. The `*_with` methods take an options builder; the bare
+  ones use defaults.
 - **Publication-ready out of the box** — a matplotlib `fancybox` (rounded) legend,
   the STIX serif used by LaTeX, and [`Style::mplhep()`](https://scikit-hep.org/mplhep/)
   for the HEP look (in-pointing minor ticks on all four sides, a heavier frame).
@@ -660,13 +663,16 @@ ax2.save("heatmap.svg")?;
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
   (height/width ratios, spacing) with `fig.sharex()`/`sharey()` and a `suptitle`,
   plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot (shared
-  x-axis, the upper panel's x labels hidden).
+  x-axis, the upper panel's x labels hidden). The figure makes room for every
+  panel's tick labels, axis labels and title so nothing overlaps, and lines up
+  the y-axis labels of a column.
 - **Output** — `save`/`save_with` pick the format from the extension: `.png`,
   `.svg`, **and `.pdf`** (a hand-written vector PDF). `SaveOpts` sets the **DPI**
   for a sharper PNG (`save_with(path, SaveOpts::new().dpi(300.0))`) or a
   transparent background; `to_png_bytes`/`to_svg_string` render in memory.
   `PdfPages` collects several figures into one **multi-page** vector PDF
-  (matplotlib's `PdfPages`).
+  (matplotlib's `PdfPages`); a PDF page is the figure's size in points at any
+  DPI.
 - **Fonts** — the default is **STIX Two** (a LaTeX-like serif: STIX Two Text +
   STIX Two Math) for a publication look with text and math in one typeface.
   `ax.fonts(FontSet::dejavu())` switches to the matplotlib sans-serif look, and

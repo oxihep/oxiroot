@@ -14,6 +14,16 @@ change the API.
 
 ### Changed
 
+- **Plotting uses oxiplot 0.3.1** (and oxihist 0.5.1, which builds on it).
+  New: log axes (`Axes::xscale`/`yscale` with `Scale::Log`), legend
+  placement (`legend()` now avoids the data; `legend_loc(Loc)` pins it),
+  `plot_with`, `profile_with` and `PdfPages::add_axes`. Figures now lay out
+  their panels around their labels, so grids no longer print labels over
+  their neighbours, and line up the y labels of a column; PDF pages are the
+  figure's size in points (they were 39% too large). Fixed: limits set
+  before plotting were overwritten, negative bins were cut off, NaN/∞ data
+  produced invalid SVG, and more (see oxiplot's changelog). The plotting
+  guide covers log axes and the legend.
 - **Rust 1.100 and edition 2024.** The minimum supported Rust version
   (`rust-version`) moves from 1.95 to 1.100, the current stable release that
   CI already builds with, and the crates move to the 2024 edition (migrated

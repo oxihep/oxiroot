@@ -102,8 +102,12 @@ ax.hist_with(&data_hist, HistOpts::new().yerr().label("data")); // √N / Sumw2 
 ```
 
 Error bars come from `√N` (or the Sumw2 per-bin error when the histogram tracks
-it). `hist`/`hist_with` snap the x-axis to the bin edges and start the y-axis at
-zero, the mplhep convention.
+it); `Errorbar` and `Band` draw them without being asked, `Step` and `Fill` when
+given `.yerr()`. `hist`/`hist_with` snap the x-axis to the bin edges and start
+the y-axis at zero, the mplhep convention; a histogram with negative bins (a
+weighted or background-subtracted one) extends below zero. Limits you set with
+`xlim`/`ylim` always win, whether set before or after plotting. Bins holding
+NaN or ±∞ are drawn empty rather than breaking the plot.
 
 ## Graphs and profiles
 
@@ -117,9 +121,43 @@ use oxiroot::plot::{Axes, ErrorbarOpts, Color};
 
 let mut ax = Axes::new();
 ax.errorbar_with(&graph, ErrorbarOpts::new().color(Color::BLACK).label("data"));
-ax.profile(&prof);
+ax.profile_with(&prof, ErrorbarOpts::new().label("mean"));
 ax.legend();
 ```
+
+`plot(&x, &y)` draws a plain line; `plot_with(&x, &y, CurveOpts::new()…)` gives
+it a color, dash pattern and legend label.
+
+## Log axes
+
+`ax.yscale(Scale::Log)` (or `xscale`) makes an axis logarithmic, as
+matplotlib's `set_yscale("log")` does: each decade takes the same length, the
+major ticks sit at the powers of ten and read `10^k`, and minor ticks mark 2…9
+in each decade. A range under two decades is ticked at 1·, 2·, 5· (or every
+integer multiple when it spans under one).
+
+<!-- fragment -->
+```rust
+use oxiroot::plot::{Axes, HistOpts, HistType, Scale};
+
+let mut ax = Axes::new();
+ax.hist_with(&falling_spectrum, HistOpts::new().histtype(HistType::Fill));
+ax.yscale(Scale::Log);
+```
+
+A log axis autoscales to the positive data: a histogram starts just below its
+smallest non-empty bin instead of at zero, which a log axis cannot show. Values
+at or below zero (an empty bin, an error bar reaching below zero) run off the
+bottom of the frame, like matplotlib's `nonpositive="clip"`.
+
+## Legend
+
+`ax.legend()` shows the labelled artists, in the spot that covers the fewest
+data points, as matplotlib's `loc="best"` does. It tries the upper right first,
+so the legend lands there whenever that corner is free. To pin it, use
+`ax.legend_loc(Loc::UpperLeft)` (or `UpperRight`, `LowerLeft`, `LowerRight`,
+`CenterLeft`, `CenterRight`, `UpperCenter`, `LowerCenter`, `Center`). Labels
+may contain `$…$` math; the frame fits the typeset label.
 
 ## 2-D histograms
 
@@ -202,13 +240,14 @@ let mut ax = Axes::new();
 ax.hist(&h);
 ax.model_with(&fitted, 50.0..130.0, CurveOpts::new().color(Color::hex("#d62728")).label("fit"));
 ax.fit_stats(&fitted, &r);   // name + χ²/ndf + each parameter ± error
-ax.legend();                 // the box stacks beneath the legend when both are top-right
+ax.legend();                 // the box stacks beneath the legend if they would overlap
 ax.save("fit.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
-The box is anchored top-right by default; when a legend is also shown there it is
-stacked directly beneath it. Use `ax.fit_stats_with(&model, &result, opts)` with a
+The box is anchored top-right by default; when the legend also lands there it is
+stacked directly beneath it (pin the legend elsewhere with `ax.legend_loc(…)` to
+keep them apart). Use `ax.fit_stats_with(&model, &result, opts)` with a
 [`StatBox`](../api/oxiroot/plot/struct.StatBox.html) to change what is listed or
 where it sits:
 
@@ -256,10 +295,20 @@ fig.sharex()                           // common x range, x labels on the bottom
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
+The figure lays the panels out around their decorations, like matplotlib's
+constrained layout: the margins and gaps of the `GridSpec` are the least room
+given, widened wherever a panel's tick labels, axis labels or title (or the
+suptitle) need more, so nothing overlaps. The y-axis labels of each column are
+lined up. Giving a figure more axes than its grid has cells adds rows below.
+
 `ratio_subplots()` is the one-call HEP ratio plot: a main panel over a shorter
 ratio panel (height ratios 3:1) sharing the x-axis. The panels touch, only the
 bottom panel shows x tick labels and the x-axis label, and the common x range is
-the union of both panels'.
+the one the panels declare (a histogram's edges, or `xlim`), so the histogram
+meets the frame however far the ratio points' autoscale would reach. Panels
+stacked with `sharex` and `hspace(0.0)` drop the top y tick label of every
+panel below the first, so the labels at each seam do not print over each
+other.
 
 ![A filled MC histogram with data points over a data/MC ratio panel](../images/plot-ratio.png){ width="65%" }
 
@@ -298,8 +347,11 @@ ax.save_with("plot.png", SaveOpts::new().transparent())?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
-SVG and PDF are resolution-independent; DPI only affects the PNG raster. To
-render without touching the filesystem, `ax.to_svg_string()`,
+SVG and PDF are resolution-independent; DPI only affects the PNG raster. A PDF
+page is the figure's size in points (6.4 × 4.8 in by default) at any DPI, so
+text keeps its point size. `PdfPages` collects several figures, or single axes
+with `add_axes`, into one multi-page PDF. To render without touching the
+filesystem, `ax.to_svg_string()`,
 `ax.to_png_bytes(SaveOpts::new())`, and `ax.to_pdf_bytes()` return the bytes
 directly (and the same three methods exist on `Figure`).
 
@@ -371,9 +423,9 @@ and Greek all render, e.g. `"$\\frac{1}{\\sigma}\\frac{d\\sigma}{dp_T}$"` or
 `"$\\sqrt{s} = 13\\,\\mathrm{TeV}$"`. A malformed math run falls back to plain
 text rather than failing.
 
-A title taller than the top margin — a display-style fraction, say — lowers the
-frame just enough to stay inside the figure; other titles leave the layout as
-it is.
+The figure leaves room above the frame for the title, however tall (a
+display-style fraction, say); a title shares the space above the frame with the
+experiment label (`hep_label`) by sitting above it.
 
 ## Figures and saving
 
