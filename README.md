@@ -1007,6 +1007,15 @@ Out of scope:
 - ROOT's graphics objects (`TCanvas`, `TPad`, …). The `plot` feature renders
   the data; it does not (de)serialise ROOT graphics.
 
+## AI assistance
+
+This project is developed with the help of AI coding assistants. Under the
+author's direction they wrote and reviewed much of the code, the tests and
+the documentation. Every change goes through the same checks either way: the
+test suite and CI (including round-trips read back by ROOT C++ and uproot,
+and fuzzing) and review before it is merged. If something looks wrong,
+please open an issue.
+
 ## License
 
 Licensed under the [MIT License](LICENSE). The oxiparticle and oxiplot-tex
