@@ -996,15 +996,9 @@ Pre-1.0: the API may still change between minor versions. The full list,
 with what "done" means for each item, is in [ROADMAP.md](ROADMAP.md). In
 short:
 
-- **Next:** category axes in oxihist's plots. The other small items
-  (oxihist and oxifit validation, oxistats examples, oxiplot stacks,
-  category axes, heatmap images, golden tests, hosted API docs for every
-  repo) are done on `main`.
-- **Then:**
-  - remote reads with fewer round trips (XRootD `kXR_readv`, HTTP
-    multi-range), and XRootD GSI/X.509 and token auth;
-  - a ROOT-C++-confirmed RNTuple `std::map`;
-  - error-contract and lint clean-ups.
+- **Next:** XRootD token and GSI authentication (needs TLS first), less
+  duplicated 1-D/2-D/3-D histogram code, and stricter lints. Batched remote
+  reads, hostile-server tests and the small items before them are done.
 - **Toward 1.0:** an API review, then publishing to crates.io.
 - **Far future:** an `RDataFrame`-style lazy analysis front-end.
 

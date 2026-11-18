@@ -57,56 +57,60 @@ Small, independent fixes, each a PR in one repo.
   oxiparticle, deployed to each repo's GitHub Pages on every push to
   `main` (e.g. <https://oxihep.github.io/oxiplot/>).
 
-The code changes are on each repo's `main`, not yet in a release.
+- **oxihist category axes in plots** (oxihist 0.6.0): a histogram over a
+  string, integer-category or boolean axis names its bins in plots.
 
-### Still open
-
-- **oxihist category axes in plots.** oxihist's `plot` feature should
-  implement oxiplot's new `Hist1dData::x_labels` for string and integer
-  category axes, once a release of oxiplot carries it.
+All of these are released: oxifit 0.1.2, oxiplot 0.4.0, oxihist 0.6.1, and
+oxiroot pins them.
 
 ## Then
 
 Larger pieces, each worth a design note before code.
 
-### Remote reads
+### Done
 
-- **Fewer round trips.**
-  - *Today:* every basket or page is one blocking request, over both XRootD
-    and HTTP.
-  - *Done when:* reading a cluster asks for all its baskets or pages at once
-    (XRootD `kXR_readv`, HTTP multi-range requests) and caches them, with
-    tests against the mock servers. This is where remote reads lose most of
-    their time.
+- **Remote reads take fewer round trips**
+  ([oxiroot#70](https://github.com/oxihep/oxiroot/pull/70)). Readers
+  announce a branch's baskets or a column's pages, and the file fetches them
+  in batches of up to 1024 ranges or 32 MiB: one XRootD `kXR_readv` per
+  batch, or up to eight concurrent HTTP range requests. About 30 % faster
+  on 3 million entries from EOS here; more on higher-latency links.
+- **Hostile-server tests** (same PR). The XRootD mock plays short reads, a
+  connection dropped mid-reply, an error status, and vector-read replies at
+  the wrong offset, cut short or with extra bytes; each ends in an error.
+  (A server that stalls is cut off by the 30 s socket timeout; it is not
+  tested, to keep the suite fast.)
+- **Shared inverse-CDF sampling.** oxihist's `BinnedSampler` (0.6.2) is the
+  one implementation; oxiroot's `Hist1D` and `Func1D` use it.
+- **Error causes.** oxiplot's `Error::Io` now reports its cause through
+  `source()` (0.4.2); oxiroot's facade error already chained every wrapped
+  error. `oxiroot_io_core::Error::Io` keeps the I/O error's kind and
+  message rather than the error itself, by design: the type is `Clone` and
+  `Eq`, which a `std::io::Error` is not.
+
+### Still open
+
 - **XRootD authentication beyond `unix`.**
   - *Done when:* GSI / X.509 and token (ZTN) authentication open
     access-controlled data. `root://` with `unix` auth, and HTTP(S) range
     reads, already ship.
-- **Hostile-server tests.** The XRootD client is fuzzed for parsing but not
-  driven by a misbehaving server (short reads, wrong lengths, stalls).
-  - *Done when:* the mock server can play each of these, and every case ends
-    in an error, not a hang or a panic.
-
-### RNTuple
-
-- **A ROOT-C++-confirmed `std::map` write.**
+  - *Design first:* token (ZTN) authentication sends a bearer token found the
+    WLCG way (`BEARER_TOKEN`, `BEARER_TOKEN_FILE`, `$XDG_RUNTIME_DIR/bt_u$UID`)
+    over a TLS connection (`roots://`, or `kXR_ableTLS`), so it needs TLS
+    first. GSI needs X.509 proxy certificates and its own handshake. Both need
+    a server to test against.
+- **A ROOT-C++-confirmed RNTuple `std::map` write.**
   - *Today:* oxiroot writes a spec-compliant `std::map` field that uproot reads
     and oxiroot round-trips (`Field::map`).
   - *Blocked on:* ROOT 6.40's `std::map` collection proxy, which can neither
     create nor read such a field in the test build.
   - *Done when:* a ROOT install with the `std::map` dictionary reads it back in
     the interop job.
-
-### Code health
-
-- **One error contract per crate.** Some errors drop their cause; make
-  `source()` chain through every wrapped error, and give every public error
-  `#[non_exhaustive]` and `Debug`, consistently across the repos.
-- **Less parallel code.**
-  - The ROOT histogram types repeat their 1-D/2-D/3-D logic (about 2000 lines).
-    Generate it or share it, behind the same public API.
-  - The inverse-CDF sampling in `oxiroot-hist` and `oxiroot-hist-func` should
-    become one function.
+- **`#[non_exhaustive]` and `Debug` everywhere.** Give every public error
+  and options type both, consistently across the repos.
+- **Less parallel code.** The ROOT histogram types repeat their 1-D/2-D/3-D
+  logic (about 2000 lines). Generate it or share it, behind the same public
+  API.
 - **Lints.** Turn on the cast and idiom lints (`cast_possible_truncation`,
   `cast_sign_loss`, …) workspace by workspace, fixing or justifying each hit.
   Settle the `i32`/`usize` mixing they surface.
