@@ -12,6 +12,7 @@ use super::directory::Directory;
 use super::free::{FreeSegment, read_free};
 use super::header::FileHeader;
 use super::key::Key;
+use super::readahead::ReadAhead;
 use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result, decompress_payload};
@@ -45,6 +46,9 @@ pub struct FileReader {
     /// Subdirectories already read, by path: reading N objects from one
     /// subdirectory used to fetch and parse its key list N times.
     dirs: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<Directory>>>,
+    /// Batched read-ahead of announced ranges, for a source that batches reads
+    /// (a remote file); unused otherwise.
+    readahead: std::sync::Mutex<ReadAhead>,
 }
 
 impl std::fmt::Debug for FileReader {
@@ -141,6 +145,7 @@ impl FileReader {
             root_dir,
             registry: std::sync::OnceLock::new(),
             dirs: std::sync::Mutex::default(),
+            readahead: std::sync::Mutex::default(),
         })
     }
 
@@ -336,7 +341,27 @@ impl FileReader {
     /// page, and TTree basket readers go through this so they touch only the
     /// bytes they need.
     pub fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
+        if self.source.batches_reads() {
+            let mut ra = self.readahead.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(bytes) = ra.take(&*self.source, offset, len)? {
+                return Ok(bytes);
+            }
+        }
         self.source.read_at(offset, len)
+    }
+
+    /// Announce the ranges about to be read, in order, so a remote file fetches
+    /// them in batches (an XRootD vector read, concurrent HTTP requests) rather
+    /// than a round trip each. A no-op for a local or in-memory file. The TTree
+    /// and RNTuple readers call it before reading a branch's baskets or a
+    /// column's pages.
+    pub fn plan_reads(&self, ranges: &[(u64, usize)]) {
+        if self.source.batches_reads() {
+            self.readahead
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .plan(ranges);
+        }
     }
 
     /// Fetch a key's (possibly compressed) object payload — the `fNbytes −
@@ -362,7 +387,15 @@ impl ByteSource for FileReader {
     }
 
     fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
-        self.source.read_at(offset, len)
+        FileReader::read_at(self, offset, len)
+    }
+
+    fn batches_reads(&self) -> bool {
+        self.source.batches_reads()
+    }
+
+    fn plan_reads(&self, ranges: &[(u64, usize)]) {
+        FileReader::plan_reads(self, ranges);
     }
 }
 

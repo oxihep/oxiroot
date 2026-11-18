@@ -10,6 +10,8 @@
 //! `kXR_read(handle, offset, length)` maps directly onto
 //! [`ByteSource::read_at`], so an [`XrootdSource`] plugs into [`FileReader`] exactly
 //! like the HTTP source, and every reader fetches only the ranges it touches.
+//! A batch of ranges — a branch's baskets, a column's pages — goes out as one
+//! `kXR_readv` (vector read), one round trip for up to 1024 ranges.
 //!
 //! The wire framing here was validated against `root://eospublic.cern.ch`.
 //!
@@ -31,6 +33,7 @@ const KXR_CLOSE: u16 = 3003;
 const KXR_LOGIN: u16 = 3007;
 const KXR_OPEN: u16 = 3010;
 const KXR_READ: u16 = 3013;
+const KXR_READV: u16 = 3025;
 const KXR_STAT: u16 = 3017;
 
 // Response status codes.
@@ -48,6 +51,14 @@ const SMALL_RESPONSE: usize = 64 * 1024;
 
 // Open option: read-only.
 const KXR_OPEN_READ: u16 = 0x10;
+
+/// The most elements one `kXR_readv` may carry (`XrdProto::maxRvecsz`).
+const READV_MAX_ELEMENTS: usize = 1024;
+/// The most bytes one `kXR_readv` element may ask for (`XrdProto::maxRvecln`);
+/// a longer range is split across elements.
+const READV_MAX_ELEMENT_LEN: usize = 2_097_136;
+/// The size of a `readahead_list` element: fhandle[4], rlen(i32), offset(i64).
+const READV_ELEMENT: usize = 16;
 
 /// Default XRootD port.
 const DEFAULT_PORT: u16 = 1094;
@@ -344,6 +355,65 @@ impl Conn {
         Ok(Bytes::from(payload))
     }
 
+    /// Read several ranges in one `kXR_readv` round trip per
+    /// [`READV_MAX_ELEMENTS`] elements, splitting ranges longer than an element
+    /// may be. Each element of the reply is checked against what was asked.
+    fn read_many(&mut self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
+        // The elements to ask for: (range index, offset, length).
+        let mut elements = Vec::new();
+        for (i, &(offset, len)) in ranges.iter().enumerate() {
+            let mut done = 0usize;
+            while done < len {
+                let n = (len - done).min(READV_MAX_ELEMENT_LEN);
+                elements.push((i, offset + done as u64, n));
+                done += n;
+            }
+        }
+        let mut out: Vec<Vec<u8>> = ranges.iter().map(|&(_, l)| Vec::with_capacity(l)).collect();
+        for chunk in elements.chunks(READV_MAX_ELEMENTS) {
+            let mut list = Vec::with_capacity(chunk.len() * READV_ELEMENT);
+            for &(_, offset, len) in chunk {
+                list.extend_from_slice(&self.fhandle);
+                list.extend_from_slice(&(len as i32).to_be_bytes());
+                list.extend_from_slice(&(offset as i64).to_be_bytes());
+            }
+            let expected: usize = chunk.iter().map(|&(_, _, l)| READV_ELEMENT + l).sum();
+            let (status, payload) = self.request(KXR_READV, [0u8; 16], &list, expected)?;
+            if status != KXR_OK {
+                return Err(server_error("vector read", status, &payload));
+            }
+            let mut at = 0usize;
+            for &(i, offset, len) in chunk {
+                let head = payload.get(at..at + READV_ELEMENT).ok_or_else(|| {
+                    protocol_err("root://: vector read reply ends before its elements".into())
+                })?;
+                let rlen = i32::from_be_bytes([head[4], head[5], head[6], head[7]]);
+                let roff = i64::from_be_bytes(head[8..16].try_into().expect("8 bytes"));
+                if rlen < 0 || rlen as usize != len || roff != offset as i64 {
+                    return Err(protocol_err(format!(
+                        "root://: vector read returned {rlen} bytes at {roff} for {len} at {offset}"
+                    )));
+                }
+                at += READV_ELEMENT;
+                let data = payload
+                    .get(at..at + len)
+                    .ok_or_else(|| Error::UnexpectedEof {
+                        needed: len,
+                        available: payload.len().saturating_sub(at),
+                    })?;
+                out[i].extend_from_slice(data);
+                at += len;
+            }
+            if at != payload.len() {
+                return Err(protocol_err(format!(
+                    "root://: vector read reply has {} bytes past its elements",
+                    payload.len() - at
+                )));
+            }
+        }
+        Ok(out.into_iter().map(Bytes::from).collect())
+    }
+
     fn close(&mut self) {
         let mut body = [0u8; 16];
         body[0..4].copy_from_slice(&self.fhandle);
@@ -409,6 +479,24 @@ impl ByteSource for XrootdSource {
         // One request/response at a time keeps the shared stream in step.
         let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.read_at(offset, len)
+    }
+
+    fn read_many(&self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
+        for &(offset, len) in ranges {
+            offset
+                .checked_add(len as u64)
+                .filter(|&e| e <= self.size)
+                .ok_or_else(|| Error::UnexpectedEof {
+                    needed: len,
+                    available: self.size.saturating_sub(offset) as usize,
+                })?;
+        }
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.read_many(ranges)
+    }
+
+    fn batches_reads(&self) -> bool {
+        true
     }
 }
 

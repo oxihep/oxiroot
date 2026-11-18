@@ -14,6 +14,18 @@ change the API.
 
 ### Changed
 
+- **Remote reads take fewer round trips.** Reading a `TTree` branch or an
+  RNTuple column over `root://` or HTTP used to fetch each basket or page
+  with its own request. The readers now announce their ranges
+  (`ByteSource::plan_reads`, `FileReader::plan_reads`) and the file fetches
+  them in batches of up to 1024 ranges or 32 MiB: one XRootD vector read
+  (`kXR_readv`) per batch, or up to eight concurrent HTTP range requests.
+  Reading 3 million entries of a branch from `root://eospublic.cern.ch` took
+  about 30 % less time; the gain grows with the network's latency. Local and
+  in-memory files are unchanged. `ByteSource` gains `read_many`,
+  `batches_reads` and `plan_reads`, all with defaults, so existing sources
+  keep working.
+
 - **Plotting uses oxiplot 0.4.0, oxihist 0.6.1 and oxifit 0.1.2.** New:
   stacked histograms (`Axes::hist_stack`), category axes (oxihist category
   histograms label their bins), large heatmaps drawn as one image, SVGs
@@ -254,6 +266,12 @@ change the API.
 
 ### Testing
 
+- The XRootD mock server answers vector reads (in `kXR_oksofar`
+  continuation frames) and plays a misbehaving server: short reads, a
+  connection dropped mid-reply, an error status, and vector-read replies at
+  the wrong offset, cut short or with extra bytes. Each ends in an error,
+  never a panic or wrong values. A live test reads 300 000 entries from EOS
+  by vector reads.
 - Criterion benchmarks in `crates/oxiroot/benches`: `fill` (ROOT and oxihist
   histograms, `ThreadedHist` on 1 and 4 threads), `read` (TTree flat and
   jagged branches, an RNTuple, 500 histograms by key) and `decompress`

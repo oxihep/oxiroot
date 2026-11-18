@@ -31,6 +31,27 @@ pub trait ByteSource: Send + Sync + std::fmt::Debug {
     /// Read exactly `len` bytes starting at absolute `offset`, or error if the
     /// requested range falls outside the file.
     fn read_at(&self, offset: u64, len: usize) -> Result<Bytes>;
+
+    /// Read several ranges, returning their bytes in the same order. The
+    /// default reads them one at a time; a remote source overrides it to fetch
+    /// them in fewer round trips (an XRootD vector read, concurrent HTTP
+    /// requests).
+    fn read_many(&self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
+        ranges.iter().map(|&(o, l)| self.read_at(o, l)).collect()
+    }
+
+    /// Whether batching reads with [`read_many`](ByteSource::read_many) saves
+    /// time — true for network sources, where each read is a round trip.
+    fn batches_reads(&self) -> bool {
+        false
+    }
+
+    /// Announce the ranges about to be read, in order (a branch's baskets, a
+    /// column's pages), so a source that batches can fetch them together. A
+    /// hint only: reads outside the plan, or in another order, still work.
+    fn plan_reads(&self, ranges: &[(u64, usize)]) {
+        let _ = ranges;
+    }
 }
 
 /// Bounds-check `[offset, offset + len)` against a file of `total` bytes,

@@ -76,6 +76,21 @@ impl HttpSource {
         })
     }
 
+    /// [`fetch`](Self::fetch), after checking the range lies in the file.
+    fn checked_fetch(&self, offset: u64, len: usize) -> Result<Bytes> {
+        if len == 0 {
+            return Ok(Bytes::new());
+        }
+        offset
+            .checked_add(len as u64)
+            .filter(|&e| e <= self.len)
+            .ok_or_else(|| Error::UnexpectedEof {
+                needed: len,
+                available: self.len.saturating_sub(offset) as usize,
+            })?;
+        self.fetch(offset, len)
+    }
+
     /// Issue a range request for `[offset, offset + len)` and return its bytes.
     fn fetch(&self, offset: u64, len: usize) -> Result<Bytes> {
         let end = offset + len as u64 - 1;
@@ -111,9 +126,65 @@ impl HttpSource {
     }
 }
 
+/// The most range requests [`HttpSource::read_many`] keeps in flight.
+const MAX_CONCURRENT: usize = 8;
+
 impl ByteSource for HttpSource {
     fn len(&self) -> u64 {
         self.len
+    }
+
+    /// Fetch the ranges with up to [`MAX_CONCURRENT`] requests in flight, so a
+    /// batch costs about one round trip per eight ranges rather than one each.
+    fn read_many(&self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
+        if ranges.len() <= 1 {
+            return ranges.iter().map(|&(o, l)| self.read_at(o, l)).collect();
+        }
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let results: Vec<Mutex<Option<Result<Bytes>>>> =
+            ranges.iter().map(|_| Mutex::new(None)).collect();
+        std::thread::scope(|scope| {
+            for _ in 0..MAX_CONCURRENT.min(ranges.len()) {
+                scope.spawn(|| {
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&(offset, len)) = ranges.get(i) else {
+                            break;
+                        };
+                        // Fetched directly, not through `read_at`: batched
+                        // basket and page bytes are read once, so they stay out
+                        // of the metadata cache.
+                        let r = self.checked_fetch(offset, len);
+                        let failed = r.is_err();
+                        *results[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+                        if failed {
+                            // Stop taking work; the error is returned below.
+                            next.store(ranges.len(), std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                });
+            }
+        });
+        results
+            .into_iter()
+            .map(|r| {
+                r.into_inner()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(|| {
+                        Err(Error::Io {
+                            kind: std::io::ErrorKind::Interrupted,
+                            message: format!(
+                                "remote {}: a batched range was not fetched",
+                                self.url
+                            ),
+                        })
+                    })
+            })
+            .collect()
+    }
+
+    fn batches_reads(&self) -> bool {
+        true
     }
 
     fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
