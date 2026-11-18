@@ -35,68 +35,35 @@ doing are listed below.
 
 Small, independent fixes, each a PR in one repo.
 
-### Correctness and validation
+### Done since this roadmap was written
 
-- **oxihist: deserialisation skips the constructors' checks.** With the
-  `serde` feature, `Axis`, `Histogram` and the storages derive `Deserialize`
-  directly, so a hand-edited or hostile file can build an axis with
-  descending edges or a storage of the wrong length.
-  - *Done when:* deserialisation goes through the constructors
-    (`#[serde(try_from = …)]`) and malformed input is an error, with a test
-    per invariant.
-- **oxihist: `Axis::integer` over a very wide range.** The bin count is
-  `hi - lo`; near the ends of `i64` that overflows.
-  - *Done when:* the span is checked, with a clear error or panic message,
-    and the extremes are tested.
-- **oxifit: the Nelder–Mead fallback reports `valid` from a finite χ²
-  alone.** A fit stopped by the 10 000-iteration cap still says it is valid.
-  - *Done when:* `valid` also requires convergence (the simplex tolerance was
-    met before the cap), as Minuit's `is_valid()` does, with a test that
-    caps the iterations.
+- **oxihist** ([#18](https://github.com/oxihep/oxihist/pull/18)):
+  deserialisation goes through the constructors' checks, and
+  `Axis::try_integer` refuses spans that overflow.
+- **oxifit** ([#11](https://github.com/oxihep/oxifit/pull/11)): a
+  Nelder–Mead fit is `valid` only when the simplex converged.
+- **oxistats** ([#6](https://github.com/oxihep/oxistats/pull/6)): runnable
+  examples.
+- **oxiplot** ([#12](https://github.com/oxihep/oxiplot/pull/12),
+  [#13](https://github.com/oxihep/oxiplot/pull/13)):
+  - stacked histograms and category axes;
+  - the legend keeps off the fit-statistics box;
+  - SVGs are sized in points;
+  - large heatmaps are drawn as one image;
+  - golden-image tests;
+  - a narrow axis gets at least two ticks.
 
-### Plotting (oxiplot)
+These are on each repo's `main`, not yet in a release.
 
-- **Stacked histograms.**
-  - *Today:* a stack is drawn by hand, as cumulative fills, tallest first.
-  - *Done when:* `Axes::hist_stack(&[&h1, &h2, …], opts)` sums the layers,
-    draws them in order, and gives each a legend entry, as mplhep's
-    `histplot(stack=True)` does.
-- **Categorical axes.**
-  - *Today:* the data traits describe numeric bins only, so a string-category
-    oxihist histogram plots against made-up numeric edges.
-  - *Done when:* there is a category-aware trait (or trait method), with
-    labelled ticks at the bin centres.
-- **The legend's `Best` placement ignores the fit-statistics box.** The box
-  stacks under the legend when they would overlap, but `Best` may still put
-  the legend over the box's corner.
-  - *Done when:* `Best` counts the box as data to avoid.
-- **SVG sized in points.**
-  - *Today:* the SVG's `width`/`height` are pixels at the figure's DPI, while
-    PDF pages are now in points.
-  - *Done when:* the SVG states its size in `pt` (as matplotlib does), so a
-    6.4 × 4.8 in figure is that size wherever it is opened.
-- **Heatmaps as one image.**
-  - *Today:* `hist2d` emits one rectangle per bin, so a 500 × 500 map is a
-    250 000-element SVG or PDF.
-  - *Done when:* the mesh is embedded as a single raster image (PNG in SVG,
-    an image XObject in PDF), keeping the per-bin path for small maps.
-- **Golden-image tests.**
-  - *Today:* the render tests read geometry back from the SVG, but nothing
-    compares a whole picture.
-  - *Done when:* a few reference renders are checked in, compared with a
-    tolerance, and re-recorded with an explicit flag (as oxiplot-tex already
-    does for its formula renders).
+### Still open
 
-### Documentation
-
-- **Hosted API docs for every repo.**
-  - *Today:* only oxiroot publishes a docs site; oxihist, oxiplot, oxifit,
-    oxistats and oxiparticle have rustdoc but no hosted copy.
-  - *Done when:* each repo deploys `cargo doc` to its GitHub Pages on every
-    push to `main`, linked from its README.
-- **Examples for oxistats.**
-  - *Done when:* the distributions, lineshapes and intervals have runnable
-    examples, and oxiroot's guide links to them.
+- **Hosted API docs for every repo.** A workflow that deploys `cargo doc`
+  to each repo's GitHub Pages is ready in a PR per repo. It needs Pages
+  enabled (source: GitHub Actions) in each repo's settings before it can
+  deploy.
+- **oxihist category axes in plots.** oxihist's `plot` feature should
+  implement oxiplot's new `Hist1dData::x_labels` for string and integer
+  category axes, once a release of oxiplot carries it.
 
 ## Then
 
