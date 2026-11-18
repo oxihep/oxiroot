@@ -646,7 +646,8 @@ ax2.save("heatmap.svg")?;
   `LogNorm`/`SymLogNorm`), `plot`, `function` (overlay any
   analytic or fitted curve), `grid`, `xlabel`/`ylabel`/`title`, `xlim`/`ylim`
   (taking a `Range`, e.g. `ax.xlim(0.0..100.0)`), log axes
-  (`ax.yscale(Scale::Log)`, decade ticks labelled 10ᵏ), and `legend`, placed
+  (`ax.yscale(Scale::Log)`, decade ticks labelled 10ᵏ), stacked histograms
+  (`hist_stack`), labelled category axes, and `legend`, placed
   where it hides the least data (matplotlib's `loc="best"`) or pinned with
   `legend_loc(Loc::…)`. The `*_with` methods take an options builder; the bare
   ones use defaults.
