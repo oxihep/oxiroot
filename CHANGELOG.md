@@ -17,6 +17,8 @@ change the API.
 
 ### Changed
 
+- **Plotting uses oxiplot 0.4.3** (and oxihist 0.6.3, which builds on it): the
+  legend's automatic placement keeps off filled histograms and stacks.
 - **Remote reads take fewer round trips.** Reading a `TTree` branch or an
   RNTuple column over `root://` or HTTP used to fetch each basket or page
   with its own request. The readers now announce their ranges
