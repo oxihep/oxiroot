@@ -68,6 +68,20 @@ command -v cargo >/dev/null 2>&1 && HAVE_CARGO=1 || HAVE_CARGO=0
 command -v root-config >/dev/null 2>&1 && HAVE_ROOT=1 || HAVE_ROOT=0
 command -v rootcling >/dev/null 2>&1 && HAVE_ROOTCLING=1 || HAVE_ROOTCLING=0
 
+# ROOT's compile flags. Homebrew's ROOT includes <vdt/vdtMath.h> from its
+# headers but `root-config --cflags` does not add Homebrew vdt's include
+# directory, so the oracles fail to compile there; add it when it is missing.
+root_cflags() {
+  local flags inc vdt
+  flags="$(root-config --cflags)"
+  inc="$(root-config --incdir)"
+  if [ ! -e "$inc/vdt/vdtMath.h" ] && command -v brew >/dev/null 2>&1; then
+    vdt="$(brew --prefix vdt 2>/dev/null)/include"
+    [ -e "$vdt/vdt/vdtMath.h" ] && flags="$flags -I$vdt"
+  fi
+  echo "$flags"
+}
+
 echo "oxiroot local interop harness"
 echo "  repo: $REPO"
 echo "  work: $WORK"
@@ -91,7 +105,7 @@ cargo build -q -p oxiroot --example interop --example interop_matrix \
 ROOT_OK=0
 if [ "$HAVE_ROOT" -eq 1 ]; then
   echo "compiling ROOT C++ oracles…"
-  RCFLAGS="$(root-config --cflags)"
+  RCFLAGS="$(root_cflags)"
   RLIBS="$(root-config --libs)"
   if c++ $RCFLAGS "$REPO/scripts/interop_root.cpp" $RLIBS -lROOTNTuple -o "$WORK/interop_root" 2>"$WORK/cc1.log" \
      && c++ $RCFLAGS -I "$REPO/scripts" "$REPO/scripts/interop_matrix_root.cpp" $RLIBS -lROOTNTuple -o "$WORK/interop_matrix_root" 2>"$WORK/cc2.log"; then
@@ -157,7 +171,7 @@ regen_fixtures() {
   local rc=0
   ( cd "$REPO"
     set -e
-    RCFLAGS="$(root-config --cflags)"; RLIBS="$(root-config --libs)"
+    RCFLAGS="$(root_cflags)"; RLIBS="$(root-config --libs)"
     c++ $RCFLAGS scripts/gen_root_fixtures.cpp    $RLIBS               -o "$WORK/gen_root"
     c++ $RCFLAGS scripts/gen_rntuple_fixtures.cpp $RLIBS -lROOTNTuple  -o "$WORK/gen_rntuple"
     c++ $RCFLAGS scripts/gen_tree_vector.cpp      $RLIBS               -o "$WORK/gen_tree_vector"
@@ -189,7 +203,7 @@ fi
 # ===========================================================================
 big_read() {
   local rcflags rlibs
-  rcflags="$(root-config --cflags)"; rlibs="$(root-config --libs)"
+  rcflags="$(root_cflags)"; rlibs="$(root-config --libs)"
   c++ $rcflags "$REPO/scripts/gen_big_fixture.cpp" $rlibs -o "$WORK/gen_big" \
     && "$WORK/gen_big" "$WORK/big.root" \
     && cargo run -q -p oxiroot --example interop_matrix -- read-big "$WORK/big.root"
