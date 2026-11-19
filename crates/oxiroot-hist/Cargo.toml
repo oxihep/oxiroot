@@ -27,7 +27,7 @@ oxiroot-linalg = { workspace = true }
 # Opt-in data-parallel fill helper (`fill_par`). Off by default so the default
 # build stays pure std with no extra dependencies; the `ThreadedHist`
 # accumulator (std::thread based) is always available.
-rayon = ["dep:rayon", "oxihist/rayon"]
+rayon = ["dep:rayon", "oxihist/rayon", "oxifit?/rayon"]
 # Opt-in fitting: implements `FitData` for `TH1`/`TGraph` (so `h.fit(&model)`
 # works) and re-exports the fitting types from `oxifit`, which carries the
 # Minuit2 minimizer. Off by default to keep the core dependency-light.

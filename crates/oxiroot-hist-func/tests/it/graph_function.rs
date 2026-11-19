@@ -81,3 +81,73 @@ fn to_model_keeps_the_names_of_a_shortcut_formula() {
     assert_eq!(model.param_names, expected.param_names);
     assert_eq!(model.eval(0.25), f.eval(0.25));
 }
+
+#[cfg(feature = "fit")]
+#[test]
+fn a_func2d_and_a_func3d_fit_their_histograms() {
+    use oxifit::FitExt;
+    use oxiroot_hist::{Hist, ToRoot};
+    use oxiroot_hist_func::{Func2D, Func3D};
+
+    // A ROOT 2-D histogram filled with a plane, fitted with a TF2-like model.
+    let mut h = Hist::reg(10, 0.0, 10.0)
+        .reg(8, 0.0, 8.0)
+        .double()
+        .to_root()
+        .named("plane");
+    for ix in 0..10 {
+        for iy in 0..8 {
+            let (x, y) = (f64::from(ix) + 0.5, f64::from(iy) + 0.5);
+            h.fill_weight(x, y, 2.0 + 0.5 * x + 1.5 * y);
+        }
+    }
+    let f2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", 0.0, 10.0, 0.0, 8.0)
+        .unwrap()
+        .with_params(vec![1.0, 1.0, 1.0]);
+    let model = f2.to_model();
+    assert_eq!(model.dim(), 2);
+    assert_eq!(model.eval_at(&[3.0, 4.0]), f2.eval(3.0, 4.0));
+    let fit = h.fit(&model);
+    assert!(fit.valid, "{fit:?}");
+    for (got, want) in fit.params.iter().zip([2.0, 0.5, 1.5]) {
+        assert!((got - want).abs() < 1e-6, "{fit:?}");
+    }
+    assert_eq!(fit.ndf, 10 * 8 - 3);
+
+    // And a 3-D one.
+    let mut h3 = Hist::reg(4, 0.0, 4.0)
+        .reg(3, 0.0, 3.0)
+        .reg(5, 0.0, 5.0)
+        .double()
+        .to_root()
+        .named("cube");
+    for ix in 0..4 {
+        for iy in 0..3 {
+            for iz in 0..5 {
+                let (x, y, z) = (
+                    f64::from(ix) + 0.5,
+                    f64::from(iy) + 0.5,
+                    f64::from(iz) + 0.5,
+                );
+                h3.fill_weight(x, y, z, 1.0 + x - y + 2.0 * z);
+            }
+        }
+    }
+    let f3 = Func3D::new(
+        "cube",
+        "[0]+[1]*x+[2]*y+[3]*z",
+        0.0,
+        4.0,
+        0.0,
+        3.0,
+        0.0,
+        5.0,
+    )
+    .unwrap()
+    .with_params(vec![0.0, 0.5, 0.0, 1.0]);
+    let fit = h3.fit(&f3.to_model());
+    assert!(fit.valid, "{fit:?}");
+    for (got, want) in fit.params.iter().zip([1.0, 1.0, -1.0, 2.0]) {
+        assert!((got - want).abs() < 1e-6, "{fit:?}");
+    }
+}
