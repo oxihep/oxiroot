@@ -126,16 +126,16 @@ the others.
 # Everything — histograms, graphs, TTree, RNTuple, fitting, plotting — through
 # the facade. Fitting, plotting and argmin are ON BY DEFAULT, so nothing
 # extra to enable (add `features = ["rayon"]` for the parallel helpers):
-oxiroot = { git = "https://github.com/oxihep/oxiroot" }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0" }
 
 # …leaner, just the format core (drops the fitting/plotting deps):
-# oxiroot = { git = "https://github.com/oxihep/oxiroot", default-features = false }
+# oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0", default-features = false }
 
 # …or depend on just one crate (Cargo finds it in the repository):
-oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot" }  # histograms + graphs
-oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot" }  # Func1D/Func2D/Func3D
-oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot" }  # TTree
-oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0" }  # Func1D/Func2D/Func3D
+oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot", tag = "v0.4.0" }  # RNTuple
 ```
 
 ```rust
@@ -811,7 +811,8 @@ ax2.save("heatmap.svg")?;
 ### Command-line inspector — `oxroot` (`oxiroot-cli`)
 
 - **Look into a ROOT file from the shell**, no ROOT or Python:
-  `cargo install oxiroot-cli` installs the `oxroot` binary. Objects
+  `cargo install --git https://github.com/oxihep/oxiroot --tag v0.4.0 --locked oxiroot-cli`
+  installs the `oxroot` binary. Objects
   are addressed `file.root:name` (uproot-style), with a `/`-path for nested
   `TDirectory`s (`file.root:cal/run2/Events`).
 - `oxroot ls [-l] [-r]` — list objects (name, class, title; `-l` adds cycle and

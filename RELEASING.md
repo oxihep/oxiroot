@@ -49,6 +49,10 @@ resolves to more than one source.
    ```sh
    git tag -a v0.1.1 -m "oxistats 0.1.1" && git push origin v0.1.1
    ```
+   Point the install instructions at the new tag in the same PR: every
+   README's dependency line, and for oxiroot the `oxiroot = { git … }` lines
+   in `README.md` and `docs/`, and the `cargo install --git … --tag` line for
+   `oxroot`.
 3. Walk **down** the dependency order above. In every repository that names
    the upstream crate, change `tag` (and `version`) to the new tag in **one PR
    per repository**, then refresh the lockfile:
