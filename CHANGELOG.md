@@ -27,6 +27,14 @@ change the API.
   and the `interop` / `interop_matrix` examples point to it when run without
   arguments.
 
+- **`charmonium_analysis` example**: a complete J/ψ and ψ(2S) analysis on
+  generated events — a dimuon `TTree` written and read back, a binned
+  Crystal Ball mass fit with a shared tail and mass-scaled resolution (MINOS
+  on the ψ(2S)/J/ψ ratio), its profile likelihood and 68 %/95 % contours, a
+  500-toy pull study, a two-dimensional unbinned fit in mass and decay length
+  for the non-prompt fraction and the b-hadron lifetime, five plots, and the
+  histograms and toy pulls written to a ROOT file and read back.
+
 ### Fixed
 
 - **`Func1D::integral` could hang.** It is built on oxifit-formula's
