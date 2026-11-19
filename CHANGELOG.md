@@ -9,6 +9,12 @@ change the API.
 
 ### Changed
 
+- **oxifit 0.4.0, oxiplot 0.7.0, oxihist 0.9.0.** `oxiroot::fit` gains
+  unbinned and extended unbinned likelihood fits on `Events` (with the
+  SumW2 correction for weighted events), toy studies (`Toys`, `ToyStudy`)
+  and simultaneous fits (`Simultaneous`); the prelude exports `Events`,
+  `Simultaneous` and `Toys`. The fitting guide has a section on each.
+
 - **oxifit 0.3.0, oxiplot 0.6.0, oxihist 0.8.0.** `oxiroot::fit` gains the
   `CmaEs` and `LevenbergMarquardt` minimizers, sum models (`sig + bkg`),
   Gaussian parameter constraints (`Model::constrain`), and profile

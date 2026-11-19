@@ -873,8 +873,8 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "oxifit"
-version = "0.3.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.3.0#28e63a34922be27d7a1e0e8e222743c2652cfd93"
+version = "0.4.0"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.4.0#f55e8fe5d535a59a3db0ad7d76daf7d52d8f2d92"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -885,16 +885,16 @@ dependencies = [
 
 [[package]]
 name = "oxifit-formula"
-version = "0.3.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.3.0#28e63a34922be27d7a1e0e8e222743c2652cfd93"
+version = "0.4.0"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.4.0#f55e8fe5d535a59a3db0ad7d76daf7d52d8f2d92"
 dependencies = [
  "oxistats",
 ]
 
 [[package]]
 name = "oxihist"
-version = "0.8.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.8.0#002935779176b9d5831433eaa58dbd0de50d9256"
+version = "0.9.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.9.0#578ed58e9c6f9cf440a57cf6b2bada0afbbb22ab"
 dependencies = [
  "foldhash",
  "oxifit",
@@ -910,8 +910,8 @@ source = "git+https://github.com/oxihep/oxiparticle?tag=v0.1.0#61ca817e2a2bff1d9
 
 [[package]]
 name = "oxiplot"
-version = "0.6.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.6.0#b61f0e28d5eaba848a47c48756f6ec27e7149d06"
+version = "0.7.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.7.0#eadc83f199851947068151781f8fd5b9dbb76996"
 dependencies = [
  "oxifit",
  "oxiplot-tex",
@@ -921,8 +921,8 @@ dependencies = [
 
 [[package]]
 name = "oxiplot-tex"
-version = "0.6.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.6.0#b61f0e28d5eaba848a47c48756f6ec27e7149d06"
+version = "0.7.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.7.0#eadc83f199851947068151781f8fd5b9dbb76996"
 dependencies = [
  "skrifa",
 ]
