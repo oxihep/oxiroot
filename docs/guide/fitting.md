@@ -225,6 +225,8 @@ The cost being minimized is a `FitMethod`:
 | `Chi2` (default) | Neyman χ², `Σ (y − f)² / σ²` | Uses the *observed* per-point error; empty (`σ ≤ 0`) points are dropped |
 | `PearsonChi2` | Pearson χ², `Σ (y − f)² / f` | Uses the *expected* (model) variance; less biased at low counts |
 | `Likelihood` | Binned Poisson, `2·Σ [f − y + y·ln(y/f)]` | Maximum-likelihood for binned counts (histograms) |
+| `UnbinnedLikelihood` | `−2·Σ w·ln(f/∫f)` | Individual events (`Events`); the model's shape, normalized over the range (see [Unbinned fits](#unbinned-fits)) |
+| `ExtendedUnbinnedLikelihood` | `−2·[Σ w·ln f − ∫f]` | Individual events; the model is the expected event density, so the yield is fitted too |
 
 ```rust
 use oxiroot::prelude::*;
@@ -258,6 +260,7 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 | `max_fcn(usize)` | Cap on cost evaluations per Minuit2 minimization |
 | `loss(Loss)` | Robust loss to down-weight outliers (see [below](#robust-fitting-outliers)) |
 | `f_scale(f64)` | Residual scale for the robust loss (default `1.0`) |
+| `with_sumw2(bool)` | Correct a weighted unbinned fit's covariance for the weights (RooFit's `SumW2Error`) |
 
 ```rust
 use oxiroot::prelude::*;
@@ -362,6 +365,99 @@ if fit.valid {
     statistics box — the function name, χ²/ndf, and every parameter with its
     error — next to the fitted curve. See
     [Plotting → Fit statistics box](plotting.md#fit-statistics-box).
+
+## Unbinned fits
+
+A histogram throws away where each event fell inside its bin. With few events,
+or a narrow feature, fit the events themselves: `Events::new(&values)` holds
+them (`Events::weighted(&values, &weights)` with weights), and the two unbinned
+likelihoods fit a model to them. Their normalization is numerical, over the fit
+`range` (default: the events' span), so any model works.
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+// Decay times in ps (in practice, a branch of a TTree).
+let times = [0.42, 1.73, 0.95, 2.61, 0.31, 1.12, 3.40, 0.77, 1.58, 0.66];
+let events = Events::new(&times);
+// UnbinnedLikelihood fits the *shape*: its overall scale is free, so fix it.
+let decay = Model::exponential("decay").with_params(vec![0.0, -0.7]).fix("constant");
+let opts = FitOptions::new().method(FitMethod::UnbinnedLikelihood).range(0.0, 10.0);
+let fit = events.fit_opts(&decay, &opts);
+println!("τ = {:.2} ps", -1.0 / fit.params[1]);
+
+// ExtendedUnbinnedLikelihood: the model is events per unit x, so its
+// integral — the yield — is fitted as well.
+let density = Model::new("yield·decay", &["n", "tau"], vec![8.0, 1.5], |t, p| {
+    p[0] / p[1] * (-t / p[1]).exp()
+});
+let ext = events.fit_opts(&density, &opts.method(FitMethod::ExtendedUnbinnedLikelihood));
+println!("{:.1} ± {:.1} events", ext.params[0], ext.errors[0]);
+```
+
+The unbinned likelihoods have no goodness of fit: `chi2` and `p_value()` are
+`NaN`. A weighted fit's errors are those of `Σw` unit-weight events unless
+`with_sumw2(true)` corrects them for the weights.
+
+## Simultaneous fits
+
+Several datasets fitted together share the parameters with the same name — a
+mass seen in two decay modes, a signal strength across categories. Each channel
+keeps its own model and cost (binned or unbinned):
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+// Two peaks of the same particle, in two samples: the mean is shared, the
+// heights and widths are each sample's own.
+let peak_in = |tag: &str| {
+    let names = [format!("{tag}.height"), "mean".to_string(), format!("{tag}.width")];
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    Model::new(tag, &refs, vec![50.0, 91.0, 2.5], |x, p| {
+        p[0] * (-0.5 * ((x - p[1]) / p[2]).powi(2)).exp()
+    })
+};
+let opts = FitOptions::new().method(FitMethod::Likelihood);
+let sim = Simultaneous::new()
+    .channel("electrons", &peak, &peak_in("ee"), &opts)
+    .channel("muons", &peak, &peak_in("mumu"), &opts);
+let fit = sim.fit(&FitOptions::new());
+let names = sim.param_names(); // ee.height, mean, ee.width, mumu.height, mumu.width
+for (name, (v, e)) in names.iter().zip(fit.params.iter().zip(&fit.errors)) {
+    println!("{name} = {v:.3} ± {e:.3}");
+}
+for (channel, cost, n) in sim.channel_costs(&fit) {
+    println!("{channel}: {cost:.1} over {n} bins");
+}
+```
+
+## Toy studies
+
+Is the fit unbiased, and are its errors right? Generate pseudo-data from the
+model at known parameters, fit each sample, and look at the pulls
+`(fitted − true)/error` — standard normal when all is well (RooFit's
+`RooMCStudy`):
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+let truth = Model::gaussian("z").with_params(vec![40.0, 91.0, 2.5]);
+let centres: Vec<f64> = (0..40).map(|i| 81.0 + 0.5 * f64::from(i)).collect();
+let opts = FitOptions::new().method(FitMethod::Likelihood);
+let study = Toys::binned(&truth, &centres).seed(1).run(&truth, &opts, 200);
+for name in ["constant", "mean", "sigma"] {
+    if let Some(p) = study.pull_summary(name) {
+        println!("{name}: pull mean {:+.2} ± {:.2}, width {:.2} ± {:.2}",
+                 p.mean, p.mean_err, p.width, p.width_err);
+    }
+}
+```
+
+`Toys::unbinned(&truth, range, n)` draws events instead (`.extended()` for a
+Poisson number of them).
 
 ## Profiles and contours
 
