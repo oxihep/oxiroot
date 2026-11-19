@@ -328,10 +328,13 @@ matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
 `p_value()`). The χ² survival function it shares with the comparison tests lives
 in the dependency-free `oxistats` crate.
 
-Two minimizer backends are selectable via `FitOptions::minimizer(...)`: the
-default `Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD — ROOT's algorithm,
-with parabolic + MINOS errors and the covariance), and, behind the **`argmin`
-feature**, `Minimizer::NelderMead` — a gradient-free simplex from the
+`FitOptions::minimizer(...)` selects the optimizer: the default
+`Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD + HESSE — ROOT's algorithm,
+with parabolic + MINOS errors and the covariance), `Minuit2Combined` and
+`Simplex`, the global searches `MultiStart` and `DifferentialEvolution` (for a
+seed that may sit in the wrong basin: they search the parameter limits, then
+polish with MIGRAD), and, behind the **`argmin` feature**,
+`Minimizer::NelderMead` — a gradient-free simplex from the
 [`argmin`](https://crates.io/crates/argmin) crate (parameter errors from a
 numerical Hessian; no MINOS), a handy independent cross-check.
 

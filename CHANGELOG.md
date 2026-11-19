@@ -7,6 +7,18 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **oxifit 0.2.0, oxiplot 0.5.0, oxihist 0.7.0.** `oxiroot::fit` gains the
+  global minimizers `Minimizer::MultiStart` and
+  `Minimizer::DifferentialEvolution`, `Minuit2Combined` and `Simplex`, the
+  `strategy`/`tolerance`/`max_fcn`/`with_hesse` options, and `fval`, `edm` and
+  `nfcn` on `FitResult`, which is now `#[non_exhaustive]` (build one with
+  `FitResult::new`). HESSE runs after MIGRAD by default, a minimizer panic is
+  reported as an invalid fit, `chi2` is `NaN` under a robust loss, and
+  formulas accept `erf`, `erfc` and `lgamma`. The fitting guide documents the
+  new minimizers.
+
 ## [0.4.0] — 2026-11-19
 
 A release about the family around oxiroot and about reading remotely. The

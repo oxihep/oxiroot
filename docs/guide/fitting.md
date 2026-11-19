@@ -229,7 +229,11 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 | `method(FitMethod)` | The cost to minimize (default `Chi2`) |
 | `range(lo, hi)` | Fit only points whose `x` lies in `[lo, hi]` |
 | `with_minos(bool)` | Also compute asymmetric MINOS errors |
-| `minimizer(Minimizer)` | Choose the optimizer backend |
+| `with_hesse(bool)` | Run HESSE after MIGRAD (default `true`, as ROOT does) |
+| `minimizer(Minimizer)` | Choose the optimizer backend (see [below](#minimizer-backends)) |
+| `strategy(u32)` | Minuit2 strategy `0`/`1`/`2` (default `1`) |
+| `tolerance(f64)` | Minuit2 convergence tolerance (default `0.1`) |
+| `max_fcn(usize)` | Cap on cost evaluations per Minuit2 minimization |
 | `loss(Loss)` | Robust loss to down-weight outliers (see [below](#robust-fitting-outliers)) |
 | `f_scale(f64)` | Residual scale for the robust loss (default `1.0`) |
 
@@ -298,10 +302,13 @@ let fit = peak.fit_opts(&model, &opts);
 | Field / method | Meaning |
 | --- | --- |
 | `params: Vec<f64>` | Best-fit parameter values |
-| `errors: Vec<f64>` | Parabolic (Minuit2) uncertainties |
+| `errors: Vec<f64>` | Parabolic uncertainties (from HESSE) |
 | `minos: Option<Vec<(f64, f64)>>` | Asymmetric `(lower, upper)` MINOS errors, when requested |
 | `covariance: Option<Vec<Vec<f64>>>` | Covariance of the *free* parameters (row-major) |
-| `chi2: f64` | Cost at the minimum |
+| `chi2: f64` | Goodness-of-fit statistic at the minimum (`NaN` under a robust loss) |
+| `fval: f64` | The minimized cost itself |
+| `edm: f64` | Minuit2's estimated distance to the minimum |
+| `nfcn: usize` | Cost evaluations the fit took |
 | `ndf: usize` | Degrees of freedom: fitted points − free parameters |
 | `valid: bool` | Whether the minimizer reported a valid minimum |
 | `chi2_per_ndf()` | Reduced chi-square `chi2 / ndf` (`NaN` if `ndf == 0`) |
@@ -336,19 +343,50 @@ if fit.valid {
 
 ## Minimizer backends
 
-`FitOptions::minimizer(...)` selects the optimizer:
+`FitOptions::minimizer(...)` selects the optimizer. Every Minuit-based backend
+ends with MIGRAD and HESSE, so the values, errors, covariance and `valid` mean
+the same thing whichever one found the minimum.
 
-| `Minimizer` | Availability | Errors | MINOS |
-| --- | --- | --- | --- |
-| `Minuit2` (default) | Always | Parabolic + covariance | Yes (on request) |
-| `NelderMead` | `argmin` feature | Numerical Hessian at the minimum | No |
+| `Minimizer` | What it does | When |
+| --- | --- | --- |
+| `Minuit2` (default) | MIGRAD from the model's parameters | A seed near the answer |
+| `Minuit2Combined` | MIGRAD, falling back to SIMPLEX when it fails (ROOT's `"Minimize"`) | MIGRAD sometimes fails |
+| `Simplex` | Minuit2's SIMPLEX | A rough, noisy cost |
+| `MultiStart(MultiStart::new(n))` | `n` local fits from points spread over the parameter limits; the lowest wins | A few competing minima |
+| `DifferentialEvolution(…)` | A population-based global search over the limits, then MIGRAD | The seed may sit in the wrong basin |
+| `NelderMead` (`argmin` feature) | An independent simplex, errors from a numerical Hessian, no MINOS | Cross-checking Minuit2 |
 
-`Minuit2` is the pure-Rust MIGRAD port — ROOT's algorithm — and is always
-available. The gradient-free `NelderMead` simplex (from the
-[`argmin`](https://crates.io/crates/argmin) crate) is a useful independent
-cross-check; it optimizes the free parameters only, enforces limits with a soft
-penalty, and derives errors from a central-difference Hessian. The
-`Minimizer::NelderMead` variant only exists when the `argmin` feature is on.
+A local minimizer only finds the minimum nearest its seed. When the seed may
+be in the wrong basin, a peak whose position is not known for instance, a
+global search looks over each free parameter's limits first. Set a `limit` on
+the parameters to search:
+
+```rust
+use oxiroot::prelude::*;
+
+// Search the whole mass window for the peak, wherever the seed puts it.
+let search = Model::gaussian("z")
+    .with_params(vec![10.0, 82.0, 1.0])
+    .limit("constant", 0.0, 1e4)
+    .limit("mean", 80.0, 100.0)
+    .limit("sigma", 0.2, 10.0);
+let de = Minimizer::DifferentialEvolution(DifferentialEvolution::new());
+let fit = peak.fit_opts(&search, &FitOptions::new().minimizer(de));
+println!("mean = {:.3} ± {:.3} after {} evaluations", fit.params[1], fit.errors[1], fit.nfcn);
+
+// Or a handful of local fits from spread-out starts:
+let ms = Minimizer::MultiStart(MultiStart::new(20).seed(1));
+let fit = peak.fit_opts(&search, &FitOptions::new().minimizer(ms));
+```
+
+Both searches are reproducible from their `seed` and cost thousands of
+evaluations instead of a few hundred.
+
+The gradient-free `NelderMead` simplex (from the
+[`argmin`](https://crates.io/crates/argmin) crate) optimizes the free
+parameters only, enforces limits with a soft penalty, and derives errors from a
+central-difference Hessian. The `Minimizer::NelderMead` variant only exists
+when the `argmin` feature is on; `with_minos` is ignored by it.
 
 ```rust
 use oxiroot::prelude::*;
@@ -359,9 +397,6 @@ let fit = peak.fit_opts(
     &FitOptions::new().minimizer(Minimizer::NelderMead),
 );
 ```
-
-The two backends agree on a Gaussian to displayed precision. `with_minos` is
-ignored by `NelderMead`.
 
 ## See also
 
