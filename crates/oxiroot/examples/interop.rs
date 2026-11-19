@@ -348,7 +348,11 @@ fn die(msg: &str) -> ! {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let usage = || -> ! {
-        eprintln!("usage: interop <write|read> <dir>");
+        eprintln!(
+            "usage: interop <write|read> <dir>\n\n\
+             One half of a round trip with ROOT C++ or uproot. To run the whole\n\
+             check locally (both directions, both oracles): bash scripts/interop_local.sh"
+        );
         exit(2);
     };
     if args.len() != 3 {

@@ -20,6 +20,13 @@ change the API.
   also parallelizes fits. The prelude exports the new data types; the fitting
   guide covers all of it.
 
+- **CI runs the interop manifest matrix.** Every histogram type, codec, TTree
+  and RNTuple shape that `interop_matrix` writes is now read back by ROOT C++
+  and uproot on each build; before, only `scripts/interop_local.sh` ran it.
+  That script now compiles its ROOT C++ oracles against a Homebrew ROOT too,
+  and the `interop` / `interop_matrix` examples point to it when run without
+  arguments.
+
 ### Fixed
 
 - **`Func1D::integral` could hang.** It is built on oxifit-formula's

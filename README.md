@@ -978,7 +978,16 @@ cargo bench -p oxiroot --bench fill --bench read --bench decompress
 
 ### Full local interop check
 
-For a comprehensive cross-language check on your own machine (not CI), run:
+The `interop` and `interop_matrix` examples are each one half of a round
+trip and need a ROOT reader or writer on the other side, so run them through
+this script rather than by hand. CI runs both against ROOT C++ and uproot; for
+the comprehensive check on your own machine, set up the uproot venv once:
+
+```sh
+uv venv -p 3.13 .venv && VIRTUAL_ENV=.venv uv pip install uproot numpy awkward
+```
+
+then run:
 
 ```sh
 bash scripts/interop_local.sh                 # full run; prints a PASS/FAIL matrix
@@ -996,7 +1005,8 @@ regenerates the committed fixtures from your *local* ROOT/uproot and re-tests.
 Missing tools (no ROOT, or no uproot venv) degrade to `SKIP`, never `FAIL`, so a
 machine with neither still gets a meaningful green from `cargo test` alone.
 Needs a Python venv at `.venv` with `uproot numpy awkward`, and `root-config`
-(+`rootcling`) on `PATH` for the ROOT-C++ side.
+(+`rootcling`) on `PATH` for the ROOT-C++ side. A Homebrew ROOT works as is:
+the script adds the `vdt` include directory that its `root-config` leaves out.
 
 ## Roadmap
 

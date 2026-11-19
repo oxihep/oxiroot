@@ -380,6 +380,12 @@ jobs:
           python scripts/interop_uproot.py write /tmp/interop
           cargo run --locked -q -p oxiroot --example interop -- read /tmp/interop
 
+      - name: Manifest matrix (Rust writes → uproot reads)
+        # Every histogram type, codec, tree and RNTuple shape in the manifest.
+        run: |
+          cargo run --locked -q -p oxiroot --example interop_matrix -- write /tmp/matrix
+          python scripts/interop_matrix_uproot.py /tmp/matrix
+
   interop-root:
     name: interop (ROOT C++)
     # Round-trip against an official ROOT build: ROOT C++ writes a histogram +
@@ -428,3 +434,10 @@ jobs:
         run: |
           cargo run --locked -q -p oxiroot --example interop -- write /tmp/interop
           /tmp/interop_root read /tmp/interop
+
+      - name: Manifest matrix (Rust writes → ROOT C++ reads)
+        # Every histogram type, codec, tree and RNTuple shape in the manifest.
+        run: |
+          c++ $(root-config --cflags) -I scripts scripts/interop_matrix_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_matrix_root
+          cargo run --locked -q -p oxiroot --example interop_matrix -- write /tmp/matrix
+          /tmp/interop_matrix_root /tmp/matrix

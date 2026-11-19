@@ -1298,7 +1298,11 @@ fn die(msg: &str) -> ! {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let usage = || -> ! {
-        eprintln!("usage: interop_matrix <write <dir> | read-big <file>>");
+        eprintln!(
+            "usage: interop_matrix <write <dir> | read-big <file>>\n\n\
+             Writes the manifest matrix for ROOT C++ / uproot to check. To run the\n\
+             whole check locally: bash scripts/interop_local.sh"
+        );
         exit(2);
     };
     if args.len() != 3 {
