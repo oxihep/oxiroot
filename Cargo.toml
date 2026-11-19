@@ -41,14 +41,14 @@ oxiroot = { path = "crates/oxiroot", version = "0.4.0", default-features = false
 # for their own dependencies (oxistats, oxifit), so Cargo resolves one copy.
 oxistats = { git = "https://github.com/oxihep/oxistats", tag = "v0.1.0", version = "0.1.0" }
 oxiparticle = { git = "https://github.com/oxihep/oxiparticle", tag = "v0.1.0", version = "0.1.0" }
-oxifit = { git = "https://github.com/oxihep/oxifit", tag = "v0.2.0", version = "0.2.0" }
-oxifit-formula = { git = "https://github.com/oxihep/oxifit", tag = "v0.2.0", version = "0.2.0" }
+oxifit = { git = "https://github.com/oxihep/oxifit", tag = "v0.3.0", version = "0.3.0" }
+oxifit-formula = { git = "https://github.com/oxihep/oxifit", tag = "v0.3.0", version = "0.3.0" }
 # Default features off: the crates that implement its data traits need none, and
 # the facade's `plot` feature turns PNG output and TeX math back on.
-oxiplot = { git = "https://github.com/oxihep/oxiplot", tag = "v0.5.0", version = "0.5.0", default-features = false }
+oxiplot = { git = "https://github.com/oxihep/oxiplot", tag = "v0.6.0", version = "0.6.0", default-features = false }
 # The ROOT-free histogram library; oxiroot-hist converts its histograms to and
 # from ROOT's.
-oxihist = { git = "https://github.com/oxihep/oxihist", tag = "v0.7.0", version = "0.7.0" }
+oxihist = { git = "https://github.com/oxihep/oxihist", tag = "v0.8.0", version = "0.8.0" }
 bytes = "1"
 # Pure-Rust blocking HTTP client (rustls, no OpenSSL), for the optional `http`
 # remote-read feature. `default-features = false` drops gzip transfer decoding,
