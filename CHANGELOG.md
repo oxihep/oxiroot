@@ -7,6 +7,15 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Func1D::integral` could hang.** It is built on oxifit-formula's
+  `integrate`, whose depth-first bisection recursed about 2⁴⁰ times on a
+  narrow peak (a width-0.01 Gaussian on [−1, 1]) or on a `NaN` integrand.
+  oxifit 0.4.1 makes it globally adaptive and bounded (at most about 60 000
+  evaluations); the integrals checked against ROOT are unchanged. Pins
+  oxifit 0.4.1, oxiplot 0.7.1, oxihist 0.9.1.
+
 ### Changed
 
 - **oxifit 0.4.0, oxiplot 0.7.0, oxihist 0.9.0.** `oxiroot::fit` gains
