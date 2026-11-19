@@ -7,6 +7,18 @@ change the API.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-19
+
+A release about the family around oxiroot and about reading remotely. The
+crates that are not about ROOT now live in their own repositories (oxihist,
+oxiplot, oxifit, oxistats, oxiparticle) and are re-exported here; remote
+`TTree` and RNTuple reads batch their requests; crafted files, decompression
+and recursion are bounded, and inputs that used to panic return errors.
+Several APIs changed (see **Breaking** below). Files written by 0.3.0 and
+0.4.0 read the same in ROOT, uproot and oxiroot.
+
+The crates are not on crates.io yet; depend on them by git, pinned to this tag.
+
 ### Added
 
 - Examples `dimuon_analysis` (a NanoAOD-style toy analysis from jagged
@@ -17,8 +29,22 @@ change the API.
 
 ### Changed
 
-- **Plotting uses oxiplot 0.4.3** (and oxihist 0.6.3, which builds on it): the
-  legend's automatic placement keeps off filled histograms and stacks.
+- **oxiplot 0.4.3, oxihist 0.6.3 and oxifit 0.1.2.** What they bring to
+  `oxiroot::plot`, `Hist` and `oxiroot::fit`:
+  - plotting: log axes (`Axes::xscale`/`yscale`), a legend that keeps off
+    the data and the fit-statistics box (`legend()`, or `legend_loc` to pin
+    it), stacked histograms (`hist_stack`), labelled category axes, figures
+    laid out around their labels (no more overlapping titles and axis
+    labels in grids), PDF pages and SVGs sized in points, large heatmaps
+    drawn as one image, and fonts read with skrifa instead of the
+    unmaintained ttf-parser (the RUSTSEC-2026-0192 ignore is gone); fixed:
+    limits set before plotting were overwritten, negative bins were cut
+    off, NaN or infinite data produced invalid output;
+  - histograms: numeric fills 2–3× faster, on par with `Hist1D` (the `fill`
+    bench: 185 → 762 M fills/s), category fills 2–3× faster, and
+    deserialised histograms validated;
+  - fitting: the Nelder–Mead fallback reports `valid` only when it
+    converged.
 - **Remote reads take fewer round trips.** Reading a `TTree` branch or an
   RNTuple column over `root://` or HTTP used to fetch each basket or page
   with its own request. The readers now announce their ranges
@@ -30,41 +56,14 @@ change the API.
   in-memory files are unchanged. `ByteSource` gains `read_many`,
   `batches_reads` and `plan_reads`, all with defaults, so existing sources
   keep working.
-
 - **Sampling shares oxihist's `BinnedSampler`.** `Hist1D::fill_random` and
   `fill_random_fn` used their own copy of the inverse-CDF code; they now use
   oxihist 0.6.2's `BinnedSampler`, as `get_random` and `Func1D::get_random`
-  already used its `Random::sample_binned`. The draws are unchanged. Plotting
-  uses oxiplot 0.4.2 (`Error::Io` reports its cause through `source()`).
-- **Plotting uses oxiplot 0.4.0, oxihist 0.6.1 and oxifit 0.1.2.** New:
-  stacked histograms (`Axes::hist_stack`), category axes (oxihist category
-  histograms label their bins), large heatmaps drawn as one image, SVGs
-  sized in points. oxihist validates deserialised histograms; oxifit's
-  Nelder–Mead fallback is valid only when it converged. The plotting guide
-  covers stacks and category axes.
-- **Plotting uses oxiplot 0.3.1** (and oxihist 0.5.1, which builds on it).
-  New: log axes (`Axes::xscale`/`yscale` with `Scale::Log`), legend
-  placement (`legend()` now avoids the data; `legend_loc(Loc)` pins it),
-  `plot_with`, `profile_with` and `PdfPages::add_axes`. Figures now lay out
-  their panels around their labels, so grids no longer print labels over
-  their neighbours, and line up the y labels of a column; PDF pages are the
-  figure's size in points (they were 39% too large). Fixed: limits set
-  before plotting were overwritten, negative bins were cut off, NaN/∞ data
-  produced invalid SVG, and more (see oxiplot's changelog). The plotting
-  guide covers log axes and the legend.
+  already used its `Random::sample_binned`. The draws are unchanged.
 - **Rust 1.100 and edition 2024.** The minimum supported Rust version
   (`rust-version`) moves from 1.95 to 1.100, the current stable release that
   CI already builds with, and the crates move to the 2024 edition (migrated
   with `cargo fix --edition`; formatting follows the 2024 style).
-- oxihist v0.4.3: category, integer and boolean axes fill 2–3× faster (the
-  `fill` bench's 20 string categories: 69 → 125 M fills/s).
-- oxihist v0.4.2: the `Hist` builder's histograms fill numbers on regular
-  and variable axes 2–3× faster, on par with `Hist1D` (the `fill` bench:
-  185 → 762 M fills/s).
-- The oxihep dependencies move to oxiplot v0.2.0 and oxihist v0.4.0. oxiplot
-  now reads fonts with skrifa instead of the unmaintained ttf-parser and
-  ab_glyph, so the RUSTSEC-2026-0192 advisory ignore is removed. Plots
-  render the same.
 - **Breaking: one `ThreadedHist` for oxihist and oxiroot.** `ThreadedHist`,
   `Mergeable` and `fill_par` are now oxihist's (oxihist 0.3.0), re-exported
   here; the copy in oxiroot-hist is gone. oxiroot implements `Mergeable` for
@@ -212,18 +211,6 @@ change the API.
   13.5 s before, 26 ms now.
 - **`fill_par` cloned the template once per rayon split.** It now fills a few
   chunks per thread. With an 8 MB template: 528 ms before, 13 ms now.
-- **`SparseHist::fill` scanned every filled cell.** It now finds the cell
-  through a hash index: 160 000 distinct cells take 21 ms instead of 19 s.
-- **Reading objects from a subdirectory re-read its key list each time, and
-  every object read re-parsed the file's streamer info.** `FileReader` now
-  reads each subdirectory once and parses the streamer info once: 3 000
-  objects from one subdirectory take 13 ms instead of 425 ms.
-- **Decompression is bounded by the block's declared size.** zstd, zlib and
-  LZMA blocks used to decode in full and be checked afterwards, so a small
-  crafted block could expand into gigabytes before being rejected. Decoding
-  now stops one byte past the declared size (at most 16 MiB per block), and
-  LZ4 uses the decoder entry point that reports a too-small output as an error
-  instead of panicking.
 - **Decompression is bounded by the block's declared size.** zstd, zlib and
   LZMA blocks used to decode in full and be checked afterwards, so a small
   crafted block could expand into gigabytes before being rejected. Decoding
