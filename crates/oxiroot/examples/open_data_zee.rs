@@ -19,7 +19,7 @@ fn main() {
 
 #[cfg(all(feature = "xrootd", feature = "fit", feature = "plot"))]
 fn main() -> oxiroot::Result<()> {
-    use oxiroot::fit::{FitMethod, FitOptions, Model};
+    use oxiroot::fit::{FitMethod, FitOptions, Minimizer, Model};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;
     use oxiroot::tree::BranchValues;
@@ -109,6 +109,49 @@ fn main() -> oxiroot::Result<()> {
         fit.chi2,
         fit.ndf
     );
+    // The whole lineshape over [70, 110] GeV: a double-sided Crystal Ball — the
+    // Gaussian core with a power-law tail on each side, the low one taking the
+    // radiation — on a falling exponential continuum, seeded from the core
+    // fit. MIGRAD alone stalls from this seed; the combined minimizer
+    // (MIGRAD with a SIMPLEX fallback) converges. The tail powers are capped
+    // at 50: beyond that a power law is an exponential, and the likelihood is
+    // flat in them.
+    let full = Model::double_crystal_ball("Z")
+        .with_params(vec![
+            fit.params[0],
+            fit.params[1],
+            fit.params[2],
+            1.0,
+            3.0,
+            1.5,
+            5.0,
+        ])
+        .limit("sigma", 0.5, 10.0)
+        .limit("alpha_lo", 0.1, 5.0)
+        .limit("n_lo", 1.01, 50.0)
+        .limit("alpha_hi", 0.1, 5.0)
+        .limit("n_hi", 1.01, 50.0)
+        + Model::exponential("continuum").with_params(vec![3.0, -0.05]);
+    let wide = FitOptions::new()
+        .method(FitMethod::Likelihood)
+        .range(70.0, 110.0)
+        .minimizer(Minimizer::Minuit2Combined);
+    let lineshape = mass.fit_opts(&full, &wide);
+    println!(
+        "full fit in [70, 110] GeV (double-sided Crystal Ball + exponential): peak {:.2} ± {:.2} GeV, \
+         resolution {:.2} ± {:.2} GeV, χ²/ndf = {:.1}/{}{}",
+        lineshape.params[1],
+        lineshape.errors[1],
+        lineshape.params[2],
+        lineshape.errors[2],
+        lineshape.chi2,
+        lineshape.ndf,
+        if lineshape.valid {
+            ""
+        } else {
+            " (not converged)"
+        }
+    );
     let tail: f64 = mass.values()[..(peak_bin - 8)].iter().sum();
     println!(
         "{:.0} % of the candidates sit more than 8 GeV below the peak: the radiative tail.",
@@ -125,6 +168,14 @@ fn main() -> oxiroot::Result<()> {
             .histtype(HistType::Errorbar)
             .color(Color::BLACK)
             .label("ATLAS open data (sim.)"),
+    );
+    ax.model_with(
+        &full.with_params(lineshape.params.clone()),
+        70.0..110.0,
+        CurveOpts::new()
+            .color(Color::hex("#3f90da"))
+            .samples(400)
+            .label("Crystal Ball + continuum"),
     );
     ax.model_with(
         &fitted,
