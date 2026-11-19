@@ -149,9 +149,11 @@ pub mod prelude {
     pub use crate::hadd::{MergeKind, MergeReport, Merger, merge_files};
 
     #[cfg(feature = "fit")]
+    // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
+    // read as a profile histogram here, next to `Profile1D`.
     pub use oxifit::{
-        DifferentialEvolution, FitData, FitExt, FitMethod, FitOptions, FitResult, Loss, Minimizer,
-        Model, MultiStart, Point, Points,
+        CmaEs, DifferentialEvolution, FitData, FitError, FitExt, FitMethod, FitOptions, FitResult,
+        Loss, Minimizer, Model, MultiStart, Point, Points,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;

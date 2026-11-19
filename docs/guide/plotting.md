@@ -300,6 +300,34 @@ ax.fit_stats_with(fitted, r, StatBox::new().corner(Corner::UpperLeft).prob(true)
 
 `fit_stats`/`fit_stats_with` and `StatBox`/`Corner` need the **`fit` feature**.
 
+## Fit contours and profiles
+
+`ax.fit_contour(&c)` draws a 2-D confidence contour from
+[`contour`](fitting.md#profiles-and-contours) as a closed line, with the best
+fit marked by a dot; `ax.fit_profile(&p)` draws a profile scan with dashed
+lines at `Δ = 1` and `Δ = 4`, whose crossings are the 1σ and 2σ interval ends.
+The `_with` variants take `CurveOpts` for the color, label and line style:
+
+```rust
+# use oxiroot::plot::{Axes, CurveOpts};
+# use oxiroot::prelude::*;
+# fn demo(data: &Hist1D, model: &Model) -> Result<(), FitError> {
+let opts = FitOptions::new();
+let mut ax = Axes::new();
+for (delta, label) in [(2.30, "68 % CL"), (5.99, "95 % CL")] {
+    let c = data.contour(model, &opts, "mean", "sigma", delta, 60)?;
+    ax.fit_contour_with(&c, CurveOpts::new().label(label));
+}
+ax.xlabel("mean").ylabel("sigma").legend();
+
+let p = data.profile(model, &opts, "mean", (90.0, 92.5), 41)?;
+let mut prof = Axes::new();
+prof.fit_profile(&p);
+prof.xlabel("mean").ylabel("$-2\\Delta\\ln L$");
+# Ok(())
+# }
+```
+
 ## Layouts: grids and ratio plots
 
 A `GridSpec` arranges several panels with custom row/column ratios. Use

@@ -151,6 +151,27 @@ let sig_bkg = Model::new(
 The closure must be `Fn(f64, &[f64]) -> f64 + Send + Sync + 'static`, so a model
 can be shared across threads.
 
+### Sums of models
+
+Built-in shapes add up: `sig + bkg` (or `Model::sum("name", &[&sig, &bkg])`)
+evaluates to the sum of its parts, with each parameter named after its part.
+Each part keeps its seeds, limits and fixed parameters:
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+let sig = Model::gaussian("sig")
+    .with_params(vec![100.0, 91.0, 2.0])
+    .lower_limit("sigma", 0.0);
+let bkg = Model::polynomial("bkg", 0).with_params(vec![10.0]);
+let sum = sig + bkg; // parameters: sig.constant, sig.mean, sig.sigma, bkg.p0
+let sum = sum.limit("sig.mean", 85.0, 97.0);
+```
+
+A part name that repeats is numbered (`g`, `g_2`), and `a + b + c` adds a third
+part rather than nesting the first sum.
+
 ### Seeding and constraints
 
 These chainable methods return the `Model`, so they compose:
@@ -164,6 +185,7 @@ These chainable methods return the `Model`, so they compose:
 | `upper_limit(name, hi)` | Constrain a parameter to `<= hi` |
 | `fix(name)` | Hold a parameter fixed at its current value |
 | `step(name, step)` | Set the initial Minuit2 step (default: 10 % of the value) |
+| `constrain(name, mean, sigma)` | Add a Gaussian constraint `((p − mean)/sigma)²` to the cost — an external measurement or a nuisance prior; counts as one more measurement in `ndf` |
 
 ```rust
 use oxiroot::prelude::*;
@@ -341,6 +363,38 @@ if fit.valid {
     error — next to the fitted curve. See
     [Plotting → Fit statistics box](plotting.md#fit-statistics-box).
 
+## Profiles and contours
+
+The parabolic errors (and MINOS) describe one parameter at a time. Two scans
+go further, both refitting the other parameters at every point:
+
+- `profile` steps one parameter across a range and returns `Δcost` against it;
+  `interval(1.0)` reads off the 1σ interval where the curve crosses `Δ = 1`
+  (`4.0` for 2σ).
+- `contour` traces the joint region of two parameters where the cost is `Δ`
+  above its minimum: `2.30` for 68 %, `5.99` for 95 %.
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+let opts = FitOptions::new();
+let model = Model::gaussian("z").estimate_from(&peak).lower_limit("sigma", 0.0);
+let fit = peak.fit_opts(&model, &opts);
+let (m, e) = (fit.params[1], fit.errors[1]);
+let profile = peak.profile(&model, &opts, "mean", (m - 3.0 * e, m + 3.0 * e), 41)?;
+if let Some((lo, hi)) = profile.interval(1.0) {
+    println!("mean ∈ [{lo:.3}, {hi:.3}] (1σ)");
+}
+let region = peak.contour(&model, &opts, "mean", "sigma", 2.30, 60)?;
+println!("{} points around ({:.3}, {:.3})", region.points.len(), region.best.0, region.best.1);
+```
+
+Both return a `FitError` for an unknown or fixed parameter, or a fit that
+failed. With the `plot` feature, `ax.fit_contour(&region)` and
+`ax.fit_profile(&profile)` draw them (see
+[Plotting → Fit contours and profiles](plotting.md#fit-contours-and-profiles)).
+
 ## Minimizer backends
 
 `FitOptions::minimizer(...)` selects the optimizer. Every Minuit-based backend
@@ -354,6 +408,8 @@ the same thing whichever one found the minimum.
 | `Simplex` | Minuit2's SIMPLEX | A rough, noisy cost |
 | `MultiStart(MultiStart::new(n))` | `n` local fits from points spread over the parameter limits; the lowest wins | A few competing minima |
 | `DifferentialEvolution(…)` | A population-based global search over the limits, then MIGRAD | The seed may sit in the wrong basin |
+| `CmaEs(CmaEs::new())` | CMA-ES, an evolution strategy that learns the valley's shape, then MIGRAD | As above, usually in a third of the evaluations |
+| `LevenbergMarquardt` | Damped Gauss–Newton on the residuals, then MIGRAD | A good seed: fewer evaluations than MIGRAD |
 | `NelderMead` (`argmin` feature) | An independent simplex, errors from a numerical Hessian, no MINOS | Cross-checking Minuit2 |
 
 A local minimizer only finds the minimum nearest its seed. When the seed may

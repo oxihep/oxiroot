@@ -9,6 +9,15 @@ change the API.
 
 ### Changed
 
+- **oxifit 0.3.0, oxiplot 0.6.0, oxihist 0.8.0.** `oxiroot::fit` gains the
+  `CmaEs` and `LevenbergMarquardt` minimizers, sum models (`sig + bkg`),
+  Gaussian parameter constraints (`Model::constrain`), and profile
+  likelihoods and 2-D contours (`FitExt::profile`, `FitExt::contour`,
+  returning `oxiroot::fit::{Profile, Contour}` or a `FitError`); the prelude
+  exports `CmaEs` and `FitError`. `oxiroot::plot` gains `Axes::fit_contour`
+  and `Axes::fit_profile` to draw them. The fitting and plotting guides cover
+  all of it.
+
 - **oxifit 0.2.0, oxiplot 0.5.0, oxihist 0.7.0.** `oxiroot::fit` gains the
   global minimizers `Minimizer::MultiStart` and
   `Minimizer::DifferentialEvolution`, `Minuit2Combined` and `Simplex`, the

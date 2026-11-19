@@ -331,7 +331,8 @@ in the dependency-free `oxistats` crate.
 `FitOptions::minimizer(...)` selects the optimizer: the default
 `Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD + HESSE — ROOT's algorithm,
 with parabolic + MINOS errors and the covariance), `Minuit2Combined` and
-`Simplex`, the global searches `MultiStart` and `DifferentialEvolution` (for a
+`Simplex`, `LevenbergMarquardt`, the global searches `MultiStart`,
+`DifferentialEvolution` and `CmaEs` (for a
 seed that may sit in the wrong basin: they search the parameter limits, then
 polish with MIGRAD), and, behind the **`argmin` feature**,
 `Minimizer::NelderMead` — a gradient-free simplex from the
