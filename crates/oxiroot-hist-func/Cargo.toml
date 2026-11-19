@@ -17,8 +17,9 @@ oxifit-formula = { workspace = true }
 oxifit = { workspace = true, optional = true }
 
 [features]
-# Opt-in fitting: `TF1::to_model` turns a function into an `oxifit::Model`.
-fit = ["dep:oxifit"]
+# Opt-in fitting: `Func1D/2D/3D::to_model` turn a function into an
+# `oxifit::Model`, and histograms become fittable (`oxiroot-hist/fit`).
+fit = ["dep:oxifit", "oxiroot-hist/fit"]
 
 [package.metadata.docs.rs]
 all-features = true

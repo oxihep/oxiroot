@@ -253,14 +253,22 @@ impl Func1D {
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
         let formula = self.core.formula.clone();
-        let names: Vec<String> = match Formula::parse(self.title()) {
-            Ok(title) if title.npar() == formula.npar() => title.param_names().to_vec(),
-            _ => formula.param_names().to_vec(),
-        };
+        let names = model_names(self.title(), &formula);
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         oxifit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
             formula.eval1(x, p)
         })
+    }
+}
+
+/// A function's parameter names for a [`Model`](oxifit::Model): from its
+/// title when the title is a formula with the same number of parameters (so
+/// `gaus` keeps its named parameters), else from the canonical `[pN]` formula.
+#[cfg(feature = "fit")]
+fn model_names(title: &str, formula: &Formula) -> Vec<String> {
+    match Formula::parse(title) {
+        Ok(t) if t.npar() == formula.npar() => t.param_names().to_vec(),
+        _ => formula.param_names().to_vec(),
     }
 }
 
@@ -315,6 +323,24 @@ impl Func2D {
     #[must_use]
     pub fn eval(&self, x: f64, y: f64) -> f64 {
         self.core.formula.eval(&[x, y], &self.core.params)
+    }
+
+    /// Convert to a fittable 2-D [`Model`](oxifit::Model), seeded with this
+    /// function's current parameters — so `h2.fit(&tf2.to_model())` fits a 2-D
+    /// histogram to this function's shape. Requires the `fit` feature;
+    /// parameter names as for [`Func1D::to_model`].
+    #[cfg(feature = "fit")]
+    #[must_use]
+    pub fn to_model(&self) -> oxifit::Model {
+        let formula = self.core.formula.clone();
+        let names = model_names(self.title(), &formula);
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        oxifit::Model::new2(
+            self.name(),
+            &names,
+            self.params().to_vec(),
+            move |x, y, p| formula.eval(&[x, y], p),
+        )
     }
 
     accessors!();
@@ -383,6 +409,23 @@ impl Func3D {
     #[must_use]
     pub fn eval(&self, x: f64, y: f64, z: f64) -> f64 {
         self.core.formula.eval(&[x, y, z], &self.core.params)
+    }
+
+    /// Convert to a fittable 3-D [`Model`](oxifit::Model), seeded with this
+    /// function's current parameters. Requires the `fit` feature; parameter
+    /// names as for [`Func1D::to_model`].
+    #[cfg(feature = "fit")]
+    #[must_use]
+    pub fn to_model(&self) -> oxifit::Model {
+        let formula = self.core.formula.clone();
+        let names = model_names(self.title(), &formula);
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        oxifit::Model::new3(
+            self.name(),
+            &names,
+            self.params().to_vec(),
+            move |x, y, z, p| formula.eval(&[x, y, z], p),
+        )
     }
 
     accessors!();

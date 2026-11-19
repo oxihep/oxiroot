@@ -7,6 +7,19 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **oxifit 0.5.0, oxiplot 0.8.0, oxihist 0.10.0.** `oxiroot::fit` gains
+  analytic gradients (`Model::with_gradient`) and `Minimizer::LBfgsB`,
+  convolution (`Model::convolve`, `Model::normal`), 2-D and 3-D fits
+  (`Model::new2`/`new3`/`product`, `Points2`/`Points3`, `Events2`/`Events3`,
+  `FitDataNd`, `FitOptions::range_y`/`range_z`), and reports misspelled
+  parameter names (`Model::check`). **`Hist2D` and `Hist3D` can be fitted**
+  (each in-range bin a point at its center), and **`Func2D::to_model` /
+  `Func3D::to_model`** convert ROOT TF2/TF3 functions. The `rayon` feature now
+  also parallelizes fits. The prelude exports the new data types; the fitting
+  guide covers all of it.
+
 ### Fixed
 
 - **`Func1D::integral` could hang.** It is built on oxifit-formula's

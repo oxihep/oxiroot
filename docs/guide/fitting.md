@@ -172,6 +172,32 @@ let sum = sum.limit("sig.mean", 85.0, 97.0);
 A part name that repeats is numbered (`g`, `g_2`), and `a + b + c` adds a third
 part rather than nesting the first sum.
 
+!!! tip "Typos in parameter names"
+    `limit`, `fix`, `constrain` and the other per-parameter setters given a
+    name the model does not have would otherwise do nothing. A model that
+    received such a name fits as **invalid**, and `model.check()` names it
+    (`FitError::UnknownParameter`).
+
+### Convolutions
+
+`Model::convolve("m", &signal, &resolution, window)` smears a model by a
+resolution function: `∫ signal(x − t)·resolution(t) dt` over `window`, the range
+of `t` the resolution covers. Use a unit-area resolution such as
+`Model::normal`, so the signal keeps its area:
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+// A decay that starts at t = 0, smeared by a Gaussian vertex resolution.
+let decay = Model::new("decay", &["n", "tau"], vec![500.0, 1.5], |t, p| {
+    if t < 0.0 { 0.0 } else { p[0] / p[1] * (-t / p[1]).exp() }
+});
+let resolution = Model::normal("res").with_params(vec![0.0, 0.1]).fix("mean");
+let measured = Model::convolve("measured", &decay, &resolution, (-1.0, 1.0));
+// parameters: decay.n, decay.tau, res.mean, res.sigma
+```
+
 ### Seeding and constraints
 
 These chainable methods return the `Model`, so they compose:
@@ -260,6 +286,8 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 | `max_fcn(usize)` | Cap on cost evaluations per Minuit2 minimization |
 | `loss(Loss)` | Robust loss to down-weight outliers (see [below](#robust-fitting-outliers)) |
 | `f_scale(f64)` | Residual scale for the robust loss (default `1.0`) |
+| `range_y(lo, hi)`, `range_z(lo, hi)` | For 2-D/3-D data, fit only points inside these `y`/`z` ranges |
+| `with_gradient(bool)` | Use the model's analytic gradient when it has one (default `true`) |
 | `with_sumw2(bool)` | Correct a weighted unbinned fit's covariance for the weights (RooFit's `SumW2Error`) |
 
 ```rust
@@ -400,6 +428,69 @@ The unbinned likelihoods have no goodness of fit: `chi2` and `p_value()` are
 `NaN`. A weighted fit's errors are those of `Σw` unit-weight events unless
 `with_sumw2(true)` corrects them for the weights.
 
+## 2-D and 3-D fits
+
+Models of two or three variables fit 2-D and 3-D histograms (each bin a point
+at its center) and 2-D/3-D events. `Model::new2(|x, y, p| …)` and
+`Model::new3(…)` take a closure; `Model::product` multiplies 1-D models, one per
+variable, and its integral factorizes, so unbinned fits normalize it with 1-D
+integrals:
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().to_root().named("map");
+// … fill map with (x, y) pairs …
+let blob = Model::product(
+    "blob",
+    &[&Model::gaussian("x").with_params(vec![50.0, 0.0, 1.0]), &Model::normal("y")],
+);
+let fit = map.fit_opts(&blob, &FitOptions::new().method(FitMethod::Likelihood));
+
+// A ROOT TF2 converts too:
+let tf2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", -4.0, 4.0, -4.0, 4.0)?;
+let plane_fit = map.fit(&tf2.to_model());
+
+// Unbinned: events of two variables, normalized over x × y ranges.
+let events = Events2::new(&[0.1, -0.4, 0.8], &[0.3, 0.0, -0.6])?;
+let opts = FitOptions::new()
+    .method(FitMethod::UnbinnedLikelihood)
+    .range(-4.0, 4.0)
+    .range_y(-4.0, 4.0);
+let shape = Model::product("xy", &[&Model::normal("x"), &Model::normal("y")]);
+let unbinned = events.fit_opts(&shape, &opts);
+```
+
+`Points2`/`Points3` hold other 2-D/3-D data, `Events3` 3-D events. A model of
+another dimension than the data fits as invalid (`FitError::DimensionMismatch`).
+
+## Analytic gradients
+
+`model.with_gradient(|x, p, g| …)` gives a model its derivatives `∂f/∂pₖ`; the
+Gaussian, exponential, polynomial and normal shapes have theirs, as do sums,
+products and convolutions of models that do, and `check_gradient` compares one
+with finite differences. Every cost then has an exact gradient: MIGRAD,
+Levenberg–Marquardt and `Minimizer::LBfgsB` use it, and the error matrix comes
+from it in `2n` gradient calls instead of HESSE's `~2n²` cost calls — the gain
+grows with the number of parameters.
+
+```rust
+use oxiroot::prelude::*;
+
+// the `fit` feature is on by default
+let line = Model::new("line", &["a", "b"], vec![0.0, 1.0], |x, p| p[0] + p[1] * x)
+    .with_gradient(|x, _p, g| {
+        g[0] = 1.0;
+        g[1] = x;
+    });
+assert!(line.check_gradient(&[0.0, 1.0, 2.0]) < 1e-8);
+```
+
+With the `rayon` feature, large costs (more than 4096 points) are summed on all
+cores, and toys, profile points and contour rays fit in parallel — with results
+that do not depend on the number of threads.
+
 ## Simultaneous fits
 
 Several datasets fitted together share the parameters with the same name — a
@@ -506,6 +597,7 @@ the same thing whichever one found the minimum.
 | `DifferentialEvolution(…)` | A population-based global search over the limits, then MIGRAD | The seed may sit in the wrong basin |
 | `CmaEs(CmaEs::new())` | CMA-ES, an evolution strategy that learns the valley's shape, then MIGRAD | As above, usually in a third of the evaluations |
 | `LevenbergMarquardt` | Damped Gauss–Newton on the residuals, then MIGRAD | A good seed: fewer evaluations than MIGRAD |
+| `LBfgsB` | Limited-memory quasi-Newton within the limits, then MIGRAD | Many parameters, with an [analytic gradient](#analytic-gradients) |
 | `NelderMead` (`argmin` feature) | An independent simplex, errors from a numerical Hessian, no MINOS | Cross-checking Minuit2 |
 
 A local minimizer only finds the minimum nearest its seed. When the seed may
@@ -536,7 +628,8 @@ evaluations instead of a few hundred.
 
 The gradient-free `NelderMead` simplex (from the
 [`argmin`](https://crates.io/crates/argmin) crate) optimizes the free
-parameters only, enforces limits with a soft penalty, and derives errors from a
+parameters only, holds limits exactly through Minuit's internal coordinates,
+and derives errors from a
 central-difference Hessian. The `Minimizer::NelderMead` variant only exists
 when the `argmin` feature is on; `with_minos` is ignored by it.
 

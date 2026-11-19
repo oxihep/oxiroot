@@ -152,8 +152,9 @@ pub mod prelude {
     // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
     // read as a profile histogram here, next to `Profile1D`.
     pub use oxifit::{
-        CmaEs, DifferentialEvolution, Events, FitData, FitError, FitExt, FitMethod, FitOptions,
-        FitResult, Loss, Minimizer, Model, MultiStart, Point, Points, Simultaneous, Toys,
+        CmaEs, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd, FitError,
+        FitExt, FitMethod, FitOptions, FitResult, Loss, Minimizer, Model, MultiStart, Point,
+        PointNd, Points, Points2, Points3, Simultaneous, Toys,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
