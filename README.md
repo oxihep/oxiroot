@@ -885,6 +885,7 @@ on, so nothing extra is needed.
 | [`analysis`](crates/oxiroot/examples/analysis.rs) | End-to-end mini analysis: weighted/variable-bin histograms → scale/merge/normalize → subdirectories → a columnar dataset → read-back |
 | [`inspect`](crates/oxiroot/examples/inspect.rs) | Introspect *any* ROOT file you did not write — a programmatic `oxroot ls` |
 | [`dimuon_analysis`](crates/oxiroot/examples/dimuon_analysis.rs) | A NanoAOD-style analysis: jagged muon branches → opposite-sign pairs → invariant mass → Z fit (Voigt + continuum) → plot → saved histogram |
+| [`charmonium_analysis`](crates/oxiroot/examples/charmonium_analysis.rs) | A complete J/ψ + ψ(2S) analysis: dimuon `TTree` → Crystal Ball mass fit with MINOS on the yield ratio → profile and 68/95 % contours → 500-toy pull study → 2-D unbinned (mass, decay length) fit for the non-prompt fraction and b-hadron lifetime → five plots and a results file with the toy pulls (`--release`, about half a minute) |
 | [`open_data_zee`](crates/oxiroot/examples/open_data_zee.rs) | Real data over the network: Z → ee from a 966 MB ATLAS open-data sample streamed with `root://` (needs `--features xrootd`) |
 | **Statistics** — `oxiroot::stat` | |
 | [`stat_intro`](crates/oxiroot/examples/stat_intro.rs) | Descriptive stats + the `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions and confidence intervals |
