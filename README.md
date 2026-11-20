@@ -1,6 +1,7 @@
 # oxiroot
 
 [![CI](https://github.com/oxihep/oxiroot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/oxihep/oxiroot/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/oxihep/oxiroot?label=release)](https://github.com/oxihep/oxiroot/releases/latest)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Foxihep.github.io%2Foxiroot%2Fcoverage%2Fbadge.json)](https://oxihep.github.io/oxiroot/coverage/html/)
 [![Docs](https://img.shields.io/badge/docs-guide%20%26%20API-blue.svg)](https://oxihep.github.io/oxiroot/)
 [![Rust 1.100+](https://img.shields.io/badge/rust-1.100%2B-orange.svg)](https://www.rust-lang.org)
