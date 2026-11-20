@@ -12,6 +12,12 @@ change the API.
 - **`Profile3D::bin_error` and `effective_entries`**, and
   `Profile2D::effective_entries`: every profile now has the same per-cell
   `bin_value`, `bin_error` (ROOT's error modes) and `effective_entries`.
+- **ROOT confirms the RNTuple `std::map` write.** The interop matrix has ROOT
+  C++ read oxiroot's `std::map<std::int32_t, double>` field, and ROOT-written
+  map fixtures (`rntuple_map_*.root`) are read in the tests. ROOT 6.40 needs
+  the map's dictionary compiled in to write or read one
+  (`scripts/rntuple_map_LinkDef.h`); without it its collection proxy crashes,
+  which is what had blocked this.
 
 ### Changed
 

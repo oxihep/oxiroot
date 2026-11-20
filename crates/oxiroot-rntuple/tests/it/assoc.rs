@@ -1,8 +1,8 @@
-//! Associative containers. `std::set` round-trips both ways: ROOT writes the
-//! `rntuple_set_*` fixtures (read here) and reads oxiroot's own set output.
-//! `std::map` is written by oxiroot and read back by uproot — ROOT 6.40's
-//! collection proxy crashes on a `std::map` RNTuple (it can neither write nor
-//! read one), so only uproot grounds the map.
+//! Associative containers. `std::set` and `std::map` round-trip both ways: ROOT
+//! writes the `rntuple_set_*` and `rntuple_map_*` fixtures (read here), and the
+//! interop matrix has ROOT read oxiroot's own output; uproot reads the map too.
+//! (ROOT 6.40 needs the map's dictionary compiled in to write or read a
+//! `std::map` RNTuple: `scripts/rntuple_map_LinkDef.h`.)
 
 use std::path::PathBuf;
 
@@ -45,6 +45,44 @@ fn reads_root_set_uncompressed() {
 #[test]
 fn reads_root_set_zstd() {
     check_set_fixture("rntuple_set_zstd.root");
+}
+
+/// A `std::map<int32_t, double>` ROOT wrote reads as a collection of key/value
+/// records, sorted by key as ROOT stores them.
+fn check_map_fixture(name: &str) {
+    let file = open(name);
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
+    assert_eq!(ntpl.entries(), 3, "{name}");
+    let m = &ntpl.header().fields[0];
+    assert_eq!(m.struct_role, StructRole::Collection);
+    assert_eq!(m.type_name, "std::map<std::int32_t,double>");
+    match ntpl.read_field(&file, "m").unwrap() {
+        FieldValues::Nested { offsets, items } => {
+            assert_eq!(offsets, vec![0, 2, 2, 5], "{name}");
+            assert_eq!(
+                *items,
+                FieldValues::Record(vec![
+                    ("_0".into(), FieldValues::I32(vec![1, 2, -7, 3, 40])),
+                    (
+                        "_1".into(),
+                        FieldValues::F64(vec![1.5, 2.5, 0.25, 3.5, -1.0])
+                    ),
+                ]),
+                "{name}"
+            );
+        }
+        other => panic!("{name}: expected a nested map collection, got {other:?}"),
+    }
+}
+
+#[test]
+fn reads_root_map_uncompressed() {
+    check_map_fixture("rntuple_map_uncompressed.root");
+}
+
+#[test]
+fn reads_root_map_zstd() {
+    check_map_fixture("rntuple_map_zstd.root");
 }
 
 /// oxiroot writes a `std::set` that round-trips (and ROOT C++ reads it — checked
