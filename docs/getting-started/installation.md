@@ -14,13 +14,13 @@ a histogram-only project never compiles the others.
 ```toml
 [dependencies]
 # Everything — histograms, graphs, TTree, RNTuple — through the facade:
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }
 
 # …or depend on just one crate (Cargo finds it in the repository):
-oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }  # histograms + graphs
-oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }  # Func1D/Func2D/Func3D
-oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }  # TTree
-oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }  # RNTuple
+oxiroot-hist      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }  # histograms + graphs
+oxiroot-hist-func = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }  # Func1D/Func2D/Func3D
+oxiroot-tree      = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }  # TTree
+oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }  # RNTuple
 ```
 
 Then bring the common types into scope with the prelude:
@@ -51,10 +51,10 @@ just the lean, pure-Rust format core.
 ```toml
 [dependencies]
 # Batteries-included — fitting, plotting and argmin all on:
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0" }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0" }
 
 # …or the lean format core only (drops the extra dependencies):
-# oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.5.0", default-features = false }
+# oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.6.0", default-features = false }
 ```
 
 !!! tip "Leaner builds"
