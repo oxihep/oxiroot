@@ -462,7 +462,11 @@ fn parallel_reads_match_serial_ones() {
         }
         let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
         let ds = Dataset::open(&file, "events").unwrap();
-        let serial: Vec<Batch> = ds.batches(COLUMNS).step(3000).collect::<Result<_, _>>().unwrap();
+        let serial: Vec<Batch> = ds
+            .batches(COLUMNS)
+            .step(3000)
+            .collect::<Result<_, _>>()
+            .unwrap();
         let parallel: Vec<Batch> = ds
             .batches(COLUMNS)
             .step(3000)

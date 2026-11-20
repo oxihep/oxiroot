@@ -102,7 +102,10 @@ fn read_pages(
             .collect();
     }
     let _ = parallel;
-    pages.iter().map(|p| read_page_bytes(file, p, bits)).collect()
+    pages
+        .iter()
+        .map(|p| read_page_bytes(file, p, bits))
+        .collect()
 }
 
 /// Invert RNTuple "split" (byte-transposed) storage: byte `j` of element `i`

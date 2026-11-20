@@ -212,7 +212,11 @@ impl<W: Write + Seek> TreeWriter<W> {
         // contributes its synthetic count column first, then its data column.
         let counts: Vec<Vec<Option<Branch>>> = batches
             .iter()
-            .map(|bs| bs.iter().map(|b| if b.jagged() { b.count_branch() } else { None }).collect())
+            .map(|bs| {
+                bs.iter()
+                    .map(|b| if b.jagged() { b.count_branch() } else { None })
+                    .collect()
+            })
             .collect();
         let mut jobs: Vec<&Branch> = Vec::new();
         for ((branches, counts), &n) in batches.iter().zip(&counts).zip(&entries) {

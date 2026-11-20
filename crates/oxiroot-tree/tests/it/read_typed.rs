@@ -147,15 +147,23 @@ fn write_batches_equals_one_batch_at_a_time() {
             vec![
                 Branch::f64("x", vec![f64::from(k); 4]),
                 Branch::jagged_i32("j", vec![vec![k], vec![], vec![k, k], vec![1]]),
-                Branch::string("s", vec!["a".into(), "bb".into(), String::new(), "c".into()]),
+                Branch::string(
+                    "s",
+                    vec!["a".into(), "bb".into(), String::new(), "c".into()],
+                ),
             ]
         })
         .collect();
-    let mut a = TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(1)).unwrap();
+    let mut a =
+        TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(1)).unwrap();
     a.write_batches(&batches).unwrap();
-    let mut b = TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(1)).unwrap();
+    let mut b =
+        TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::Zstd(1)).unwrap();
     for batch in &batches {
         b.write_batch(batch).unwrap();
     }
-    assert_eq!(a.finish().unwrap().into_inner(), b.finish().unwrap().into_inner());
+    assert_eq!(
+        a.finish().unwrap().into_inner(),
+        b.finish().unwrap().into_inner()
+    );
 }

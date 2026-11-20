@@ -161,7 +161,10 @@ fn parallel_reads_match_serial_ones() {
             "{name} window"
         );
     }
-    assert_eq!(n.field("v").parallel(true).flat().unwrap(), n.field("v").flat().unwrap());
+    assert_eq!(
+        n.field("v").parallel(true).flat().unwrap(),
+        n.field("v").flat().unwrap()
+    );
 }
 
 #[test]
@@ -174,11 +177,26 @@ fn write_batches_equals_one_batch_at_a_time() {
             ]
         })
         .collect();
-    let mut a = NtupleWriter::new(Cursor::new(Vec::new()), "t.root", "ntpl", Compression::Zstd(1)).unwrap();
+    let mut a = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "t.root",
+        "ntpl",
+        Compression::Zstd(1),
+    )
+    .unwrap();
     a.write_batches(&batches).unwrap();
-    let mut b = NtupleWriter::new(Cursor::new(Vec::new()), "t.root", "ntpl", Compression::Zstd(1)).unwrap();
+    let mut b = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "t.root",
+        "ntpl",
+        Compression::Zstd(1),
+    )
+    .unwrap();
     for batch in &batches {
         b.write_batch(batch).unwrap();
     }
-    assert_eq!(a.finish().unwrap().into_inner(), b.finish().unwrap().into_inner());
+    assert_eq!(
+        a.finish().unwrap().into_inner(),
+        b.finish().unwrap().into_inner()
+    );
 }

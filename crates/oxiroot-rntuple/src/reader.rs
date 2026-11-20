@@ -715,12 +715,22 @@ impl<'f> NtupleReader<'f> {
         #[cfg(feature = "rayon")]
         let clusters: Vec<Vec<u64>> = if self.parallel {
             use rayon::prelude::*;
-            self.page_clusters.par_iter().map(decode).collect::<Result<_>>()?
+            self.page_clusters
+                .par_iter()
+                .map(decode)
+                .collect::<Result<_>>()?
         } else {
-            self.page_clusters.iter().map(decode).collect::<Result<_>>()?
+            self.page_clusters
+                .iter()
+                .map(decode)
+                .collect::<Result<_>>()?
         };
         #[cfg(not(feature = "rayon"))]
-        let clusters: Vec<Vec<u64>> = self.page_clusters.iter().map(decode).collect::<Result<_>>()?;
+        let clusters: Vec<Vec<u64>> = self
+            .page_clusters
+            .iter()
+            .map(decode)
+            .collect::<Result<_>>()?;
         let mut out = Vec::with_capacity(clusters.iter().map(Vec::len).sum());
         let mut base = 0u64;
         for local in clusters {
