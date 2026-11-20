@@ -184,8 +184,8 @@ impl<W: Write + Seek> TreeWriter<W> {
 
     /// Total entries appended so far.
     #[must_use]
-    pub fn entries(&self) -> i64 {
-        self.total_entries
+    pub fn entries(&self) -> u64 {
+        u64::try_from(self.total_entries).unwrap_or(0)
     }
 
     /// Append one batch of entries (one basket per branch). The first batch fixes

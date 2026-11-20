@@ -38,7 +38,7 @@ fn reads_multi_basket_tree() {
 }
 
 fn check_values(f: &FileReader, t: &TreeReader) {
-    let read = |n| t.read_branch(f, n).expect("read branch");
+    let read = |n| t.branch(n).values().expect("read branch");
     assert_eq!(read("i4"), BranchValues::I32(vec![0, 1, 2, 3, 4]));
     assert_eq!(read("i8"), BranchValues::I64(vec![10, 11, 12, 13, 14]));
     assert_eq!(read("f4"), BranchValues::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]));

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{TreeReader, concat_trees};
+use oxiroot_tree::{TreeReader};
 
 /// Fixtures spanning the supported branch layouts, with their tree name.
 const FIXTURES: &[(&str, &str)] = &[
@@ -27,17 +27,24 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Open the tree (if it parses), read every branch, and run it through the
-/// `hadd`-style [`concat_trees`] merge. The point is that none of this panics
+/// `hadd`-style [`append_trees`](oxiroot_tree::append_trees) merge. The point is that none of this panics
 /// regardless of the bytes.
 fn poke_tree(f: &FileReader, tree: &str) {
     if let Ok(t) = TreeReader::open(f, tree) {
         let names: Vec<String> = t.branch_names().iter().map(|s| s.to_string()).collect();
         for b in &names {
-            let _ = t.read_branch(f, b);
+            let _ = t.branch(b).values();
         }
         // Merge the (possibly corrupt) tree with itself — exercises the branch
         // kind reconstruction and value concatenation on malformed input.
-        let _ = concat_trees(&[(f, &t)]);
+        let mut w = oxiroot_tree::TreeWriter::new(
+            std::io::Cursor::new(Vec::new()),
+            "m.root",
+            tree,
+            oxiroot_io_core::Compression::None,
+        )
+        .expect("an in-memory writer");
+        let _ = oxiroot_tree::append_trees(&mut w, &[&t]);
     }
 }
 

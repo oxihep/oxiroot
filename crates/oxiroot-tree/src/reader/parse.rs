@@ -4,7 +4,7 @@
 use oxiroot_io_core::raw::{
     K_BYTE_COUNT_MASK, StreamerElement, TagReader, read_named, read_object_base,
 };
-use oxiroot_io_core::{Error, RBuffer, Result, StreamerRegistry};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry};
 
 use super::members::{Members, member_int, member_str, walk_members};
 use super::types::{
@@ -16,12 +16,13 @@ use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length),
 /// driving the member layout from the file's `TStreamerInfo`.
-pub(super) fn read_tree(
+pub(super) fn read_tree<'f>(
+    file: &'f FileReader,
     object: &[u8],
     keylen: usize,
     reg: &StreamerRegistry,
     class_name: &str,
-) -> Result<TreeReader> {
+) -> Result<TreeReader<'f>> {
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
@@ -101,6 +102,7 @@ pub(super) fn read_tree(
     }
 
     Ok(TreeReader {
+        file,
         name: member_str(&out, "fName"),
         entries: u64::saturating_from(member_int(&out, "fEntries")),
         branches,

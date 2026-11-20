@@ -18,12 +18,9 @@ mod streamer_gen;
 mod value;
 mod writer;
 
-pub use chain::ChainReader;
+pub use chain::{ChainBranchRead, ChainReader};
 pub use entrylist::EntryList;
-pub use merge::{append_trees, concat_trees};
-pub use reader::{Friend, TreeIndex, TreeReader};
-pub use value::{BranchValues, Jagged, LeafType};
-pub use writer::{
-    Branch, SplitMember, Tree, TreeWriter, tree_file_bytes, write_tree_file,
-    write_tree_file_baskets,
-};
+pub use merge::append_trees;
+pub use reader::{BranchRead, Friend, TreeIndex, TreeReader};
+pub use value::{BranchValues, FromBranch, Jagged, LeafType};
+pub use writer::{Branch, SplitMember, TreeWriter, raw};

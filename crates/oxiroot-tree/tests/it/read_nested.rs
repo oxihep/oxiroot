@@ -30,19 +30,19 @@ fn reads_nested_struct_subbranches() {
     assert!(t.unsupported_branches().is_empty());
 
     assert_eq!(
-        t.read_branch(&f, "v.id").unwrap(),
+        t.branch("v.id").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 1], vec![0, 1, 2]])
     );
     assert_eq!(
-        t.read_branch(&f, "v.inner.a").unwrap(),
+        t.branch("v.inner.a").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
-        t.read_branch(&f, "v.inner.b").unwrap(),
+        t.branch("v.inner.b").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 2], vec![0, 2, 4]])
     );
     assert_eq!(
-        t.read_branch(&f, "v.w").unwrap(),
+        t.branch("v.w").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.5], vec![0.0, 1.5, 3.0]])
     );
 }

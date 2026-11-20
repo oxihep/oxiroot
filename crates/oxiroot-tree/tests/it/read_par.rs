@@ -6,9 +6,10 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
+use crate::support::{write_tree_file_baskets};
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, TreeReader, write_tree_file_baskets};
+use oxiroot_tree::{Branch, TreeReader};
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(
@@ -21,17 +22,17 @@ fn fixture(name: &str) -> FileReader {
 
 fn assert_par_matches_serial(f: &FileReader, t: &TreeReader) {
     for name in t.branch_names() {
-        let serial = t.read_branch(f, name);
-        assert_eq!(t.read_branch_par(f, name), serial, "branch {name}");
+        let serial = t.branch(name).values();
+        assert_eq!(t.branch(name).parallel(true).values(), serial, "branch {name}");
         let n = t.entries();
         assert_eq!(
-            t.read_branch_range_par(f, name, 1, n.saturating_sub(1)),
-            t.read_branch_range(f, name, 1, n.saturating_sub(1)),
+            t.branch(name).range(1..n.saturating_sub(1)).parallel(true).values(),
+            t.branch(name).range(1..n.saturating_sub(1)).values(),
             "range of {name}"
         );
         assert_eq!(
-            t.read_branch_flat_par(f, name),
-            t.read_branch_flat(f, name),
+            t.branch(name).parallel(true).flat(),
+            t.branch(name).flat(),
             "flat {name}"
         );
     }

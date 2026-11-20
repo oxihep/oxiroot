@@ -37,8 +37,8 @@ fn friend_branch_aligns_by_entry() {
     // The friend lives in the same file here, so reuse `f`.
     let friend = TreeReader::open(&f, fr.tree_name()).expect("open friend tree");
 
-    let x = t.read_branch(&f, "x").unwrap();
-    let y = friend.read_branch(&f, "y").unwrap();
+    let x = t.branch("x").values().unwrap();
+    let y = friend.branch("y").values().unwrap();
     // Same number of entries: the columns line up 1:1.
     assert_eq!(x.len(), y.len());
     assert_eq!(x, BranchValues::F32(vec![1.5, 2.5, 3.5, 4.5, 5.5]));

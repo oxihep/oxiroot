@@ -54,7 +54,7 @@ fn a_friend_joins_on_its_index_as_root_does() {
     let main = TreeReader::open(&file, "main").unwrap();
     let friend = TreeReader::open(&file, "fr").unwrap();
 
-    let rows = main.join_by_index(&file, &friend, &file).expect("join");
+    let rows = main.join_by_index(&friend).expect("join");
     assert_eq!(
         rows,
         vec![Some(2), Some(5), Some(4), Some(1), Some(3), Some(0)]
@@ -62,7 +62,7 @@ fn a_friend_joins_on_its_index_as_root_does() {
 
     // Permuting the friend's column by that mapping lines it up with the main
     // tree: entry i of `main` has key (run, event), and the weight that carries.
-    let BranchValues::F64(weights) = friend.read_branch(&file, "weight").unwrap() else {
+    let BranchValues::F64(weights) = friend.branch("weight").values().unwrap() else {
         panic!("weight is a double branch")
     };
     let aligned: Vec<Option<f64>> = rows
@@ -91,7 +91,7 @@ fn joining_without_an_index_is_refused() {
     // `main` carries no index, so it cannot be joined on — rather than falling
     // back to pairing entry with entry, which would pair the wrong ones.
     let err = friend
-        .join_by_index(&file, &main, &file)
+        .join_by_index(&main)
         .expect_err("a friend with no index must be refused");
     assert!(err.to_string().contains("BuildIndex"), "{err}");
 }

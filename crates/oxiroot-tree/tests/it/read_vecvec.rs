@@ -27,7 +27,7 @@ fn reads_vector_of_vector_int() {
     assert!(t.unsupported_branches().is_empty());
 
     // vi = [[[0]], [[100], [110, 111]], [[200], [210, 211], [220, 221, 222]]]
-    let vi = t.read_branch(&f, "vi").unwrap();
+    let vi = t.branch("vi").values().unwrap();
     assert_eq!(vi.len(), 3);
     assert_eq!(
         vi,
@@ -51,7 +51,7 @@ fn reads_vector_of_vector_double() {
     let t = TreeReader::open(&f, "T").expect("open tree");
     // vd = [[[0.0]], [[1.0], [1.1, 1.11]], [[2.0], [2.1, 2.11], [2.2, 2.21, 2.22]]]
     assert_eq!(
-        t.read_branch(&f, "vd").unwrap(),
+        t.branch("vd").values().unwrap(),
         BranchValues::Nested {
             offsets: vec![0, 1, 3, 6],
             items: Box::new(BranchValues::VecF64(vec![
@@ -72,7 +72,7 @@ fn reads_vector_of_vector_double() {
 fn nested_offsets_partition_entries() {
     let f = fixture("tree_vecvec.root");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    let BranchValues::Nested { offsets, items } = t.read_branch(&f, "vi").unwrap() else {
+    let BranchValues::Nested { offsets, items } = t.branch("vi").values().unwrap() else {
         panic!("expected a nested branch");
     };
     let BranchValues::VecI32(inner) = *items else {

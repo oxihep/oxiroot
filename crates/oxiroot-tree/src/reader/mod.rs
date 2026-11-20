@@ -15,7 +15,9 @@
 use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload, find_key};
 use oxiroot_io_core::{Error, FileReader, Result};
 
-use crate::value::{BranchValues, Jagged, LeafType};
+use std::ops::Range;
+
+use crate::value::{BranchValues, FromBranch, Jagged, LeafType};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 mod decode;
@@ -27,10 +29,16 @@ use decode::{Decode, decode_baskets, decode_scalar, entry_regions, read_baskets,
 use parse::read_tree;
 
 /// Reads a `TTree` from a [`FileReader`]. Opening parses the tree's name, entry
-/// count, and branches; branch data is read on demand, one branch at a time.
+/// count, and branches; branch data is read on demand, one branch at a time,
+/// with [`branch`](Self::branch).
+///
+/// This is the low-level, TTree-specific reader. For one API over TTree and
+/// RNTuple, read through `oxiroot::data::Dataset`.
 #[doc(alias = "TTree", alias = "TTreeReader")]
 #[derive(Debug, Clone)]
-pub struct TreeReader {
+pub struct TreeReader<'f> {
+    /// The file the branch data is read from.
+    file: &'f FileReader,
     name: String,
     entries: u64,
     branches: Vec<Branch>,
@@ -219,7 +227,7 @@ struct ObjectMember {
 }
 
 /// The write-reconstruction metadata of a read branch — the private-field
-/// summary [`concat_trees`](crate::concat_trees) needs to rebuild a branch as a
+/// summary [`BranchRead::to_branch`] needs to rebuild a branch as a
 /// writable [`Branch`](crate::Branch) with the correct kind (scalar / fixed
 /// array / jagged / `std::vector` / string), or to reject the kinds this crate
 /// cannot write back.
@@ -248,9 +256,9 @@ struct Leaf {
     offset: usize,
 }
 
-impl TreeReader {
+impl<'f> TreeReader<'f> {
     /// Open the `TTree` named `name` in `file`.
-    pub fn open(file: &FileReader, name: &str) -> Result<TreeReader> {
+    pub fn open(file: &'f FileReader, name: &str) -> Result<TreeReader<'f>> {
         let key = file.key(name).ok_or_else(|| Error::NotFound {
             what: "key",
             name: name.to_string(),
@@ -260,7 +268,7 @@ impl TreeReader {
 
     /// Open the `TTree` named `name` from the subdirectory `subdir` (a
     /// `/`-separated path descends through nested `TDirectory`s).
-    pub fn open_in(file: &FileReader, subdir: &str, name: &str) -> Result<TreeReader> {
+    pub fn open_in(file: &'f FileReader, subdir: &str, name: &str) -> Result<TreeReader<'f>> {
         let dir = file.subdir(subdir)?;
         // The cycle `name` asks for, or the highest — `FileReader::key`'s rule.
         let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
@@ -274,7 +282,7 @@ impl TreeReader {
     }
 
     /// Decode a `TTree` (or `TNtuple`/`TNtupleD`) from an already-located key.
-    fn open_from_key(file: &FileReader, key: &Key) -> Result<TreeReader> {
+    fn open_from_key(file: &'f FileReader, key: &Key) -> Result<TreeReader<'f>> {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
@@ -291,7 +299,7 @@ impl TreeReader {
 
         let payload = file.key_payload(key)?;
         let object = decompress_payload(&payload, key.obj_len as usize, "TTree")?;
-        let mut tree = read_tree(&object, key.key_len as usize, &registry, &key.class_name)?;
+        let mut tree = read_tree(file, &object, key.key_len as usize, &registry, &key.class_name)?;
         tree.streamer_classes = registry
             .infos()
             .iter()
@@ -352,9 +360,9 @@ impl TreeReader {
     /// # let (file, friend_file) = (FileReader::open("f.root")?, FileReader::open("f.root")?);
     /// let main = TreeReader::open(&file, "main")?;
     /// let friend = TreeReader::open(&friend_file, "fr")?;
-    /// let rows = main.join_by_index(&file, &friend, &friend_file)?;
+    /// let rows = main.join_by_index(&friend)?;
     ///
-    /// let BranchValues::F64(weights) = friend.read_branch(&friend_file, "weight")? else {
+    /// let BranchValues::F64(weights) = friend.branch("weight").values()? else {
     ///     unreachable!("weight is a double branch")
     /// };
     /// // One weight per entry of `main`, in `main`'s order.
@@ -365,23 +373,17 @@ impl TreeReader {
     /// # let _ = aligned;
     /// # Ok(()) }
     /// ```
-    pub fn join_by_index(
-        &self,
-        file: &FileReader,
-        friend: &TreeReader,
-        friend_file: &FileReader,
-    ) -> Result<Vec<Option<u64>>> {
+    pub fn join_by_index(&self, friend: &TreeReader<'_>) -> Result<Vec<Option<u64>>> {
         let index = friend.index().ok_or_else(|| {
             Error::InvalidInput(format!(
                 "tree {:?} has no index to join on: build one with TTree::BuildIndex",
                 friend.name()
             ))
         })?;
-        let _ = friend_file;
-        let major = self.index_column(file, index.major_name())?;
+        let major = self.index_column(index.major_name())?;
         let minor = match index.minor_name() {
             "" => vec![0; major.len()],
-            name => self.index_column(file, name)?,
+            name => self.index_column(name)?,
         };
         Ok(major
             .iter()
@@ -391,8 +393,8 @@ impl TreeReader {
     }
 
     /// Read branch `name` as the integers an index key is made of.
-    fn index_column(&self, file: &FileReader, name: &str) -> Result<Vec<i64>> {
-        let values = self.read_branch(file, name)?;
+    fn index_column(&self, name: &str) -> Result<Vec<i64>> {
+        let values = self.branch(name).values()?;
         values.as_i64_vec().ok_or_else(|| {
             Error::InvalidInput(format!(
                 "branch {name:?} of tree {:?} holds {:?} values, which are not index keys",
@@ -422,20 +424,20 @@ impl TreeReader {
     /// The element type of branch `name` (without reading its data), or `None`
     /// if there is no such readable branch.
     pub fn branch_type(&self, name: &str) -> Option<LeafType> {
-        self.branch(name).map(|b| b.leaf_type)
+        self.find_branch(name).map(|b| b.leaf_type)
     }
 
     /// `fLen` for branch `name`: the per-entry element count of a fixed-size
     /// array branch (`1` for a scalar; jagged branches report `1` and vary per
     /// entry). `None` if there is no such branch.
     pub fn branch_len(&self, name: &str) -> Option<i32> {
-        self.branch(name).map(|b| b.leaf_len)
+        self.find_branch(name).map(|b| b.leaf_len)
     }
 
     /// The title (`fTitle`) of branch `name` — the leaf-list / shape string such
     /// as `x[3]` or `n` — or `None` if there is no such branch.
     pub fn branch_title(&self, name: &str) -> Option<&str> {
-        self.branch(name).map(|b| b.title.as_str())
+        self.find_branch(name).map(|b| b.title.as_str())
     }
 
     /// The per-entry fixed array shape of branch `name`: `[N]` for `x[N]`,
@@ -444,7 +446,7 @@ impl TreeReader {
     /// inner vector has `N` or `N*M` elements); use this to reshape them. `None`
     /// if there is no such branch.
     pub fn branch_shape(&self, name: &str) -> Option<&[usize]> {
-        self.branch(name).map(|b| b.dims.as_slice())
+        self.find_branch(name).map(|b| b.dims.as_slice())
     }
 
     /// Branches present in the file that this crate cannot read yet, as
@@ -469,16 +471,14 @@ impl TreeReader {
             .collect()
     }
 
-    fn branch(&self, name: &str) -> Option<&Branch> {
+    fn find_branch(&self, name: &str) -> Option<&Branch> {
         self.branches.iter().find(|b| b.name == name)
     }
 
-    /// The write-reconstruction metadata of branch `name` (for [`concat_trees`]),
-    /// or `None` if there is no such branch.
-    ///
-    /// [`concat_trees`]: crate::concat_trees
+    /// The write-reconstruction metadata of branch `name` (for
+    /// [`BranchRead::to_branch`]), or `None` if there is no such branch.
     pub(crate) fn branch_meta(&self, name: &str) -> Option<BranchMetaLite> {
-        let b = self.branch(name)?;
+        let b = self.find_branch(name)?;
         Some(BranchMetaLite {
             dims_len: b.dims.len(),
             elem_header: b.elem_header,
@@ -488,81 +488,58 @@ impl TreeReader {
         })
     }
 
-    /// Read all values of branch `name` across every basket.
+    /// Read the branch `name`: set a [`range`](BranchRead::range) of entries
+    /// or [`parallel`](BranchRead::parallel) decompression on the returned
+    /// [`BranchRead`], then take the values typed
+    /// ([`read`](BranchRead::read)), as the [`BranchValues`] enum
+    /// ([`values`](BranchRead::values)), or flat ([`flat`](BranchRead::flat)).
     ///
-    /// Scalar branches yield a flat [`BranchValues`]; fixed (`x[N]`) and
-    /// variable (`x[n]`) branches yield a nested one; `TLeafC` yields strings.
-    ///
-    /// Baskets are decompressed in order on the calling thread; see
-    /// [`read_branch_par`](Self::read_branch_par) for the parallel variant.
-    pub fn read_branch(&self, file: &FileReader, name: &str) -> Result<BranchValues> {
-        self.read_branch_with(file, name, Decode::Serial)
+    /// ```no_run
+    /// # use oxiroot_io_core::FileReader;
+    /// # use oxiroot_tree::TreeReader;
+    /// let file = FileReader::open("events.root")?;
+    /// let tree = TreeReader::open(&file, "events")?;
+    /// let pt: Vec<Vec<f32>> = tree.branch("lep_pt").range(0..1000).read()?;
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    pub fn branch<'a>(&'a self, name: &'a str) -> BranchRead<'a, 'f> {
+        BranchRead {
+            tree: self,
+            name,
+            range: None,
+            decode: Decode::Serial,
+        }
     }
 
-    /// [`read_branch`](Self::read_branch), decompressing the baskets in parallel
-    /// on rayon's global thread pool. Requires the `rayon` feature.
-    #[cfg(feature = "rayon")]
-    pub fn read_branch_par(&self, file: &FileReader, name: &str) -> Result<BranchValues> {
-        self.read_branch_with(file, name, Decode::Parallel)
+    /// The entry numbers at which `name`'s baskets start, followed by the
+    /// entry count: basket `i` holds entries `[b[i], b[i + 1])`. Reading a
+    /// window that starts and ends on these decompresses no basket twice.
+    pub fn basket_boundaries(&self, name: &str) -> Result<Vec<u64>> {
+        let branch = self.require_branch(name)?;
+        let mut bounds: Vec<u64> = if branch.basket_entry.len() == branch.n_baskets {
+            branch
+                .basket_entry
+                .iter()
+                .map(|&e| e.max(0).cast_unsigned())
+                .collect()
+        } else {
+            vec![0]
+        };
+        bounds.push(self.entries);
+        bounds.dedup();
+        Ok(bounds)
     }
 
-    fn read_branch_with(
-        &self,
-        file: &FileReader,
-        name: &str,
-        decode: Decode,
-    ) -> Result<BranchValues> {
-        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
+    fn require_branch(&self, name: &str) -> Result<&Branch> {
+        self.find_branch(name).ok_or_else(|| Error::NotFound {
             what: "branch",
             name: name.to_string(),
-        })?;
-        let baskets = read_baskets(file, branch, 0..branch.n_baskets, decode)?;
-        decode_baskets(branch, &baskets)
+        })
     }
 
-    /// Read only entries `[start, stop)` of branch `name`, fetching just the
-    /// baskets that cover the range rather than the whole branch. `stop` is
-    /// clamped to the entry count and `start` to `stop`, so an out-of-range
-    /// window yields fewer (or no) entries instead of an error.
-    ///
-    /// Baskets are decompressed in order on the calling thread; see
-    /// [`read_branch_range_par`](Self::read_branch_range_par) for the parallel
-    /// variant.
-    pub fn read_branch_range(
-        &self,
-        file: &FileReader,
-        name: &str,
-        start: u64,
-        stop: u64,
-    ) -> Result<BranchValues> {
-        self.read_branch_range_with(file, name, start, stop, Decode::Serial)
-    }
-
-    /// [`read_branch_range`](Self::read_branch_range), decompressing the baskets
-    /// in parallel on rayon's global thread pool. Requires the `rayon` feature.
-    #[cfg(feature = "rayon")]
-    pub fn read_branch_range_par(
-        &self,
-        file: &FileReader,
-        name: &str,
-        start: u64,
-        stop: u64,
-    ) -> Result<BranchValues> {
-        self.read_branch_range_with(file, name, start, stop, Decode::Parallel)
-    }
-
-    fn read_branch_range_with(
-        &self,
-        file: &FileReader,
-        name: &str,
-        start: u64,
-        stop: u64,
-        decode: Decode,
-    ) -> Result<BranchValues> {
-        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
-            what: "branch",
-            name: name.to_string(),
-        })?;
+    /// The baskets of `branch` overlapping entries `[start, stop)` (clamped to
+    /// the entry count), and the first entry the first of them holds.
+    fn select_baskets(&self, branch: &Branch, start: u64, stop: u64) -> (Vec<usize>, u64, u64, u64) {
         let stop = stop.min(self.entries);
         let start = start.min(stop);
 
@@ -596,8 +573,17 @@ impl TreeReader {
                 indices.push(i);
             }
         }
+        (indices, first_entry, start, stop)
+    }
 
-        let baskets = read_baskets(file, branch, indices.iter().copied(), decode)?;
+    fn read_values(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<BranchValues> {
+        let branch = self.require_branch(name)?;
+        let Some(range) = range else {
+            let baskets = read_baskets(self.file, branch, 0..branch.n_baskets, decode)?;
+            return decode_baskets(branch, &baskets);
+        };
+        let (indices, first_entry, start, stop) = self.select_baskets(branch, range.start, range.end);
+        let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
         let values = decode_baskets(branch, &baskets)?;
         // `values` covers [first_entry, ..); slice out [start, stop).
         let off = usize::saturating_from(start.saturating_sub(first_entry));
@@ -605,55 +591,35 @@ impl TreeReader {
         Ok(slice_values(values, off, len))
     }
 
-    /// Read branch `name` as a [`Jagged`] view — cumulative `offsets` over one
-    /// flat scalar [`BranchValues`] — without allocating a `Vec` per entry. Works
-    /// for scalar (one element per entry), fixed `x[N]`, multidimensional, and
-    /// variable/jagged numeric branches; string branches are not supported (use
-    /// [`read_branch`](Self::read_branch)).
-    ///
-    /// Baskets are decompressed in order on the calling thread; see
-    /// [`read_branch_flat_par`](Self::read_branch_flat_par) for the parallel
-    /// variant.
-    pub fn read_branch_flat(&self, file: &FileReader, name: &str) -> Result<Jagged> {
-        self.read_branch_flat_with(file, name, Decode::Serial)
-    }
-
-    /// [`read_branch_flat`](Self::read_branch_flat), decompressing the baskets in
-    /// parallel on rayon's global thread pool. Requires the `rayon` feature.
-    #[cfg(feature = "rayon")]
-    pub fn read_branch_flat_par(&self, file: &FileReader, name: &str) -> Result<Jagged> {
-        self.read_branch_flat_with(file, name, Decode::Parallel)
-    }
-
-    fn read_branch_flat_with(
-        &self,
-        file: &FileReader,
-        name: &str,
-        decode: Decode,
-    ) -> Result<Jagged> {
-        let branch = self.branch(name).ok_or_else(|| Error::NotFound {
-            what: "branch",
-            name: name.to_string(),
-        })?;
+    fn read_flat(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<Jagged> {
+        let branch = self.require_branch(name)?;
         if branch.leaf_type == LeafType::Str {
             return Err(Error::InvalidInput(format!(
-                "branch {name:?} is a string branch; use read_branch"
+                "branch {name:?} is a string branch, which has no flat form; use values()"
             )));
         }
-        if branch.object_member.is_some() {
+        if branch.object_member.is_some() || branch.nested_elem.is_some() {
             return Err(Error::InvalidInput(format!(
-                "branch {name:?} is a TBranchObject member; use read_branch"
+                "branch {name:?} has no flat form; use values()"
             )));
         }
-        let baskets = read_baskets(file, branch, 0..branch.n_baskets, decode)?;
+        let (indices, first_entry, start, stop) = match range {
+            Some(r) => self.select_baskets(branch, r.start, r.end),
+            None => ((0..branch.n_baskets).collect(), 0, 0, self.entries),
+        };
+        let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
         let regions = entry_regions(branch, &baskets);
+        let skip = usize::saturating_from(start.saturating_sub(first_entry)).min(regions.len());
+        let take = usize::saturating_from(stop - start).min(regions.len() - skip);
+        let regions = &regions[skip..skip + take];
         let size = branch.leaf_type.size().max(1);
 
+        let total: usize = regions.iter().map(|r| r.len()).sum();
         let mut offsets = Vec::with_capacity(regions.len() + 1);
         offsets.push(0u64);
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(total);
         let mut acc = 0u64;
-        for r in &regions {
+        for r in regions {
             bytes.extend_from_slice(r);
             acc += (r.len() / size) as u64;
             offsets.push(acc);
@@ -662,5 +628,62 @@ impl TreeReader {
             offsets,
             values: decode_scalar(branch.leaf_type, &bytes)?,
         })
+    }
+}
+
+/// One branch read, set up by [`TreeReader::branch`]: the entries to read and
+/// how, then the form to read them in.
+#[must_use = "a BranchRead does nothing until read, values or flat is called"]
+pub struct BranchRead<'a, 'f> {
+    tree: &'a TreeReader<'f>,
+    name: &'a str,
+    range: Option<Range<u64>>,
+    decode: Decode,
+}
+
+impl<'a, 'f> BranchRead<'a, 'f> {
+    pub(crate) fn name(&self) -> &'a str {
+        self.name
+    }
+
+    pub(crate) fn tree(&self) -> &'a TreeReader<'f> {
+        self.tree
+    }
+
+    /// Read only entries `range` (clamped to the entry count: a window past
+    /// the end yields fewer entries, not an error). Only the baskets the window
+    /// touches are fetched and decompressed.
+    pub fn range(mut self, range: Range<u64>) -> Self {
+        self.range = Some(range);
+        self
+    }
+
+    /// Decompress the baskets in parallel on rayon's global thread pool.
+    #[cfg(feature = "rayon")]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.decode = if parallel { Decode::Parallel } else { Decode::Serial };
+        self
+    }
+
+    /// The values as `Vec<T>`: `f32` for a `float` branch, `Vec<f32>` for an
+    /// array or `std::vector<float>`, `String` for a string. Asking for another
+    /// type than the branch holds is an [`Error::TypeMismatch`]; nothing is
+    /// converted.
+    pub fn read<T: FromBranch>(self) -> Result<Vec<T>> {
+        let name = self.name;
+        T::from_values(name, self.values()?)
+    }
+
+    /// The values as the [`BranchValues`] enum, for code that does not know the
+    /// branch's type in advance.
+    pub fn values(self) -> Result<BranchValues> {
+        self.tree.read_values(self.name, self.range, self.decode)
+    }
+
+    /// The values flat: one buffer of every element plus per-entry offsets —
+    /// no allocation per entry. Scalar, fixed-array, variable-array and
+    /// `std::vector<T>` branches; not strings or nested vectors.
+    pub fn flat(self) -> Result<Jagged> {
+        self.tree.read_flat(self.name, self.range, self.decode)
     }
 }

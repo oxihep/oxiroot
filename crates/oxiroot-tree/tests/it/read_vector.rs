@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_std_vector_branches() {
     let f = FileReader::open(fixture("tree_vector.root")).expect("open");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    let read = |n| t.read_branch(&f, n).expect("read branch");
+    let read = |n| t.branch(n).values().expect("read branch");
 
     assert_eq!(t.entries(), 4);
     // The scalar branch and the three vector branches are all visible.

@@ -8,11 +8,14 @@ use oxiroot_io_core::{Error, Result};
 use crate::value::BranchValues;
 
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
-/// scalars, [`Branch::vec_f64`] … for fixed-size arrays, [`Branch::jagged_f64`] …
-/// for variable-length arrays, [`Branch::strings`] for strings.
+/// scalars, [`Branch::array_f64`] … for fixed-size arrays (`x[N]`),
+/// [`Branch::jagged_f64`] … for C-style variable-length arrays (`x[n]`),
+/// [`Branch::vector_f64`] … for `std::vector<T>`, [`Branch::string`] for
+/// strings — or [`BranchRead::to_branch`](crate::BranchRead::to_branch) to
+/// write back a branch as it was read.
 pub struct Branch {
     /// Branch (and leaf) name.
-    pub name: String,
+    pub(crate) name: String,
     /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
     /// Private: a branch is built only through the typed constructors
     /// ([`Branch::i32`], [`Branch::jagged_f64`], …) so the payload can never
@@ -52,6 +55,12 @@ pub(super) struct SplitSpec {
 }
 
 impl Branch {
+    /// The branch's name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub(super) fn jagged(&self) -> bool {
         matches!(self.kind, BranchKind::Jagged)
     }
@@ -114,12 +123,12 @@ macro_rules! branch_ctors {
     };
 }
 branch_ctors! {
-    bools => Bool(bool), i8 => I8(i8), u8 => U8(u8), i16 => I16(i16), u16 => U16(u16),
+    bool => Bool(bool), i8 => I8(i8), u8 => U8(u8), i16 => I16(i16), u16 => U16(u16),
     i32 => I32(i32), u32 => U32(u32), i64 => I64(i64), u64 => U64(u64),
     f32 => F32(f32), f64 => F64(f64),
 }
 
-/// Generate `Branch::vec_<name>` shortcuts for fixed-size array branches (each
+/// Generate `Branch::array_<name>` shortcuts for fixed-size array branches (each
 /// inner vector must have the same length `N`, written as `x[N]`).
 macro_rules! vec_ctors {
     ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
@@ -134,10 +143,10 @@ macro_rules! vec_ctors {
     };
 }
 vec_ctors! {
-    vec_bool => VecBool(bool), vec_i8 => VecI8(i8), vec_u8 => VecU8(u8),
-    vec_i16 => VecI16(i16), vec_u16 => VecU16(u16), vec_i32 => VecI32(i32),
-    vec_u32 => VecU32(u32), vec_i64 => VecI64(i64), vec_u64 => VecU64(u64),
-    vec_f32 => VecF32(f32), vec_f64 => VecF64(f64),
+    array_bool => VecBool(bool), array_i8 => VecI8(i8), array_u8 => VecU8(u8),
+    array_i16 => VecI16(i16), array_u16 => VecU16(u16), array_i32 => VecI32(i32),
+    array_u32 => VecU32(u32), array_i64 => VecI64(i64), array_u64 => VecU64(u64),
+    array_f32 => VecF32(f32), array_f64 => VecF64(f64),
 }
 
 /// Generate `Branch::jagged_<name>` shortcuts for variable-length array branches
@@ -185,7 +194,7 @@ vector_ctors! {
 
 impl Branch {
     /// A string branch (`TLeafC`).
-    pub fn strings(name: impl Into<String>, values: Vec<String>) -> Branch {
+    pub fn string(name: impl Into<String>, values: Vec<String>) -> Branch {
         Branch {
             name: name.into(),
             values: BranchValues::Str(values),

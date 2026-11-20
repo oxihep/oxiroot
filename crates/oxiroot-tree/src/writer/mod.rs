@@ -10,12 +10,11 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
-use std::io::{Cursor, Seek, Write};
-use std::path::Path;
+use std::io::{Seek, Write};
 
-use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
+use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::streamer_gen::ClassDef;
-use oxiroot_io_core::{Compression, Error, Result, WriteInto};
+use oxiroot_io_core::{Error, Result};
 
 use crate::value::BranchValues;
 
@@ -48,205 +47,11 @@ type LeafRefs = HashMap<String, u32>;
 /// collection), so the writer's value matches never see one.
 const NESTED_NOT_WRITABLE: &str = "a write Branch is never built with a Nested value";
 
-/// Write a single-tree ROOT file containing the flat scalar `branches`.
-pub fn write_tree_file(
-    path: impl AsRef<Path>,
-    tree_name: &str,
-    branches: &[Branch],
-    compression: Compression,
-) -> Result<()> {
-    let path = path.as_ref();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    std::fs::write(
-        path,
-        tree_file_bytes(file_name, tree_name, branches, compression)?,
-    )?;
-    Ok(())
-}
-
-/// Build the bytes of a single-tree ROOT file (one basket per branch).
-///
-/// Returns an error if a fixed-array branch ([`Branch::vec_f64`] …) was given
-/// rows of differing length — use [`Branch::jagged_f64`] … for that.
-pub fn tree_file_bytes(
-    file_name: &str,
-    tree_name: &str,
-    branches: &[Branch],
-    compression: Compression,
-) -> Result<Vec<u8>> {
-    tree_bytes(
-        file_name,
-        tree_name,
-        branches,
-        compression,
-        0,
-        KSTART_BIG_FILE,
-    )
-}
-
-/// Write a single-tree ROOT file, splitting each branch into baskets of at most
-/// `entries_per_basket` entries (`0` = one basket per branch). Multiple baskets
-/// let a large tree be stored the way ROOT writes it; split `std::vector<Struct>`
-/// branches are always one basket (their per-member alignment is not chunked).
-pub fn write_tree_file_baskets(
-    path: impl AsRef<Path>,
-    tree_name: &str,
-    branches: &[Branch],
-    compression: Compression,
-    entries_per_basket: usize,
-) -> Result<()> {
-    let path = path.as_ref();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    std::fs::write(
-        path,
-        tree_bytes(
-            file_name,
-            tree_name,
-            branches,
-            compression,
-            entries_per_basket,
-            KSTART_BIG_FILE,
-        )?,
-    )?;
-    Ok(())
-}
-
-/// A tree to write: a name and its [`Branch`]es. The method-based,
-/// write-side counterpart to the free [`write_tree_file`] function (and to the
-/// read-only [`TreeReader`](crate::TreeReader)) — build one, then call
-/// [`write_root`](Tree::write_root), mirroring `hist.write_root`:
-///
-/// ```no_run
-/// use oxiroot_tree::{Branch, Tree};
-/// use oxiroot_io_core::Compression;
-///
-/// let branches = vec![
-///     Branch::i32("event", vec![1, 2, 3]),
-///     Branch::f64("energy", vec![10.5, 20.1, 5.0]),
-/// ];
-/// Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-pub struct Tree {
-    name: String,
-    branches: Vec<Branch>,
-}
-
-impl Tree {
-    /// Create a writable tree from a name and its branches.
-    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> Tree {
-        Tree {
-            name: name.into(),
-            branches,
-        }
-    }
-
-    /// The tree's name (the in-file `TTree` key).
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The tree's branches.
-    pub fn branches(&self) -> &[Branch] {
-        &self.branches
-    }
-
-    /// Write this tree as a new single-tree ROOT file (one basket per branch),
-    /// readable by ROOT and uproot. The method form of [`write_tree_file`].
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        write_tree_file(path, &self.name, &self.branches, compression)
-    }
-
-    /// Like [`write_root`](Tree::write_root) but split each branch into baskets
-    /// of at most `entries_per_basket` entries (`0` = one basket per branch).
-    /// The method form of [`write_tree_file_baskets`].
-    pub fn write_root_baskets(
-        &self,
-        path: impl AsRef<Path>,
-        compression: Compression,
-        entries_per_basket: usize,
-    ) -> Result<()> {
-        write_tree_file_baskets(
-            path,
-            &self.name,
-            &self.branches,
-            compression,
-            entries_per_basket,
-        )
-    }
-
-    /// The complete ROOT-file bytes for this tree (the method form of
-    /// [`tree_file_bytes`]); `file_name` is the `TFile` name recorded in the
-    /// file header.
-    pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
-        tree_file_bytes(file_name, &self.name, &self.branches, compression)
-    }
-}
-
-/// A `Tree` goes into a [`FileWriter`](oxiroot_io_core::FileWriter) with
-/// [`put`](oxiroot_io_core::FileWriter::put), next to histograms or RNTuples, with
-/// one basket per branch:
-///
-/// ```no_run
-/// use oxiroot_io_core::{Compression, FileWriter, Parameter};
-/// use oxiroot_tree::{Branch, Tree};
-///
-/// FileWriter::create("run.root")
-///     .add(&Parameter::f64("lumi", 12.5))
-///     .put(Tree::new("Events", vec![Branch::f64("energy", vec![10.5, 20.1])]))
-///     .dir("cal", |d| d.put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])])))
-///     .write(Compression::Zstd(5))?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-impl WriteInto for Tree {
-    fn root_class(&self) -> String {
-        "TTree".to_string()
-    }
-    fn root_name(&self) -> &str {
-        &self.name
-    }
-    fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
-        check_branches(&self.branches)?;
-        write_tree_records(file, dir, &self.name, &self.branches, 0)
-    }
-    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        tree_streamer_classes(&self.branches)
-            .into_iter()
-            .map(ClassDef::into_owned)
-            .collect()
-    }
-}
-
 /// A representative `TLeafC` string value whose length yields `fLen` = `len`
 /// (longest string + 1), used for a streamed string column's leaf metadata.
 fn str_rep(len: i32) -> BranchValues {
     let n = usize::saturating_from(len - 1);
     BranchValues::Str(vec!["\0".repeat(n)])
-}
-
-/// Shared body of [`tree_file_bytes`] / [`write_tree_file_baskets`]:
-/// `entries_per_basket` of `0` means one basket per branch. The file switches to
-/// ROOT's 64-bit container form once it would exceed `big_threshold` bytes.
-fn tree_bytes(
-    file_name: &str,
-    tree_name: &str,
-    branches: &[Branch],
-    compression: Compression,
-    entries_per_basket: usize,
-    big_threshold: u64,
-) -> Result<Vec<u8>> {
-    check_branches(branches)?;
-    let classes = tree_streamer_classes(branches);
-    ContainerWriter::build(file_name, compression, big_threshold, |file| {
-        write_tree_records(file, DirId::TOP, tree_name, branches, entries_per_basket)?;
-        file.place_streamer_info(&[], &classes)
-    })
 }
 
 /// Reject branches whose entry counts differ from the first branch's: the tree
@@ -272,7 +77,7 @@ fn check_branches(branches: &[Branch]) -> Result<()> {
         if !b.jagged() && !b.stl_vector() && b.is_jagged() {
             return Err(Error::InvalidInput(format!(
                 "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_* for \
-                 variable-length arrays (Branch::vec_* requires every row to have the same length)",
+                 variable-length arrays (Branch::array_* requires every row to have the same length)",
                 b.name
             )));
         }
@@ -339,18 +144,82 @@ fn write_tree_records<W: Write + Seek>(
     Ok(())
 }
 
-impl std::fmt::Debug for Tree {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tree")
-            .field("name", &self.name)
-            .field("branches", &self.branches.len())
-            .finish_non_exhaustive()
+/// Low-level writing of a whole tree into an open ROOT container — what a
+/// [`WriteInto`](oxiroot_io_core::WriteInto) object (such as
+/// `oxiroot::data::Dataset`'s) calls to place a tree next to other objects.
+/// For a tree written to its own file, entry batch by entry batch, use
+/// [`TreeWriter`].
+pub mod raw {
+    use std::io::{Seek, Write};
+
+    use oxiroot_io_core::Result;
+    use oxiroot_io_core::raw::{ContainerWriter, DirId};
+    use oxiroot_io_core::streamer_gen::ClassDef;
+
+    use super::Branch;
+
+    /// Write the tree `name` with `branches` into `file` under directory
+    /// `dir`: its baskets, then the `TTree` key. Every branch kind is
+    /// supported, split `std::vector<Struct>` branches included. A branch is
+    /// cut into baskets of `entries_per_basket` entries (`0`: one basket).
+    ///
+    /// # Errors
+    ///
+    /// Branches of different lengths, a fixed array with rows of differing
+    /// length, split members that disagree, or a write error.
+    pub fn write_tree<W: Write + Seek>(
+        file: &mut ContainerWriter<W>,
+        dir: DirId,
+        name: &str,
+        branches: &[Branch],
+        entries_per_basket: usize,
+    ) -> Result<()> {
+        super::check_branches(branches)?;
+        super::write_tree_records(file, dir, name, branches, entries_per_basket)
+    }
+
+    /// The `TStreamerInfo` classes a tree with `branches` needs in its file:
+    /// the `TTree` hierarchy, and each split branch's struct.
+    #[must_use]
+    pub fn tree_streamer_classes(branches: &[Branch]) -> Vec<ClassDef<'static>> {
+        super::tree_streamer_classes(branches)
+            .into_iter()
+            .map(ClassDef::into_owned)
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oxiroot_io_core::Compression;
+    use oxiroot_io_core::raw::KSTART_BIG_FILE;
+
+    /// A whole file holding one tree, switching to the 64-bit form past
+    /// `big_threshold` bytes.
+    fn tree_bytes(
+        file_name: &str,
+        tree_name: &str,
+        branches: &[Branch],
+        compression: Compression,
+        entries_per_basket: usize,
+        big_threshold: u64,
+    ) -> Result<Vec<u8>> {
+        let classes = raw::tree_streamer_classes(branches);
+        ContainerWriter::build(file_name, compression, big_threshold, |file| {
+            raw::write_tree(file, DirId::TOP, tree_name, branches, entries_per_basket)?;
+            file.place_streamer_info(&[], &classes)
+        })
+    }
+
+    fn tree_file_bytes(
+        file_name: &str,
+        tree_name: &str,
+        branches: &[Branch],
+        compression: Compression,
+    ) -> Result<Vec<u8>> {
+        tree_bytes(file_name, tree_name, branches, compression, 0, KSTART_BIG_FILE)
+    }
     use crate::TreeReader;
     use oxiroot_io_core::FileReader;
     use std::io::Cursor;
@@ -359,7 +228,7 @@ mod tests {
         vec![
             Branch::i32("x", vec![1, 2, 3, 4]),
             Branch::jagged_f32("v", vec![vec![1.0], vec![], vec![2.0, 3.0], vec![4.0]]),
-            Branch::strings(
+            Branch::string(
                 "s",
                 vec!["a".into(), "bb".into(), String::new(), "d".into()],
             ),
@@ -410,20 +279,20 @@ mod tests {
             vec![
                 Branch::i32("x", vec![3, 7]),
                 Branch::jagged_f32("v", vec![vec![1.0], vec![]]),
-                Branch::strings("s", vec!["a".into(), "bbb".into()]),
+                Branch::string("s", vec!["a".into(), "bbb".into()]),
             ]
         };
         let second = || {
             vec![
                 Branch::i32("x", vec![9, 1]),
                 Branch::jagged_f32("v", vec![vec![2.0, 3.0, 4.0], vec![5.0]]),
-                Branch::strings("s", vec!["cc".into(), "dddd".into()]),
+                Branch::string("s", vec!["cc".into(), "dddd".into()]),
             ]
         };
         let all = vec![
             Branch::i32("x", vec![3, 7, 9, 1]),
             Branch::jagged_f32("v", vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0]]),
-            Branch::strings(
+            Branch::string(
                 "s",
                 vec!["a".into(), "bbb".into(), "cc".into(), "dddd".into()],
             ),
@@ -487,15 +356,15 @@ mod tests {
         assert!(f.header().is_big());
         let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
-            t.read_branch(&f, "x").unwrap(),
+            t.branch("x").values().unwrap(),
             BranchValues::I32(vec![1, 2, 3, 4])
         );
         assert_eq!(
-            t.read_branch(&f, "v").unwrap(),
+            t.branch("v").values().unwrap(),
             BranchValues::VecF32(vec![vec![1.0], vec![], vec![2.0, 3.0], vec![4.0]])
         );
         assert_eq!(
-            t.read_branch(&f, "s").unwrap(),
+            t.branch("s").values().unwrap(),
             BranchValues::Str(vec!["a".into(), "bb".into(), String::new(), "d".into()])
         );
     }
@@ -515,7 +384,7 @@ mod tests {
         let f = FileReader::from_bytes(bytes).unwrap();
         let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
-            t.read_branch(&f, &name).unwrap(),
+            t.branch(&name).values().unwrap(),
             BranchValues::F64(vec![0.5, 1.5])
         );
     }

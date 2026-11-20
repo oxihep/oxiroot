@@ -22,30 +22,30 @@ fn reads_entry_ranges() {
     assert_eq!(t.entries(), 5);
 
     // Full range equals read_branch.
-    let full = t.read_branch(&f, "i4").expect("full");
+    let full = t.branch("i4").values().expect("full");
     assert_eq!(
-        t.read_branch_range(&f, "i4", 0, 5).expect("range full"),
+        t.branch("i4").range(0..5).values().expect("range full"),
         full
     );
     assert_eq!(full, BranchValues::I32(vec![0, 1, 2, 3, 4]));
 
     // A sub-window (may span the basket boundary).
     assert_eq!(
-        t.read_branch_range(&f, "i4", 1, 4).expect("mid"),
+        t.branch("i4").range(1..4).values().expect("mid"),
         BranchValues::I32(vec![1, 2, 3])
     );
 
     // stop clamps to the entry count; start clamps to stop.
     assert_eq!(
-        t.read_branch_range(&f, "i4", 3, 100).expect("tail"),
+        t.branch("i4").range(3..100).values().expect("tail"),
         BranchValues::I32(vec![3, 4])
     );
     assert_eq!(
-        t.read_branch_range(&f, "i4", 2, 2).expect("empty"),
+        t.branch("i4").range(2..2).values().expect("empty"),
         BranchValues::I32(vec![])
     );
     assert_eq!(
-        t.read_branch_range(&f, "i4", 10, 20).expect("past end"),
+        t.branch("i4").range(10..20).values().expect("past end"),
         BranchValues::I32(vec![])
     );
 }
