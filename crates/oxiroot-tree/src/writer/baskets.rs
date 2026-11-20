@@ -186,11 +186,42 @@ pub(super) fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> Branc
     }
 }
 
-/// Write the basket(s) backing one branch. A leaf branch has exactly one. A
-/// split `std::vector<MyStruct>` branch has a *count* basket (the parent's
-/// per-entry element counts, as a variable `i32`) followed by one jagged basket
-/// per member sub-branch; `basket_groups[i][0]` is the count basket and `[1..]`
-/// the members, matching the order `serialize::write_split_parent` reads them back.
+/// The branches a split `std::vector<MyStruct>` branch's entries
+/// `[start, start+len)` are written as: a *count* branch (the parent's
+/// per-entry element counts, as single-element jagged `i32` rows, so it carries
+/// the `fEntryOffset` ROOT writes for the parent), then one jagged branch per
+/// member (`parent.member`). One basket of each makes one chunk.
+pub(super) fn split_pieces(branch: &Branch, start: usize, len: usize) -> Vec<Branch> {
+    let spec = branch.split().expect("a split branch");
+    let first = chunk_values(&spec.members[0].values, start, len);
+    let counts = vec_row_lengths(&first);
+    let mut out = Vec::with_capacity(spec.members.len() + 1);
+    out.push(Branch {
+        name: branch.name.clone(),
+        values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
+        kind: BranchKind::Jagged,
+    });
+    for (i, m) in spec.members.iter().enumerate() {
+        out.push(Branch {
+            name: format!("{}.{}", branch.name, m.name),
+            values: if i == 0 {
+                first.clone()
+            } else {
+                chunk_values(&m.values, start, len)
+            },
+            kind: BranchKind::Jagged,
+        });
+    }
+    out
+}
+
+/// Write the basket(s) backing one branch, in chunks of `entries_per_basket`
+/// entries (`0`: one chunk). A leaf branch has one basket per chunk. A split
+/// `std::vector<MyStruct>` branch has, per chunk, a count basket then one
+/// basket per member sub-branch ([`split_pieces`]): its group is
+/// `[count, member 0, member 1, …]` repeated, the order
+/// `serialize::write_split_parent` reads them back in. An empty branch still
+/// gets one (empty) chunk.
 pub(super) fn write_branch_baskets<W: Write + Seek>(
     file: &mut ContainerWriter<W>,
     dir: DirId,
@@ -198,48 +229,32 @@ pub(super) fn write_branch_baskets<W: Write + Seek>(
     tree_name: &str,
     entries_per_basket: usize,
 ) -> Result<Vec<BasketRec>> {
-    let Some(spec) = branch.split() else {
-        // A single-leaf branch is split into baskets of `entries_per_basket`
-        // entries (0 = one basket). An empty branch still gets one empty basket.
-        let n = branch.n_entries() as usize;
-        let epb = if entries_per_basket == 0 {
-            n.max(1)
+    let n = branch.n_entries() as usize;
+    let epb = if entries_per_basket == 0 {
+        n.max(1)
+    } else {
+        entries_per_basket
+    };
+    let mut recs = Vec::new();
+    let mut start = 0;
+    loop {
+        let len = epb.min(n - start);
+        if branch.split().is_some() {
+            for piece in split_pieces(branch, start, len) {
+                recs.push(write_basket(file, dir, &piece, tree_name)?);
+            }
         } else {
-            entries_per_basket
-        };
-        let mut recs = Vec::new();
-        let mut start = 0;
-        while start < n {
-            let len = epb.min(n - start);
-            recs.push(write_basket(
-                file,
-                dir,
-                &chunk_branch(branch, start, len),
-                tree_name,
-            )?);
-            start += len;
+            let chunk = if start == 0 && len == n {
+                write_basket(file, dir, branch, tree_name)?
+            } else {
+                write_basket(file, dir, &chunk_branch(branch, start, len), tree_name)?
+            };
+            recs.push(chunk);
         }
-        if recs.is_empty() {
-            recs.push(write_basket(file, dir, branch, tree_name)?);
+        start += len;
+        if start >= n {
+            break;
         }
-        return Ok(recs);
-    };
-    // Count basket: per-entry element counts as single-element jagged `i32`
-    // rows, so it carries the same `fEntryOffset` ROOT writes for the parent.
-    let counts = vec_row_lengths(&spec.members[0].values);
-    let count_branch = Branch {
-        name: branch.name.clone(),
-        values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
-        kind: BranchKind::Jagged,
-    };
-    let mut recs = vec![write_basket(file, dir, &count_branch, tree_name)?];
-    for m in &spec.members {
-        let sub = Branch {
-            name: format!("{}.{}", branch.name, m.name),
-            values: m.values.clone(),
-            kind: BranchKind::Jagged,
-        };
-        recs.push(write_basket(file, dir, &sub, tree_name)?);
     }
     Ok(recs)
 }

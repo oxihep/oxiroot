@@ -215,6 +215,9 @@ struct Branch {
     /// The branch data is one whole object per entry (`[className][version][members]`),
     /// from which this member is extracted at read time.
     object_member: Option<ObjectMember>,
+    /// Set for a member of a split `std::vector<Struct>` (`hits.x` of `hits`):
+    /// the collection's branch name, so the members can be read back together.
+    collection: Option<String>,
 }
 
 /// One member column synthesized from an old unsplit `TBranchObject` (a whole
@@ -502,6 +505,28 @@ impl<'f> TreeReader<'f> {
         self.streamer_classes
             .iter()
             .map(|(n, v)| (n.as_str(), *v))
+            .collect()
+    }
+
+    /// The split `std::vector<Struct>` collection that branch `name` is a
+    /// member of (`hits` for `hits.x`), or `None`. Only a collection whose
+    /// members are all numbers is named; see
+    /// [`collection_members`](Self::collection_members).
+    #[must_use]
+    pub fn branch_collection(&self, name: &str) -> Option<&str> {
+        self.find_branch(name)?.collection.as_deref()
+    }
+
+    /// The member branches of the split `std::vector<Struct>` collection
+    /// `name` (`hits.x`, `hits.y`, … for `hits`), in tree order; empty if
+    /// `name` is not such a collection. Each member reads as a list of numbers,
+    /// all with the same length per entry.
+    #[must_use]
+    pub fn collection_members(&self, name: &str) -> Vec<&str> {
+        self.branches
+            .iter()
+            .filter(|b| b.collection.as_deref() == Some(name))
+            .map(|b| b.name.as_str())
             .collect()
     }
 

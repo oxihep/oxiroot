@@ -266,13 +266,16 @@ fn write_split_parent(
 ) {
     let spec = branch.split().expect("split spec");
     let counter = format!("{}_", branch.name);
-    let count_basket = &group[0];
+    // The group is `[count, member 0, member 1, …]` once per chunk.
+    let stride = spec.members.len() + 1;
+    let count_baskets: Vec<BasketRec> = group.iter().step_by(stride).copied().collect();
+    let tot_bytes: i64 = count_baskets.iter().map(|b| i64::from(b.nbytes)).sum();
     let checksum = class_checksum(&spec.class_name, &spec.members);
     let max_count = vec_row_lengths(&spec.members[0].values)
         .into_iter()
         .max()
         .unwrap_or(0);
-    let max_baskets = 10i32;
+    let max_baskets = i32::saturating_from(count_baskets.len()).max(10);
 
     let te = w.begin_object(10); // TBranchElement v10
     let tb = w.begin_object(13); // TBranch v13
@@ -281,7 +284,7 @@ fn write_split_parent(
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
     w.be_i32(1000); // fEntryOffsetLen
-    w.be_i32(1); // fWriteBasket
+    w.be_i32(i32::saturating_from(count_baskets.len())); // fWriteBasket
     w.be_i64(n_entries); // fEntryNumber
     write_iofeatures(w);
     w.be_i32(0); // fOffset
@@ -289,8 +292,8 @@ fn write_split_parent(
     w.be_i32(99); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
-    w.be_i64(i64::from(count_basket.nbytes)); // fTotBytes
-    w.be_i64(i64::from(count_basket.nbytes)); // fZipBytes
+    w.be_i64(tot_bytes); // fTotBytes
+    w.be_i64(tot_bytes); // fZipBytes
 
     // fBranches: the member sub-branches. The first writes `counter` inline.
     let sub_tok = obj_array_header(w, spec.members.len());
@@ -304,7 +307,12 @@ fn write_split_parent(
             checksum,
             m,
             i32::saturating_from(i),
-            &group[i + 1],
+            &group
+                .iter()
+                .skip(i + 1)
+                .step_by(stride)
+                .copied()
+                .collect::<Vec<_>>(),
             n_entries,
             keylen,
             parent_ref,
@@ -322,7 +330,7 @@ fn write_split_parent(
 
     let baskets = obj_array_header(w, 0); // fBaskets (empty)
     w.end_object(baskets);
-    write_basket_arrays(w, std::slice::from_ref(count_basket), max_baskets);
+    write_basket_arrays(w, &count_baskets, max_baskets);
     w.string(""); // fFileName
     w.end_object(tb);
 
@@ -355,7 +363,7 @@ fn write_split_sub(
     checksum: u32,
     member: &SplitMember,
     index: i32,
-    basket: &BasketRec,
+    baskets: &[BasketRec],
     n_entries: i64,
     keylen: u32,
     parent_ref: u32,
@@ -365,7 +373,8 @@ fn write_split_sub(
     let (type_code, _typename, size) = member_type_info(&member.values);
     let name = format!("{parent}.{}", member.name);
     let title = format!("{}[{counter}]", member.name);
-    let max_baskets = 10i32;
+    let max_baskets = i32::saturating_from(baskets.len()).max(10);
+    let tot_bytes: i64 = baskets.iter().map(|b| i64::from(b.nbytes)).sum();
 
     let te = w.begin_object(10); // TBranchElement v10
     let tb = w.begin_object(13); // TBranch v13
@@ -374,7 +383,7 @@ fn write_split_sub(
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
     w.be_i32(1000); // fEntryOffsetLen
-    w.be_i32(1); // fWriteBasket
+    w.be_i32(i32::saturating_from(baskets.len())); // fWriteBasket
     w.be_i64(n_entries); // fEntryNumber
     write_iofeatures(w);
     w.be_i32(0); // fOffset
@@ -382,8 +391,8 @@ fn write_split_sub(
     w.be_i32(0); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
-    w.be_i64(i64::from(basket.nbytes)); // fTotBytes
-    w.be_i64(i64::from(basket.nbytes)); // fZipBytes
+    w.be_i64(tot_bytes); // fTotBytes
+    w.be_i64(tot_bytes); // fZipBytes
 
     let sub = obj_array_header(w, 0); // fBranches (empty)
     w.end_object(sub);
@@ -420,9 +429,9 @@ fn write_split_sub(
         .or_insert(leaf_pos + keylen + K_MAP_OFFSET);
     w.end_object(leaf_tok);
 
-    let baskets = obj_array_header(w, 0); // fBaskets (empty)
-    w.end_object(baskets);
-    write_basket_arrays(w, std::slice::from_ref(basket), max_baskets);
+    let empty = obj_array_header(w, 0); // fBaskets (empty)
+    w.end_object(empty);
+    write_basket_arrays(w, baskets, max_baskets);
     w.string(""); // fFileName
     w.end_object(tb);
 

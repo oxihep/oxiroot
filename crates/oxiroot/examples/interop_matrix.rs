@@ -22,7 +22,7 @@ use std::process::exit;
 
 use oxiroot::ntuple::{Field, NtupleWriter};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader};
+use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader, TreeWriter};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -822,7 +822,8 @@ fn write(dir: &Path) {
     cases.push(tree_scalars("tree_scalars_zstd", zstd, dir));
     cases.push(tree_arrays("tree_arrays", zstd, dir));
     cases.push(tree_stl_vector("tree_stl_vector", dir));
-    cases.push(tree_split("tree_split", dir));
+    cases.push(tree_split("tree_split", dir, false));
+    cases.push(tree_split("tree_split_streamed", dir, true));
 
     // --- Emit manifest.json. ---
     let manifest = J::Obj(vec![("version", J::Int(1)), ("cases", J::Arr(cases))]);
@@ -1226,22 +1227,41 @@ fn tree_stl_vector(id: &'static str, dir: &Path) -> J {
     ])
 }
 
-fn tree_split(id: &'static str, dir: &Path) -> J {
+/// A split `std::vector<Hit>` branch, written whole, or `streamed` with a
+/// `TreeWriter` one entry per batch (so a basket per entry and member) under
+/// Zstd.
+fn tree_split(id: &'static str, dir: &Path, streamed: bool) -> J {
     let file = format!("m_{id}.root");
-    let x = vec![vec![1.0f32], vec![], vec![2.0, 3.0]];
-    let y = vec![vec![1.5f32], vec![], vec![2.5, 3.5]];
-    let idm = vec![vec![1i32], vec![], vec![2, 3]];
-    let branch = Branch::split_vector(
-        "hits",
-        "Hit",
-        vec![
-            SplitMember::f32("x", x.clone()),
-            SplitMember::f32("y", y.clone()),
-            SplitMember::i32("id", idm.clone()),
-        ],
-    );
-    write_tree_file(dir.join(&file), "T", &[branch], Compression::None)
-        .unwrap_or_else(|e| die(&format!("{id}: {e}")));
+    let x = [vec![1.0f32], vec![], vec![2.0, 3.0]];
+    let y = [vec![1.5f32], vec![], vec![2.5, 3.5]];
+    let idm = [vec![1i32], vec![], vec![2, 3]];
+    let branch = |rows: std::ops::Range<usize>| {
+        Branch::split_vector(
+            "hits",
+            "Hit",
+            vec![
+                SplitMember::f32("x", x[rows.clone()].to_vec()),
+                SplitMember::f32("y", y[rows.clone()].to_vec()),
+                SplitMember::i32("id", idm[rows].to_vec()),
+            ],
+        )
+    };
+    let comp = if streamed {
+        Compression::Zstd(5)
+    } else {
+        Compression::None
+    };
+    let written = if streamed {
+        TreeWriter::create(dir.join(&file), "T", comp).and_then(|mut w| {
+            for i in 0..x.len() {
+                w.write_batch(&[branch(i..i + 1)])?;
+            }
+            w.finish().map(drop)
+        })
+    } else {
+        write_tree_file(dir.join(&file), "T", &[branch(0..x.len())], comp)
+    };
+    written.unwrap_or_else(|e| die(&format!("{id}: {e}")));
     let mem = |name: &str, ty: &str, values: J| {
         J::Obj(vec![
             ("name", J::Str(name.into())),
@@ -1254,7 +1274,7 @@ fn tree_split(id: &'static str, dir: &Path) -> J {
         ("kind", J::Str("tree".into())),
         ("file", J::Str(file)),
         ("name", J::Str("T".into())),
-        ("compression", comp_str(Compression::None)),
+        ("compression", comp_str(comp)),
         ("n_entries", J::Int(3)),
         (
             "split",

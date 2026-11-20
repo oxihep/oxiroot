@@ -737,8 +737,9 @@ ax2.save("heatmap.svg")?;
   into parallel `.first`/`.second` collections), and `TNtuple` / `TNtupleD` (the
   all-`float`/`double` `TTree` subclasses) as ordinary trees.
 - **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
-  (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
-  ROOT-C++- and uproot-verified, both directions.
+  (`TBranchElement`), with a generated `TStreamerInfo` for the element class,
+  whole or streamed — ROOT-C++- and uproot-verified, both directions. A
+  `Dataset` reads and writes one as a list of structs.
 - The low-level layer under [Datasets](#datasets-oxirootdata), for what only a
   tree has. `Branch::{i32, f64, bool, string, …}` for scalars,
   `Branch::array_*` for fixed arrays, `Branch::jagged_*` for C-style variable

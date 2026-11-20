@@ -513,7 +513,7 @@ fn vectors_of_bools_strings_and_vectors_round_trip_through_both_formats() {
 }
 
 #[test]
-fn structs_round_trip_through_an_rntuple_and_are_refused_by_a_tree() {
+fn structs_round_trip_and_a_tree_takes_them_in_a_list() {
     let hit = Column::Struct(vec![
         ("x".into(), Column::F32(vec![1.0, 2.0, 3.0])),
         ("id".into(), Column::I32(vec![7, 8, 9])),
@@ -539,8 +539,123 @@ fn structs_round_trip_through_an_rntuple_and_are_refused_by_a_tree() {
         Some(&Column::I32(vec![7, 8, 9]))
     );
     assert_eq!(back.filter(&[true, false, true]).unwrap().len(), 2);
+
+    // A tree holds the list as a split std::vector<hits>, and reads it back
+    // as one column; a struct on its own it refuses.
+    let lists = b.select(["hits"]).unwrap();
+    assert_eq!(round_trip(Format::Tree, &lists), lists);
     let err = DatasetObject::new("t", Format::Tree, &b).unwrap_err();
-    assert!(err.to_string().contains("{x: f32, id: i32}"), "{err}");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("\"hit\"") && msg.contains("{x: f32, id: i32}"),
+        "{msg}"
+    );
+    assert!(msg.contains("std::vector<Struct>"), "{msg}");
+}
+
+/// Entry `i` holds `i % 4` hits, `x = i + k / 10` and `id = i * 10 + k`.
+fn hits(n: usize) -> Column {
+    let mut offsets = vec![0_u64];
+    let (mut x, mut id, mut on) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 0..n {
+        for k in 0..i % 4 {
+            x.push(i as f64 + k as f64 / 10.0);
+            id.push(i64::try_from(i * 10 + k).unwrap());
+            on.push(k % 2 == 0);
+        }
+        offsets.push(x.len() as u64);
+    }
+    Column::List {
+        offsets,
+        values: Box::new(Column::Struct(vec![
+            ("x".into(), Column::F64(x)),
+            ("id".into(), Column::I64(id)),
+            ("on".into(), Column::Bool(on)),
+        ])),
+    }
+}
+
+#[test]
+fn a_list_of_structs_streams_into_a_tree_in_many_baskets() {
+    // Small clusters: each `write` is flushed as a cluster of its own.
+    let all = Batch::new()
+        .column("n", (0..5000).collect::<Vec<i32>>())
+        .unwrap()
+        .column("hits", hits(5000))
+        .unwrap();
+    let parts = [
+        all.slice(0..1700),
+        all.slice(1700..3300),
+        all.slice(3300..5000),
+    ];
+    let file = FileReader::from_bytes(write(Format::Tree, &parts, 4096)).unwrap();
+    let ds = Dataset::open(&file, "events").unwrap();
+    assert_eq!(ds.columns(), ["n", "hits"]);
+    assert_eq!(ds.read(["n", "hits"]).unwrap(), all);
+
+    let tree = ds.as_tree().unwrap();
+    assert_eq!(
+        tree.collection_members("hits"),
+        ["hits.x", "hits.id", "hits.on"]
+    );
+    // One basket per member per `write`.
+    assert_eq!(
+        tree.basket_boundaries("hits.x").unwrap(),
+        [0, 1700, 3300, 5000]
+    );
+    // A member reads on its own too.
+    let x = ds.read(["hits.x"]).unwrap();
+    let Some(Column::List { offsets, values }) = all.get("hits") else {
+        panic!("a list");
+    };
+    assert_eq!(
+        x.jagged::<f64>("hits.x").unwrap().offsets(),
+        offsets.as_slice()
+    );
+    assert_eq!(
+        Some(&Column::F64(
+            x.jagged::<f64>("hits.x").unwrap().values().to_vec()
+        )),
+        values.member("x")
+    );
+
+    // Batches cut at basket boundaries put the pieces back together.
+    let mut joined = Batch::new();
+    for batch in ds.batches(["n", "hits"]).step(700) {
+        joined.append(batch.unwrap()).unwrap();
+    }
+    assert_eq!(joined, all);
+    let mut window = Batch::new();
+    for batch in ds.batches(["hits"]).range(1234..2345) {
+        window.append(batch.unwrap()).unwrap();
+    }
+    assert_eq!(window, all.slice(1234..2345).select(["hits"]).unwrap());
+}
+
+#[test]
+fn a_root_written_split_vector_reads_as_a_list_of_structs() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tree_split.root");
+    let file = FileReader::open(path).unwrap();
+    let ds = Dataset::open(&file, "T").unwrap();
+    assert_eq!(ds.columns(), ["hits"]);
+    let b = ds.read(["hits"]).unwrap();
+    assert_eq!(
+        b.get("hits").unwrap().type_name(),
+        "Vec<{x: f32, y: f32, id: i32}>"
+    );
+    let low = ds.as_tree().unwrap();
+    let x = low.branch("hits.x").flat().unwrap();
+    let Some(Column::List { offsets, values }) = b.get("hits") else {
+        panic!("a list");
+    };
+    assert_eq!(*offsets, x.offsets);
+    assert_eq!(
+        values.member("x"),
+        Some(&Column::F32(match x.values {
+            BranchValues::F32(v) => v,
+            other => panic!("{other:?}"),
+        }))
+    );
 }
 
 #[test]
@@ -555,16 +670,14 @@ fn an_empty_dataset_is_written_with_its_columns() {
         assert_eq!(ds.entries(), 0, "{format:?}");
         let back = ds.read(COLUMNS).unwrap();
         assert_eq!(back.names().collect::<Vec<_>>(), COLUMNS, "{format:?}");
-        if format == Format::Ntuple {
-            assert_eq!(back, b);
-        } else {
-            // An empty TTree has no row to take a fixed array's width from.
-            assert_eq!(
-                back.select(["idx", "x", "v", "s"]).unwrap(),
-                b.select(["idx", "x", "v", "s"]).unwrap()
-            );
-        }
+        // The fixed array keeps its width, in a TTree too.
+        assert_eq!(back, b, "{format:?}");
         assert_eq!(ds.batches(COLUMNS).count(), 0);
+    }
+    // An empty list of structs keeps its members.
+    let empty_hits = Batch::new().column("hits", hits(0)).unwrap();
+    for format in [Format::Tree, Format::Ntuple] {
+        assert_eq!(round_trip(format, &empty_hits), empty_hits, "{format:?}");
     }
     let w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree);
     assert!(w.finish().is_err(), "no batch, no columns");
@@ -720,5 +833,44 @@ mod polars {
             .into_polars()
             .unwrap();
         assert_eq!(Batch::from_polars(&df).unwrap(), b);
+    }
+
+    #[test]
+    fn an_optional_of_an_optional_folds_into_one_level_of_nulls() {
+        // [Some(Some(1)), Some(None), None, Some(Some(4)), None] inside a
+        // struct and on its own.
+        let nested = || Column::Optional {
+            valid: vec![true, true, false, true, false],
+            values: Box::new(Column::Optional {
+                valid: vec![true, false, true],
+                values: Box::new(Column::I32(vec![1, 4])),
+            }),
+        };
+        let b = Batch::new()
+            .column("oo", nested())
+            .unwrap()
+            .column(
+                "rec",
+                Column::Struct(vec![
+                    ("oo".into(), nested()),
+                    ("n".into(), Column::U8(vec![0; 5])),
+                ]),
+            )
+            .unwrap();
+        let folded = Column::Optional {
+            valid: vec![true, false, false, true, false],
+            values: Box::new(Column::I32(vec![1, 4])),
+        };
+        let df = b.to_polars().unwrap();
+        assert_eq!(df.column("oo").unwrap().null_count(), 3);
+        let back = Batch::from_polars(&df).unwrap();
+        assert_eq!(back.get("oo"), Some(&folded));
+        assert_eq!(back.get("rec").unwrap().member("oo"), Some(&folded));
+        #[cfg(feature = "arrow")]
+        {
+            let arrow_back = Batch::from_arrow(&b.to_arrow().unwrap()).unwrap();
+            assert_eq!(arrow_back.get("oo"), Some(&folded));
+            assert_eq!(arrow_back.get("rec").unwrap().member("oo"), Some(&folded));
+        }
     }
 }
