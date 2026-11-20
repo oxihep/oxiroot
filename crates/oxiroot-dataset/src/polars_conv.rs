@@ -2,8 +2,10 @@
 //!
 //! Each column becomes a Polars series of the matching type: numbers and
 //! booleans, `String`, `List` (from a list), `Array` (from a fixed array),
-//! `Struct`, with nulls for an `Optional`. Coming back, a series with nulls
-//! becomes an `Optional` over its non-null values.
+//! `Struct`, with nulls for an `Optional`. Polars has one level of nulls, so
+//! an `Optional` of an `Optional` folds into it: `Some(None)` and `None` are
+//! both null. Coming back, a series with nulls becomes an `Optional` over its
+//! non-null values.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
@@ -132,7 +134,8 @@ fn to_array(column: Column) -> Result<Box<dyn Array>> {
             )
         }
         Column::Optional { valid, values } => {
-            let full = spread(*values, &valid)?;
+            let (valid, values) = one_null_level(valid, *values);
+            let full = spread(values, &valid)?;
             to_array(full)?.with_validity(Some(Bitmap::from_iter(valid)))
         }
         Column::Struct(members) => {
@@ -150,6 +153,27 @@ fn to_array(column: Column) -> Result<Box<dyn Array>> {
             )
         }
     })
+}
+
+/// An optional of an optional (of …) as one level of nulls, the only one
+/// Polars has: an entry is present when every level is, so `Some(None)` and
+/// `None` both become null. Returns the combined validity and the innermost
+/// values, one per present entry.
+fn one_null_level(valid: Vec<bool>, values: Column) -> (Vec<bool>, Column) {
+    match values {
+        Column::Optional {
+            valid: inner,
+            values,
+        } => {
+            let mut next = inner.into_iter();
+            let combined = valid
+                .into_iter()
+                .map(|v| v && next.next().unwrap_or(false))
+                .collect();
+            one_null_level(combined, *values)
+        }
+        other => (valid, other),
+    }
 }
 
 /// Spread `dense` (one value per `true` in `valid`) out to one slot per
@@ -207,10 +231,21 @@ fn spread(dense: Column, valid: &[bool]) -> Result<Column> {
                 .map(|(n, c)| Ok((n, spread(c, valid)?)))
                 .collect::<Result<_>>()?,
         ),
-        Column::Optional { .. } => {
-            return Err(Error::Unsupported(
-                "an optional of an optional has no Polars type".into(),
-            ));
+        // A present entry of an optional member keeps its own nulls.
+        Column::Optional {
+            valid: inner,
+            values,
+        } => {
+            let mut it = inner.into_iter();
+            let spread_valid: Vec<bool> = valid
+                .iter()
+                .map(|&v| v && it.next().unwrap_or(false))
+                .collect();
+            let (valid, values) = one_null_level(spread_valid, *values);
+            Column::Optional {
+                valid,
+                values: Box::new(values),
+            }
         }
     })
 }

@@ -48,7 +48,7 @@ Build a batch with `column(name, data)`, where `data` is a `Vec` of one of:
 | `[T; N]` | fixed array `x[N]` | `std::array<T, N>` |
 | `Vec<Vec<T>>`, `Vec<String>`, `Vec<bool>` | `std::vector<…>` | `std::vector<…>` |
 | `Option<T>` | — | `std::optional<T>` |
-| struct (`Column::Struct`) | read as member columns (`hits.x`) | record / user class |
+| struct (`Column::Struct`) | in a list only: split `std::vector<Struct>` | record / user class |
 
 Or give a list flat with `list(name, offsets, values)`, or any shape as a
 `Column`, structs included: `Column::Struct(vec![("x", Column::F32(…)), …])`,
@@ -57,7 +57,15 @@ members are reached with `Column::member(name)`. In an RNTuple, a struct whose
 members are `_0`, `_1`, … is a `std::pair` / `std::tuple`; one with named
 members is a user class named after the column (`hits`). ROOT reads it with a
 dictionary of that class, or without one through type emulation
-(`RCreateModelOptions::SetEmulateUnknownTypes`); uproot reads it as is. A batch checks every
+(`RCreateModelOptions::SetEmulateUnknownTypes`); uproot reads it as is.
+
+A `TTree` holds structs in a list, as a split `std::vector<hits>` whose
+members are numbers: one sub-branch per member (`hits.x`, `hits.id`), the way
+ROOT splits it. Reading gives back the list of structs, from a split
+collection ROOT wrote too; a member also reads on its own
+(`read(["hits.x"])`).
+
+A batch checks every
 column when it is added: same entry count, offsets that partition their
 values, UTF-8 strings.
 
@@ -136,8 +144,7 @@ parallel. In the `write` benchmark (1M entries, two scalars and a
 
 The first batch fixes the schema; every later batch must have the same
 columns and types. A writer given only empty batches writes a dataset with
-their columns and no entries. (An empty `TTree` cannot keep a fixed array's
-width, which it takes from the first row.) A column the format cannot hold, such as `Option<T>` in a
+their columns and no entries, fixed arrays keeping their width. A column the format cannot hold, such as `Option<T>` in a
 `TTree`, is refused on that first write, before anything reaches the file.
 
 To put a dataset next to histograms or other datasets in one file, give a
@@ -174,14 +181,15 @@ let back = Batch::from_polars(&frame)?;
 Every column shape converts: lists to `LargeList` / `List`, fixed arrays to
 `FixedSizeList` / `Array`, structs to `Struct`, and an `Optional` to its
 value's type with nulls; coming back, a column with nulls becomes an
-`Optional`. `oxiroot::data::arrow_rs` and `polars_rs` re-export the crates at
+`Optional`. Arrow and Polars have one level of nulls, so an `Optional` of an
+`Optional` folds into it: `Some(None)` and `None` both become null. `oxiroot::data::arrow_rs` and `polars_rs` re-export the crates at
 the matching versions.
 
 ## Format-specific features
 
 The low-level readers and writers cover what only one format has:
 
-- [TTree](ttree.md): split `std::vector<Struct>` branches, C-style `x[n]`
-  arrays, leaflists, friends and indices, `ChainReader`.
+- [TTree](ttree.md): C-style `x[n]` arrays, leaflists, split single objects,
+  friends and indices, `ChainReader`.
 - [RNTuple](rntuple.md): records, variants, maps and sets, reduced-precision
   floats, schema extension.

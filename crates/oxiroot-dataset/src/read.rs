@@ -134,10 +134,23 @@ impl<'f> Dataset<'f> {
     }
 
     /// The column names: a tree's branches, an RNTuple's top-level fields.
+    /// A tree's split `std::vector<Struct>` is one column (`hits`), read as a
+    /// list of structs, as in an RNTuple; its members (`hits.x`) can still be
+    /// read on their own.
     #[must_use]
     pub fn columns(&self) -> Vec<&str> {
         match &self.source {
-            Source::Tree(t) => t.branch_names(),
+            Source::Tree(t) => {
+                let mut out: Vec<&str> = Vec::new();
+                for name in t.branch_names() {
+                    match t.branch_collection(name) {
+                        Some(c) if out.last() == Some(&c) => {}
+                        Some(c) => out.push(c),
+                        None => out.push(name),
+                    }
+                }
+                out
+            }
             Source::Ntuple(n) => n.field_names(),
         }
     }
@@ -212,7 +225,15 @@ impl<'f> Dataset<'f> {
             Source::Ntuple(n) => Ok(n.cluster_boundaries()),
             Source::Tree(t) => {
                 let mut common: Option<Vec<u64>> = None;
-                for name in names {
+                // A split collection's baskets are its members'.
+                let members: Vec<&str> = names
+                    .iter()
+                    .flat_map(|n| {
+                        let m = t.collection_members(n);
+                        if m.is_empty() { vec![n.as_str()] } else { m }
+                    })
+                    .collect();
+                for name in members {
                     let b = t.basket_boundaries(name)?;
                     common = Some(match common {
                         None => b,
@@ -340,10 +361,16 @@ fn tree_column(
     range: Range<u64>,
     parallel: bool,
 ) -> Result<Column> {
-    let layout = t.branch_layout(name).ok_or_else(|| Error::NotFound {
-        what: "column",
-        name: name.to_string(),
-    })?;
+    let Some(layout) = t.branch_layout(name) else {
+        let members = t.collection_members(name);
+        if members.is_empty() {
+            return Err(Error::NotFound {
+                what: "column",
+                name: name.to_string(),
+            });
+        }
+        return tree_collection(t, name, &members, range, parallel);
+    };
     let is_str = t.branch_type(name) == Some(LeafType::Str);
     #[cfg(feature = "rayon")]
     let branch = || t.branch(name).range(range.clone()).parallel(parallel);
@@ -369,6 +396,47 @@ fn tree_column(
         },
         _ => branch_column(branch().values()?),
     }
+}
+
+/// A split `std::vector<Struct>` collection as a list of structs: each
+/// member read flat, sharing the first member's offsets.
+fn tree_collection(
+    t: &TreeReader<'_>,
+    name: &str,
+    members: &[&str],
+    range: Range<u64>,
+    parallel: bool,
+) -> Result<Column> {
+    let mut offsets: Option<Vec<u64>> = None;
+    let mut fields = Vec::with_capacity(members.len());
+    for &member in members {
+        #[cfg(feature = "rayon")]
+        let read = t.branch(member).range(range.clone()).parallel(parallel);
+        #[cfg(not(feature = "rayon"))]
+        let read = {
+            let _ = parallel;
+            t.branch(member).range(range.clone())
+        };
+        let j = read.flat()?;
+        match &offsets {
+            None => offsets = Some(j.offsets),
+            Some(o) if *o == j.offsets => {}
+            Some(_) => {
+                return Err(Error::Format(format!(
+                    "column {name:?}: member {member:?} has other entry lengths than the first"
+                )));
+            }
+        }
+        let short = member
+            .strip_prefix(name)
+            .and_then(|m| m.strip_prefix('.'))
+            .unwrap_or(member);
+        fields.push((short.to_string(), branch_column(j.values)?));
+    }
+    Ok(Column::List {
+        offsets: offsets.unwrap_or_else(|| vec![0]),
+        values: Box::new(Column::Struct(fields)),
+    })
 }
 
 /// A list column whose every entry has `len` values, as an array column.

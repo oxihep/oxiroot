@@ -83,8 +83,13 @@ let hits = Branch::split_vector(
 ```
 
 `SplitMember` has the same per-type constructors as the jagged branches:
-`f64`, `f32`, `i8`/`u8` … `i64`/`u64`. Each takes the member's per-entry values
-as a `Vec<Vec<T>>`.
+`bool`, `f64`, `f32`, `i8`/`u8` … `i64`/`u64`. Each takes the member's
+per-entry values as a `Vec<Vec<T>>`.
+
+Reading, the members are branches of their own (`hits.x`, …);
+`TreeReader::collection_members("hits")` lists them and
+`branch_collection("hits.x")` names the collection. A
+[`Dataset`](datasets.md) reads the whole collection as one list of structs.
 
 ## Writing a tree
 
@@ -110,13 +115,14 @@ w.finish()?; // commit metadata + header; returns the sink
 `TreeWriter::new` takes any `Write + Seek` sink if you do not want a file path,
 and `create_large`/`new_large` write ROOT's 64-bit layout for files past 2 GiB.
 Every batch must share the first batch's schema: branch names, element types,
-the jagged / `std::vector` flags, and fixed-array widths. A mismatch is an
-error.
+the jagged / `std::vector` flags, fixed-array widths, and a split branch's
+class and members. A mismatch is an error. A first batch with no entries
+fixes the schema too; give its fixed arrays their width with
+`Branch::with_width`, since they have no row to take it from.
 
-Split `std::vector<Struct>` branches are written whole, into an open
-container, by `oxiroot::tree::raw::write_tree`, which a
-[`FileWriter`](../api/oxiroot/file/struct.FileWriter.html) object calls; see
-the `raw` module's docs.
+To place a tree next to other objects in one file, a
+[`FileWriter`](../api/oxiroot/file/struct.FileWriter.html) object calls
+`oxiroot::tree::raw::write_tree`; see the `raw` module's docs.
 
 ## Reading a tree
 

@@ -38,7 +38,7 @@
 //! | `[T; N]` | fixed array `x[N]` | `std::array<T, N>` |
 //! | `Vec<Vec<T>>`, `Vec<String>`, `Vec<bool>` | `std::vector<…>` | `std::vector<…>` |
 //! | `Option<T>` | — | `std::optional<T>` |
-//! | struct ([`Column::Struct`]) | read as member columns (`hits.x`) | record / user class |
+//! | struct ([`Column::Struct`]) | in a list only: split `std::vector<Struct>` | record / user class |
 //!
 //! Reads are strict: [`Batch::values::<f64>`](Batch::values) on a `float`
 //! column is an [`Error::TypeMismatch`](oxiroot_io_core::Error::TypeMismatch),

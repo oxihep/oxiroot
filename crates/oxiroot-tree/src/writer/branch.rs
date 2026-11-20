@@ -30,8 +30,11 @@ pub struct Branch {
 /// flag triple. The constructors pick the variant; the payload type is the
 /// `Branch`'s `values`.
 pub(super) enum BranchKind {
-    /// A scalar, fixed-size array (`x[N]`), or string (`TLeafC`) branch.
+    /// A scalar or string (`TLeafC`) branch.
     Plain,
+    /// A fixed-size array `x[N]` of this width. Kept apart from the rows so a
+    /// branch with none still knows `N`.
+    Array(usize),
     /// The `n<name>` count branch of a jagged array: a plain `Int_t` scalar
     /// whose leaf, like ROOT's, is a range (`fIsRange`) whose `fMaximum` is the
     /// largest count.
@@ -77,6 +80,7 @@ impl Branch {
     /// split branch (which is never chunked), in which case [`BranchKind::Plain`].
     pub(super) fn chunk_kind(&self) -> BranchKind {
         match self.kind {
+            BranchKind::Array(n) => BranchKind::Array(n),
             BranchKind::Jagged => BranchKind::Jagged,
             BranchKind::StlVector => BranchKind::StlVector,
             BranchKind::Count => BranchKind::Count,
@@ -105,7 +109,7 @@ macro_rules! split_member_ctors {
     };
 }
 split_member_ctors! {
-    i8 => VecI8(i8), u8 => VecU8(u8), i16 => VecI16(i16), u16 => VecU16(u16),
+    bool => VecBool(bool), i8 => VecI8(i8), u8 => VecU8(u8), i16 => VecI16(i16), u16 => VecU16(u16),
     i32 => VecI32(i32), u32 => VecU32(u32), i64 => VecI64(i64), u64 => VecU64(u64),
     f32 => VecF32(f32), f64 => VecF64(f64),
 }
@@ -134,9 +138,11 @@ macro_rules! vec_ctors {
     ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
         impl Branch {
             $(
-                #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows.")]
+                #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows, ")]
+                #[doc = "all as long as the first (give a branch with no rows its width with [`Branch::with_width`])."]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain }
+                    let width = values.first().map_or(0, Vec::len);
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Array(width) }
                 }
             )*
         }
@@ -228,6 +234,19 @@ vector_vector_ctors! {
 }
 
 impl Branch {
+    /// This fixed-size array branch with width `n`: every row must hold `n`
+    /// values. Rows give the width themselves, so this matters for a branch
+    /// with no rows, such as the first, empty batch that fixes a
+    /// [`TreeWriter`](crate::TreeWriter)'s schema. Other kinds of branch are
+    /// returned unchanged.
+    #[must_use]
+    pub fn with_width(mut self, n: usize) -> Branch {
+        if let BranchKind::Array(width) = &mut self.kind {
+            *width = n;
+        }
+        self
+    }
+
     /// A `std::vector<std::string>` branch (a `TBranchElement`).
     pub fn vector_string(name: impl Into<String>, values: Vec<Vec<String>>) -> Branch {
         Branch {

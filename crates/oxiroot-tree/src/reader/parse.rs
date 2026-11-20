@@ -407,6 +407,7 @@ pub(super) fn read_branch(
             variable: has_count_dim(&leaf.title),
             nested_elem: None,
             object_member: None,
+            collection: None,
         }]);
     }
 
@@ -434,6 +435,7 @@ pub(super) fn read_branch(
             variable: false,
             nested_elem: None,
             object_member: None,
+            collection: None,
         })
         .collect();
     Ok(out)
@@ -480,6 +482,26 @@ fn read_branch_element(
     // 0/2). It holds no data itself; its members do, and they were just parsed
     // into `sub`.
     if !sub.is_empty() {
+        // The members of a split STL collection of structs (`fType` 4) whose
+        // members are all plain numbers can be read back as one list of
+        // structs; mark them with the collection's name.
+        let mut sub = sub;
+        let plain_members = sub.iter().all(|b| {
+            b.variable
+                && b.elem_header == 0
+                && b.nested_elem.is_none()
+                && b.dims.is_empty()
+                && b.leaf_type != LeafType::Str
+                && b.name.strip_prefix(name.as_str()).is_some_and(|m| {
+                    m.strip_prefix('.')
+                        .is_some_and(|m| !m.is_empty() && !m.contains('.'))
+                })
+        });
+        if f_type == 4 && plain_members {
+            for b in &mut sub {
+                b.collection = Some(name.clone());
+            }
+        }
         return Ok(sub);
     }
 
@@ -532,6 +554,7 @@ fn read_branch_element(
         variable: member || elem_header > 0,
         nested_elem,
         object_member: None,
+        collection: None,
     }])
 }
 
@@ -602,6 +625,7 @@ fn read_branch_object(
                 member: el.name.clone(),
                 class_elements: class_info.elements.clone(),
             }),
+            collection: None,
         });
     }
     if branches.is_empty() {

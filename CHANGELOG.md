@@ -9,6 +9,22 @@ change the API.
 
 ### Added
 
+- **Lists of structs in a `TTree`**. A `Batch` column that is a list of
+  structs of numbers (a `Column::List` of a `Column::Struct`) writes to a
+  `TTree` as a split `std::vector<Struct>`: one sub-branch per member
+  (`hits.x`, `hits.id`), the struct a class named after the column. ROOT 6.40
+  and uproot read it back. `Dataset` reads a split collection, oxiroot's or
+  ROOT's, as that list of structs again, so the same batch round-trips through
+  both formats.
+- **`TreeWriter` writes split `std::vector<Struct>` branches**, batch by
+  batch, a basket per member per batch (they needed `raw::write_tree` before).
+  `raw::write_tree` cuts them into baskets of `entries_per_basket` too.
+- `TreeReader::collection_members` and `branch_collection`: the members of a
+  split collection, and the collection of a member.
+- `Branch::with_width`: a fixed-array branch's width, for a branch with no
+  rows. `SplitMember::bool`.
+- An interop case streams a split `std::vector<Hit>` over several batches
+  under Zstd; ROOT C++ and uproot check it.
 - **A comparison with uproot**: `scripts/bench_uproot.py` reads the same
   `TTree` and RNTuple files, written by oxiroot and by ROOT's RDataFrame
   (`scripts/bench_write_root.C`), with `Dataset` and with uproot, serial and
@@ -16,8 +32,19 @@ change the API.
   [Performance](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot)
   page.
 
+### Changed
+
+- `Dataset::columns` lists a tree's split `std::vector<Struct>` once, by its
+  name (`hits`), instead of its members (`hits.x`, …). The members still read
+  on their own.
+- Converting a batch to Polars no longer fails on an `Optional` of an
+  `Optional`: as in Arrow, it folds into one level of nulls (`Some(None)` and
+  `None` are both null). Arrow and Polars have no second level.
+
 ### Fixed
 
+- An empty `TTree` (written from batches with no entries) keeps its fixed
+  arrays' width; it took the width from the first row, so lost it.
 - **RNTuples written by ROOT with more than one page of collection or string
   offsets per cluster** read correctly. ROOT delta-encodes a split index column
   page by page, storing each page's first offset whole; the reader summed the

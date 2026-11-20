@@ -6,7 +6,7 @@
 //! | `String` | `LargeUtf8` (`Utf8` and `Utf8View` also read) |
 //! | `List` | `LargeList` (`List` also read) |
 //! | `Array` | `FixedSizeList` |
-//! | `Optional` | the value's type, with nulls |
+//! | `Optional` | the value's type, with nulls (an `Optional` of an `Optional` folds into one level: `Some(None)` and `None` are both null) |
 //! | `Struct` | `Struct` |
 //!
 //! Going to Arrow moves the value buffers (no copy) when the batch is given

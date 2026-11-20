@@ -8,8 +8,10 @@ use std::path::Path;
 use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::{Compression, Error, Result};
 
-use super::baskets::{BasketRec, PreparedBasket, chunk_values, place_basket, prepare_basket};
-use super::branch::{Branch, BranchKind};
+use super::baskets::{
+    BasketRec, PreparedBasket, chunk_values, place_basket, prepare_basket, split_pieces,
+};
+use super::branch::{Branch, BranchKind, SplitMember, check_split_members, split_class};
 use super::layout::Kind;
 use super::serialize::build_tree_object;
 use super::{check_entry_counts, str_rep};
@@ -27,7 +29,13 @@ struct ColSig {
     flen: i32,
     /// The element type code (`F`, `I`, …), so nested element types differ.
     elem: char,
+    /// A split `std::vector<Struct>`'s class name and its members' names and
+    /// types.
+    split: Option<(String, Vec<MemberSig>)>,
 }
+
+/// A split member's name and value type.
+type MemberSig = (String, std::mem::Discriminant<BranchValues>);
 
 fn col_sig(b: &Branch) -> ColSig {
     ColSig {
@@ -37,6 +45,67 @@ fn col_sig(b: &Branch) -> ColSig {
         stl_vector: b.stl_vector(),
         flen: b.flen(),
         elem: b.leaf().code,
+        split: b.split().map(|spec| {
+            (
+                spec.class_name.clone(),
+                spec.members
+                    .iter()
+                    .map(|m| (m.name.clone(), std::mem::discriminant(&m.values)))
+                    .collect(),
+            )
+        }),
+    }
+}
+
+/// One row of `len` default values, of the same jagged variant as `values`:
+/// what a split member's representative holds, so the parent's `fMaximum`
+/// comes out as `len`.
+fn row_of(values: &BranchValues, len: usize) -> BranchValues {
+    use BranchValues::*;
+    match values {
+        VecBool(_) => VecBool(vec![vec![false; len]]),
+        VecI8(_) => VecI8(vec![vec![0; len]]),
+        VecU8(_) => VecU8(vec![vec![0; len]]),
+        VecI16(_) => VecI16(vec![vec![0; len]]),
+        VecU16(_) => VecU16(vec![vec![0; len]]),
+        VecI32(_) => VecI32(vec![vec![0; len]]),
+        VecU32(_) => VecU32(vec![vec![0; len]]),
+        VecI64(_) => VecI64(vec![vec![0; len]]),
+        VecU64(_) => VecU64(vec![vec![0; len]]),
+        VecF32(_) => VecF32(vec![vec![0.0; len]]),
+        VecF64(_) => VecF64(vec![vec![0.0; len]]),
+        other => chunk_values(other, 0, 0),
+    }
+}
+
+/// A split branch's representative: its class and members, each holding one
+/// row of `max_count` values.
+fn split_rep(b: &Branch, max_count: usize) -> Branch {
+    let spec = b.split().expect("a split branch");
+    Branch::split_vector(
+        b.name.clone(),
+        spec.class_name.clone(),
+        spec.members
+            .iter()
+            .map(|m| SplitMember {
+                name: m.name.clone(),
+                values: row_of(&m.values, max_count),
+            })
+            .collect(),
+    )
+}
+
+/// The largest element count in a split branch's count piece (single-element
+/// `i32` rows).
+fn max_count(count_piece: &Branch) -> usize {
+    match &count_piece.values {
+        BranchValues::VecI32(rows) => rows
+            .iter()
+            .filter_map(|r| r.first())
+            .map(|&n| usize::saturating_from(n))
+            .max()
+            .unwrap_or(0),
+        _ => 0,
     }
 }
 
@@ -52,6 +121,9 @@ enum ColAgg {
     /// A `TLeafC` string column: track the longest string length + 1, which is
     /// the leaf's `fLen` (the buffer ROOT allocates for the string).
     Str(i32),
+    /// A split `std::vector<Struct>` column: track the largest element count,
+    /// the parent's `fMaximum`.
+    Split(usize),
 }
 
 /// Accumulated state for one effective output column across batches.
@@ -74,9 +146,8 @@ struct StreamCol {
 /// streamer info, and the key list, then patches the file header.
 ///
 /// Every batch must share the first batch's schema: branch names, element
-/// types, the jagged / `std::vector` flags, and fixed-array widths. Split
-/// `std::vector<Struct>` branches are not supported here — use
-/// [`raw::write_tree`](super::raw::write_tree) for those.
+/// types, the jagged / `std::vector` flags, fixed-array widths, and a split
+/// `std::vector<Struct>` branch's class and members.
 ///
 /// ```no_run
 /// use oxiroot_io_core::Compression;
@@ -211,31 +282,50 @@ impl<W: Write + Seek> TreeWriter<W> {
         for branches in batches {
             entries.push(self.check_batch(branches)?);
         }
-        // The effective columns of each non-empty batch: a jagged branch
-        // contributes its synthetic count column first, then its data column.
-        let counts: Vec<Vec<Option<Branch>>> = batches
+        // The branches each batch's baskets are made from: a jagged branch's
+        // synthetic count branch, then the branch itself (two columns); a split
+        // branch's count and member pieces (one column, its baskets
+        // interleaved); any other branch as it is (one column).
+        let pieces: Vec<Vec<Vec<Branch>>> = batches
             .iter()
             .map(|bs| {
                 bs.iter()
-                    .map(|b| if b.jagged() { b.count_branch() } else { None })
+                    .map(|b| {
+                        if b.jagged() {
+                            b.count_branch().into_iter().collect()
+                        } else if b.split().is_some() {
+                            split_pieces(b, 0, b.n_entries() as usize)
+                        } else {
+                            Vec::new()
+                        }
+                    })
                     .collect()
             })
             .collect();
-        let mut jobs: Vec<&Branch> = Vec::new();
-        for ((branches, counts), &n) in batches.iter().zip(&counts).zip(&entries) {
+        // Each basket to write, and the column it belongs to.
+        let mut jobs: Vec<(usize, &Branch)> = Vec::new();
+        for ((branches, pieces), &n) in batches.iter().zip(&pieces).zip(&entries) {
             if n == 0 {
                 continue;
             }
-            for (b, count) in branches.iter().zip(counts) {
-                if let Some(c) = count {
-                    jobs.push(c);
+            let mut col = 0;
+            for (b, extra) in branches.iter().zip(pieces) {
+                if b.split().is_some() {
+                    jobs.extend(extra.iter().map(|p| (col, p)));
+                    col += 1;
+                    continue;
                 }
-                jobs.push(b);
+                if let Some(c) = extra.first() {
+                    jobs.push((col, c));
+                    col += 1;
+                }
+                jobs.push((col, b));
+                col += 1;
             }
         }
         let compression = self.file.compression_setting();
         let tree_name = self.tree_name.clone();
-        let prepare = |b: &&Branch| prepare_basket(b, &tree_name, compression);
+        let prepare = |(_, b): &(usize, &Branch)| prepare_basket(b, &tree_name, compression);
         #[cfg(feature = "rayon")]
         let prepared: Vec<PreparedBasket> = {
             use rayon::prelude::*;
@@ -244,10 +334,9 @@ impl<W: Write + Seek> TreeWriter<W> {
         #[cfg(not(feature = "rayon"))]
         let prepared: Vec<PreparedBasket> = jobs.iter().map(prepare).collect();
 
-        let ncols = self.columns.len();
-        for (k, (p, branch)) in prepared.iter().zip(&jobs).enumerate() {
+        for (p, &(col, branch)) in prepared.iter().zip(&jobs) {
             let rec = place_basket(&mut self.file, DirId::TOP, p, &tree_name)?;
-            self.record(k % ncols.max(1), branch, rec);
+            self.record(col, branch, rec);
         }
         self.total_entries += entries.iter().map(|&n| i64::from(n)).sum::<i64>();
         Ok(())
@@ -257,12 +346,8 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// its entry count.
     fn check_batch(&mut self, branches: &[Branch]) -> Result<u32> {
         for b in branches {
-            if b.split().is_some() {
-                return Err(Error::Unsupported(format!(
-                    "branch {:?}: TreeWriter does not support split std::vector<Struct> branches; \
-                     use oxiroot_tree::raw::write_tree for those",
-                    b.name
-                )));
+            if let Some(spec) = b.split() {
+                check_split_members(&b.name, spec)?;
             }
             if !b.jagged() && !b.stl_vector() && b.is_jagged() {
                 return Err(Error::InvalidInput(format!(
@@ -317,7 +402,16 @@ impl<W: Write + Seek> TreeWriter<W> {
                     c.rep.values = str_rep(*len);
                 }
             }
-            ColAgg::Data => {}
+            // The count piece (named after the branch) carries the counts;
+            // the member pieces add nothing.
+            ColAgg::Split(m) if branch.name == c.rep.name => {
+                let batch_max = max_count(branch);
+                if batch_max > *m {
+                    *m = batch_max;
+                    c.rep = split_rep(&c.rep, *m);
+                }
+            }
+            ColAgg::Split(_) | ColAgg::Data => {}
         }
     }
 
@@ -326,6 +420,14 @@ impl<W: Write + Seek> TreeWriter<W> {
     fn init_columns(&mut self, branches: &[Branch]) {
         let mut cols = Vec::new();
         for b in branches {
+            if b.split().is_some() {
+                cols.push(StreamCol {
+                    rep: split_rep(b, 0),
+                    baskets: Vec::new(),
+                    agg: ColAgg::Split(0),
+                });
+                continue;
+            }
             if b.jagged() {
                 let count = b
                     .count_branch()
@@ -390,8 +492,15 @@ impl<W: Write + Seek> TreeWriter<W> {
         );
         self.file
             .place_key(DirId::TOP, "TTree", &self.tree_name, "", &tree_obj)?;
+        // The tree classes, plus each split branch's struct.
+        let structs: Vec<_> = self
+            .columns
+            .iter()
+            .filter_map(|c| c.rep.split())
+            .map(split_class)
+            .collect();
         self.file
-            .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &[])?;
+            .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &structs)?;
         self.file.finish()
     }
 }

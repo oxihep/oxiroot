@@ -161,6 +161,9 @@ impl Branch {
         if self.jagged() || self.stl_vector() {
             return 1;
         }
+        if let BranchKind::Array(n) = self.kind {
+            return i32::saturating_from(n);
+        }
         let n = match &self.values {
             VecBool(r) => r.first().map_or(0, Vec::len),
             VecI8(r) => r.first().map_or(0, Vec::len),
@@ -182,9 +185,15 @@ impl Branch {
     /// writable — variable-length numeric arrays need a separate count branch).
     pub(super) fn is_jagged(&self) -> bool {
         use BranchValues::*;
+        // A fixed array's rows must all be its width; others, as long as the
+        // first.
+        let width = match self.kind {
+            BranchKind::Array(n) => Some(n),
+            _ => None,
+        };
         macro_rules! jag {
             ($r:expr_2021) => {{
-                let n = $r.first().map_or(0, Vec::len);
+                let n = width.unwrap_or_else(|| $r.first().map_or(0, Vec::len));
                 $r.iter().any(|x| x.len() != n)
             }};
         }

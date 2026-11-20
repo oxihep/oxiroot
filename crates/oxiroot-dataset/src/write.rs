@@ -11,7 +11,7 @@ use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::streamer_gen::ClassDef;
 use oxiroot_io_core::{Compression, Error, Result, WriteInto};
 use oxiroot_rntuple::{ANCHOR_CLASS, Column as RnColumn, Field, NtupleWriter};
-use oxiroot_tree::{Branch, TreeWriter};
+use oxiroot_tree::{Branch, SplitMember, TreeWriter};
 
 use crate::batch::Batch;
 use crate::column::Column;
@@ -421,8 +421,14 @@ fn check_column(format: Format, name: &str, column: &Column) -> Result<()> {
             Format::Tree => "a TTree",
             Format::Ntuple => "an RNTuple",
         };
+        let hint = match (format, column) {
+            (Format::Tree, Column::Struct(_)) => {
+                "; a TTree holds structs in a list, as a split std::vector<Struct>"
+            }
+            _ => "",
+        };
         Err(Error::Unsupported(format!(
-            "column {name:?} is {}, which {what} written by oxiroot cannot hold",
+            "column {name:?} is {}, which {what} written by oxiroot cannot hold{hint}",
             column.type_name()
         )))
     }
@@ -450,6 +456,10 @@ fn tree_branch_ok(c: &Column) -> bool {
         Column::String { .. } => true,
         Column::List { values, .. } => match &**values {
             Column::String { .. } => true,
+            // A split `std::vector<Struct>` of number members.
+            Column::Struct(members) => {
+                !members.is_empty() && members.iter().all(|(_, m)| is_scalar(m))
+            }
             Column::List { values, .. } => is_scalar(values),
             v => is_scalar(v),
         },
@@ -509,6 +519,20 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
     match c {
         Column::String { offsets, bytes } => Ok(Branch::string(name, strings(offsets, bytes))),
         Column::List { offsets, values } => match &**values {
+            // A list of structs is a split `std::vector<Struct>`: one jagged
+            // sub-branch per member, the struct a class named after the column.
+            Column::Struct(members) => {
+                let members = members
+                    .iter()
+                    .map(|(m, mc)| {
+                        by_type!(SplitMember, m.as_str(), c, WHAT, mc, x => rows(offsets, x);
+                            Bool => bool, I8 => i8, U8 => u8, I16 => i16, U16 => u16,
+                            I32 => i32, U32 => u32, I64 => i64, U64 => u64, F32 => f32,
+                            F64 => f64)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Branch::split_vector(name, class_name(name), members))
+            }
             Column::String { offsets: o2, bytes } => Ok(Branch::vector_string(
                 name,
                 rows(offsets, &strings(o2, bytes)),
@@ -528,11 +552,13 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
                 U16 => vector_u16, I32 => vector_i32, U32 => vector_u32, I64 => vector_i64,
                 U64 => vector_u64, F32 => vector_f32, F64 => vector_f64),
         },
+        // The width goes with the branch, so an empty batch keeps it too.
         Column::Array { len, values } => by_type!(Branch, name, c, WHAT, &**values,
-            v => v.chunks(*len).map(<[_]>::to_vec).collect();
+            v => if *len == 0 { Vec::new() } else { v.chunks(*len).map(<[_]>::to_vec).collect() };
             Bool => array_bool, I8 => array_i8, U8 => array_u8, I16 => array_i16,
             U16 => array_u16, I32 => array_i32, U32 => array_u32, I64 => array_i64,
-            U64 => array_u64, F32 => array_f32, F64 => array_f64),
+            U64 => array_u64, F32 => array_f32, F64 => array_f64)
+        .map(|b| b.with_width(*len)),
         scalar => by_type!(Branch, name, c, WHAT, scalar, v => v.clone();
             Bool => bool, I8 => i8, U8 => u8, I16 => i16, U16 => u16, I32 => i32,
             U32 => u32, I64 => i64, U64 => u64, F32 => f32, F64 => f64),
