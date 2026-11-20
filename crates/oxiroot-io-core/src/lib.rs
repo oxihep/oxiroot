@@ -64,6 +64,8 @@ pub use compression::Compression;
 pub use error::{Error, External, Result};
 #[cfg(feature = "mmap")]
 pub use file::MmapSource;
+#[cfg(feature = "xrootd-tls")]
+pub use file::XrootdOptions;
 #[cfg(feature = "xrootd")]
 pub use file::XrootdSource;
 pub use file::{ByteSource, BytesSource, FileReader, FileSource, FileWriter, SubdirWriter};

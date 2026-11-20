@@ -105,6 +105,8 @@ impl FileReader {
     ///
     /// - `http://` / `https://` — HTTP(S) byte-range requests (`http` feature).
     ///   The server must honor `Range` requests (`Accept-Ranges: bytes`).
+    /// - `roots://` — XRootD over TLS (`xrootd-tls` feature), which also adds
+    ///   token authentication with a WLCG bearer token from the environment.
     /// - `root://` — the XRootD protocol (`xrootd` feature), with `unix` auth
     ///   for public/world-readable files (e.g. `root://eospublic.cern.ch`).
     ///

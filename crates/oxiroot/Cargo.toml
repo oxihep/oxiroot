@@ -44,6 +44,9 @@ http = ["oxiroot-io-core/http"]
 # Enable remote reads over the XRootD `root://` protocol (`FileReader::open_url`).
 # Opt-in; pure `std::net` (unix auth), so it adds no dependencies.
 xrootd = ["oxiroot-io-core/xrootd"]
+# Add TLS to XRootD: `roots://`, servers that require TLS, and token (`ztn`)
+# authentication with a WLCG bearer token. Pulls in rustls.
+xrootd-tls = ["xrootd", "oxiroot-io-core/xrootd-tls"]
 # Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
 # the parallel TTree reads (`TreeReader::read_branch_par` and friends).
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
@@ -68,6 +71,8 @@ plot = [
 [dev-dependencies]
 # Benchmarks only (`cargo bench -p oxiroot`); no plots, so no plotters.
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+# The TLS side of the mock XRootD server (`xrootd-tls` tests).
+rustls.workspace = true
 
 [[bench]]
 name = "fill"

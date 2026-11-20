@@ -14,6 +14,8 @@ mod source;
 mod writer;
 #[cfg(feature = "xrootd")]
 mod xrootd;
+#[cfg(feature = "xrootd-tls")]
+mod xrootd_tls;
 
 pub(crate) use container::STREAMER_INFO_KEY_LEN;
 pub use container::{
@@ -30,3 +32,5 @@ pub use source::{ByteSource, BytesSource, FileSource};
 pub use writer::{FileWriter, SubdirWriter};
 #[cfg(feature = "xrootd")]
 pub use xrootd::XrootdSource;
+#[cfg(feature = "xrootd-tls")]
+pub use xrootd_tls::XrootdOptions;

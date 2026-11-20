@@ -127,9 +127,30 @@ large branch keeps memory bounded. Nothing changes in the code that reads.
 - `root://` — the `xrootd` feature (pure `std::net`, no dependencies). It uses
   the credential-free `unix` security protocol, so it reads world-readable /
   open data from servers that offer it (e.g. `root://eospublic.cern.ch`, CERN's
-  anonymous open-data endpoint, which offers `krb5`, `gsi`, `sss` and `unix`);
-  GSI/Kerberos/token security is not implemented. A server that offers none of
-  what this client speaks is an error naming what it did offer.
+  anonymous open-data endpoint, which offers `krb5`, `gsi`, `sss` and `unix`).
+  A server that offers none of what this client speaks is an error naming what
+  it did offer, and why each was skipped.
+- `roots://`, and access-controlled data — the `xrootd-tls` feature (adds
+  rustls). The connection switches to TLS when the URL is `roots://` or the
+  server asks for it, and the client authenticates with a WLCG bearer token
+  (the `ztn` protocol) when the server offers it. The token is found the WLCG
+  way: `BEARER_TOKEN`, the file `BEARER_TOKEN_FILE` names,
+  `$XDG_RUNTIME_DIR/bt_u<uid>`, then `/tmp/bt_u<uid>` (a token file must not
+  be readable by others). Server certificates are checked against the Mozilla
+  root store plus the grid CAs in `$X509_CERT_DIR` (default
+  `/etc/grid-security/certificates`). To pass a token or CA directory
+  explicitly, use `XrootdOptions`:
+
+  ```rust,no_run
+  use oxiroot::file::{FileReader, XrootdOptions, XrootdSource};
+
+  let opts = XrootdOptions::new().token(std::fs::read_to_string("token.jwt")?);
+  let source = XrootdSource::open_with("roots://eos.example.org//data/run.root", &opts)?;
+  let f = FileReader::from_source(Box::new(source))?;
+  # Ok::<(), Box<dyn std::error::Error>>(())
+  ```
+
+  GSI (X.509 proxy) and Kerberos authentication are not supported.
 
   The live checks against that endpoint are in the test suite but ignored by
   default, since they need the network and CERN's public servers are slow from

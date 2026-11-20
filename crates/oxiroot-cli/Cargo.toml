@@ -27,6 +27,9 @@ http = ["oxiroot/http"]
 # Read ROOT files from a `root://` (XRootD) URL. Pure std::net (unix auth), no
 # extra dependencies; build with `--features xrootd`.
 xrootd = ["oxiroot/xrootd"]
+# Add TLS to `root://`: `roots://` URLs and token (`ztn`) authentication with a
+# WLCG bearer token. Pulls in rustls; build with `--features xrootd-tls`.
+xrootd-tls = ["xrootd", "oxiroot/xrootd-tls"]
 
 [lints]
 workspace = true
