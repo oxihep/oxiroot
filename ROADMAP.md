@@ -87,6 +87,20 @@ Larger pieces, each worth a design note before code.
   error. `oxiroot_io_core::Error::Io` keeps the I/O error's kind and
   message rather than the error itself, by design: the type is `Clone` and
   `Eq`, which a `std::io::Error` is not.
+- **`#[non_exhaustive]` and `Debug` across the repos.** Every public error
+  and option type has both (oxifit 0.8.0, oxiplot 0.10.0, oxihist 0.12.0,
+  oxiroot); oxiplot's public enums that may grow are non-exhaustive.
+- **Less parallel code.** The plain histograms' shared methods (arithmetic,
+  extrema, statistics, bookkeeping) come from one macro (`family.rs`); the
+  profiles share `add` the same way. The readers and writers stay per class,
+  as ROOT's on-disk layouts differ.
+- **Cast lints in every workspace.** `cast_possible_truncation`,
+  `cast_sign_loss`, `cast_possible_wrap` and `cast_lossless` are on; each hit
+  is fixed or justified where it stands. In oxiroot the `i32`/`usize` mixing
+  of ROOT's on-disk types goes through `SaturatingFrom` (a value out of range
+  clamps instead of wrapping), same-width reinterpretations are explicit
+  (`cast_signed`/`cast_unsigned`), and the bit-level encodings say why they
+  truncate.
 
 ### Still open
 
@@ -106,14 +120,6 @@ Larger pieces, each worth a design note before code.
     create nor read such a field in the test build.
   - *Done when:* a ROOT install with the `std::map` dictionary reads it back in
     the interop job.
-- **`#[non_exhaustive]` and `Debug` everywhere.** Give every public error
-  and options type both, consistently across the repos.
-- **Less parallel code.** The ROOT histogram types repeat their 1-D/2-D/3-D
-  logic (about 2000 lines). Generate it or share it, behind the same public
-  API.
-- **Lints.** Turn on the cast and idiom lints (`cast_possible_truncation`,
-  `cast_sign_loss`, …) workspace by workspace, fixing or justifying each hit.
-  Settle the `i32`/`usize` mixing they surface.
 
 ## Toward 1.0
 

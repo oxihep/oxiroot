@@ -19,6 +19,7 @@ use std::fmt;
 
 /// Errors raised while (de)compressing ROOT payloads.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompressError {
     /// The input was shorter than required to read a header or block payload.
     Truncated {
@@ -70,12 +71,15 @@ impl std::error::Error for CompressError {}
 /// `algorithm_code` follows ROOT's `ECompressionAlgorithm` enum (zlib = 1,
 /// LZMA = 2, LZ4 = 4, Zstd = 5); `level` is 1..=9.
 pub fn compression_settings(algorithm_code: u8, level: u8) -> u32 {
-    algorithm_code as u32 * 100 + level as u32
+    u32::from(algorithm_code) * 100 + u32::from(level)
 }
 
 /// Split a compression-settings integer back into `(algorithm_code, level)`.
 pub fn split_settings(settings: u32) -> (u8, u8) {
-    ((settings / 100) as u8, (settings % 100) as u8)
+    (
+        u8::try_from(settings / 100).unwrap_or(u8::MAX),
+        u8::try_from(settings % 100).unwrap_or(u8::MAX),
+    )
 }
 
 /// Decompress `src` into exactly `uncompressed_len` bytes.
@@ -193,8 +197,9 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
         BlockHeader {
             tag,
             method,
-            compressed_size: frame.len() as u32,
-            uncompressed_size: chunk.len() as u32,
+            // Both checked above to fit 24 bits.
+            compressed_size: u32::try_from(frame.len()).unwrap_or(u32::MAX),
+            uncompressed_size: u32::try_from(chunk.len()).unwrap_or(u32::MAX),
         }
         .write(&mut out);
         out.extend_from_slice(&frame);
@@ -352,7 +357,7 @@ mod tests {
         BlockHeader {
             tag: *b"ZL",
             method: 8,
-            compressed_size: compressed.len() as u32,
+            compressed_size: u32::try_from(compressed.len()).unwrap(),
             uncompressed_size: 64 << 20, // lie: claims 64 MiB
         }
         .write(&mut block);
@@ -375,8 +380,8 @@ mod tests {
         BlockHeader {
             tag: *b"ZL",
             method: 8, // Z_DEFLATED
-            compressed_size: compressed.len() as u32,
-            uncompressed_size: original.len() as u32,
+            compressed_size: u32::try_from(compressed.len()).unwrap(),
+            uncompressed_size: u32::try_from(original.len()).unwrap(),
         }
         .write(&mut block);
         block.extend_from_slice(&compressed);

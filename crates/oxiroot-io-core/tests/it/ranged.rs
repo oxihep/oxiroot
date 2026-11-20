@@ -1,6 +1,7 @@
 //! `FileReader::open_ranged` (positioned local reads, no full slurp) must parse and
 //! read byte-for-byte identically to the resident `FileReader::open`.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -35,7 +36,7 @@ fn open_ranged_matches_open() {
         }
 
         // The whole file, read range-by-range, equals the resident buffer.
-        let whole = |f: &FileReader| f.read_at(0, f.size() as usize).unwrap();
+        let whole = |f: &FileReader| f.read_at(0, usize::saturating_from(f.size())).unwrap();
         assert_eq!(whole(&ranged), whole(&resident), "{name}: whole-file bytes");
     }
 }

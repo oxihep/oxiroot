@@ -140,6 +140,11 @@ mod analysis {
         0.5 / ct * (0.5 * (s / ct).powi(2) - t / ct).exp() * erfc(arg)
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a rounded event count, and generated values stored in f32 branches"
+    )]
     pub(super) fn run() -> oxiroot::Result<()> {
         let start = std::time::Instant::now();
         let dir = std::env::temp_dir().join("oxiroot-charmonium");
@@ -314,9 +319,9 @@ mod analysis {
         // The mass shapes normalized inside the window, once.
         let steps = 2000;
         let integral = |f: &dyn Fn(f64) -> f64| -> f64 {
-            let h = (WIN.1 - WIN.0) / steps as f64;
+            let h = (WIN.1 - WIN.0) / f64::from(steps);
             (0..steps)
-                .map(|k| f(WIN.0 + h * (k as f64 + 0.5)) * h)
+                .map(|k| f(WIN.0 + h * (f64::from(k) + 0.5)) * h)
                 .sum()
         };
         let sig_m = move |m: f64| cb_density(m, m1, s1, alpha, n_cb);

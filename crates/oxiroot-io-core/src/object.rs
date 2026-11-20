@@ -7,6 +7,7 @@
 //! (ROOT reads objects from a key with `origin = -fKeylen`). This machinery is
 //! shared by the streamer-info parser, `TObjArray` reading, and `TTree`.
 
+use crate::cast::SaturatingFrom;
 use std::collections::HashMap;
 
 use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer};
@@ -68,7 +69,7 @@ impl TagReader {
             refs: HashMap::new(),
             objects: HashMap::new(),
             seq: 0,
-            keylen: keylen as i64,
+            keylen: i64::saturating_from(keylen),
         }
     }
 
@@ -135,7 +136,7 @@ impl TagReader {
             let classname = read_cstring(r)?;
             // Register the class at the tag's displacement (+ keylen + offset).
             if versioned {
-                let start_disp = (beg + 4) as i64 + self.keylen;
+                let start_disp = i64::saturating_from(beg + 4) + self.keylen;
                 self.refs
                     .insert(start_disp + K_MAP_OFFSET, classname.clone());
             } else {
@@ -149,7 +150,7 @@ impl TagReader {
                 back_ref: None,
             })
         } else {
-            let refpos = (tag & !K_CLASS_MASK) as i64;
+            let refpos = i64::from(tag & !K_CLASS_MASK);
             let classname =
                 self.refs.get(&refpos).cloned().ok_or_else(|| {
                     Error::Format(format!("unknown class-tag reference {refpos}"))
@@ -169,12 +170,29 @@ impl TagReader {
     /// header's first word rather than at the class tag.
     fn map_object(&mut self, beg: usize, class_name: &str, pos: usize) {
         self.objects.insert(
-            beg as i64 + self.keylen + K_MAP_OFFSET,
+            i64::saturating_from(beg) + self.keylen + K_MAP_OFFSET,
             ObjectRef {
                 class_name: class_name.to_string(),
                 pos,
             },
         );
+    }
+}
+
+impl std::fmt::Debug for RecordHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordHeader")
+            .field("class_name", &self.class_name)
+            .field("end", &self.end)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for TagReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TagReader")
+            .field("seq", &self.seq)
+            .finish_non_exhaustive()
     }
 }
 

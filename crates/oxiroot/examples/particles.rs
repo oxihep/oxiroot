@@ -33,11 +33,11 @@ fn main() {
             "  {id:>11}: {kind:<8} charge = {:>4}   quarks: down={} up={} strange={} charm={} bottom={}",
             p.charge()
                 .map_or("?".to_string(), |q| format!("{q:+.2}").replace(".00", "")),
-            p.has_down() as u8,
-            p.has_up() as u8,
-            p.has_strange() as u8,
-            p.has_charm() as u8,
-            p.has_bottom() as u8,
+            u8::from(p.has_down()),
+            u8::from(p.has_up()),
+            u8::from(p.has_strange()),
+            u8::from(p.has_charm()),
+            u8::from(p.has_bottom()),
         );
     }
     // A nucleus ID even yields its A and Z:

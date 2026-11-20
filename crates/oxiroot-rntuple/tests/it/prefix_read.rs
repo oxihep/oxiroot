@@ -2,6 +2,7 @@
 //! for every field of every fixture and a spread of `m` (including 0, past the
 //! end, and — for the multi-cluster fixture — values that fall mid-file).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -39,7 +40,7 @@ fn prefix_read_equals_truncated_full_read() {
     for &fx in FIXTURES {
         let file = FileReader::from_bytes(fixture(fx)).expect("parse file");
         let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
-        let total = ntpl.num_entries() as usize;
+        let total = usize::saturating_from(ntpl.num_entries());
 
         // 0, a few, mid-file (splits the multi-cluster file across clusters),
         // last, exactly all, and past the end.

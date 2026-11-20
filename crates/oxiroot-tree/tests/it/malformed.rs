@@ -106,7 +106,8 @@ fn basket_key_longer_than_probe_never_panics() {
                     continue;
                 }
                 let mut bytes = original.clone();
-                let key_len = (nbytes + 100).min(i32::from(i16::MAX)) as i16;
+                let key_len =
+                    i16::try_from((nbytes + 100).min(i32::from(i16::MAX))).expect("clamped to i16");
                 bytes[start + 14..start + 16].copy_from_slice(&key_len.to_be_bytes());
                 bytes[start..start + 4].copy_from_slice(&(i32::from(key_len) + 100).to_be_bytes());
                 patched_any = true;

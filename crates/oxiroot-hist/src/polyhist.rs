@@ -31,6 +31,7 @@ use oxiroot_io_core::{
 
 use crate::axis::Axis;
 use crate::base::{check_len, object_bytes_keyed, read_th1_base};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// One polygon bin of a [`PolyHist`] (ROOT `TH2PolyBin`).
 #[derive(Debug, Clone, PartialEq)]
@@ -155,7 +156,7 @@ impl PolyHist {
 
     /// Add a polygon bin from vertex slices of equal length.
     fn push_bin(&mut self, x: &[f64], y: &[f64]) -> i32 {
-        let number = self.bins.len() as i32 + 1;
+        let number = i32::saturating_from(self.bins.len()) + 1;
         let xmin = x.iter().copied().fold(f64::INFINITY, f64::min);
         let xmax = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let ymin = y.iter().copied().fold(f64::INFINITY, f64::min);
@@ -241,7 +242,7 @@ impl PolyHist {
         }
         let _cell_x = r.be_i32()?; // fCellX (grid columns)
         let _cell_y = r.be_i32()?; // fCellY (grid rows)
-        let ncells = r.be_i32()?.max(0) as usize; // fNCells (grid cell count)
+        let ncells = usize::saturating_from(r.be_i32()?.max(0)); // fNCells (grid cell count)
 
         // fCells (TStreamerLoop): a {byte-count, version} header then `ncells`
         // inline TLists. ROOT writes each bin in full the first time it appears
@@ -386,7 +387,7 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
     skip_versioned(r)?; // TAttLine
     skip_versioned(r)?; // TAttFill
     skip_versioned(r)?; // TAttMarker
-    let npoints = r.be_i32()?.max(0) as usize; // fNpoints
+    let npoints = usize::saturating_from(r.be_i32()?.max(0)); // fNpoints
     let _x_marker = r.u8()?; // Double_t* //[fNpoints] presence marker
     let x = (0..npoints)
         .map(|_| r.be_f64())

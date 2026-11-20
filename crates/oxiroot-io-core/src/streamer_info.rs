@@ -8,6 +8,7 @@
 //! references are keyed by the object's buffer offset **plus the key length**
 //! (ROOT reads key objects with `origin = -fKeylen`).
 
+use crate::cast::SaturatingFrom;
 use std::ops::Range;
 
 use crate::buffer::RBuffer;
@@ -147,7 +148,7 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
     let _name = r.string()?;
     let count = r.be_i32()?.max(0);
 
-    let mut infos = Vec::with_capacity((count as usize).min(r.remaining()));
+    let mut infos = Vec::with_capacity(usize::saturating_from(count).min(r.remaining()));
     for _ in 0..count {
         let header = tags.read_header(&mut r)?;
         if header.class_name.as_deref() == Some("TStreamerInfo") {
@@ -207,7 +208,7 @@ fn parse_element_array(
     let size = r.be_i32()?.max(0);
     let _lower_bound = r.be_i32()?;
 
-    let mut elements = Vec::with_capacity((size as usize).min(r.remaining()));
+    let mut elements = Vec::with_capacity(usize::saturating_from(size).min(r.remaining()));
     for _ in 0..size {
         let header = tags.read_header(r)?;
         if let Some(class) = header.class_name.clone() {

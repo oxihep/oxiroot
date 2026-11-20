@@ -14,6 +14,10 @@
 
 use oxiroot::prelude::*;
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a whole-number parameter shown as an integer"
+)]
 fn main() -> oxiroot::Result<()> {
     // Keep the file out of the repo: a temp path tagged with THIS example's
     // name, removed before we return.

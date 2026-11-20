@@ -4,6 +4,7 @@
 //! fTsumwxy }, TArray }`. The inline `TArray` holds the `(nx+2)*(ny+2)` cells
 //! with the x index varying fastest.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
@@ -105,12 +106,12 @@ impl Hist2D {
 
     /// Number of x bins (excluding flow).
     pub fn nx(&self) -> usize {
-        self.xaxis.nbins.max(0) as usize
+        usize::saturating_from(self.xaxis.nbins.max(0))
     }
 
     /// Number of y bins (excluding flow).
     pub fn ny(&self) -> usize {
-        self.yaxis.nbins.max(0) as usize
+        usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
     /// Bin contents excluding flow as `values[ix][iy]` (`nx` rows, `ny` cols),
@@ -146,7 +147,7 @@ impl Hist2D {
             tsumwy: 0.0,
             tsumwy2: 0.0,
             tsumwxy: 0.0,
-            contents: vec![0.0; ncells.max(0) as usize],
+            contents: vec![0.0; usize::saturating_from(ncells.max(0))],
             sumw2: Vec::new(),
         }
     }
@@ -154,7 +155,8 @@ impl Hist2D {
     /// Create an empty `TH2D` with variable bin edges on each axis. Internal
     /// primitive behind [`Hist::var`](crate::Hist::var)`(xedges).var(yedges).double()`.
     pub(crate) fn new_variable(xedges: &[f64], yedges: &[f64]) -> Hist2D {
-        let ncells = (xedges.len() as i32 + 1) * (yedges.len() as i32 + 1);
+        let ncells =
+            (i32::saturating_from(xedges.len()) + 1) * (i32::saturating_from(yedges.len()) + 1);
         Hist2D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
@@ -171,7 +173,7 @@ impl Hist2D {
             tsumwy: 0.0,
             tsumwy2: 0.0,
             tsumwxy: 0.0,
-            contents: vec![0.0; ncells.max(0) as usize],
+            contents: vec![0.0; usize::saturating_from(ncells.max(0))],
             sumw2: Vec::new(),
         }
     }

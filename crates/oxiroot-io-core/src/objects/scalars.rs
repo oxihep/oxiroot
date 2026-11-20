@@ -138,8 +138,8 @@ impl ParamValue {
     pub fn as_f64(&self) -> f64 {
         match *self {
             ParamValue::Double(v) => v,
-            ParamValue::Float(v) => v as f64,
-            ParamValue::Int(v) => v as f64,
+            ParamValue::Float(v) => f64::from(v),
+            ParamValue::Int(v) => f64::from(v),
             ParamValue::Long64(v) => v as f64,
         }
     }

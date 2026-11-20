@@ -124,7 +124,7 @@ impl BlockHeader {
 }
 
 fn u24_le(b: &[u8]) -> u32 {
-    (b[0] as u32) | ((b[1] as u32) << 8) | ((b[2] as u32) << 16)
+    u32::from(b[0]) | (u32::from(b[1]) << 8) | (u32::from(b[2]) << 16)
 }
 
 fn put_u24_le(out: &mut Vec<u8>, v: u32) {

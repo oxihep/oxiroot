@@ -13,6 +13,7 @@
 
 use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D, WriteRoot};
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::streamer_gen::{Cls, El, any, base, basic};
 use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer, write_named};
 
@@ -37,7 +38,7 @@ fn axis_record(version: u16, nbins: i32, xmin: f64, xmax: f64, edges: &[f64]) ->
     w.be_i32(nbins);
     w.be_f64(xmin);
     w.be_f64(xmax);
-    w.be_i32(edges.len() as i32); // fXbins
+    w.be_i32(i32::saturating_from(edges.len())); // fXbins
     for &edge in edges {
         w.be_f64(edge);
     }

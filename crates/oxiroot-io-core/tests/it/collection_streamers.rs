@@ -152,7 +152,7 @@ fn two_versions_of_a_class_are_both_described() {
         }
         fn to_root_bytes(&self) -> Vec<u8> {
             let mut w = WBuffer::new();
-            let hit = w.begin_object(self.0 as u16);
+            let hit = w.begin_object(u16::try_from(self.0).expect("a small test tag"));
             w.be_f64(1.0);
             w.end_object(hit);
             w.into_vec()

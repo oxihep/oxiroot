@@ -112,7 +112,7 @@ impl Efficiency {
 
 /// Skip a byte-counted member (`{kByteCountMask | len}{len bytes}`).
 fn skip_byte_counted(r: &mut RBuffer) -> Result<()> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     r.skip((bc & 0x3fff_ffff) as usize)
 }
 
@@ -120,8 +120,8 @@ fn skip_byte_counted(r: &mut RBuffer) -> Result<()> {
 /// The tag is `kNewClassTag` + the class name on first use, or a class
 /// back-reference afterwards (the two histograms share the `TH1D` class).
 fn read_embedded_th1d(r: &mut RBuffer) -> Result<Hist1D> {
-    let _bc = r.be_i32()? as u32; // object byte count
-    let tag = r.be_i32()? as u32; // class tag
+    let _bc = r.be_i32()?.cast_unsigned(); // object byte count
+    let tag = r.be_i32()?.cast_unsigned(); // class tag
     if tag == 0xFFFF_FFFF {
         // kNewClassTag: a NUL-terminated class name follows.
         while r.u8()? != 0 {}

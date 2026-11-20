@@ -5,6 +5,7 @@
 //! byte-transposed back ("unsplit"), then signed-integer columns are
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{ByteSource, Error, Result, decompress_payload};
 
 use crate::column::ColumnType;
@@ -47,7 +48,7 @@ pub enum ColumnValues {
 /// Uncompressed byte size of `n` elements stored at `bits` bits each. Computed
 /// in 64-bit to avoid overflow on 32-bit targets for adversarially large counts.
 fn uncompressed_size(bits: u16, n: usize) -> usize {
-    (n as u64 * bits as u64).div_ceil(8).min(usize::MAX as u64) as usize
+    usize::saturating_from((n as u64 * u64::from(bits)).div_ceil(8))
 }
 
 /// The file range one page occupies: its bytes, plus the 8-byte checksum
@@ -97,14 +98,26 @@ fn unsplit(raw: &[u8], n: usize, width: usize) -> Vec<u8> {
 }
 
 /// Zigzag-decode an unsigned value to signed (`(u >> 1) ^ -(u & 1)`).
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "zigzag decoding reinterprets the bits"
+)]
 fn zigzag32(u: u32) -> i32 {
     ((u >> 1) as i32) ^ -((u & 1) as i32)
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "zigzag decoding reinterprets the bits"
+)]
 fn zigzag64(u: u64) -> i64 {
     ((u >> 1) as i64) ^ -((u & 1) as i64)
 }
 
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "zigzag decoding reinterprets the bits"
+)]
 fn zigzag16(u: u16) -> i16 {
     ((u >> 1) as i16) ^ -((u & 1) as i16)
 }
@@ -122,6 +135,10 @@ fn delta_decode(deltas: Vec<u64>) -> Vec<u64> {
 }
 
 /// Decode all pages of one physical column (in order) into [`ColumnValues`].
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a quantized Real32 field holds f32 values"
+)]
 pub fn read_column(
     file: &dyn ByteSource,
     column_type: ColumnType,
@@ -242,11 +259,11 @@ pub fn read_column(
         // A 32-bit float with its low (32 − bits) mantissa bits dropped, then the
         // top `bits` bit-packed. Decode: left-shift back into the float's high bits.
         Real32Trunc => {
-            let shift = 32 - bits as u32;
+            let shift = 32 - u32::from(bits);
             let raw = packed_uints(file, bits, pages)?;
             Ok(ColumnValues::F32(
                 raw.into_iter()
-                    .map(|v| f32::from_bits((v as u32) << shift))
+                    .map(|v| f32::from_bits(u32::saturating_from(v) << shift))
                     .collect(),
             ))
         }
@@ -357,18 +374,18 @@ fn half_to_f32(h: u16) -> f32 {
                     break;
                 }
             }
-            sign | (((127 - 15 - e) as u32) << 23) | ((m & 0x3ff) << 13)
+            sign | ((127 - 15 - e).cast_unsigned() << 23) | ((m & 0x3ff) << 13)
         }
     } else if exp == 0x1f {
         sign | (0xff << 23) | (mant << 13) // inf / NaN
     } else {
-        sign | (((i32::from(exp) - 15 + 127) as u32) << 23) | (mant << 13)
+        sign | ((i32::from(exp) - 15 + 127).cast_unsigned() << 23) | (mant << 13)
     };
     f32::from_bits(bits)
 }
 
 fn le_i8(c: &[u8]) -> i8 {
-    c[0] as i8
+    c[0].cast_signed()
 }
 fn le_u8(c: &[u8]) -> u8 {
     c[0]

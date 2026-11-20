@@ -4,6 +4,7 @@
 //!
 //!   cargo bench -p oxiroot --bench read
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::hint::black_box;
 use std::path::PathBuf;
 
@@ -31,7 +32,7 @@ fn write_files() -> Files {
     let pt: Vec<f64> = (0..ENTRIES)
         .map(|i| (i as f64 * 0.37).sin().abs() * 100.0)
         .collect();
-    let n: Vec<i32> = (0..ENTRIES).map(|i| (i % 17) as i32).collect();
+    let n: Vec<i32> = (0..ENTRIES).map(|i| i32::saturating_from(i % 17)).collect();
     let jets: Vec<Vec<f64>> = (0..ENTRIES / 10).map(|i| vec![i as f64; i % 5]).collect();
 
     let tree = dir.join("tree.root");

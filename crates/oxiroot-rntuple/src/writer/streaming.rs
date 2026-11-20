@@ -1,6 +1,7 @@
 //! [`NtupleWriter`]: an RNTuple written one cluster per batch, so the whole
 //! dataset need not be in memory.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
@@ -206,7 +207,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
         let mut recs = Vec::with_capacity(cols.len());
         for (i, c) in cols.iter().enumerate() {
             let disk = compress_if_smaller(&c.page, self.file.compression_setting());
-            let element_offset = self.element_base[i] as i64;
+            let element_offset = self.element_base[i].cast_signed();
             let offset = self.file.place_blob(&disk)?;
             recs.push(PageRec {
                 offset,
@@ -214,11 +215,11 @@ impl<W: Write + Seek> NtupleWriter<W> {
                 n_elements: c.n,
                 element_offset,
             });
-            self.element_base[i] += c.n as u64;
+            self.element_base[i] += u64::from(c.n);
         }
         self.cluster_pages.push(recs);
-        self.summaries.push((first_entry, n_entries as u64));
-        self.total_entries += n_entries as u64;
+        self.summaries.push((first_entry, u64::from(n_entries)));
+        self.total_entries += u64::from(n_entries);
         Ok(())
     }
 
@@ -228,7 +229,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
         let header = self.header.take().ok_or_else(|| {
             Error::InvalidInput("NtupleWriter finished with no batches written".into())
         })?;
-        let num_clusters = self.summaries.len() as u32;
+        let num_clusters = u32::saturating_from(self.summaries.len());
 
         let compression = self.file.compression_setting();
         let page_list_env = build_page_list_multi(
@@ -240,7 +241,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
         let page_list_offset = self.file.place_blob(&page_list_env)?;
 
         let footer_env = build_footer(
-            self.total_entries as u32,
+            u32::saturating_from(self.total_entries),
             num_clusters,
             offset(page_list_offset)?,
             page_list_env.len(),
@@ -303,15 +304,15 @@ fn build_page_list_multi(
         for pr in cols {
             check_page_limits(pr.n_elements, pr.disk_size)?;
             let mut page = Vec::new();
-            page.extend_from_slice(&(pr.n_elements as i32).to_le_bytes()); // no checksum
-            page.extend_from_slice(&(pr.disk_size as i32).to_le_bytes()); // on-disk size
+            page.extend_from_slice(&(pr.n_elements).cast_signed().to_le_bytes()); // no checksum
+            page.extend_from_slice(&i32::saturating_from(pr.disk_size).to_le_bytes()); // on-disk size
             page.extend_from_slice(&pr.offset.to_le_bytes()); // locator offset
             let mut body = Vec::new();
             body.extend_from_slice(&1u32.to_le_bytes()); // one page
             body.extend_from_slice(&page);
             body.extend_from_slice(&pr.element_offset.to_le_bytes());
             body.extend_from_slice(&compression.to_le_bytes());
-            let size = (8 + body.len()) as i64;
+            let size = i64::saturating_from(8 + body.len());
             let mut frame = (-size).to_le_bytes().to_vec();
             frame.extend_from_slice(&body);
             col_frames.push(frame);
@@ -321,4 +322,13 @@ fn build_page_list_multi(
     p.extend_from_slice(&list_frame(&cluster_frames));
 
     Ok(envelope(0x03, &p))
+}
+
+impl<W: Write + Seek> std::fmt::Debug for NtupleWriter<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NtupleWriter")
+            .field("name", &self.ntuple_name)
+            .field("entries", &self.total_entries)
+            .finish_non_exhaustive()
+    }
 }

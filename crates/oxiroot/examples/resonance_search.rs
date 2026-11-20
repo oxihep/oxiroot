@@ -135,6 +135,10 @@ mod search {
         fitter.clone().set("mass", m).fix("mass")
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "generated values stored in an f32 branch"
+    )]
     pub(super) fn run() -> oxiroot::Result<()> {
         let start = std::time::Instant::now();
         let dir = std::env::temp_dir().join("oxiroot-resonance-search");

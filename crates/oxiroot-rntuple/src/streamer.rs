@@ -9,6 +9,7 @@
 //! Only flat classes of basic members and `std::string` are supported: no base
 //! classes, nested objects, arrays, or STL collections beyond `std::string`.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, RBuffer, Result, StreamerElement, StreamerInfo};
 
 use crate::field::FieldValues;
@@ -25,7 +26,7 @@ pub(crate) fn decode(info: &StreamerInfo, offsets: &[u64], bytes: &[u8]) -> Resu
 
     let mut start = 0usize;
     for &end in offsets {
-        let end = end as usize;
+        let end = usize::saturating_from(end);
         let blob = bytes
             .get(start..end)
             .ok_or_else(|| Error::Format("streamer blob offset out of range".into()))?;

@@ -1,19 +1,20 @@
 //! The header, page-list and footer envelopes, and the anchor.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
 use super::lower::{ColumnPlan, FieldPlan};
 use super::{CHECKSUM_TYPE_VERSION, COLUMN_FLAG_DEFERRED, COLUMN_FLAG_RANGE, K_BYTE_COUNT_MASK};
 
 fn rstr(s: &str) -> Vec<u8> {
-    let mut out = (s.len() as u32).to_le_bytes().to_vec();
+    let mut out = u32::saturating_from(s.len()).to_le_bytes().to_vec();
     out.extend_from_slice(s.as_bytes());
     out
 }
 
 pub(super) fn envelope(type_id: u16, payload: &[u8]) -> Vec<u8> {
     let length = (8 + payload.len() + 8) as u64;
-    let word = (type_id as u64) | (length << 16);
+    let word = u64::from(type_id) | (length << 16);
     let mut out = word.to_le_bytes().to_vec();
     out.extend_from_slice(payload);
     let checksum = xxhash_rust::xxh3::xxh3_64(&out);
@@ -22,7 +23,7 @@ pub(super) fn envelope(type_id: u16, payload: &[u8]) -> Vec<u8> {
 }
 
 pub(super) fn record_frame(payload: &[u8]) -> Vec<u8> {
-    let size = (8 + payload.len()) as i64;
+    let size = i64::saturating_from(8 + payload.len());
     let mut out = size.to_le_bytes().to_vec();
     out.extend_from_slice(payload);
     out
@@ -30,9 +31,9 @@ pub(super) fn record_frame(payload: &[u8]) -> Vec<u8> {
 
 pub(super) fn list_frame(items: &[Vec<u8>]) -> Vec<u8> {
     let body_len: usize = items.iter().map(|i| i.len()).sum();
-    let size = (8 + 4 + body_len) as i64;
+    let size = i64::saturating_from(8 + 4 + body_len);
     let mut out = (-size).to_le_bytes().to_vec();
-    out.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    out.extend_from_slice(&u32::saturating_from(items.len()).to_le_bytes());
     for item in items {
         out.extend_from_slice(item);
     }
@@ -179,22 +180,22 @@ pub(super) fn build_page_list_offsets(
 
     let mut summary = Vec::new();
     summary.extend_from_slice(&0u64.to_le_bytes()); // first entry
-    summary.extend_from_slice(&(n_entries as u64).to_le_bytes()); // num entries (flags=0)
+    summary.extend_from_slice(&u64::from(n_entries).to_le_bytes()); // num entries (flags=0)
     p.extend_from_slice(&list_frame(&[record_frame(&summary)]));
 
     let mut column_frames: Vec<Vec<u8>> = Vec::with_capacity(cols.len());
     for (i, c) in cols.iter().enumerate() {
         check_page_limits(c.n, disk_sizes[i])?;
         let mut page = Vec::new();
-        page.extend_from_slice(&(c.n as i32).to_le_bytes()); // positive: no checksum
-        page.extend_from_slice(&(disk_sizes[i] as i32).to_le_bytes()); // on-disk locator size
+        page.extend_from_slice(&(c.n).cast_signed().to_le_bytes()); // positive: no checksum
+        page.extend_from_slice(&i32::saturating_from(disk_sizes[i]).to_le_bytes()); // on-disk locator size
         page.extend_from_slice(&(page_offsets[i] as u64).to_le_bytes()); // locator offset
         let mut body = Vec::new();
         body.extend_from_slice(&1u32.to_le_bytes()); // one page
         body.extend_from_slice(&page);
         body.extend_from_slice(&element_offsets[i].to_le_bytes()); // element offset
         body.extend_from_slice(&compression.to_le_bytes()); // compression settings
-        let size = (8 + body.len()) as i64;
+        let size = i64::saturating_from(8 + body.len());
         let mut frame = (-size).to_le_bytes().to_vec();
         frame.extend_from_slice(&body);
         column_frames.push(frame);
@@ -261,10 +262,10 @@ pub(super) fn build_footer_ext(
     // envelope that details all clusters' pages.
     let mut cg = Vec::new();
     cg.extend_from_slice(&0u64.to_le_bytes()); // min entry
-    cg.extend_from_slice(&(n_entries as u64).to_le_bytes()); // entry span
+    cg.extend_from_slice(&u64::from(n_entries).to_le_bytes()); // entry span
     cg.extend_from_slice(&num_clusters.to_le_bytes()); // num clusters
     cg.extend_from_slice(&(page_list_len as u64).to_le_bytes()); // envelope link: uncompressed len
-    cg.extend_from_slice(&(page_list_len as i32).to_le_bytes()); // locator size
+    cg.extend_from_slice(&i32::saturating_from(page_list_len).to_le_bytes()); // locator size
     cg.extend_from_slice(&(page_list_offset as u64).to_le_bytes()); // locator offset
     p.extend_from_slice(&list_frame(&[record_frame(&cg)]));
 

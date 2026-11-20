@@ -8,6 +8,7 @@ use oxiroot::hist::{
 use oxiroot::ntuple::{FieldValues, NtupleReader};
 use oxiroot::tree::{BranchValues, TreeReader};
 use oxiroot::{FileReader, Value};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 use crate::json::Json;
 use crate::util::{CmdResult, Kind, Table, classify, locate_class, parse_spec, split_obj};
@@ -234,7 +235,7 @@ fn dump_tree(
         None => TreeReader::open(file, name)?,
         Some(dir) => TreeReader::open_in(file, dir, name)?,
     };
-    let n = args.entries.min(tree.num_entries() as usize);
+    let n = args.entries.min(usize::saturating_from(tree.num_entries()));
     let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
@@ -245,8 +246,8 @@ fn dump_tree(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.num_entries() as i64)),
-            ("showing", Json::Int(n as i64)),
+            ("entries", Json::Int(tree.num_entries().cast_signed())),
+            ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
                 Json::Array(cols.iter().map(|(c, _)| Json::s(c.clone())).collect()),
@@ -277,7 +278,9 @@ fn dump_rntuple(
         None => NtupleReader::open(file, name)?,
         Some(dir) => NtupleReader::open_in(file, dir, name)?,
     };
-    let n = args.entries.min(ntuple.num_entries() as usize);
+    let n = args
+        .entries
+        .min(usize::saturating_from(ntuple.num_entries()));
     let selected = select(&args.branches, ntuple.field_names());
     // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
@@ -289,8 +292,8 @@ fn dump_rntuple(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.num_entries() as i64)),
-            ("showing", Json::Int(n as i64)),
+            ("entries", Json::Int(ntuple.num_entries().cast_signed())),
+            ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
                 Json::Array(cols.iter().map(|(c, _)| Json::s(c.clone())).collect()),
@@ -423,8 +426,8 @@ fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TH2")),
-            ("bins_x", Json::Int(nx as i64)),
-            ("bins_y", Json::Int(ny as i64)),
+            ("bins_x", Json::Int(i64::saturating_from(nx))),
+            ("bins_y", Json::Int(i64::saturating_from(ny))),
             ("entries", Json::F64(hist.entries())),
             ("integral", Json::F64(hist.integral())),
             ("mean_x", Json::F64(hist.mean_x())),
@@ -454,9 +457,9 @@ fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TH3")),
-            ("bins_x", Json::Int(nx as i64)),
-            ("bins_y", Json::Int(ny as i64)),
-            ("bins_z", Json::Int(nz as i64)),
+            ("bins_x", Json::Int(i64::saturating_from(nx))),
+            ("bins_y", Json::Int(i64::saturating_from(ny))),
+            ("bins_z", Json::Int(i64::saturating_from(nz))),
             ("entries", Json::F64(hist.entries())),
             ("integral", Json::F64(hist.integral())),
             ("mean_x", Json::F64(hist.mean_x())),
@@ -641,7 +644,7 @@ fn branch_json(values: &BranchValues, i: usize) -> Json {
         I32(v) => opt(v.get(i), int),
         U32(v) => opt(v.get(i), int),
         I64(v) => opt(v.get(i), int),
-        U64(v) => opt(v.get(i), |x| Json::Int(*x as i64)),
+        U64(v) => opt(v.get(i), |x| Json::Int((*x).cast_signed())),
         F32(v) => opt(v.get(i), float),
         F64(v) => opt(v.get(i), float),
         Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
@@ -653,7 +656,7 @@ fn branch_json(values: &BranchValues, i: usize) -> Json {
         VecI32(v) => arr(v.get(i), int),
         VecU32(v) => arr(v.get(i), int),
         VecI64(v) => arr(v.get(i), int),
-        VecU64(v) => arr(v.get(i), |x| Json::Int(*x as i64)),
+        VecU64(v) => arr(v.get(i), |x| Json::Int((*x).cast_signed())),
         VecF32(v) => arr(v.get(i), float),
         VecF64(v) => arr(v.get(i), float),
         VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
@@ -674,7 +677,7 @@ fn field_json(values: &FieldValues, i: usize) -> Json {
         I32(v) => opt(v.get(i), int),
         U32(v) => opt(v.get(i), int),
         I64(v) => opt(v.get(i), int),
-        U64(v) => opt(v.get(i), |x| Json::Int(*x as i64)),
+        U64(v) => opt(v.get(i), |x| Json::Int((*x).cast_signed())),
         F32(v) => opt(v.get(i), float),
         F64(v) => opt(v.get(i), float),
         Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
@@ -686,7 +689,7 @@ fn field_json(values: &FieldValues, i: usize) -> Json {
         VecI32(v) => arr(v.get(i), int),
         VecU32(v) => arr(v.get(i), int),
         VecI64(v) => arr(v.get(i), int),
-        VecU64(v) => arr(v.get(i), |x| Json::Int(*x as i64)),
+        VecU64(v) => arr(v.get(i), |x| Json::Int((*x).cast_signed())),
         VecF32(v) => arr(v.get(i), float),
         VecF64(v) => arr(v.get(i), float),
         VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
@@ -724,6 +727,10 @@ fn list_cell<T: ToString>(rows: &[Vec<T>], i: usize) -> String {
 
 /// Format a float compactly: integers without a fraction, otherwise up to six
 /// decimals with trailing zeros trimmed.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a whole number below 1e15: exact as an i64"
+)]
 fn num(x: f64) -> String {
     if x == 0.0 {
         return "0".to_string();

@@ -5,6 +5,7 @@
 //! an index column with a char column, and `std::vector<T>` combines an index
 //! column with the element field's column.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
 use crate::page::ColumnValues;
@@ -195,7 +196,7 @@ impl FieldValues {
             // holds the flattened items, so keep only those the first `n`
             // entries span.
             Nested { offsets, items } => {
-                let items_len = offsets.get(n).map_or(0, |&o| o as usize);
+                let items_len = offsets.get(n).map_or(0, |&o| usize::saturating_from(o));
                 offsets.truncate(n + 1);
                 items.truncate(items_len);
             }
@@ -370,7 +371,7 @@ pub(crate) fn strings(offsets: &[u64], bytes: &[u8]) -> Result<FieldValues> {
     let mut start = 0usize;
     let mut out = Vec::with_capacity(offsets.len());
     for &end in offsets {
-        let end = end as usize;
+        let end = usize::saturating_from(end);
         let slice = bytes
             .get(start..end)
             .ok_or_else(|| Error::Format("string offset out of range".into()))?;
@@ -454,7 +455,7 @@ fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
     let mut start = 0usize;
     let mut out = Vec::with_capacity(offsets.len());
     for &end in offsets {
-        let end = end as usize;
+        let end = usize::saturating_from(end);
         let slice = data
             .get(start..end)
             .ok_or_else(|| Error::Format("collection offset out of range".into()))?;

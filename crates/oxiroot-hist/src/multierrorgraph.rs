@@ -12,6 +12,7 @@
 //! Note: uproot cannot decode the memberwise attribute vectors, so this class is
 //! cross-checked against compiled ROOT C++ only.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, read_named, skip_versioned};
 
 use crate::base::{check_len, object_bytes_any};
@@ -116,10 +117,10 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
 /// `TArrayD` (`fN` + `fN` doubles) per layer.
 fn read_vector_tarrayd(r: &mut RBuffer) -> Result<Vec<Vec<f64>>> {
     let v = r.read_version()?;
-    let count = r.be_i32()?.max(0) as usize;
+    let count = usize::saturating_from(r.be_i32()?.max(0));
     let mut layers = Vec::with_capacity(count);
     for _ in 0..count {
-        let fnn = r.be_i32()?.max(0) as usize;
+        let fnn = usize::saturating_from(r.be_i32()?.max(0));
         let arr: Vec<f64> = (0..fnn).map(|_| r.be_f64()).collect::<Result<_>>()?;
         layers.push(arr);
     }
@@ -144,7 +145,7 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<Mu
     skip_versioned(&mut r)?; // TAttLine
     skip_versioned(&mut r)?; // TAttFill
     skip_versioned(&mut r)?; // TAttMarker
-    let npoints = r.be_i32()?.max(0) as usize;
+    let npoints = usize::saturating_from(r.be_i32()?.max(0));
     let x = read_basic_array(&mut r, npoints)?;
     let y = read_basic_array(&mut r, npoints)?;
     if let Some(end) = base.end {

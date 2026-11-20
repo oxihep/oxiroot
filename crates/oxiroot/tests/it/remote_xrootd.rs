@@ -10,6 +10,7 @@
 //! live tests below, which read a real 966 MB sample without fetching it whole.
 #![cfg(feature = "xrootd")]
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -100,13 +101,14 @@ fn readv_reply(list: &[u8], data: &[u8], mode: Mode) -> Vec<u8> {
     let mut out = Vec::new();
     let n = list.len() / 16;
     for (k, el) in list.as_chunks::<16>().0.iter().enumerate() {
-        let rlen = i32::from_be_bytes(el[4..8].try_into().unwrap()).max(0) as usize;
-        let offset = i64::from_be_bytes(el[8..16].try_into().unwrap()).max(0) as usize;
+        let rlen = usize::saturating_from(i32::from_be_bytes(el[4..8].try_into().unwrap()).max(0));
+        let offset =
+            usize::saturating_from(i64::from_be_bytes(el[8..16].try_into().unwrap()).max(0));
         let end = (offset + rlen).min(data.len());
         let mut chunk = data.get(offset..end).unwrap_or(&[]).to_vec();
         let mut head = el.to_vec();
         if matches!(mode, Mode::ReadvWrongOffset) {
-            head[8..16].copy_from_slice(&((offset + 1) as i64).to_be_bytes());
+            head[8..16].copy_from_slice(&i64::saturating_from(offset + 1).to_be_bytes());
         }
         if matches!(mode, Mode::ReadvTruncated) && k + 1 == n {
             chunk.truncate(chunk.len() / 2);
@@ -124,7 +126,7 @@ fn reply(stream: &mut TcpStream, streamid: [u8; 2], status: u16, payload: &[u8])
     let mut msg = Vec::with_capacity(8 + payload.len());
     msg.extend_from_slice(&streamid);
     msg.extend_from_slice(&status.to_be_bytes());
-    msg.extend_from_slice(&(payload.len() as i32).to_be_bytes());
+    msg.extend_from_slice(&i32::saturating_from(payload.len()).to_be_bytes());
     msg.extend_from_slice(payload);
     stream.write_all(&msg).is_ok()
 }
@@ -151,7 +153,9 @@ fn handle(mut stream: TcpStream, data: &[u8], mode: Mode, counts: &Counts) {
         let streamid = [head[0], head[1]];
         let reqid = u16::from_be_bytes([head[2], head[3]]);
         let body = &head[4..20];
-        let dlen = i32::from_be_bytes([head[20], head[21], head[22], head[23]]).max(0) as usize;
+        let dlen = usize::saturating_from(
+            i32::from_be_bytes([head[20], head[21], head[22], head[23]]).max(0),
+        );
         let mut reqdata = vec![0u8; dlen];
         if stream.read_exact(&mut reqdata).is_err() {
             return;
@@ -185,8 +189,11 @@ fn handle(mut stream: TcpStream, data: &[u8], mode: Mode, counts: &Counts) {
             KXR_READ => {
                 counts.reads.fetch_add(1, Ordering::Relaxed);
                 // Body: fhandle[4] + offset(i64) + rlen(i32).
-                let offset = i64::from_be_bytes(body[4..12].try_into().unwrap()) as usize;
-                let rlen = i32::from_be_bytes(body[12..16].try_into().unwrap()).max(0) as usize;
+                let offset =
+                    usize::saturating_from(i64::from_be_bytes(body[4..12].try_into().unwrap()));
+                let rlen = usize::saturating_from(
+                    i32::from_be_bytes(body[12..16].try_into().unwrap()).max(0),
+                );
                 let end = (offset + rlen).min(data.len());
                 let chunk = data.get(offset..end).unwrap_or(&[]);
                 // The file header and key list are read before any data, and
@@ -200,7 +207,7 @@ fn handle(mut stream: TcpStream, data: &[u8], mode: Mode, counts: &Counts) {
                         let mut msg = Vec::new();
                         msg.extend_from_slice(&streamid);
                         msg.extend_from_slice(&KXR_OK.to_be_bytes());
-                        msg.extend_from_slice(&(chunk.len() as i32).to_be_bytes());
+                        msg.extend_from_slice(&i32::saturating_from(chunk.len()).to_be_bytes());
                         msg.extend_from_slice(&chunk[..chunk.len() / 2]);
                         let _ = stream.write_all(&msg);
                         return; // hang up

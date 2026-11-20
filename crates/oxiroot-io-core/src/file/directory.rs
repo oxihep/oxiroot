@@ -10,6 +10,7 @@ use super::header::FileHeader;
 use super::key::Key;
 use super::source::ByteSource;
 use crate::buffer::RBuffer;
+use crate::cast::SaturatingFrom;
 use crate::error::Result;
 
 /// Directory version above which seek pointers are 64-bit.
@@ -51,7 +52,7 @@ impl Directory {
         // The directory record's fixed header is at most `DIR_RECORD_MAX` bytes;
         // fetch that window (clamped to the file) and parse it standalone.
         let avail = source.len().saturating_sub(offset);
-        let win = source.read_at(offset, DIR_RECORD_MAX.min(avail as usize))?;
+        let win = source.read_at(offset, DIR_RECORD_MAX.min(usize::saturating_from(avail)))?;
         let mut r = RBuffer::new(&win);
 
         let version = r.be_i16()?;
@@ -62,7 +63,11 @@ impl Directory {
         let (seek_dir, seek_parent, seek_keys) = if version > DIR_BIG_VERSION {
             (r.be_u64()?, r.be_u64()?, r.be_u64()?)
         } else {
-            (r.be_u32()? as u64, r.be_u32()? as u64, r.be_u32()? as u64)
+            (
+                u64::from(r.be_u32()?),
+                u64::from(r.be_u32()?),
+                u64::from(r.be_u32()?),
+            )
         };
 
         let keys = read_keys(source, seek_keys, nbytes_keys)?;
@@ -82,7 +87,7 @@ impl Directory {
 
     /// Read the root directory of a file (located at `begin + nbytes_name`).
     pub fn read_root(source: &dyn ByteSource, header: &FileHeader) -> Result<Directory> {
-        Self::read(source, header.begin + header.nbytes_name as u64)
+        Self::read(source, header.begin + u64::from(header.nbytes_name))
     }
 }
 
@@ -97,16 +102,16 @@ fn read_keys(source: &dyn ByteSource, seek_keys: u64, nbytes_keys: i32) -> Resul
     // Trust `fNbytesKeys` when present; otherwise fall back to the rest of the
     // file so a zero/negative count still reads (key lists are small).
     let want = if nbytes_keys > 0 {
-        (nbytes_keys as u64).min(avail)
+        u64::saturating_from(nbytes_keys).min(avail)
     } else {
         avail
     };
-    let win = source.read_at(seek_keys, want as usize)?;
+    let win = source.read_at(seek_keys, usize::saturating_from(want))?;
     let mut r = RBuffer::new(&win);
 
     // The record at `seek_keys` is itself a Key; its payload is the key list.
     let _wrapper = Key::read(&mut r)?;
-    let nkeys = r.be_i32()?.max(0) as usize;
+    let nkeys = usize::saturating_from(r.be_i32()?.max(0));
 
     let mut keys = Vec::with_capacity(nkeys.min(r.remaining()));
     for _ in 0..nkeys {

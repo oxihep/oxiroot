@@ -642,3 +642,21 @@ impl SubdirWriter {
         }
     }
 }
+
+impl std::fmt::Debug for FileWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileWriter")
+            .field("path", &self.path)
+            .field("purge", &self.purge)
+            .field("compact", &self.compact)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for SubdirWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubdirWriter")
+            .field("subdirs", &self.dirs.len())
+            .finish_non_exhaustive()
+    }
+}

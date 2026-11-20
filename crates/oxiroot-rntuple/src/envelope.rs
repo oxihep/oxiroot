@@ -4,6 +4,7 @@
 //! 48-bit uncompressed length (high bits), followed by the payload and a
 //! trailing XXH3-64 checksum over everything before it.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, RBuffer, Result};
 
 /// Schema (fields, columns) envelope.
@@ -76,7 +77,7 @@ pub fn read_frame(r: &mut RBuffer) -> Result<Frame> {
     let start = r.pos();
     let raw = r.le_i64()?;
     let is_list = raw < 0;
-    let size = raw.unsigned_abs() as usize;
+    let size = usize::saturating_from(raw.unsigned_abs());
     if size < 8 {
         return Err(Error::Format(format!("frame size {size} too small")));
     }
@@ -115,7 +116,7 @@ pub fn read_locator(r: &mut RBuffer) -> Result<Locator> {
     }
     let offset = r.le_u64()?;
     Ok(Locator {
-        size: size as u32,
+        size: size.cast_unsigned(),
         offset,
     })
 }

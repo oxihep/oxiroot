@@ -1,6 +1,7 @@
 //! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, Result, decompress_payload, find_key};
 
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
@@ -111,7 +112,7 @@ impl NtupleReader {
             let blob = read_blob(
                 file,
                 group.page_list.offset,
-                group.page_list.size as u64,
+                u64::from(group.page_list.size),
                 group.page_list_len,
                 "page list",
             )?;
@@ -308,7 +309,7 @@ impl NtupleReader {
         // fall back to the full read (then truncate) to stay exact.
         let deferred_past_view = self.header.columns.iter().any(|c| {
             c.first_element_index
-                .is_some_and(|f| f as u64 > view_entries)
+                .is_some_and(|f| f.cast_unsigned() > view_entries)
         });
 
         let mut values = if deferred_past_view {
@@ -361,7 +362,7 @@ impl NtupleReader {
                 })?;
                 self.read_field_tree(file, child)?
             };
-            return field::chunk(flat, rep as usize);
+            return field::chunk(flat, usize::saturating_from(rep));
         }
 
         match fld.struct_role {
@@ -635,9 +636,17 @@ const MAX_ELEMENTS_PER_ENTRY: u64 = 1 << 16;
 
 fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let win = file
-        .read_at(seek, nbytes as usize)
+        .read_at(seek, usize::saturating_from(nbytes))
         .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
-    decompress_payload(&win, len as usize, what)
+    decompress_payload(&win, usize::saturating_from(len), what)
+}
+
+impl std::fmt::Debug for NtupleReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NtupleReader")
+            .field("clusters", &self.summaries.len())
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]

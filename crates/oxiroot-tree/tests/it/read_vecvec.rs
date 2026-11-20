@@ -3,6 +3,7 @@
 //! inner vectors partitioned per entry by cumulative `offsets`. Cross-checked
 //! against ROOT C++ and uproot.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -78,6 +79,6 @@ fn nested_offsets_partition_entries() {
         panic!("expected i32 inner vectors");
     };
     // Entry 1 spans items[offsets[1]..offsets[2]].
-    let entry1 = &inner[offsets[1] as usize..offsets[2] as usize];
+    let entry1 = &inner[usize::saturating_from(offsets[1])..usize::saturating_from(offsets[2])];
     assert_eq!(entry1, &[vec![100], vec![110, 111]]);
 }

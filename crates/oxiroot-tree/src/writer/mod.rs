@@ -8,6 +8,7 @@
 //! this crate. The embedded `TStreamerInfo` ([`crate::streamer_gen`]) makes the
 //! file self-describing.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
@@ -226,7 +227,7 @@ impl WriteInto for Tree {
 /// A representative `TLeafC` string value whose length yields `fLen` = `len`
 /// (longest string + 1), used for a streamed string column's leaf metadata.
 fn str_rep(len: i32) -> BranchValues {
-    let n = (len - 1).max(0) as usize;
+    let n = usize::saturating_from(len - 1);
     BranchValues::Str(vec!["\0".repeat(n)])
 }
 
@@ -339,6 +340,15 @@ fn write_tree_records<W: Write + Seek>(
     Ok(())
 }
 
+impl std::fmt::Debug for Tree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tree")
+            .field("name", &self.name)
+            .field("branches", &self.branches.len())
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,6 +370,10 @@ mod tests {
     /// Each leaf's `(name, fIsRange, fMaximum)`, as a generic reader sees them.
     fn leaf_ranges(bytes: Vec<u8>) -> Vec<(String, bool, i64)> {
         use oxiroot_io_core::Value;
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a leaf's fMaximum: a whole number read as a double"
+        )]
         fn walk(v: &Value, out: &mut Vec<(String, bool, i64)>) {
             // A branch's leaf list points back at the leaves the tree holds, so
             // only the object itself carries the members; a reference to it does

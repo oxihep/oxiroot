@@ -8,6 +8,7 @@
 //! stride is `2^Σ_{e<d} bits[e]`), packed big-endian into
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{FileReader, RBuffer, Result, read_named, read_object_base};
 
 use crate::axis::Axis;
@@ -122,7 +123,7 @@ impl SparseHist {
             .axes
             .iter()
             .zip(coords)
-            .map(|(ax, &x)| ax.find_bin(x) as i32)
+            .map(|(ax, &x)| i32::saturating_from(ax.find_bin(x)))
             .collect();
         self.entries += 1.0;
         match self.cell(&bins) {
@@ -144,7 +145,7 @@ impl SparseHist {
         self.axes
             .iter()
             .map(|ax| {
-                let cells = (ax.nbins.max(0) + 2) as u32;
+                let cells = (ax.nbins.max(0) + 2).cast_unsigned();
                 u32::BITS - cells.leading_zeros()
             })
             .collect()
@@ -155,13 +156,18 @@ impl SparseHist {
         let mut coord = 0u64;
         let mut shift = 0u32;
         for (&b, &nb) in bins.iter().zip(bits) {
-            coord |= (b as u64) << shift;
+            coord |= u64::saturating_from(b) << shift;
             shift += nb;
         }
         coord
     }
 
     /// Unpack a compact global coordinate into per-axis bins.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "a masked bit field of a packed coordinate"
+    )]
     fn unpack(&self, mut coord: u64, bits: &[u32]) -> Vec<i32> {
         bits.iter()
             .map(|&nb| {
@@ -179,7 +185,7 @@ impl SparseHist {
         let thnbase = r.read_version()?; // THnBase v1
 
         let named = read_named(r)?;
-        let ndim = r.be_i32()? as usize;
+        let ndim = usize::saturating_from(r.be_i32()?);
         let axes = read_axis_array(r)?;
         let entries = r.be_f64()?;
         let tsumw = r.be_f64()?;
@@ -225,11 +231,11 @@ impl SparseHist {
 /// Consume an object-pointer header (`{byte count}{class tag}`), leaving the
 /// cursor at the object body. Returns `false` for a null pointer.
 fn enter_object(r: &mut RBuffer) -> Result<bool> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     if bc == 0 {
         return Ok(false); // null pointer
     }
-    let tag = r.be_i32()? as u32;
+    let tag = r.be_i32()?.cast_unsigned();
     if tag == 0xFFFF_FFFF {
         while r.u8()? != 0 {} // kNewClassTag: NUL-terminated class name
     }
@@ -241,7 +247,7 @@ fn read_objarray_len(r: &mut RBuffer) -> Result<usize> {
     let _oa = r.read_version()?; // TObjArray version 3
     read_object_base(r)?;
     let _name = r.string()?;
-    let size = r.be_i32()? as usize;
+    let size = usize::saturating_from(r.be_i32()?);
     let _lower_bound = r.be_i32()?;
     Ok(size)
 }
@@ -268,8 +274,8 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
         }
         let _chunk = r.read_version()?; // THnSparseArrayChunk v1
         read_object_base(r)?;
-        let single = r.be_i32()? as usize; // fSingleCoordinateSize
-        let coords_size = r.be_i32()? as usize; // fCoordinatesSize
+        let single = usize::saturating_from(r.be_i32()?); // fSingleCoordinateSize
+        let coords_size = usize::saturating_from(r.be_i32()?); // fCoordinatesSize
         let _marker = r.u8()?; // char* presence flag
         let coords = r.bytes(coords_size)?.to_vec();
         // fContent: a TArrayD* of the contents (sized to the chunk capacity).
@@ -286,7 +292,7 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
         for i in 0..n_filled {
             let mut c = 0u64;
             for b in &coords[i * single..(i + 1) * single] {
-                c = (c << 8) | *b as u64; // big-endian
+                c = (c << 8) | u64::from(*b); // big-endian
             }
             out.push((c, content.get(i).copied().unwrap_or(0.0)));
         }
@@ -320,6 +326,10 @@ mod index_tests {
     /// The cell index gives the same cells and contents as counting by hand,
     /// and notices cells removed from `bins` directly.
     #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "bin coordinates, whole numbers within the axis"
+    )]
     fn indexed_fill_matches_a_plain_count() {
         let mut h = SparseHist::new(&[(50, 0.0, 50.0), (50, 0.0, 50.0), (4, 0.0, 4.0)]);
         let mut expect: std::collections::HashMap<Vec<i32>, f64> = Default::default();

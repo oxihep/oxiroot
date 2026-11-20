@@ -9,6 +9,7 @@
 //! (and the page locators) point to; only the anchor is a `Key`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
@@ -181,18 +182,18 @@ fn prep_ntuple_extended(
                 field.name
             )));
         }
-        if *first_entry + late_n as u64 != u64::from(n_entries) {
+        if *first_entry + u64::from(late_n) != u64::from(n_entries) {
             return Err(Error::LengthMismatch {
                 what: format!(
                     "late RNTuple field {:?}, from entry {first_entry}",
                     field.name
                 ),
-                expected: u64::from(n_entries).saturating_sub(*first_entry) as usize,
+                expected: usize::saturating_from(u64::from(n_entries).saturating_sub(*first_entry)),
                 found: late_n as usize,
             });
         }
         // Continue the schema's field/column IDs past everything added so far.
-        let id_base = (base_fields_plan.len() + ext_fields.len()) as u32;
+        let id_base = u32::saturating_from(base_fields_plan.len() + ext_fields.len());
         for f in &mut late_fp {
             f.parent_id += id_base;
         }
@@ -200,8 +201,8 @@ fn prep_ntuple_extended(
             c.field_id += id_base;
         }
         ext_fields.append(&mut late_fp);
-        first_entries.push(*first_entry as i64);
-        element_offsets.push(*first_entry as i64);
+        first_entries.push((*first_entry).cast_signed());
+        element_offsets.push((*first_entry).cast_signed());
         cols.append(&mut late_cols);
     }
 
@@ -462,6 +463,15 @@ impl WriteInto for Ntuple {
             .into_iter()
             .map(Cls::into_owned)
             .collect()
+    }
+}
+
+impl std::fmt::Debug for Ntuple {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ntuple")
+            .field("name", &self.name)
+            .field("fields", &self.fields.len())
+            .finish_non_exhaustive()
     }
 }
 

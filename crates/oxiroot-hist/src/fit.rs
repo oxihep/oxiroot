@@ -25,6 +25,7 @@ use crate::graph::{Graph, GraphErrors};
 use crate::hist1d::Hist1D;
 use crate::hist2d::Hist2D;
 use crate::hist3d::Hist3D;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Each in-range bin becomes a point at its `(x, y)` center with its content
 /// and error (ROOT's global bin `ix + (nx + 2)·iy`, flow excluded).
@@ -34,8 +35,8 @@ impl FitDataNd for Hist2D {
     }
     fn points_nd(&self) -> Vec<PointNd> {
         let (nx, ny) = (
-            self.xaxis.nbins.max(0) as usize,
-            self.yaxis.nbins.max(0) as usize,
+            usize::saturating_from(self.xaxis.nbins.max(0)),
+            usize::saturating_from(self.yaxis.nbins.max(0)),
         );
         let mut out = Vec::with_capacity(nx * ny);
         for iy in 1..=ny {
@@ -58,9 +59,9 @@ impl FitDataNd for Hist3D {
     }
     fn points_nd(&self) -> Vec<PointNd> {
         let (nx, ny, nz) = (
-            self.xaxis.nbins.max(0) as usize,
-            self.yaxis.nbins.max(0) as usize,
-            self.zaxis.nbins.max(0) as usize,
+            usize::saturating_from(self.xaxis.nbins.max(0)),
+            usize::saturating_from(self.yaxis.nbins.max(0)),
+            usize::saturating_from(self.zaxis.nbins.max(0)),
         );
         let (sx, sy) = (nx + 2, ny + 2);
         let mut out = Vec::with_capacity(nx * ny * nz);
@@ -87,7 +88,7 @@ impl FitDataNd for Hist3D {
 /// keep it.
 impl FitData for Hist1D {
     fn points(&self) -> Vec<Point> {
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         (1..=n)
             .map(|i| {
                 let y = self.contents.get(i).copied().unwrap_or(0.0);

@@ -17,6 +17,7 @@
 //!
 //! [`FileReader`]: super::reader::FileReader
 
+use crate::cast::SaturatingFrom;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
@@ -183,7 +184,7 @@ impl Conn {
         hdr.extend_from_slice(&self.stream_id.to_be_bytes());
         hdr.extend_from_slice(&reqid.to_be_bytes());
         hdr.extend_from_slice(&body);
-        hdr.extend_from_slice(&(data.len() as i32).to_be_bytes());
+        hdr.extend_from_slice(&i32::saturating_from(data.len()).to_be_bytes());
         hdr.extend_from_slice(data);
         self.stream
             .write_all(&hdr)
@@ -202,7 +203,9 @@ impl Conn {
             let mut head = [0u8; 8];
             self.read_exact(&mut head)?;
             let status = u16::from_be_bytes([head[2], head[3]]);
-            let dlen = i32::from_be_bytes([head[4], head[5], head[6], head[7]]).max(0) as usize;
+            let dlen = usize::saturating_from(
+                i32::from_be_bytes([head[4], head[5], head[6], head[7]]).max(0),
+            );
             if payload.len() + dlen > max_len {
                 return Err(protocol_err(format!(
                     "root://: response of {} bytes exceeds the {max_len} this request allows",
@@ -309,7 +312,9 @@ impl Conn {
             KXR_WAIT => {
                 let secs = payload
                     .get(0..4)
-                    .map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]).max(0) as u64)
+                    .map(|b| {
+                        u64::saturating_from(i32::from_be_bytes([b[0], b[1], b[2], b[3]]).max(0))
+                    })
                     .unwrap_or(1)
                     .min(10);
                 std::thread::sleep(Duration::from_secs(secs));
@@ -340,8 +345,8 @@ impl Conn {
         // Body: fhandle[4] + offset(i64) + rlen(i32).
         let mut body = [0u8; 16];
         body[0..4].copy_from_slice(&self.fhandle);
-        body[4..12].copy_from_slice(&(offset as i64).to_be_bytes());
-        body[12..16].copy_from_slice(&(len as i32).to_be_bytes());
+        body[4..12].copy_from_slice(&(offset).cast_signed().to_be_bytes());
+        body[12..16].copy_from_slice(&i32::saturating_from(len).to_be_bytes());
         let (status, payload) = self.request(KXR_READ, body, &[], len)?;
         if status != KXR_OK {
             return Err(server_error("reading", status, &payload));
@@ -374,8 +379,8 @@ impl Conn {
             let mut list = Vec::with_capacity(chunk.len() * READV_ELEMENT);
             for &(_, offset, len) in chunk {
                 list.extend_from_slice(&self.fhandle);
-                list.extend_from_slice(&(len as i32).to_be_bytes());
-                list.extend_from_slice(&(offset as i64).to_be_bytes());
+                list.extend_from_slice(&i32::saturating_from(len).to_be_bytes());
+                list.extend_from_slice(&(offset).cast_signed().to_be_bytes());
             }
             let expected: usize = chunk.iter().map(|&(_, _, l)| READV_ELEMENT + l).sum();
             let (status, payload) = self.request(KXR_READV, [0u8; 16], &list, expected)?;
@@ -389,7 +394,7 @@ impl Conn {
                 })?;
                 let rlen = i32::from_be_bytes([head[4], head[5], head[6], head[7]]);
                 let roff = i64::from_be_bytes(head[8..16].try_into().expect("8 bytes"));
-                if rlen < 0 || rlen as usize != len || roff != offset as i64 {
+                if rlen < 0 || usize::saturating_from(rlen) != len || roff != offset.cast_signed() {
                     return Err(protocol_err(format!(
                         "root://: vector read returned {rlen} bytes at {roff} for {len} at {offset}"
                     )));
@@ -474,7 +479,7 @@ impl ByteSource for XrootdSource {
             .filter(|&e| e <= self.size)
             .ok_or_else(|| Error::UnexpectedEof {
                 needed: len,
-                available: self.size.saturating_sub(offset) as usize,
+                available: usize::saturating_from(self.size.saturating_sub(offset)),
             })?;
         // One request/response at a time keeps the shared stream in step.
         let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -488,7 +493,7 @@ impl ByteSource for XrootdSource {
                 .filter(|&e| e <= self.size)
                 .ok_or_else(|| Error::UnexpectedEof {
                     needed: len,
-                    available: self.size.saturating_sub(offset) as usize,
+                    available: usize::saturating_from(self.size.saturating_sub(offset)),
                 })?;
         }
         let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -540,7 +545,7 @@ fn parse_redirect(payload: &[u8]) -> Result<(String, u16, String)> {
             "root://: bad redirect to {rest:?}:{port}"
         )));
     }
-    Ok((host, port as u16, opaque.to_string()))
+    Ok((host, u16::saturating_from(port), opaque.to_string()))
 }
 
 /// Turn a `kXR_error`/unexpected status into an [`Error`]. The error payload is

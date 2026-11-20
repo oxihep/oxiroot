@@ -18,7 +18,7 @@ fn streams_multiple_clusters() {
     let mut expect_y = Vec::new();
     for cluster in 0..3i32 {
         let x: Vec<i32> = (0..4).map(|i| cluster * 100 + i).collect();
-        let y: Vec<f64> = (0..4).map(|i| (cluster * 4 + i) as f64 * 0.5).collect();
+        let y: Vec<f64> = (0..4).map(|i| f64::from(cluster * 4 + i) * 0.5).collect();
         expect_x.extend_from_slice(&x);
         expect_y.extend_from_slice(&y);
         w.write_batch(&[

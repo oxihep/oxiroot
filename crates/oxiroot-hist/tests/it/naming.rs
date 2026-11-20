@@ -8,7 +8,7 @@ use oxiroot_io_core::{Error, FileReader};
 fn filled(name: &str) -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named(name);
     for b in 0..4 {
-        h.fill(b as f64 + 0.5);
+        h.fill(f64::from(b) + 0.5);
     }
     h
 }

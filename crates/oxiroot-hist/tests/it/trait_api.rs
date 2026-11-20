@@ -16,7 +16,7 @@ fn sample() -> Hist1D {
         .titled("title");
     h.sumw2();
     for i in 0..10 {
-        h.fill_weight(i as f64 + 0.5, (i + 1) as f64);
+        h.fill_weight(f64::from(i) + 0.5, f64::from(i + 1));
     }
     h
 }

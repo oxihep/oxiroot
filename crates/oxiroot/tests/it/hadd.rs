@@ -1,6 +1,7 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
 use oxiroot::hadd::{MergeKind, Merger, merge_files};
 use oxiroot::prelude::*;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 fn tmp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("oxiroot_hadd_{name}.root"))
@@ -122,7 +123,9 @@ fn a_tree_merge_streams_one_batch_per_input() {
                     Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
                     Branch::jagged_f32(
                         "hits",
-                        (0..n).map(|x| vec![x as f32; x as usize]).collect(),
+                        (0..n)
+                            .map(|x| vec![x as f32; usize::saturating_from(x)])
+                            .collect(),
                     ),
                     Branch::strings("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
                     Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),

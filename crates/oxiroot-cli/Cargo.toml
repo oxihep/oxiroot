@@ -15,6 +15,7 @@ name = "oxroot"
 path = "src/main.rs"
 
 [dependencies]
+oxiroot-io-core = { workspace = true }
 oxiroot = { workspace = true }
 clap = { workspace = true }
 

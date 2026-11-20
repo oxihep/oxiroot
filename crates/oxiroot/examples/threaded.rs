@@ -30,7 +30,7 @@ fn main() {
 
     // Some data to fill, split across the available worker threads.
     let data: Vec<f64> = (0..1_000_000)
-        .map(|i| (i as f64 * 0.61803) % 100.0)
+        .map(|i| (f64::from(i) * 0.61803) % 100.0)
         .collect();
     let n_threads = std::thread::available_parallelism().map_or(4, |n| n.get());
 

@@ -230,3 +230,14 @@ pub fn object_bytes_any_keyed(file: &FileReader, name: &str) -> Result<(String, 
     let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
     Ok((key.class_name.clone(), object, key.key_len as usize))
 }
+
+impl std::fmt::Debug for ObjectRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ObjectRecord")
+            .field("class_name", &self.class_name)
+            .field("name", &self.name)
+            .field("title", &self.title)
+            .field("bytes", &self.object.len())
+            .finish_non_exhaustive()
+    }
+}

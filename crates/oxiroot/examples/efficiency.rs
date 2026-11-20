@@ -10,6 +10,7 @@
 //! ```
 
 use oxiroot::prelude::*;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run. Copied verbatim from the
@@ -25,6 +26,11 @@ impl XorShift64 {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a bin index inside the range"
+)]
 fn main() -> oxiroot::Result<()> {
     let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
 
@@ -53,9 +59,9 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Per-bin efficiency: the recovered turn-on curve. ----------------------
     // Bins are 1-based (bin 0 is underflow); the low edge of bin i is a stride in.
-    let stride = (pt_hi - pt_lo) / nbins as f64;
+    let stride = (pt_hi - pt_lo) / f64::from(nbins);
     println!("\n  bin   pT-center   passed/total     eff     truth");
-    for bin in 1..=nbins as usize {
+    for bin in 1..=usize::saturating_from(nbins) {
         let center = pt_lo + (bin as f64 - 0.5) * stride;
         // `passed`/`total` are the two embedded TH1D histograms; their `contents`
         // are 1-based too, so we can index by `bin` directly.

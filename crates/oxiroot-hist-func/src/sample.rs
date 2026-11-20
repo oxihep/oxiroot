@@ -39,8 +39,8 @@ mod tests {
             s += x;
             s2 += x * x;
         }
-        let mean = s / n as f64;
-        let std = (s2 / n as f64 - mean * mean).sqrt();
+        let mean = s / f64::from(n);
+        let std = (s2 / f64::from(n) - mean * mean).sqrt();
         assert!((mean - 3.0).abs() < 0.02, "mean {mean}");
         assert!((std - 0.8).abs() < 0.02, "std {std}");
     }

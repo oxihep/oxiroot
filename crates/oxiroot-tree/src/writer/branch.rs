@@ -1,6 +1,7 @@
 //! The branches a caller builds: [`Branch`] and its constructors, and the
 //! members of a split `std::vector<MyStruct>` branch ([`SplitMember`]).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::streamer_gen::{Cls, basic};
 use oxiroot_io_core::{Error, Result};
 
@@ -237,7 +238,7 @@ pub(super) fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
     use BranchValues::*;
     macro_rules! lens {
         ($r:expr_2021) => {
-            $r.iter().map(|x| x.len() as i32).collect()
+            $r.iter().map(|x| i32::saturating_from(x.len())).collect()
         };
     }
     match values {
@@ -286,8 +287,8 @@ pub(super) fn check_split_members(branch: &str, spec: &SplitSpec) -> Result<()> 
                     "branch {branch:?} split member {:?} in entry {entry}",
                     m.name
                 ),
-                expected: counts[entry] as usize,
-                found: other[entry] as usize,
+                expected: usize::saturating_from(counts[entry]),
+                found: usize::saturating_from(other[entry]),
             });
         }
     }
@@ -327,5 +328,21 @@ pub(super) fn split_class(spec: &SplitSpec) -> Cls<'_> {
                 basic(&m.name, ty, size, type_name)
             })
             .collect(),
+    }
+}
+
+impl std::fmt::Debug for Branch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Branch")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for SplitMember {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SplitMember")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
     }
 }

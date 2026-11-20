@@ -12,6 +12,7 @@
 //! directory records at the end. [`ContainerWriter::build`] runs a layout in
 //! memory and picks the form from the result's size.
 
+use crate::cast::SaturatingFrom;
 use std::borrow::Cow;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
@@ -189,7 +190,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         } else {
             FILE_VERSION
         });
-        w.be_u32(BEGIN as u32);
+        w.be_u32(u32::saturating_from(BEGIN));
         seek_value(&mut w, 0, big); // fEND
         seek_value(&mut w, 0, big); // fSeekFree
         w.be_u32(0); // fNbytesFree
@@ -210,8 +211,8 @@ impl<W: Write + Seek> ContainerWriter<W> {
         // does, so an append can later widen it in place.
         let key_len = key_len_fmt(TOP_DIR_CLASS, file_name, "", big);
         let name_title_len = (1 + file_name.len()) + 1;
-        let nbytes_name = key_len as u32 + name_title_len as u32;
-        let obj_len = name_title_len as u32 + dir_record_len(true);
+        let nbytes_name = u32::from(key_len) + u32::saturating_from(name_title_len);
+        let obj_len = u32::saturating_from(name_title_len) + dir_record_len(true);
         write_key_header_fmt(
             &mut w,
             TOP_DIR_CLASS,
@@ -624,7 +625,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         if self.big {
             self.patch(offset, &value.to_be_bytes())
         } else {
-            self.patch(offset, &(value as u32).to_be_bytes())
+            self.patch(offset, &u32::saturating_from(value).to_be_bytes())
         }
     }
 
@@ -735,7 +736,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         write_key_header_fmt(
             &mut w, d.class, &d.name, &d.title, obj_len, obj_len, seek, d.seek, 1, big,
         );
-        w.be_i32(d.keys.len() as i32);
+        w.be_i32(i32::saturating_from(d.keys.len()));
         for k in &d.keys {
             // Each entry keeps the form of the key it copies: a small key read from
             // an existing file stays small even in a big file's list, since its
@@ -746,7 +747,9 @@ impl<W: Write + Seek> ContainerWriter<W> {
                 &k.name,
                 &k.title,
                 k.obj_len,
-                (k.nbytes as u32).saturating_sub(u32::from(k.key_len)),
+                (k.nbytes)
+                    .cast_unsigned()
+                    .saturating_sub(u32::from(k.key_len)),
                 k.seek_key,
                 d.seek,
                 k.cycle,
@@ -804,7 +807,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let mut h = WBuffer::new();
         h.bytes(MAGIC);
         h.be_u32(version);
-        h.be_u32(self.begin as u32);
+        h.be_u32(u32::saturating_from(self.begin));
         h.be_u64(end);
         h.be_u64(0); // fSeekFree
         h.be_u32(0); // fNbytesFree
@@ -993,7 +996,7 @@ fn new_key(
 ) -> Key {
     let key_len = key_len_fmt(class, name, title, big);
     Key {
-        nbytes: (u32::from(key_len) + payload_len) as i32,
+        nbytes: (u32::from(key_len) + payload_len).cast_signed(),
         version: if big {
             KEY_VERSION_SMALL + 1000
         } else {
@@ -1013,7 +1016,7 @@ fn new_key(
 
 /// Length of a key header, which [`check_key_strings`] has bounded to 16 bits.
 fn key_len_fmt(class: &str, name: &str, title: &str, big: bool) -> u16 {
-    Key::header_len(class, name, title, big) as u16
+    u16::saturating_from(Key::header_len(class, name, title, big))
 }
 
 /// Write a `Key` header (no payload) in the small or big form. `obj_len` is the
@@ -1032,7 +1035,7 @@ fn write_key_header_fmt(
     big: bool,
 ) {
     let key_len = key_len_fmt(class, name, title, big);
-    w.be_i32((u32::from(key_len) + payload_len) as i32); // Nbytes
+    w.be_i32((u32::from(key_len) + payload_len).cast_signed()); // Nbytes
     w.be_u16(if big {
         KEY_VERSION_SMALL + 1000
     } else {
@@ -1054,7 +1057,7 @@ fn seek_value(w: &mut WBuffer, v: u64, big: bool) {
     if big {
         w.be_u64(v);
     } else {
-        w.be_u32(v as u32);
+        w.be_u32(u32::saturating_from(v));
     }
 }
 
@@ -1071,10 +1074,19 @@ fn write_dir_record(w: &mut WBuffer, seek_dir: u64, seek_parent: u64, nbytes_nam
     w.be_u32(DATIME); // fDatimeC
     w.be_u32(DATIME); // fDatimeM
     w.be_u32(0); // fNbytesKeys
-    w.be_i32(nbytes_name as i32); // fNbytesName
+    w.be_i32(nbytes_name.cast_signed()); // fNbytesName
     seek_value(w, seek_dir, big); // fSeekDir
     seek_value(w, seek_parent, big); // fSeekParent
     seek_value(w, 0, big); // fSeekKeys
     w.be_u16(1); // UUID version
     w.bytes(&[0u8; 16]); // UUID
+}
+
+impl<W: Write + Seek> std::fmt::Debug for ContainerWriter<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContainerWriter")
+            .field("pos", &self.pos)
+            .field("big", &self.big)
+            .finish_non_exhaustive()
+    }
 }

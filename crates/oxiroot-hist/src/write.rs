@@ -4,6 +4,7 @@
 //! against a ROOT-written fixture), filling the data-bearing members from a
 //! [`Hist1D`] and the cosmetic/auxiliary members with ROOT's defaults.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::sync::LazyLock;
 
 use oxiroot_io_core::streamer_gen::{Cls, StreamerInfoList};
@@ -467,7 +468,7 @@ fn write_th1d_ptr(w: &mut WBuffer, h: &Hist1D) {
     w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
     w.bytes(b"TH1D\0");
     write_th1d(w, h);
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
@@ -479,7 +480,7 @@ fn write_th1f_ptr(w: &mut WBuffer, h: &Hist1D) {
     w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
     w.bytes(b"TH1F\0");
     write_th1f(w, h);
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
@@ -521,7 +522,7 @@ pub(crate) fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut
     w.bytes(class.as_bytes());
     w.u8(0);
     f(w);
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
@@ -531,7 +532,7 @@ fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, 
     let oa = w.begin_object(3); // TObjArray version 3
     write_object_base(w, 0);
     w.string(""); // fName
-    w.be_i32(n as i32); // fSize
+    w.be_i32(i32::saturating_from(n)); // fSize
     w.be_i32(0); // fLowerBound
     for i in 0..n {
         elem(w, i);
@@ -543,6 +544,10 @@ fn write_objarray(w: &mut WBuffer, n: usize, mut elem: impl FnMut(&mut WBuffer, 
 /// Named, fNdimensions, fAxes(TObjArray<Axis>), fEntries, fTsumw, fTsumw2,
 /// fTsumwx, fTsumwx2 }, fChunkSize, fFilledBins, fBinContent(TObjArray<chunk>) }}`.
 /// The single chunk packs every filled bin's compact coordinate and content.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the bytes of a packed coordinate"
+)]
 pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &SparseHist) {
     let bits = h.axis_bits();
     let total_bits: u32 = bits.iter().sum();
@@ -553,7 +558,7 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &SparseHist) {
     let ts = w.begin_object(3); // SparseHist version 3
     let tb = w.begin_object(1); // THnBase version 1
     write_named(w, HIST_BITS, &h.name, &h.title);
-    w.be_i32(h.ndim() as i32);
+    w.be_i32(i32::saturating_from(h.ndim()));
     write_objarray(w, h.ndim(), |w, i| {
         write_object_ptr(w, "TAxis", |w| write_taxis(w, &h.axes[i]));
     });
@@ -564,14 +569,14 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &SparseHist) {
     write_tarrayd(w, &h.tsumwx2);
     w.end_object(tb);
 
-    w.be_i32(nfilled.max(1) as i32); // fChunkSize (one chunk holds them all)
-    w.be_i64(nfilled as i64); // fFilledBins
+    w.be_i32(i32::saturating_from(nfilled.max(1))); // fChunkSize (one chunk holds them all)
+    w.be_i64(i64::saturating_from(nfilled)); // fFilledBins
     write_objarray(w, 1, |w, _| {
         write_object_ptr(w, "THnSparseArrayChunk", |w| {
             let chunk = w.begin_object(1); // THnSparseArrayChunk version 1
             write_object_base(w, 0);
-            w.be_i32(single as i32); // fSingleCoordinateSize
-            w.be_i32((nfilled * single) as i32); // fCoordinatesSize
+            w.be_i32(i32::saturating_from(single)); // fSingleCoordinateSize
+            w.be_i32(i32::saturating_from(nfilled * single)); // fCoordinatesSize
             w.u8(1); // char* presence flag
             for b in &h.bins {
                 let coord = h.pack(&b.coords, &bits);
@@ -628,7 +633,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
         &h.xaxis,
         &h.yaxis,
         &zaxis,
-        (n + 9) as i32,
+        i32::saturating_from(n + 9),
         h.entries,
         h.tsumw,
         h.tsumw2,
@@ -648,7 +653,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
     }
     w.be_i32(POLY_CELLS_PER_AXIS); // fCellX
     w.be_i32(POLY_CELLS_PER_AXIS); // fCellY
-    w.be_i32(ncells_grid as i32); // fNCells
+    w.be_i32(i32::saturating_from(ncells_grid)); // fNCells
 
     // fCells (TStreamerLoop): a {byte count, version} header then `ncells_grid`
     // empty TLists. ROOT/uproot skip the 6-byte header; we patch the byte count.
@@ -658,11 +663,11 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
     for _ in 0..ncells_grid {
         write_empty_tlist(w);
     }
-    let cells_len = (w.len() - cells_start) as u32;
+    let cells_len = u32::saturating_from(w.len() - cells_start);
     w.patch_be_u32(cells_bc, 0x4000_0000 | cells_len);
 
-    let step_x = (h.xaxis.xmax - h.xaxis.xmin) / POLY_CELLS_PER_AXIS as f64;
-    let step_y = (h.yaxis.xmax - h.yaxis.xmin) / POLY_CELLS_PER_AXIS as f64;
+    let step_x = (h.xaxis.xmax - h.xaxis.xmin) / f64::from(POLY_CELLS_PER_AXIS);
+    let step_y = (h.yaxis.xmax - h.yaxis.xmin) / f64::from(POLY_CELLS_PER_AXIS);
     w.be_f64(step_x); // fStepX
     w.be_f64(step_y); // fStepY
 
@@ -683,7 +688,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
         let tl = w.begin_object(5); // TList version 5
         write_object_base(w, TLIST_BITS);
         w.string(""); // fName
-        w.be_i32(n as i32); // fSize
+        w.be_i32(i32::saturating_from(n)); // fSize
         for b in &bins {
             write_object_ptr(w, "TH2PolyBin", |w| write_polybin(w, b));
             w.string(""); // per-element option string
@@ -747,7 +752,7 @@ fn write_tgraph_base(
     w.end_object(marker);
 
     let npoints = x.len().min(y.len());
-    w.be_i32(npoints as i32); // fNpoints
+    w.be_i32(i32::saturating_from(npoints)); // fNpoints
     w.u8(1); // fX presence marker
     for &v in &x[..npoints] {
         w.be_f64(v);
@@ -778,7 +783,7 @@ fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
         let tl = w.begin_object(5); // TList version 5
         write_object_base(w, 0); // ROOT writes 0 bits for an embedded fFunctions list
         w.string(""); // fName
-        w.be_i32(functions.len() as i32); // fSize
+        w.be_i32(i32::saturating_from(functions.len())); // fSize
         for f in functions {
             write_object_ptr(w, "TF1", |w| f.write_tf1_body(w, 1, 100));
             w.string(""); // per-element option string
@@ -889,7 +894,7 @@ fn write_tgraph2d(w: &mut WBuffer, g: &Graph2D) {
     w.be_f32(1.0);
     w.end_object(marker);
 
-    w.be_i32(n as i32); // fNpoints
+    w.be_i32(i32::saturating_from(n)); // fNpoints
     w.be_i32(40); // fNpx (ROOT default)
     w.be_i32(40); // fNpy
     w.be_i32(100_000); // fMaxIter
@@ -934,9 +939,9 @@ impl WriteRoot for Graph2D {
 /// layer as a `TArrayD` (`fN` + `fN` doubles), zero-padded to `n`.
 fn write_vector_tarrayd(w: &mut WBuffer, layers: &[Vec<f64>], n: usize) {
     let t = w.begin_object(0x000a);
-    w.be_i32(layers.len() as i32);
+    w.be_i32(i32::saturating_from(layers.len()));
     for layer in layers {
-        w.be_i32(n as i32);
+        w.be_i32(i32::saturating_from(n));
         for i in 0..n {
             w.be_f64(layer.get(i).copied().unwrap_or(0.0));
         }
@@ -951,7 +956,7 @@ fn write_vector_tarrayd(w: &mut WBuffer, layers: &[Vec<f64>], n: usize) {
 fn write_memberwise_att(w: &mut WBuffer, elem_version: i16, count: usize, members: &[i16]) {
     let t = w.begin_object(0x400a);
     w.be_i16(elem_version);
-    w.be_i32(count as i32);
+    w.be_i32(i32::saturating_from(count));
     for &m in members {
         for _ in 0..count {
             w.be_i16(m);
@@ -969,7 +974,7 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &MultiErrorGraph) {
     let layers = g.ey_low.len();
     let obj = w.begin_object(1); // MultiErrorGraph version 1
     write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None, &[]);
-    w.be_i32(layers as i32); // fNYErrors
+    w.be_i32(i32::saturating_from(layers)); // fNYErrors
     w.be_i32(g.sum_errors_mode); // fSumErrorsMode
     write_basic_array(w, &g.ex_low, n); // fExL
     write_basic_array(w, &g.ex_high, n); // fExH
@@ -1141,12 +1146,12 @@ fn write_labels(w: &mut WBuffer, labels: &[String]) {
             .filter(|(_, l)| !l.is_empty())
             .map(|(i, l)| (i + 1, l)) // 1-based bin number
             .collect();
-        w.be_i32(present.len() as i32); // fSize
+        w.be_i32(i32::saturating_from(present.len())); // fSize
         for (bin, label) in present {
             write_object_ptr(w, "TObjString", |w| {
                 let ts = w.begin_object(1); // ObjString version 1
                 w.be_u16(1); // TObject version
-                w.be_u32(bin as u32); // fUniqueID = bin number
+                w.be_u32(u32::saturating_from(bin)); // fUniqueID = bin number
                 w.be_u32(0); // fBits
                 w.string(label); // fString
                 w.end_object(ts);
@@ -1167,7 +1172,7 @@ fn write_empty_tlist(w: &mut WBuffer) {
 
 /// Write a `TArrayD` base inline (a count followed by that many doubles).
 fn write_tarrayd(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_f64(d);
     }
@@ -1175,40 +1180,60 @@ fn write_tarrayd(w: &mut WBuffer, data: &[f64]) {
 
 /// Write a `TArrayF` base inline (a count followed by that many floats). The
 /// in-memory bin contents are `f64`; a `TH*F` narrows them to `f32`, as ROOT does.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
+)]
 fn write_tarrayf(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_f32(d as f32);
     }
 }
 
 /// Write a `TArrayC` base inline (`Char_t`/`i8` bin contents; `TH*C`).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "contents stored in the class type (TH1C): the narrowing is the format, as in ROOT"
+)]
 fn write_tarrayc(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
-        w.u8(d as i8 as u8);
+        w.u8((d as i8).cast_unsigned());
     }
 }
 
 /// Write a `TArrayS` base inline (`Short_t`/`i16` bin contents; `TH*S`).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
+)]
 fn write_tarrays(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_i16(d as i16);
     }
 }
 
 /// Write a `TArrayI` base inline (`Int_t`/`i32` bin contents; `TH*I`).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
+)]
 fn write_tarrayi(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_i32(d as i32);
     }
 }
 
 /// Write a `TArrayL64` base inline (`Long64_t`/`i64` bin contents; `TH*L`).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
+)]
 fn write_tarrayl(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_i64(d as i64);
     }

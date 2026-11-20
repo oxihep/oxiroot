@@ -7,6 +7,7 @@
 //! this pattern.
 
 use super::reader::K_BYTE_COUNT_MASK;
+use crate::cast::SaturatingFrom;
 
 /// Handle to a reserved, fixed-size region awaiting a later value.
 #[derive(Debug, Clone, Copy)]
@@ -77,7 +78,7 @@ impl WBuffer {
 
     /// Append a single signed byte.
     pub fn i8(&mut self, v: i8) {
-        self.buf.push(v as u8);
+        self.buf.push(v.cast_unsigned());
     }
 
     /// Append raw bytes.
@@ -176,10 +177,11 @@ impl WBuffer {
     pub fn string(&mut self, s: &str) {
         let b = s.as_bytes();
         if b.len() < 255 {
-            self.buf.push(b.len() as u8);
+            self.buf.push(u8::saturating_from(b.len()));
         } else {
             self.buf.push(255);
-            self.buf.extend_from_slice(&(b.len() as u32).to_be_bytes());
+            self.buf
+                .extend_from_slice(&u32::saturating_from(b.len()).to_be_bytes());
         }
         self.buf.extend_from_slice(b);
     }
@@ -221,7 +223,7 @@ impl WBuffer {
     /// everything written since [`WBuffer::begin_object`] (excluding the count
     /// word itself), with [`K_BYTE_COUNT_MASK`] set.
     pub fn end_object(&mut self, tok: CountToken) {
-        let nbytes = (self.buf.len() - (tok.count_pos + 4)) as u32;
+        let nbytes = u32::saturating_from(self.buf.len() - (tok.count_pos + 4));
         let word = nbytes | K_BYTE_COUNT_MASK;
         self.buf[tok.count_pos..tok.count_pos + 4].copy_from_slice(&word.to_be_bytes());
     }

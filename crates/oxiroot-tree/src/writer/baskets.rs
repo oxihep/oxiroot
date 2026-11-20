@@ -1,5 +1,6 @@
 //! Writing branch data into `TBasket` records, whole or in chunks.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::{ContainerWriter, DATIME, DirId, Key, Result, WBuffer, compress_if_smaller};
@@ -58,31 +59,31 @@ fn basket_bytes(
         _ => branch.flen() * leaf.size,
     };
 
-    let klen = Key::header_len("TBasket", &branch.name, tree_name, true) as u32 + 19;
-    let border = data.len() as u32;
+    let klen = u32::saturating_from(Key::header_len("TBasket", &branch.name, tree_name, true)) + 19;
+    let border = u32::saturating_from(data.len());
 
     // The uncompressed buffer is the entry data, then (for a variable branch)
     // the `fEntryOffset` array: `int32 count(=n_entries+1)` followed by
     // basket-relative offsets (the data-relative offsets plus `fKeyLen`).
     let mut buffer = data;
     if let Some(offs) = &offsets {
-        buffer.extend_from_slice(&(offs.len() as i32).to_be_bytes());
+        buffer.extend_from_slice(&i32::saturating_from(offs.len()).to_be_bytes());
         for &o in offs {
-            buffer.extend_from_slice(&((o + klen) as i32).to_be_bytes());
+            buffer.extend_from_slice(&(o + klen).cast_signed().to_be_bytes());
         }
     }
-    let obj_len = buffer.len() as u32;
+    let obj_len = u32::saturating_from(buffer.len());
     let payload = compress_if_smaller(&buffer, compression);
-    let nbytes = klen + payload.len() as u32;
+    let nbytes = klen + u32::saturating_from(payload.len());
     let f_last = klen + border; // entry data ends at the border
 
     let mut w = WBuffer::with_capacity(nbytes as usize);
     // Big-format Key header.
-    w.be_i32(nbytes as i32);
+    w.be_i32(nbytes.cast_signed());
     w.be_u16(1004); // big-format key version
     w.be_u32(obj_len);
     w.be_u32(DATIME);
-    w.be_u16(klen as u16);
+    w.be_u16(u16::saturating_from(klen));
     w.be_u16(0); // cycle
     w.be_u64(seek);
     w.be_u64(seek_pdir); // fSeekPdir
@@ -93,8 +94,8 @@ fn basket_bytes(
     w.be_u16(3); // basket version
     w.be_i32(32000); // fBufferSize
     w.be_i32(nev_buf_size); // fNevBufSize
-    w.be_i32(n_entries as i32); // fNevBuf
-    w.be_i32(f_last as i32); // fLast
+    w.be_i32(n_entries.cast_signed()); // fNevBuf
+    w.be_i32(f_last.cast_signed()); // fLast
     w.u8(0); // flag
     w.bytes(&payload);
 

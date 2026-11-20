@@ -18,6 +18,13 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
+# Casts that can lose information: fixed (`From`, `try_from`) or justified
+# where they stand. `cast_precision_loss` stays off: the integer → f64 casts
+# are counts and bin indices, exact below 2⁵³.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+cast_lossless = "warn"
 
 [workspace.dependencies]
 # Internal crates. `version` must match `workspace.package.version` above: a

@@ -8,6 +8,7 @@
 //! position-independent. Reading uses [`TagReader`], which resolves both the
 //! class tags oxiroot writes and the back-references ROOT writes.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::ops::Range;
 
 use oxiroot_io_core::streamer_gen::{Cls, base, basic, objptr};
@@ -74,7 +75,7 @@ fn write_object_list(w: &mut WBuffer, list_name: &str, members: &[(String, Vec<u
     let list = body.begin_object(5); // TList version 5
     write_object_base(&mut body, 0);
     body.string(list_name); // fName
-    body.be_i32(members.len() as i32); // nobjects
+    body.be_i32(i32::saturating_from(members.len())); // nobjects
     for (class, member) in members {
         write_object_any(&mut body, class, member);
         body.string(""); // the per-object option string
@@ -128,7 +129,7 @@ fn list_member_ranges(
     r.string()?; // the list's fName
     let n = r.be_i32()?.max(0);
 
-    let mut out = Vec::with_capacity(n as usize);
+    let mut out = Vec::with_capacity(usize::saturating_from(n));
     for _ in 0..n {
         let header = tags.read_header(r)?;
         match (header.class_name, header.end) {

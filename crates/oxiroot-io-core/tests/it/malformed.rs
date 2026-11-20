@@ -2,6 +2,7 @@
 //! return `Err` (or `Ok` with valid data) — never panic or allocate unboundedly.
 //! A panic anywhere below fails the test.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Datime, FileReader, Key, WBuffer};
@@ -122,17 +123,17 @@ fn decompress_huge_declared_length_errors_without_ooming() {
 fn key_header(w: &mut WBuffer, class: &str, name: &str, seek_key: u64, big: bool) {
     let seek_len = if big { 8 } else { 4 };
     let key_len = 18 + 2 * seek_len + (1 + class.len()) + (1 + name.len()) + 1;
-    w.be_i32(key_len as i32); // Nbytes (no payload)
+    w.be_i32(i32::saturating_from(key_len)); // Nbytes (no payload)
     w.be_u16(if big { 1004 } else { 4 }); // version
     w.be_u32(0); // ObjLen
     w.be_u32(0); // Datime
-    w.be_u16(key_len as u16); // KeyLen
+    w.be_u16(u16::saturating_from(key_len)); // KeyLen
     w.be_u16(1); // Cycle
     if big {
         w.be_u64(seek_key);
         w.be_u64(100); // fSeekPdir
     } else {
-        w.be_u32(seek_key as u32);
+        w.be_u32(u32::saturating_from(seek_key));
         w.be_u32(100);
     }
     w.string(class);
@@ -178,9 +179,9 @@ fn file_with_hostile_big_directory_key() -> Vec<u8> {
     let p_seek_keys = w.reserve(4); // fSeekKeys (patched below)
 
     // Key list: a wrapper key, the count, then the one hostile entry.
-    let keylist = w.len() as u32;
+    let keylist = u32::saturating_from(w.len());
     w.patch_be_u32(p_seek_keys, keylist);
-    key_header(&mut w, "TFile", "f", keylist as u64, false);
+    key_header(&mut w, "TFile", "f", u64::from(keylist), false);
     w.be_i32(1); // nkeys
 
     // The hostile key: a big-format TDirectory whose fSeekKey is near u64::MAX,

@@ -7,6 +7,11 @@ use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Hist3D, ReadRoot, Write
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "small whole fill counts"
+)]
 fn th1f_write_read_round_trips() {
     let mut h = Hist::reg(4, 0.0, 4.0)
         .double()

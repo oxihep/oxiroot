@@ -17,6 +17,7 @@ use oxiroot_io_core::{
 };
 
 use crate::value::{BranchValues, Jagged, LeafType};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 mod decode;
 mod members;
@@ -569,7 +570,12 @@ impl TreeReader {
         // Per-basket entry boundaries: basket i covers [start_i, start_{i+1}),
         // the last basket ending at the tree's entry count.
         let have_bounds = branch.basket_entry.len() == branch.n_baskets;
-        let basket_start = |i: usize| branch.basket_entry.get(i).map_or(0, |&e| e.max(0) as u64);
+        let basket_start = |i: usize| {
+            branch
+                .basket_entry
+                .get(i)
+                .map_or(0, |&e| e.max(0).cast_unsigned())
+        };
         let basket_stop = |i: usize| {
             if i + 1 < branch.basket_entry.len() {
                 basket_start(i + 1)
@@ -595,8 +601,8 @@ impl TreeReader {
         let baskets = read_baskets(file, branch, indices.iter().copied(), decode)?;
         let values = decode_baskets(branch, &baskets)?;
         // `values` covers [first_entry, ..); slice out [start, stop).
-        let off = start.saturating_sub(first_entry) as usize;
-        let len = (stop - start) as usize;
+        let off = usize::saturating_from(start.saturating_sub(first_entry));
+        let len = usize::saturating_from(stop - start);
         Ok(slice_values(values, off, len))
     }
 

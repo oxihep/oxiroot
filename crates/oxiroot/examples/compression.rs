@@ -10,6 +10,7 @@
 //! ```
 
 use oxiroot::prelude::*;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and builds the same payload every run.
@@ -28,6 +29,7 @@ impl XorShift64 {
     }
 }
 
+#[allow(clippy::cast_possible_truncation, reason = "a uniform integer in 0..8")]
 fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
@@ -42,7 +44,7 @@ fn main() -> oxiroot::Result<()> {
     let mut id = Vec::with_capacity(n);
     for i in 0..n {
         energy.push(rng.gauss(91.2, 2.5));
-        index.push(i as i32);
+        index.push(i32::saturating_from(i));
         id.push((rng.uniform() * 8.0) as i32); // 0..7
     }
 
@@ -115,7 +117,7 @@ fn main() -> oxiroot::Result<()> {
     let f = FileReader::open(zstd_path)?;
     let tree = TreeReader::open(&f, "Events")?;
     assert_eq!(
-        tree.num_entries() as usize,
+        usize::saturating_from(tree.num_entries()),
         n,
         "entry count survived the round-trip"
     );

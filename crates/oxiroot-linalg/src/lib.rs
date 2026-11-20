@@ -10,6 +10,7 @@
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::streamer_gen::{Cls, base, basic, basicptr, basicptr_in};
 use oxiroot_io_core::{
     Error, FileReader, FromMember, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
@@ -62,11 +63,11 @@ fn read_dim(r: &mut RBuffer, field: &str) -> Result<usize> {
 fn write_matrix_base(w: &mut WBuffer, nrows: usize, ncols: usize) {
     let base = w.begin_object(5); // TMatrixTBase<double> version 5
     write_object_base(w, 0);
-    w.be_i32(nrows as i32); // fNrows
-    w.be_i32(ncols as i32); // fNcols
+    w.be_i32(i32::saturating_from(nrows)); // fNrows
+    w.be_i32(i32::saturating_from(ncols)); // fNcols
     w.be_i32(0); // fRowLwb
     w.be_i32(0); // fColLwb
-    w.be_i32((nrows * ncols) as i32); // fNelems
+    w.be_i32(i32::saturating_from(nrows * ncols)); // fNelems
     w.be_i32(0); // fNrowIndex
     w.be_f64(MATRIX_TOL); // fTol
     w.end_object(base);
@@ -146,7 +147,7 @@ impl WriteRoot for Vector {
         let mut w = WBuffer::new();
         let obj = w.begin_object(4); // TVectorT<double> version 4
         write_object_base(&mut w, 0);
-        w.be_i32(self.elements.len() as i32); // fNrows
+        w.be_i32(i32::saturating_from(self.elements.len())); // fNrows
         w.be_i32(0); // fRowLwb
         w.u8(1); // fElements is-array flag
         for &e in &self.elements {

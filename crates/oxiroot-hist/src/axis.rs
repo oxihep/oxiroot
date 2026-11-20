@@ -1,5 +1,6 @@
 //! `Axis` — a histogram axis.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, RBuffer, Result, read_named, read_object_base, skip_versioned};
 
 use crate::base::end_record;
@@ -76,7 +77,7 @@ impl Axis {
         Ok(Axis {
             name: name.to_string(),
             title: String::new(),
-            nbins: (edges.len() - 1) as i32,
+            nbins: i32::saturating_from(edges.len() - 1),
             xmin: edges[0],
             xmax: edges[edges.len() - 1],
             xbins: edges.to_vec(),
@@ -89,8 +90,13 @@ impl Axis {
     /// Find the bin for value `x`: 0 = underflow, `1..=nbins` = in range,
     /// `nbins + 1` = overflow. Handles uniform and variable-width axes. `NaN`
     /// goes to overflow, matching ROOT's `Axis::FindBin`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "x lies in [xmin, xmax): a non-negative bin offset"
+    )]
     pub fn find_bin(&self, x: f64) -> usize {
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if n == 0 {
             return 0;
         }
@@ -124,7 +130,8 @@ impl Axis {
     #[must_use]
     pub fn same_binning(&self, other: &Axis) -> bool {
         self.nbins == other.nbins
-            && (0..=self.nbins.max(0) as usize).all(|i| self.edge(i) == other.edge(i))
+            && (0..=usize::saturating_from(self.nbins.max(0)))
+                .all(|i| self.edge(i) == other.edge(i))
     }
 
     /// Read an `Axis` from `r` (positioned at the axis's `{byte-count, version}`
@@ -151,7 +158,7 @@ impl Axis {
         // fXbins is a TArrayD member: a count followed by that many doubles.
         // Cap the reservation at the buffer size so a forged count can't drive a
         // huge allocation before the element reads fail.
-        let n = r.be_i32()?.max(0) as usize;
+        let n = usize::saturating_from(r.be_i32()?.max(0));
         let mut xbins = Vec::with_capacity(n.min(r.remaining()));
         for _ in 0..n {
             xbins.push(r.be_f64()?);
@@ -166,7 +173,7 @@ impl Axis {
         let time_display = r.u8()? != 0;
         let time_format = r.string()?;
         let labels = if vh.version >= 7 {
-            read_labels(r, nbins.max(0) as usize)? // fLabels (THashList*)
+            read_labels(r, usize::saturating_from(nbins.max(0)))? // fLabels (THashList*)
         } else {
             Vec::new()
         };
@@ -234,7 +241,7 @@ impl Axis {
     /// Set the alphanumeric label for bin `bin` (1-based), growing the label
     /// vector to `nbins` as needed. A no-op for an out-of-range bin.
     pub fn set_label(&mut self, bin: usize, label: &str) {
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if bin < 1 || bin > n {
             return;
         }
@@ -249,7 +256,7 @@ impl Axis {
         if !self.xbins.is_empty() {
             return self.xbins.clone();
         }
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if n == 0 {
             return vec![self.xmin, self.xmax];
         }
@@ -265,7 +272,7 @@ impl Axis {
         if !self.xbins.is_empty() {
             return self.xbins[i.min(self.xbins.len() - 1)];
         }
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if n == 0 {
             return if i == 0 { self.xmin } else { self.xmax };
         }
@@ -283,7 +290,7 @@ impl Axis {
     /// Width of bin `bin` (1-based). `0.0` for an out-of-range bin index.
     #[must_use]
     pub fn bin_width(&self, bin: usize) -> f64 {
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if (1..=n).contains(&bin) {
             self.edge(bin) - self.edge(bin - 1)
         } else {
@@ -294,7 +301,7 @@ impl Axis {
     /// Center of bin `bin` (1-based). `0.0` for an out-of-range bin index.
     #[must_use]
     pub fn bin_center(&self, bin: usize) -> f64 {
-        let n = self.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.nbins.max(0));
         if (1..=n).contains(&bin) {
             0.5 * (self.edge(bin - 1) + self.edge(bin))
         } else {
@@ -326,7 +333,7 @@ fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
     r.read_version()?; // THashList (a TList, version 5)
     read_object_base(r)?;
     let _name = r.string()?; // fName (empty)
-    let size = r.be_i32()?.max(0) as usize;
+    let size = usize::saturating_from(r.be_i32()?.max(0));
 
     let mut labels = vec![String::new(); nbins];
     for _ in 0..size {

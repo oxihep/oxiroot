@@ -12,6 +12,7 @@
 //! ```
 
 use oxiroot::prelude::*;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
@@ -81,7 +82,7 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Print it as an event loop would see it: one row per entry. ------------
     println!("per-entry values:");
-    for i in 0..ntpl.num_entries() as usize {
+    for i in 0..usize::saturating_from(ntpl.num_entries()) {
         println!(
             "  {:>3}: label = {:>3}  mass = {:>7.2} GeV  charge = {:+}  jets = {:?}",
             i, labels[i], masses[i], charges[i], jets[i],

@@ -43,6 +43,8 @@
 //! whose short names (`basic`, `base`, `stl`, …) read best qualified.
 
 mod buffer;
+#[doc(hidden)]
+pub mod cast;
 mod compression;
 mod error;
 mod file;

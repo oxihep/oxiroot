@@ -67,7 +67,7 @@ pub fn run(args: Args, json: bool) -> CmdResult {
                         ("cycle", Json::Int(i64::from(r.cycle))),
                         (
                             "entries",
-                            r.entries.map_or(Json::Null, |e| Json::Int(e as i64)),
+                            r.entries.map_or(Json::Null, |e| Json::Int(e.cast_signed())),
                         ),
                     ])
                 })

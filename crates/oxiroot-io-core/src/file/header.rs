@@ -70,18 +70,22 @@ impl FileHeader {
 
         let version = r.be_u32()?;
         let big = version >= BIG_FILE_VERSION;
-        let begin = r.be_u32()? as u64;
+        let begin = u64::from(r.be_u32()?);
         let (end, seek_free) = if big {
             (r.be_u64()?, r.be_u64()?)
         } else {
-            (r.be_u32()? as u64, r.be_u32()? as u64)
+            (u64::from(r.be_u32()?), u64::from(r.be_u32()?))
         };
         let nbytes_free = r.be_u32()?;
         let nfree = r.be_u32()?;
         let nbytes_name = r.be_u32()?;
         let units = r.u8()?;
         let compress = r.be_u32()?;
-        let seek_info = if big { r.be_u64()? } else { r.be_u32()? as u64 };
+        let seek_info = if big {
+            r.be_u64()?
+        } else {
+            u64::from(r.be_u32()?)
+        };
         let nbytes_info = r.be_u32()?;
         let uuid_version = r.be_u16()?;
         let mut uuid_bytes = [0u8; 16];

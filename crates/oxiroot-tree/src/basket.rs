@@ -8,6 +8,7 @@
 //! fKeyLen`); for variable-length branches `[border, fObjLen)` is the
 //! `fEntryOffset` array.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, decompress_payload};
 
 /// Key version at or above which a `Key` uses 64-bit seek pointers.
@@ -51,7 +52,7 @@ impl Basket {
             Some(n) => (n as u64).min(avail),
             None => BASKET_HEADER_PROBE.min(avail),
         };
-        let head = file.read_at(seek, want as usize)?;
+        let head = file.read_at(seek, usize::saturating_from(want))?;
         let mut r = RBuffer::new(&head);
 
         // Standard Key header.
@@ -76,8 +77,8 @@ impl Basket {
         let _basket_version = r.be_u16()?;
         let _buffer_size = r.be_i32()?;
         let _nev_buf_size = r.be_i32()?;
-        let n_entries = r.be_i32()?.max(0) as u32; // fNevBuf
-        let last = r.be_i32()?.max(0) as usize; // fLast
+        let n_entries = r.be_i32()?.max(0).cast_unsigned(); // fNevBuf
+        let last = usize::saturating_from(r.be_i32()?.max(0)); // fLast
         let _flag = r.u8()?;
 
         let key_len = key_len as usize;
@@ -131,11 +132,13 @@ impl Basket {
         // Keep the `n_entries` start offsets and append `border` as the end.
         let entry_offsets = if border < data.len() {
             let mut o = RBuffer::new(&data[border..]);
-            let count = o.be_i32()?.max(0) as usize;
+            let count = usize::saturating_from(o.be_i32()?.max(0));
             let mut offs = Vec::with_capacity(count.min(o.remaining()));
             for _ in 0..count {
-                let raw = o.be_i32()? as i64 - key_len as i64;
-                offs.push(raw.clamp(0, border as i64) as usize);
+                let raw = i64::from(o.be_i32()?) - i64::saturating_from(key_len);
+                offs.push(usize::saturating_from(
+                    raw.clamp(0, i64::saturating_from(border)),
+                ));
             }
             offs.truncate(n_entries as usize);
             offs.push(border);

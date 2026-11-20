@@ -1,4 +1,5 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
+use oxiroot_io_core::cast::SaturatingFrom;
 
 use oxiroot_io_core::{
     Error, RBuffer, Result, StreamerElement, StreamerRegistry, read_named, read_object_base,
@@ -64,7 +65,7 @@ fn basic_kind(t: i32) -> Option<(usize, bool)> {
 /// Read one basic value of the given width, widening integers to `i64`.
 fn read_basic(r: &mut RBuffer, width: usize, is_float: bool) -> Result<MemberVal> {
     Ok(match (width, is_float) {
-        (1, false) => MemberVal::Int(i64::from(r.u8()? as i8)),
+        (1, false) => MemberVal::Int(i64::from(r.u8()?.cast_signed())),
         (2, false) => MemberVal::Int(i64::from(r.be_i16()?)),
         (4, false) => MemberVal::Int(i64::from(r.be_i32()?)),
         (8, false) => MemberVal::Int(r.be_i64()?),
@@ -136,8 +137,7 @@ fn walk_members_at(
             let count = el
                 .count_name
                 .as_deref()
-                .map_or(0, |c| member_int(out, c))
-                .max(0) as usize;
+                .map_or(0, |c| usize::saturating_from(member_int(out, c)));
             r.u8()?; // is-array marker
             let mut vals = Vec::with_capacity(count.min(r.remaining()));
             for _ in 0..count {

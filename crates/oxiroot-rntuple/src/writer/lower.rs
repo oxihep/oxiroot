@@ -1,6 +1,7 @@
 //! Lowering fields to the on-disk model: one field record per (sub)field and
 //! one column with its encoded page per column.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
 use super::check::{check_fields, entry_count};
@@ -87,6 +88,12 @@ fn pack_uints(values: &[u64], bits: u16) -> Vec<u8> {
 }
 
 /// Encode an IEEE-754 single into a half (binary16), round-to-nearest-even.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    reason = "IEEE half-float encoding: masked bit fields"
+)]
 fn f32_to_half(value: f32) -> u16 {
     let x = value.to_bits();
     let sign = ((x >> 16) & 0x8000) as u16;
@@ -117,7 +124,7 @@ fn f32_to_half(value: f32) -> u16 {
         return sign | h;
     }
     // Normal half; rounding may carry into the exponent, which is correct.
-    let mut h = ((he as u16) << 10) | (mant >> 13) as u16;
+    let mut h = (u16::saturating_from(he) << 10) | (mant >> 13) as u16;
     let rem = mant & 0x1fff;
     if rem > 0x1000 || (rem == 0x1000 && (h & 1) == 1) {
         h += 1;
@@ -155,7 +162,7 @@ fn raw(column_type: ColumnType, bits: u16, page: Vec<u8>, n: usize) -> RawCol {
         column_type,
         bits,
         page,
-        n: n as u32,
+        n: u32::saturating_from(n),
         value_range: None,
     }
 }
@@ -263,6 +270,11 @@ fn record_type_name(children: &[Node]) -> String {
 }
 
 /// Lower one field's [`Column`] into a [`Node`] subtree.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "t in [0, 1]: a quantized value within its bit width"
+)]
 fn lower_column(name: &str, data: &Column) -> Node {
     match data {
         Column::Bool(v) => leaf_node(name, "bool", raw(ColumnType::Bit, 1, pack_bits(v), v.len())),
@@ -692,7 +704,7 @@ fn push_node(
     fields: &mut Vec<FieldPlan>,
     cols: &mut Vec<ColumnPlan>,
 ) {
-    let id = fields.len() as u32;
+    let id = u32::saturating_from(fields.len());
     fields.push(FieldPlan {
         name: node.name,
         type_name: node.type_name,

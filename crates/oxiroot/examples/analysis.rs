@@ -55,7 +55,9 @@ fn main() -> oxiroot::Result<()> {
     // Share `&acc` across threads and call `fill` from any of them — each thread
     // transparently gets its own copy; `merge` combines them exactly (identical
     // to a serial fill).
-    let samples: Vec<f64> = (0..100_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
+    let samples: Vec<f64> = (0..100_000)
+        .map(|i| (f64::from(i) * 0.618) % 100.0)
+        .collect();
     let acc = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()

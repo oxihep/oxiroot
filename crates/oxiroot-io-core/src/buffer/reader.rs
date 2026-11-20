@@ -121,7 +121,7 @@ impl<'a> RBuffer<'a> {
 
     /// Read a single signed byte.
     pub fn i8(&mut self) -> Result<i8> {
-        Ok(self.array::<1>()?[0] as i8)
+        Ok(self.array::<1>()?[0].cast_signed())
     }
 
     num_reader!(

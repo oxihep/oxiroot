@@ -23,6 +23,7 @@
 //! past it rather than failing.
 
 use crate::buffer::RBuffer;
+use crate::cast::SaturatingFrom;
 use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::streamer::{read_named, read_object_base};
@@ -180,12 +181,12 @@ fn read_base(
         // streams as `{Int_t fN}{fN elements}` with no version header.
         _ if tarray_elem(class).is_some() => {
             let base = tarray_elem(class).expect("checked");
-            let n = (r.be_i32()?.max(0) as usize).min(r.remaining());
+            let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
             let mut items = Vec::with_capacity(n);
             for _ in 0..n {
                 items.push(read_basic(r, base)?.unwrap_or(Value::Null));
             }
-            out.push(("fN".to_string(), Value::I32(n as i32)));
+            out.push(("fN".to_string(), Value::I32(i32::saturating_from(n))));
             out.push(("fArray".to_string(), Value::Array(items)));
         }
         _ => match r
@@ -328,7 +329,7 @@ fn read_collection(
     let vh = r.read_version()?;
     read_object_base(r)?;
     let name = r.string()?; // fName
-    let n = (r.be_i32()?.max(0) as usize).min(r.remaining());
+    let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
     let has_lower_bound = matches!(class, "TObjArray" | "TClonesArray");
     if has_lower_bound {
         r.be_i32()?; // fLowerBound
@@ -370,7 +371,7 @@ fn read_collection(
 /// Read a `TArray{C,S,I,L,F,D}` member: `{Int_t n}{n elements}`, no version header.
 fn read_tarray(class: &str, r: &mut RBuffer) -> Result<Value> {
     let base = tarray_elem(class).expect("caller checked");
-    let n = (r.be_i32()?.max(0) as usize).min(r.remaining());
+    let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
     let mut items = Vec::with_capacity(n);
     for _ in 0..n {
         items.push(read_basic(r, base)?.unwrap_or(Value::Null));
@@ -393,7 +394,7 @@ fn tarray_elem(class: &str) -> Option<i32> {
 
 /// Read a fixed-length C array of `array_length` basic elements.
 fn read_fixed_array(el: &StreamerElement, base: i32, r: &mut RBuffer) -> Result<Option<Value>> {
-    let n = (el.array_length.max(0) as usize).min(r.remaining());
+    let n = usize::saturating_from(el.array_length.max(0)).min(r.remaining());
     let mut items = Vec::with_capacity(n);
     for _ in 0..n {
         match read_basic(r, base)? {
@@ -411,8 +412,7 @@ fn counter_value(el: &StreamerElement, read_so_far: &[(String, Value)]) -> usize
         .as_deref()
         .and_then(|c| read_so_far.iter().find(|(n, _)| n == c))
         .and_then(|(_, v)| v.as_i64())
-        .unwrap_or(0)
-        .max(0) as usize
+        .map_or(0, usize::saturating_from)
 }
 
 /// Read a `T* //[fCount]` variable array: a presence byte, then `fCount` basic
@@ -615,7 +615,7 @@ fn decode_stl(
 /// An STL container's `{Int_t n}` element count, clamped to the bytes left (a
 /// corrupt count then shortens the decode, which the byte-count check catches).
 fn stl_count(r: &mut RBuffer) -> Option<usize> {
-    Some((r.be_i32().ok()?.max(0) as usize).min(r.remaining()))
+    Some(usize::saturating_from(r.be_i32().ok()?.max(0)).min(r.remaining()))
 }
 
 /// A memberwise container's header: the version of the element class, and the
@@ -902,7 +902,9 @@ mod tests {
     /// ROOT's `{byte-count, version}` framing around `body`.
     fn framed(version: u16, body: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend_from_slice(&(0x4000_0000u32 | (body.len() as u32 + 2)).to_be_bytes());
+        out.extend_from_slice(
+            &(0x4000_0000u32 | (u32::saturating_from(body.len()) + 2)).to_be_bytes(),
+        );
         out.extend_from_slice(&version.to_be_bytes());
         out.extend_from_slice(body);
         out
@@ -980,7 +982,7 @@ mod tests {
         let reg = one_container("map<TString,int,TFormulaParamOrder>");
         let mut body = 2i32.to_be_bytes().to_vec();
         for (name, index) in [("p0", 0i32), ("p1", 1)] {
-            body.push(name.len() as u8);
+            body.push(u8::saturating_from(name.len()));
             body.extend_from_slice(name.as_bytes());
             body.extend_from_slice(&index.to_be_bytes());
         }
