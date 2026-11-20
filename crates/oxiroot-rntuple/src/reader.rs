@@ -19,9 +19,12 @@ use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 /// parses the schema, cluster summaries, and per-cluster page locations; column
 /// data is decoded on demand.
 #[doc(alias = "RNTuple", alias = "RNTupleReader")]
+#[derive(Clone)]
 pub struct NtupleReader<'f> {
     /// The file the pages are read from.
     file: &'f FileReader,
+    /// Decompress a column's pages in parallel (a per-read view's setting).
+    parallel: bool,
     anchor: RNTupleAnchor,
     header: Header,
     footer: Footer,
@@ -138,6 +141,7 @@ impl<'f> NtupleReader<'f> {
 
         Ok(NtupleReader {
             file,
+            parallel: false,
             anchor,
             header,
             footer,
@@ -209,6 +213,7 @@ impl<'f> NtupleReader<'f> {
             descriptor.bits_on_storage,
             &pages,
             descriptor.value_range,
+            self.parallel,
         )?;
 
         // A deferred (schema-extension) column carries a non-zero
@@ -269,6 +274,7 @@ impl<'f> NtupleReader<'f> {
             ntuple: self,
             name,
             range: None,
+            parallel: false,
         }
     }
 
@@ -453,6 +459,7 @@ impl<'f> NtupleReader<'f> {
     fn cluster_window(&self, k0: usize, k1: usize) -> NtupleReader<'f> {
         NtupleReader {
             file: self.file,
+            parallel: self.parallel,
             anchor: self.anchor.clone(),
             header: self.header.clone(),
             footer: self.footer.clone(),
@@ -681,29 +688,42 @@ impl<'f> NtupleReader<'f> {
             .get(column_index)
             .ok_or_else(|| Error::Format(format!("no column {column_index}")))?;
 
-        let mut out = Vec::new();
-        let mut base = 0u64;
-        for cluster in &self.page_clusters {
+        // Each cluster's offsets decode on their own (an index column's delta
+        // encoding restarts per cluster), concurrently when reading in
+        // parallel; then each is rebased onto the running total. Offsets are
+        // decoded from the file; use wrapping arithmetic (as delta_decode
+        // does) so a corrupt index column cannot panic in debug.
+        let decode = |cluster: &ClusterPages| -> Result<Vec<u64>> {
             let column = cluster
                 .columns
                 .get(column_index)
                 .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
-            let local = match read_column(
+            match read_column(
                 file,
                 descriptor.column_type,
                 descriptor.bits_on_storage,
                 &column.pages,
                 descriptor.value_range,
+                false,
             )? {
-                ColumnValues::U64(v) => v,
-                other => {
-                    return Err(Error::Format(format!(
-                        "expected index offsets, got {other:?}"
-                    )));
-                }
-            };
-            // Offsets are decoded from the file; use wrapping arithmetic (as
-            // delta_decode does) so a corrupt index column cannot panic in debug.
+                ColumnValues::U64(v) => Ok(v),
+                other => Err(Error::Format(format!(
+                    "expected index offsets, got {other:?}"
+                ))),
+            }
+        };
+        #[cfg(feature = "rayon")]
+        let clusters: Vec<Vec<u64>> = if self.parallel {
+            use rayon::prelude::*;
+            self.page_clusters.par_iter().map(decode).collect::<Result<_>>()?
+        } else {
+            self.page_clusters.iter().map(decode).collect::<Result<_>>()?
+        };
+        #[cfg(not(feature = "rayon"))]
+        let clusters: Vec<Vec<u64>> = self.page_clusters.iter().map(decode).collect::<Result<_>>()?;
+        let mut out = Vec::with_capacity(clusters.iter().map(Vec::len).sum());
+        let mut base = 0u64;
+        for local in clusters {
             let cluster_total = local.last().copied().unwrap_or(0);
             out.extend(local.into_iter().map(|v| v.wrapping_add(base)));
             base = base.wrapping_add(cluster_total);
@@ -775,6 +795,7 @@ pub struct FieldRead<'a, 'f> {
     ntuple: &'a NtupleReader<'f>,
     name: &'a str,
     range: Option<Range<u64>>,
+    parallel: bool,
 }
 
 impl<'a, 'f> FieldRead<'a, 'f> {
@@ -784,6 +805,25 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     pub fn range(mut self, range: Range<u64>) -> Self {
         self.range = Some(range);
         self
+    }
+
+    /// Decompress each column's pages in parallel, on rayon's global thread
+    /// pool.
+    #[cfg(feature = "rayon")]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
+        self
+    }
+
+    /// The reader to read through: this one, or a parallel view of it.
+    fn reader(&self) -> std::borrow::Cow<'a, NtupleReader<'f>> {
+        if self.parallel {
+            let mut view = self.ntuple.cluster_window(0, self.ntuple.summaries.len());
+            view.parallel = true;
+            std::borrow::Cow::Owned(view)
+        } else {
+            std::borrow::Cow::Borrowed(self.ntuple)
+        }
     }
 
     /// The values as `Vec<T>`: `f64` for a `double` field, `Vec<f32>` for a
@@ -798,9 +838,10 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     /// The values as the [`FieldValues`] enum, for code that does not know the
     /// field's type in advance.
     pub fn values(self) -> Result<FieldValues> {
+        let reader = self.reader();
         match self.range {
-            None => self.ntuple.read_top(self.ntuple.file, self.name),
-            Some(r) => self.ntuple.read_range(self.name, r.start, r.end),
+            None => reader.read_top(reader.file, self.name),
+            Some(r) => reader.read_range(self.name, r.start, r.end),
         }
     }
 
@@ -809,8 +850,8 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     /// no allocation per entry. Only for `std::vector` of a scalar type; other
     /// fields are an [`Error::Unsupported`].
     pub fn flat(self) -> Result<Jagged> {
-        let r = self.range.unwrap_or(0..u64::MAX);
-        self.ntuple
+        let r = self.range.clone().unwrap_or(0..u64::MAX);
+        self.reader()
             .read_flat_range(self.name, r.start, r.end)?
             .ok_or_else(|| {
                 Error::Unsupported(format!(

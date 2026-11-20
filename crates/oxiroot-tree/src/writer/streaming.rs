@@ -8,7 +8,7 @@ use std::path::Path;
 use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::{Compression, Error, Result};
 
-use super::baskets::{BasketRec, chunk_values, write_basket};
+use super::baskets::{BasketRec, PreparedBasket, chunk_values, place_basket, prepare_basket};
 use super::branch::{Branch, BranchKind};
 use super::layout::Kind;
 use super::serialize::build_tree_object;
@@ -191,6 +191,64 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// Append one batch of entries (one basket per branch). The first batch fixes
     /// the schema; later batches must match it. An empty batch is a no-op.
     pub fn write_batch(&mut self, branches: &[Branch]) -> Result<()> {
+        self.write_chunks(&[branches])
+    }
+
+    /// Append several batches at once, in order: one basket per branch per
+    /// batch. With the `rayon` feature every basket of every batch is
+    /// serialized and compressed in parallel before they are written, so a
+    /// cluster cut into many baskets costs about one basket's time per core.
+    pub fn write_batches(&mut self, batches: &[Vec<Branch>]) -> Result<()> {
+        let slices: Vec<&[Branch]> = batches.iter().map(Vec::as_slice).collect();
+        self.write_chunks(&slices)
+    }
+
+    fn write_chunks(&mut self, batches: &[&[Branch]]) -> Result<()> {
+        let mut entries = Vec::with_capacity(batches.len());
+        for branches in batches {
+            entries.push(self.check_batch(branches)?);
+        }
+        // The effective columns of each non-empty batch: a jagged branch
+        // contributes its synthetic count column first, then its data column.
+        let counts: Vec<Vec<Option<Branch>>> = batches
+            .iter()
+            .map(|bs| bs.iter().map(|b| if b.jagged() { b.count_branch() } else { None }).collect())
+            .collect();
+        let mut jobs: Vec<&Branch> = Vec::new();
+        for ((branches, counts), &n) in batches.iter().zip(&counts).zip(&entries) {
+            if n == 0 {
+                continue;
+            }
+            for (b, count) in branches.iter().zip(counts) {
+                if let Some(c) = count {
+                    jobs.push(c);
+                }
+                jobs.push(b);
+            }
+        }
+        let compression = self.file.compression_setting();
+        let tree_name = self.tree_name.clone();
+        let prepare = |b: &&Branch| prepare_basket(b, &tree_name, compression);
+        #[cfg(feature = "rayon")]
+        let prepared: Vec<PreparedBasket> = {
+            use rayon::prelude::*;
+            jobs.par_iter().map(prepare).collect()
+        };
+        #[cfg(not(feature = "rayon"))]
+        let prepared: Vec<PreparedBasket> = jobs.iter().map(prepare).collect();
+
+        let ncols = self.columns.len();
+        for (k, (p, branch)) in prepared.iter().zip(&jobs).enumerate() {
+            let rec = place_basket(&mut self.file, DirId::TOP, p, &tree_name)?;
+            self.record(k % ncols.max(1), branch, rec);
+        }
+        self.total_entries += entries.iter().map(|&n| i64::from(n)).sum::<i64>();
+        Ok(())
+    }
+
+    /// Check one batch and fix the schema on the first non-empty one. Returns
+    /// its entry count.
+    fn check_batch(&mut self, branches: &[Branch]) -> Result<u32> {
         for b in branches {
             if b.split().is_some() {
                 return Err(Error::Unsupported(format!(
@@ -211,7 +269,7 @@ impl<W: Write + Seek> TreeWriter<W> {
         check_entry_counts(branches)?;
         let batch_entries = branches.first().map_or(0, Branch::n_entries);
         if batch_entries == 0 {
-            return Ok(());
+            return Ok(0);
         }
 
         let sig: Vec<ColSig> = branches.iter().map(col_sig).collect();
@@ -227,30 +285,12 @@ impl<W: Write + Seek> TreeWriter<W> {
                 self.schema = Some(sig);
             }
         }
-
-        // Walk the effective columns in lockstep: a jagged branch contributes its
-        // synthetic count column first, then its data column.
-        let mut col = 0;
-        let tree_name = self.tree_name.clone();
-        for b in branches {
-            if b.jagged() {
-                let count = b
-                    .count_branch()
-                    .expect("a jagged branch has a count branch");
-                self.emit(col, &count, &tree_name)?;
-                col += 1;
-            }
-            self.emit(col, b, &tree_name)?;
-            col += 1;
-        }
-        self.total_entries += i64::from(batch_entries);
-        Ok(())
+        Ok(batch_entries)
     }
 
-    /// Emit one basket for column `col`, append its record, and grow that
-    /// column's leaf aggregate (count `fMaximum` / string `fLen`).
-    fn emit(&mut self, col: usize, branch: &Branch, tree_name: &str) -> Result<()> {
-        let rec = write_basket(&mut self.file, DirId::TOP, branch, tree_name)?;
+    /// Record one placed basket for column `col`, and grow that column's leaf
+    /// aggregate (count `fMaximum` / string `fLen`).
+    fn record(&mut self, col: usize, branch: &Branch, rec: BasketRec) {
         let c = &mut self.columns[col];
         c.baskets.push(rec);
         match &mut c.agg {
@@ -270,7 +310,6 @@ impl<W: Write + Seek> TreeWriter<W> {
             }
             ColAgg::Data => {}
         }
-        Ok(())
     }
 
     /// Build the effective-column list from the first batch (jagged branches

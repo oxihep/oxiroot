@@ -84,6 +84,10 @@ name = "read"
 harness = false
 
 [[bench]]
+name = "write"
+harness = false
+
+[[bench]]
 name = "decompress"
 harness = false
 

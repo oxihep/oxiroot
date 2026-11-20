@@ -231,7 +231,7 @@ impl<'f> Dataset<'f> {
         let read = |name: &String| -> Result<Column> {
             match &self.source {
                 Source::Tree(t) => tree_column(t, name, range.clone(), parallel),
-                Source::Ntuple(n) => ntuple_column(n, name, range.clone()),
+                Source::Ntuple(n) => ntuple_column(n, name, range.clone(), parallel),
             }
         };
         #[cfg(feature = "rayon")]
@@ -428,8 +428,19 @@ fn branch_column(values: BranchValues) -> Result<Column> {
 }
 
 /// Read one RNTuple field's window as a flat column.
-fn ntuple_column(n: &NtupleReader<'_>, name: &str, range: Range<u64>) -> Result<Column> {
-    let field = || n.field(name).range(range.clone());
+fn ntuple_column(
+    n: &NtupleReader<'_>,
+    name: &str,
+    range: Range<u64>,
+    parallel: bool,
+) -> Result<Column> {
+    #[cfg(feature = "rayon")]
+    let field = || n.field(name).range(range.clone()).parallel(parallel);
+    #[cfg(not(feature = "rayon"))]
+    let field = || {
+        let _ = parallel;
+        n.field(name).range(range.clone())
+    };
     let array_size = n
         .header()
         .fields

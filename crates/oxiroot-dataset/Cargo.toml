@@ -18,8 +18,9 @@ rayon = { version = "1", optional = true }
 
 [features]
 # Read a batch's columns concurrently (`Batches::parallel`), decompressing
-# each TTree branch's baskets in parallel too.
-rayon = ["dep:rayon", "oxiroot-tree/rayon"]
+# baskets and pages in parallel too; and convert and compress the chunks a
+# `DatasetWriter` writes in parallel.
+rayon = ["dep:rayon", "oxiroot-tree/rayon", "oxiroot-rntuple/rayon"]
 
 [package.metadata.docs.rs]
 all-features = true

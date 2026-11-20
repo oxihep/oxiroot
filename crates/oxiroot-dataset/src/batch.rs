@@ -305,6 +305,11 @@ impl Batch {
             .collect()
     }
 
+    /// The columns, by value, in order.
+    pub(crate) fn into_columns(self) -> impl Iterator<Item = (String, Column)> {
+        self.names.into_iter().zip(self.columns)
+    }
+
     /// Roughly how many bytes the values take.
     #[must_use]
     pub fn byte_size(&self) -> usize {
