@@ -111,10 +111,23 @@ Larger pieces, each worth a design note before code.
   login, and the client authenticates with a WLCG bearer token (`ztn`). Tested
   against a mock server in CI and a real `xrootd` locally
   (`scripts/xrootd_tls_local.sh`).
-- **One API for `TTree` and RNTuple** (`oxiroot::data`): `Dataset`,
+- **One API for `TTree` and RNTuple** (`oxiroot::data`, 0.7.0): `Dataset`,
   `DatasetWriter` and flat `Batch` columns, read cluster by cluster; the old
   high-level `Tree`/`Ntuple` writers and `read_branch*`/`read_field*` methods
   are gone, replaced by a read builder on the low-level readers.
+- **Faster dataset reads and writes, more shapes, Arrow and Polars**
+  (0.8.0). With `rayon`, writes convert and compress every chunk in parallel
+  (5–7× faster) and `.parallel(true)` reads 2–4× faster. A `Batch` holds
+  structs (RNTuple records and user classes) and writes `std::vector<bool>`,
+  `std::vector<std::string>` and `std::vector<std::vector<T>>` to a `TTree`.
+  The `arrow` and `polars` features convert a batch to a `RecordBatch` or a
+  `DataFrame` and back.
+- **A comparison with uproot** ([Performance](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot),
+  `scripts/bench_uproot.py`). The same files, written by oxiroot and by ROOT,
+  read by both. In parallel, oxiroot is faster in most cases; on one thread,
+  uproot is 1.5–4× faster on compressed data, all of it down to the pure-Rust
+  Zstd decoder (see below). Writing it found a reader bug: ROOT's
+  multi-page index columns ([#104](https://github.com/oxihep/oxiroot/pull/104)).
 - **API review** (oxiroot 0.6.0, with oxistats 0.2.0, oxifit 0.9.0, oxiplot
   0.11.0 and oxihist 0.13.0). Names that collided across crates are renamed,
   public fields are private behind accessors, and options builders take one
@@ -129,6 +142,15 @@ Larger pieces, each worth a design note before code.
 
 ### Still open
 
+- **Single-thread Zstd decompression.**
+  - *Today:* `ruzstd`, the pure-Rust decoder, takes 85 % of a read's time and
+    is about 4× slower than C libzstd on compressed blocks. uproot uses
+    libzstd, so it reads 1.5–4× faster on one thread.
+  - *Done when:* a one-thread read of a ROOT-written file is as fast as
+    uproot's. With libzstd swapped in as an experiment, every case already is.
+  - *Options:* an opt-in feature that decodes with libzstd (the `zstd` crate
+    builds it from source, so a C compiler but no system library), keeping the
+    pure-Rust decoder the default; or speed-ups contributed to `ruzstd`.
 - **XRootD GSI (X.509 proxy) authentication.**
   - *Today:* `unix` and token (`ztn`, over TLS) authentication ship, which
     covers open data and token-based access. WLCG is moving from X.509 to
@@ -157,7 +179,8 @@ The API review is done (see above): the surface is what 1.0 would freeze.
     RNTuple;
   - parallelised across clusters.
   This is a compute engine rather than IO, and the natural cap on the stack
-  once the IO layer is complete. ROOT's `RNTupleProcessor` has the same shape
+  once the IO layer is complete. Its foundation is in place: `Dataset`
+  reads cluster by cluster, in parallel, into Arrow-style batches. ROOT's `RNTupleProcessor` has the same shape
   and would share the machinery.
 
 ## Out of scope
