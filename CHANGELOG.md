@@ -7,6 +7,8 @@ change the API.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-20
+
 One API to read and write `TTree` and RNTuple (breaking).
 
 ### Added
