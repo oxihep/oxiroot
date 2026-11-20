@@ -514,4 +514,3 @@ and a ratio plot — each as PNG, SVG, and PDF (and the first at 220 DPI).
 - [Fitting](fitting.md) — fit a model to the same data
 - [Reading & writing files](reading-writing.md) — persist the histograms first
 ```
-

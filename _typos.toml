@@ -1,0 +1,33 @@
+# Spell check (https://github.com/crate-ci/typos), run in CI and by pre-commit.
+# These are not typos: ROOT names, physics shorthand, and loop indices.
+[default.extend-words]
+# Histogram and loop indices: ix, iy, iz.
+iy = "iy"
+iz = "iz"
+# ROOT's TFormula built-in Gaussian (`gaus`, `TF1("f", "gaus")`).
+gaus = "gaus"
+# `TGraphAsymmErrors` shorthand in tests and scripts.
+gae = "gae"
+# N-dimensional: `FitDataNd`, `SparseHist` docs.
+nd = "nd"
+# Student's t-test (`ttest_ind`, as in scipy.stats).
+ttest = "ttest"
+# XRootD's protocol field names (`kXR_protocol` parms).
+parms = "parms"
+# ROOT's own member name `TFormula::fAllParametersSetted`.
+setted = "setted"
+# ROOT's `TIOFeatures`.
+tio = "tio"
+# "mis-read", "mis-decoded".
+mis = "mis"
+# Both spellings are English.
+unparseable = "unparseable"
+# Short local names in tests and scripts: output file `fo`, a threshold
+# parameter `thr`, the `th.id` branch, a byte array `ba`.
+fo = "fo"
+thr = "thr"
+thid = "thid"
+ba = "ba"
+
+[files]
+extend-exclude = ["fixtures/", "*.root", "Cargo.lock"]

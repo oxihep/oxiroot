@@ -71,8 +71,6 @@ webpki-roots = "1"
 rustix = { version = "1", default-features = false, features = ["std", "process"] }
 proptest = "1"
 clap = { version = "4", features = ["derive"] }
-# Per-thread storage without a shared lock (ThreadedHist).
-thread_local = "1.1"
 
 [profile.release]
 opt-level = 3

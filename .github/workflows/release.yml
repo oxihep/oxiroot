@@ -1,0 +1,54 @@
+name: Release
+
+# A GitHub Release for every version tag, with that version's CHANGELOG.md
+# section as its notes, so the Releases page and its feed follow the tags.
+# Run it by hand (Actions → Release → Run workflow) for a tag pushed before
+# this workflow existed.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to publish a release for, e.g. v0.8.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Notes from the CHANGELOG
+        run: |
+          version="${TAG#v}"
+          # The lines after "## [<version>]" up to the next release heading.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          echo "" >> notes.md
+          echo "**Install:** \`oxiroot = { git = \"https://github.com/${{ github.repository }}\", tag = \"$TAG\" }\`" >> notes.md
+
+      - name: Publish the release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --verify-tag --title "oxiroot ${TAG#v}" --notes-file notes.md
+          fi

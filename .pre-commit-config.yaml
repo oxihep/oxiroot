@@ -1,0 +1,47 @@
+# Checks before a commit (and clippy before a push), so CI rarely fails on
+# them. Install once:
+#
+#   pip install pre-commit
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+#
+# Run them all by hand with `pre-commit run --all-files`.
+exclude: ^fixtures/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: \.md$
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.52.2
+    hooks:
+      - id: typos
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]

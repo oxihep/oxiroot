@@ -1,8 +1,11 @@
 # oxiroot
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/oxihep/oxiroot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/oxihep/oxiroot/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Foxihep.github.io%2Foxiroot%2Fcoverage%2Fbadge.json)](https://oxihep.github.io/oxiroot/coverage/html/)
+[![Docs](https://img.shields.io/badge/docs-guide%20%26%20API-blue.svg)](https://oxihep.github.io/oxiroot/)
 [![Rust 1.100+](https://img.shields.io/badge/rust-1.100%2B-orange.svg)](https://www.rust-lang.org)
-[![No libROOT](https://img.shields.io/badge/dependency-no%20libROOT-success.svg)](#)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![No libROOT](https://img.shields.io/badge/dependency-no%20libROOT-success.svg)](#highlights)
 
 Pure-Rust IO for the [CERN ROOT](https://root.cern) file format — **read and
 write** RNTuple, `TTree`, the classic histogram family, and graphs in the ROOT
@@ -1013,11 +1016,30 @@ malformed-input hardening. CI additionally round-trips every type both ways
 against official ROOT (C++) and uproot — Rust writes files they read, and reads
 files they write.
 
-Criterion benchmarks for filling, reading and (de)compression (numbers on the
-[Performance](https://oxihep.github.io/oxiroot/reference/performance/) page):
+Criterion benchmarks for filling, reading, writing and (de)compression
+(numbers on the
+[Performance](https://oxihep.github.io/oxiroot/reference/performance/) page;
+CI runs them weekly and charts the history under
+[/bench/](https://oxihep.github.io/oxiroot/bench/)):
 
 ```sh
-cargo bench -p oxiroot --bench fill --bench read --bench decompress
+cargo bench -p oxiroot --features rayon --bench fill --bench read --bench write --bench decompress
+```
+
+Test coverage, with [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov).
+CI asks that a PR's changed lines be at least 80 % covered, and publishes
+main's [report](https://oxihep.github.io/oxiroot/coverage/html/):
+
+```sh
+cargo llvm-cov --workspace --all-features --html --open
+```
+
+[pre-commit](https://pre-commit.com) hooks run `cargo fmt`, the spell check
+(`typos`, configured in `_typos.toml`) and a secret scan before each commit, and
+clippy before each push:
+
+```sh
+pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
 ### Full local interop check

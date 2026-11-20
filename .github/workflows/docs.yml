@@ -3,10 +3,16 @@ name: Docs
 # Build the Zensical guide site + the rustdoc API reference and publish them to
 # GitHub Pages. The guides live in docs/ (driven by zensical.toml); the API
 # reference is `cargo doc` output served under /api/ (see scripts/build_docs.sh).
+# Next to them: main's test coverage under /coverage/ (an HTML report, and the
+# badge the README shows), and the benchmark history under /bench/ (charts of
+# the weekly `bench` job's runs, from the `bench-data` branch).
 
 on:
   push:
     branches: [main]
+  # Weekly, after the CI's weekly benchmark run, so /bench/ shows it.
+  schedule:
+    - cron: "17 7 * * 1"
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 
@@ -33,6 +39,8 @@ jobs:
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -46,6 +54,33 @@ jobs:
 
       - name: Build docs (guides + rustdoc API)
         run: bash scripts/build_docs.sh
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Coverage report and badge
+        # The HTML report under /coverage/, and a shields.io endpoint
+        # (badge.json) with the line coverage, which the README badge reads.
+        run: |
+          cargo llvm-cov --locked --workspace --all-features --no-report
+          cargo llvm-cov report --html --output-dir site/coverage
+          cargo llvm-cov report --json --summary-only --output-path coverage.json
+          python3 - <<'PY'
+          import json
+          pct = json.load(open("coverage.json"))["data"][0]["totals"]["lines"]["percent"]
+          color = "brightgreen" if pct >= 85 else "green" if pct >= 75 else "yellow" if pct >= 60 else "red"
+          json.dump({"schemaVersion": 1, "label": "coverage", "message": f"{pct:.0f}%", "color": color},
+                    open("site/coverage/badge.json", "w"))
+          PY
+
+      - name: Benchmark history
+        # The weekly bench job's charts; absent until its first run.
+        run: |
+          if git fetch --depth 1 origin bench-data 2>/dev/null; then
+            git archive FETCH_HEAD bench | tar -x -C site || true
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

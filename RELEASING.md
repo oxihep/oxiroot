@@ -49,7 +49,10 @@ resolves to more than one source.
    ```sh
    git tag -a v0.1.1 -m "oxistats 0.1.1" && git push origin v0.1.1
    ```
-   Point the install instructions at the new tag in the same PR: every
+   In oxiroot, pushing the tag runs `.github/workflows/release.yml`, which
+   publishes a GitHub Release whose notes are the version's CHANGELOG section.
+   Point the install instructions at the new tag in the same PR (and, in
+   oxiroot, `version` and `date-released` in `CITATION.cff`): every
    README's dependency line, and for oxiroot the `oxiroot = { git … }` lines
    in `README.md` and `docs/`, and the `cargo install --git … --tag` line for
    `oxroot`.
