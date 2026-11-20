@@ -7,6 +7,12 @@ change the API.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-11-20
+
+XRootD over TLS with token authentication, a ROOT-confirmed RNTuple
+`std::map` write, and shared profile code. Built on oxiplot 0.11.1 and
+oxihist 0.13.1.
+
 ### Added
 
 - **`Profile3D::bin_error` and `effective_entries`**, and
@@ -32,6 +38,8 @@ change the API.
 
 ### Changed
 
+- **oxiplot 0.11.1 and oxihist 0.13.1**: the legend's automatic placement
+  keeps off text annotations.
 - **The profiles share their per-cell code.** Filling, the profiled value,
   its error and the effective entries come from one macro
   (`impl_profile_family!`) for `Profile1D`, `Profile2D` and `Profile3D`;
