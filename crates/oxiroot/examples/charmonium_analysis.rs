@@ -216,11 +216,9 @@ mod analysis {
         .limit("alpha", 0.3, 5.0)
         .limit("n", 1.05, 50.0)
         .limit("slope", 0.01, 10.0);
-        // MIGRAD with a SIMPLEX fallback: from a rough seed, eight parameters
-        // of very different scales.
-        let opts = FitOptions::new()
-            .method(FitMethod::Likelihood)
-            .minimizer(Minimizer::Minuit2Combined);
+        // The default minimizer, MIGRAD with a SIMPLEX fallback, copes with
+        // the rough seed and eight parameters of very different scales.
+        let opts = FitOptions::new().method(FitMethod::Likelihood);
         let fit = m_hist.fit_opts(&model, &opts.with_minos(true));
         let minos = fit.minos.clone().unwrap_or_default();
         println!(

@@ -364,3 +364,37 @@ fn fit_a_tgraph_with_errors() {
     // 5 points − 2 free params = 3 d.o.f.
     assert_eq!(fit.ndf, 3);
 }
+
+#[test]
+fn variable_bins_are_integrated_over_their_edges() {
+    use oxiroot_hist::{FitData, FitOptions};
+    // Contents are the exact bin averages of 100·e^(−x/2) over very uneven
+    // bins, with 1 % errors: only a fit averaging the model over each bin's
+    // real edges recovers the slope (ROOT's option "I").
+    let edges = [0.0, 0.5, 1.5, 3.0, 5.0, 8.0];
+    let mut h = Hist::var(&edges).weight().to_root();
+    for (i, w) in edges.windows(2).enumerate() {
+        let average = 200.0 * ((-w[0] / 2.0).exp() - (-w[1] / 2.0).exp()) / (w[1] - w[0]);
+        h.contents[i + 1] = average;
+        h.sumw2[i + 1] = (0.01 * average).powi(2);
+    }
+    assert_eq!(
+        h.bin_edges().expect("edges"),
+        vec![(0.0, 0.5), (0.5, 1.5), (1.5, 3.0), (3.0, 5.0), (5.0, 8.0)]
+    );
+    let model = Model::new("e", &["n", "tau"], vec![80.0, 1.5], |x, p| {
+        p[0] * (-x / p[1]).exp()
+    });
+    let fit = h.fit_opts(&model, &FitOptions::new().with_bin_integration(true));
+    assert!(
+        fit.valid && (fit.params[1] - 2.0).abs() < 1e-4,
+        "{:?}",
+        fit.params
+    );
+    let at_centers = h.fit(&model);
+    assert!(
+        (at_centers.params[1] - 2.0).abs() > 1e-2,
+        "{:?}",
+        at_centers.params
+    );
+}

@@ -328,10 +328,17 @@ matrix, and `chi2`/`ndf` (with `chi2_per_ndf()` and a goodness-of-fit
 `p_value()`). The χ² survival function it shares with the comparison tests lives
 in the dependency-free `oxistats` crate.
 
+Beyond curve fits, `oxiroot::fit` has your own costs (`Cost`, `FnCost`,
+`ModelCost`, `CostSum`, run by a `Fitter`), CLs limits and discovery
+significances (`HypoTest`), HistFactory-style template fits with systematics
+(`TemplateModel`), sWeights (`SWeights`), bin-integrated fits, binomial
+efficiency fits and an ensemble MCMC sampler (`Sampler`). The
+[fitting guide](docs/guide/fitting.md) has a section on each.
+
 `FitOptions::minimizer(...)` selects the optimizer: the default
-`Minimizer::Minuit2` (the pure-Rust Minuit2 MIGRAD + HESSE — ROOT's algorithm,
-with parabolic + MINOS errors and the covariance), `Minuit2Combined` and
-`Simplex`, `LevenbergMarquardt`, the global searches `MultiStart`,
+`Minimizer::Minuit2Combined` (the pure-Rust Minuit2 MIGRAD + HESSE — ROOT's
+algorithm, with parabolic + MINOS errors and the covariance — falling back to
+SIMPLEX when MIGRAD fails), `Minuit2` alone, `Simplex`, `LevenbergMarquardt`, the global searches `MultiStart`,
 `DifferentialEvolution` and `CmaEs` (for a
 seed that may sit in the wrong basin: they search the parameter limits, then
 polish with MIGRAD), and, behind the **`argmin` feature**,
