@@ -156,7 +156,7 @@ pub mod prelude {
     pub use oxifit::{
         CmaEs, Cost, CostSum, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd,
         FitError, FitExt, FitMethod, FitOptions, FitResult, Fitter, FnCost, HypoTest, Loss,
-        Minimizer, Model, ModelCost, MultiStart, Point, PointNd, Points, Points2, Points3,
+        Minimizer, Model, ModelCost, MultiStart, Nuts, Point, PointNd, Points, Points2, Points3,
         SWeights, Sampler, Simultaneous, TemplateModel, Toys,
     };
     #[cfg(feature = "rayon")]

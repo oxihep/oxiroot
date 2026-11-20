@@ -176,59 +176,6 @@ impl Hist2D {
         }
     }
 
-    /// Enable per-bin error tracking (ROOT's `Sumw2`); see [`crate::Hist1D::sumw2`].
-    /// Returns `&mut self` so it can chain.
-    pub fn sumw2(&mut self) -> &mut Self {
-        if self.sumw2.len() != self.contents.len() {
-            self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
-        }
-        self
-    }
-
-    /// Total cells including the flow bins (`fNcells`), derived from `contents`.
-    #[must_use]
-    pub fn ncells(&self) -> i32 {
-        self.contents.len() as i32
-    }
-
-    /// The exact ROOT class name (`"TH2D"`/`"TH2F"`/…), derived from the stored
-    /// [`bin_content_type`](Hist2D::bin_content_type).
-    #[must_use]
-    pub fn class_name(&self) -> String {
-        self.bin_content_type.class_name("TH2")
-    }
-
-    /// This histogram's on-disk [`BinContentType`] (the class suffix);
-    /// [`BinContentType::F64`] by default. See [`crate::Hist1D::bin_content_type`].
-    #[must_use]
-    pub fn bin_content_type(&self) -> BinContentType {
-        self.bin_content_type
-    }
-
-    /// Change the on-disk bin content type of an existing histogram — the
-    /// post-construction counterpart of the builder's storage finalizers (build
-    /// with a given type via [`Hist::reg(...).reg(...).double().to_root_as(crate::BinContentType::F32)`](crate::Hist) → `TH2F`, …).
-    #[must_use]
-    pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
-        self.bin_content_type = bin_content_type;
-        self
-    }
-
-    /// Per-bin error: `sqrt(sumw2[bin])` when error tracking is on, else
-    /// `sqrt(content)`. `bin` is the global cell index (x fastest).
-    pub fn bin_error(&self, bin: usize) -> f64 {
-        if let Some(&s) = self.sumw2.get(bin) {
-            s.max(0.0).sqrt()
-        } else {
-            self.contents
-                .get(bin)
-                .copied()
-                .unwrap_or(0.0)
-                .max(0.0)
-                .sqrt()
-        }
-    }
-
     /// Fill `(x, y)` with unit weight, as in an analysis loop.
     pub fn fill(&mut self, x: f64, y: f64) {
         self.fill_weight(x, y, 1.0);
