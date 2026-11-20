@@ -7,6 +7,17 @@ change the API.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-20
+
+Fitting grown into an analysis toolkit, complete analysis examples, and a
+cleaner codebase. oxiroot now builds on oxifit 0.8.0, oxiplot 0.10.0 and
+oxihist 0.12.0: user-defined costs, CLs limits and significances,
+HistFactory-style template fits, sWeights, efficiency and bin-integrated
+fits, ensemble and NUTS sampling, faster gradient fits, and plots for
+limits, pulls, impacts and posteriors. Four new examples run whole
+analyses from a `TTree` to plots and a ROOT file. Breaking: several enums
+are now `#[non_exhaustive]` (see Changed).
+
 ### Added
 
 - **Four complete analysis examples**, each a `TTree` in, fits, plots and a

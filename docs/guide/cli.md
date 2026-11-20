@@ -6,7 +6,7 @@ It ships in the `oxiroot-cli` crate and is built on the same readers as the
 library.
 
 ```sh
-cargo install --git https://github.com/oxihep/oxiroot --tag v0.4.0 --locked oxiroot-cli   # installs `oxroot`
+cargo install --git https://github.com/oxihep/oxiroot --tag v0.5.0 --locked oxiroot-cli   # installs `oxroot`
 # or, from a checkout:
 cargo install --path crates/oxiroot-cli
 cargo run -p oxiroot-cli -- <command> ...
