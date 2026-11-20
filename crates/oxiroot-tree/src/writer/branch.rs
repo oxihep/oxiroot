@@ -186,13 +186,57 @@ macro_rules! vector_ctors {
     };
 }
 vector_ctors! {
-    vector_i8 => VecI8(i8), vector_u8 => VecU8(u8), vector_i16 => VecI16(i16),
+    vector_bool => VecBool(bool), vector_i8 => VecI8(i8), vector_u8 => VecU8(u8), vector_i16 => VecI16(i16),
     vector_u16 => VecU16(u16), vector_i32 => VecI32(i32), vector_u32 => VecU32(u32),
     vector_i64 => VecI64(i64), vector_u64 => VecU64(u64),
     vector_f32 => VecF32(f32), vector_f64 => VecF64(f64),
 }
 
+/// Generate `Branch::vector_vector_<name>` shortcuts for
+/// `std::vector<std::vector<T>>` branches (a `TBranchElement`).
+macro_rules! vector_vector_ctors {
+    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
+        impl Branch {
+            $(
+                #[doc = concat!("A `std::vector<std::vector<", stringify!($elem), ">>` branch (a `TBranchElement`).")]
+                pub fn $method(name: impl Into<String>, values: Vec<Vec<Vec<$elem>>>) -> Branch {
+                    let mut offsets = Vec::with_capacity(values.len() + 1);
+                    offsets.push(0u64);
+                    let mut acc = 0u64;
+                    for row in &values {
+                        acc += row.len() as u64;
+                        offsets.push(acc);
+                    }
+                    let items = values.into_iter().flatten().collect();
+                    Branch {
+                        name: name.into(),
+                        values: BranchValues::Nested { offsets, items: Box::new(BranchValues::$variant(items)) },
+                        kind: BranchKind::StlVector,
+                    }
+                }
+            )*
+        }
+    };
+}
+vector_vector_ctors! {
+    vector_vector_bool => VecBool(bool), vector_vector_i8 => VecI8(i8),
+    vector_vector_u8 => VecU8(u8), vector_vector_i16 => VecI16(i16),
+    vector_vector_u16 => VecU16(u16), vector_vector_i32 => VecI32(i32),
+    vector_vector_u32 => VecU32(u32), vector_vector_i64 => VecI64(i64),
+    vector_vector_u64 => VecU64(u64), vector_vector_f32 => VecF32(f32),
+    vector_vector_f64 => VecF64(f64),
+}
+
 impl Branch {
+    /// A `std::vector<std::string>` branch (a `TBranchElement`).
+    pub fn vector_string(name: impl Into<String>, values: Vec<Vec<String>>) -> Branch {
+        Branch {
+            name: name.into(),
+            values: BranchValues::VecStr(values),
+            kind: BranchKind::StlVector,
+        }
+    }
+
     /// A string branch (`TLeafC`).
     pub fn string(name: impl Into<String>, values: Vec<String>) -> Branch {
         Branch {

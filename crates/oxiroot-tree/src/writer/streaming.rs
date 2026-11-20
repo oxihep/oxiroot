@@ -25,6 +25,8 @@ struct ColSig {
     jagged: bool,
     stl_vector: bool,
     flen: i32,
+    /// The element type code (`F`, `I`, …), so nested element types differ.
+    elem: char,
 }
 
 fn col_sig(b: &Branch) -> ColSig {
@@ -34,6 +36,7 @@ fn col_sig(b: &Branch) -> ColSig {
         jagged: b.jagged(),
         stl_vector: b.stl_vector(),
         flen: b.flen(),
+        elem: b.leaf().code,
     }
 }
 
@@ -272,7 +275,9 @@ impl<W: Write + Seek> TreeWriter<W> {
         // All branches in a batch must carry the same number of entries.
         check_entry_counts(branches)?;
         let batch_entries = branches.first().map_or(0, Branch::n_entries);
-        if batch_entries == 0 {
+        // An empty batch writes nothing, but the first one still fixes the
+        // schema, so a tree with no entries can be written.
+        if branches.is_empty() || (batch_entries == 0 && self.schema.is_some()) {
             return Ok(0);
         }
 

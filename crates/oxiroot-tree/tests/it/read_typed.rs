@@ -167,3 +167,53 @@ fn write_batches_equals_one_batch_at_a_time() {
         b.finish().unwrap().into_inner()
     );
 }
+
+#[test]
+fn writes_vector_bool_string_and_vector_vector() {
+    let vb = vec![vec![true, false], vec![], vec![true]];
+    let vs = vec![
+        vec!["a".to_string(), "bc".into()],
+        vec![],
+        vec!["x".repeat(300)],
+    ];
+    let vv = vec![
+        vec![vec![1.5_f32], vec![]],
+        vec![],
+        vec![vec![2.0, 3.0], vec![4.0]],
+    ];
+    let vvi = vec![vec![vec![1_i64, 2]], vec![vec![]], vec![]];
+    let chunk = |r: std::ops::Range<usize>| {
+        vec![
+            Branch::vector_bool("vb", vb[r.clone()].to_vec()),
+            Branch::vector_string("vs", vs[r.clone()].to_vec()),
+            Branch::vector_vector_f32("vv", vv[r.clone()].to_vec()),
+            Branch::vector_vector_i64("vvi", vvi[r].to_vec()),
+        ]
+    };
+    // Two baskets, so each kind is also cut and stitched back.
+    let mut w =
+        TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::Zstd(1)).unwrap();
+    w.write_batches(&[chunk(0..2), chunk(2..3)]).unwrap();
+    let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
+    let t = TreeReader::open(&file, "T").unwrap();
+    assert_eq!(t.branch("vb").read::<Vec<bool>>().unwrap(), vb);
+    assert_eq!(t.branch("vs").read::<Vec<String>>().unwrap(), vs);
+    assert_eq!(t.branch("vv").read::<Vec<Vec<f32>>>().unwrap(), vv);
+    assert_eq!(t.branch("vvi").read::<Vec<Vec<i64>>>().unwrap(), vvi);
+    assert_eq!(
+        t.branch_layout("vv"),
+        Some(oxiroot_tree::BranchLayout::ListOfLists)
+    );
+}
+
+#[test]
+fn an_empty_first_batch_writes_a_tree_with_no_entries() {
+    let mut w = TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::None).unwrap();
+    w.write_batch(&[Branch::f64("x", vec![]), Branch::vector_i32("v", vec![])])
+        .unwrap();
+    let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
+    let t = TreeReader::open(&file, "T").unwrap();
+    assert_eq!(t.entries(), 0);
+    assert_eq!(t.branch_names(), ["x", "v"]);
+    assert_eq!(t.branch("x").read::<f64>().unwrap(), Vec::<f64>::new());
+}
