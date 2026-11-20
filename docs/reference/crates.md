@@ -72,7 +72,7 @@ oxistats, oxiparticle, oxifit-formula: no dependencies
 
 All pure Rust — the no-libROOT promise holds end to end:
 
-- [`ruzstd`](https://crates.io/crates/ruzstd) — Zstd
+- [`zrip`](https://crates.io/crates/zrip) — Zstd (safe Rust, within about 1.25× of C zstd's speed)
 - [`miniz_oxide`](https://crates.io/crates/miniz_oxide) — zlib
 - [`lz4_flex`](https://crates.io/crates/lz4_flex) — LZ4
 - [`lzma-rust2`](https://crates.io/crates/lzma-rust2) — LZMA / XZ (encode + decode)
