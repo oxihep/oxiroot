@@ -9,6 +9,13 @@ change the API.
 
 ### Added
 
+- **Four complete analysis examples**, each a `TTree` in, fits, plots and a
+  ROOT file out, a few seconds in `--release` and run by CI:
+  `resonance_search` (a bump hunt to the Brazil band), `template_fit` (a
+  HistFactory-style fit from ROOT histograms to the post-fit stack, pulls
+  and impacts), `splot_lifetime` (sWeights as a friend tree, a lifetime fit
+  with correct weighted-fit errors) and `tag_and_probe` (pass/fail fits to
+  an efficiency map, turn-ons and a binomially fitted `TEfficiency`).
 - **oxifit 0.8.0, oxiplot 0.10.0, oxihist 0.12.0.** `oxiroot::fit` gains
   Hamiltonian Monte Carlo (`Nuts`, in the prelude) with `Chain::r_hat` and
   `Chain::divergences`, and fits with an analytic gradient run about twice

@@ -72,6 +72,15 @@ jobs:
           cargo run --locked -q -p oxiroot --example rntuple_nested
           cargo run --locked -q -p oxiroot --example plot --features plot,fit
 
+      - name: Run the analysis examples (release)
+        # Complete analyses — a TTree in, fits, toys, plots and a ROOT file
+        # out — each a few seconds in release (far longer in debug).
+        run: |
+          cargo run --locked -q --release -p oxiroot --example resonance_search
+          cargo run --locked -q --release -p oxiroot --example template_fit
+          cargo run --locked -q --release -p oxiroot --example splot_lifetime
+          cargo run --locked -q --release -p oxiroot --example tag_and_probe
+
   macos:
     name: test (macOS)
     # The mmap path, file locking and path handling differ from Linux.
