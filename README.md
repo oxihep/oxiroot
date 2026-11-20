@@ -73,7 +73,8 @@ None of them is on crates.io yet; depend on them from GitHub (see
 - 📊 **Datasets** (`oxiroot::data`) — one API to read and write `TTree` and
   RNTuple: a `Batch` of flat, Arrow-style columns is what `Dataset` reads and
   `DatasetWriter` writes, whatever the format. Typed slices with no copies,
-  cluster-by-cluster iteration, strict types, and skims with no per-type code.
+  cluster-by-cluster iteration, strict types, and skims with no per-type code;
+  parallel reads and writes with `rayon`, and conversion to Arrow and Polars.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -1056,9 +1057,11 @@ Pre-1.0: the API may still change between minor versions. The full list,
 with what "done" means for each item, is in [ROADMAP.md](ROADMAP.md). In
 short:
 
-- **Next:** XRootD GSI (X.509 proxy) authentication. Token authentication
-  over TLS, the API review, shared histogram and profile code, cast lints and
-  a ROOT-confirmed RNTuple `std::map` write are done.
+- **Done lately:** one `Dataset` API for `TTree` and RNTuple (0.7), then
+  parallel reads and writes, structs, and Arrow and Polars conversion (0.8);
+  a [comparison with uproot](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot).
+- **Next:** faster single-thread Zstd decompression, where uproot (C libzstd)
+  is still ahead; XRootD GSI (X.509 proxy) authentication.
 - **Toward 1.0:** publishing to crates.io, once it is decided to.
 - **Far future:** an `RDataFrame`-style lazy analysis front-end.
 

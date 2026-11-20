@@ -7,6 +7,15 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **A comparison with uproot**: `scripts/bench_uproot.py` reads the same
+  `TTree` and RNTuple files, written by oxiroot and by ROOT's RDataFrame
+  (`scripts/bench_write_root.C`), with `Dataset` and with uproot, serial and
+  parallel (example `read_timing`). Results and analysis on the
+  [Performance](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot)
+  page.
+
 ### Fixed
 
 - **RNTuples written by ROOT with more than one page of collection or string
@@ -854,7 +863,13 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/oxihep/oxiroot/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/oxihep/oxiroot/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/oxihep/oxiroot/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/oxihep/oxiroot/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/oxihep/oxiroot/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/oxihep/oxiroot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/oxihep/oxiroot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/oxihep/oxiroot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/oxihep/oxiroot/releases/tag/v0.1.0
