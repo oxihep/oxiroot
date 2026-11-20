@@ -1,6 +1,6 @@
 //! Codec backends for ROOT compression blocks.
 //!
-//! All pure-Rust: Zstd via `ruzstd`, zlib via `miniz_oxide`, LZ4 via `lz4_flex`
+//! All pure-Rust: Zstd via `zrip`, zlib via `miniz_oxide`, LZ4 via `lz4_flex`
 //! (block format), and LZMA via `lzma-rust2` (an XZ stream). Every algorithm
 //! ROOT writes can be both decoded and encoded here except the legacy `CS`,
 //! which ROOT itself no longer writes.
@@ -11,14 +11,35 @@ use xxhash_rust::xxh64::xxh64;
 
 use crate::CompressError;
 
-/// Decode a single Zstd-compressed block payload (a standard Zstd frame).
+thread_local! {
+    /// One Zstd decoder per thread: its tables and workspace are reused from
+    /// block to block instead of being allocated for each.
+    static ZSTD_DECODER: std::cell::RefCell<zrip::DecompressContext> =
+        std::cell::RefCell::new(zrip::DecompressContext::new());
+    /// One Zstd encoder per thread, likewise; its level is set per block.
+    static ZSTD_ENCODER: std::cell::RefCell<Option<zrip::CompressContext>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Decode a single Zstd-compressed block payload (a standard Zstd frame),
+/// producing at most `uncompressed_size` bytes (the block header's declared
+/// size, at most 16 MiB): a frame that would expand further fails with
+/// [`CompressError::SizeMismatch`] before it is decoded whole.
 pub(crate) fn zstd_decode(
     payload: &[u8],
     uncompressed_size: usize,
 ) -> Result<Vec<u8>, CompressError> {
-    let mut decoder = ruzstd::decoding::StreamingDecoder::new(payload)
-        .map_err(|e| CompressError::Codec(format!("zstd: {e:?}")))?;
-    read_bounded(&mut decoder, uncompressed_size, "zstd")
+    let mut out = Vec::with_capacity(uncompressed_size.min(crate::MAX_CHUNK_SIZE));
+    ZSTD_DECODER
+        .with_borrow_mut(|d| d.decompress_into_with_limit(payload, &mut out, uncompressed_size))
+        .map_err(|e| match e {
+            zrip::DecompressError::OutputTooSmall => CompressError::SizeMismatch {
+                expected: uncompressed_size,
+                got: uncompressed_size + 1,
+            },
+            e => CompressError::Codec(format!("zstd: {e}")),
+        })?;
+    Ok(out)
 }
 
 /// Decode a single zlib-compressed block payload (a standard zlib stream),
@@ -122,16 +143,34 @@ pub(crate) fn lz4_encode(data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Encode `data` as a single standard Zstd frame (pure-Rust `ruzstd`). The frame
+/// The zrip level for ROOT's Zstd level `level` (1..=9). zrip's levels stop
+/// at 4, which already compresses physics data about as well as C zstd's
+/// level 5, ROOT's default; ROOT's higher levels use it too.
+fn zrip_level(level: u8) -> i32 {
+    i32::from(level.clamp(1, 4))
+}
+
+/// Encode `data` as a single standard Zstd frame (pure-Rust `zrip`). The frame
 /// is what ROOT stores after a block's 9-byte header.
-///
-/// `_level` is the requested ROOT level (1..=9). The pure-Rust `ruzstd` encoder
-/// exposes only one compressing level (`Fastest`), so the numeric level does not
-/// change the ratio here — the output is always valid Zstd that ROOT reads back
-/// correctly, just not tuned per level. (A higher-ratio backend would be a build
-/// option, not an interop concern.)
-pub(crate) fn zstd_encode(data: &[u8], _level: u8) -> Vec<u8> {
-    ruzstd::encoding::compress_to_vec(data, ruzstd::encoding::CompressionLevel::Fastest)
+pub(crate) fn zstd_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressError> {
+    let level = zrip_level(level);
+    ZSTD_ENCODER.with_borrow_mut(|slot| {
+        let encoder = match slot {
+            Some(e) => {
+                e.set_level(level)
+                    .map_err(|e| CompressError::Codec(format!("zstd: {e}")))?;
+                e
+            }
+            None => slot.insert(
+                zrip::CompressContext::new(level)
+                    .map_err(|e| CompressError::Codec(format!("zstd: {e}")))?,
+            ),
+        };
+        encoder
+            .compress(data)
+            .map(std::borrow::Cow::into_owned)
+            .map_err(|e| CompressError::Codec(format!("zstd: {e}")))
+    })
 }
 
 /// Encode `data` as a ROOT LZMA block payload: a complete XZ stream (pure-Rust

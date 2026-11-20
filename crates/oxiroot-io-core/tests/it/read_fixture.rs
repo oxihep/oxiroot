@@ -102,7 +102,7 @@ fn decompresses_zstd_object_matching_uncompressed() {
     let unc_obj = unc.key_payload(unc_key).expect("uncompressed payload");
 
     // The zstd fixture stores it compressed; decode it via the real ROOT block
-    // framing + ruzstd and require a byte-for-byte match with the plain object.
+    // framing + zrip and require a byte-for-byte match with the plain object.
     assert!(!zst_key.is_uncompressed());
     let zst_payload = zst.key_payload(zst_key).expect("zstd payload");
     let decoded =

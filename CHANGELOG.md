@@ -7,6 +7,25 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Zstd goes through [zrip](https://crates.io/crates/zrip) instead of
+  `ruzstd`**: pure, safe Rust (`forbid(unsafe_code)`), MIT, within about 1.25×
+  of C zstd's speed both ways and with its compression ratio. Of seven Rust
+  Zstd crates timed on ROOT's blocks, it was the fastest without `unsafe`.
+  - Reads: a one-thread read of a ROOT-written `TTree` is 2.4× faster, of an
+    RNTuple 2.5×. oxiroot now matches or beats uproot on one thread in seven
+    of eight cases of the comparison, and in parallel is up to 3.6× faster.
+  - Writes: 3–6× faster, and the files are about a third smaller (`ruzstd`
+    had a single fast level, which left many blocks nearly raw). Zstd levels
+    1–4 are zrip's; higher levels use its level 4, which compresses physics
+    data about as well as C zstd's level 5.
+  - A column that barely compressed before (such as random doubles) now
+    compresses a little, and reading it costs a decompression where it was a
+    copy, as in ROOT and uproot.
+  - Decoding stays bounded by the block header's declared size; the
+    decompression fuzz target ran 4 million inputs without a crash.
+
 ### Added
 
 - **Lists of structs in a `TTree`**. A `Batch` column that is a list of

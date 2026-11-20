@@ -12,7 +12,9 @@ description = "ROOT compression block framing and codecs"
 
 [dependencies]
 miniz_oxide = "0.9.1"
-ruzstd = "0.9.1"
+# Pure, safe Rust Zstandard (`forbid(unsafe_code)`), within about 1.25x of C
+# zstd's speed both ways and with its compression ratio.
+zrip = "0.8.22"
 lz4_flex = { version = "0.14", default-features = false, features = ["alloc", "safe-encode", "safe-decode", "checked-decode"] }
 # Pure-Rust LZMA/XZ (tukaani xz-for-java port). Both directions: `xz` gives the
 # decoder, `encoder` the compressor. `optimization` improves the ratio.

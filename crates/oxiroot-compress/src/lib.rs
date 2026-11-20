@@ -186,7 +186,7 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
             1 => codec::zlib_encode(chunk, level),
             2 => codec::lzma_encode(chunk, level)?,
             4 => codec::lz4_encode(chunk),
-            5 => codec::zstd_encode(chunk, level),
+            5 => codec::zstd_encode(chunk, level)?,
             _ => unreachable!("algorithm validated above"),
         };
         if frame.len() > MAX_CHUNK_SIZE {

@@ -882,7 +882,7 @@ ax2.save("heatmap.svg")?;
   written with any of them match ROOT's own block framing and read back in ROOT
   and uproot.
 
-All four codecs are pure Rust (`ruzstd`, `miniz_oxide`, `lz4_flex`,
+All four codecs are pure Rust (`zrip`, `miniz_oxide`, `lz4_flex`,
 `lzma-rust2`), so the no-libROOT promise holds. LZ4 blocks carry ROOT's XXH64
 integrity check, verified on read.
 
@@ -976,7 +976,7 @@ The crates that are not about ROOT (oxihist, oxiplot, oxifit, oxistats,
 oxiparticle) live in their own repositories; see
 [the family table](#part-of-the-oxihep-family).
 
-Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
+Dependencies are pure Rust: [`zrip`](https://crates.io/crates/zrip) (Zstd),
 [`miniz_oxide`](https://crates.io/crates/miniz_oxide) (zlib),
 [`lz4_flex`](https://crates.io/crates/lz4_flex) (LZ4),
 [`lzma-rust2`](https://crates.io/crates/lzma-rust2) (LZMA/XZ), and
@@ -1083,8 +1083,8 @@ short:
 - **Done lately:** one `Dataset` API for `TTree` and RNTuple (0.7), then
   parallel reads and writes, structs, and Arrow and Polars conversion (0.8);
   a [comparison with uproot](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot).
-- **Next:** faster single-thread Zstd decompression, where uproot (C libzstd)
-  is still ahead; XRootD GSI (X.509 proxy) authentication.
+- **Next:** XRootD GSI (X.509 proxy) authentication. Zstd now goes through
+  `zrip` (pure, safe Rust), so a one-thread read is as fast as uproot's.
 - **Toward 1.0:** publishing to crates.io, once it is decided to.
 - **Far future:** an `RDataFrame`-style lazy analysis front-end.
 

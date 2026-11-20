@@ -53,21 +53,21 @@ basket or page they need; `parallel` uses rayon's pool (the `rayon` feature).
 
 | Read | `TTree` | RNTuple |
 | --- | ---: | ---: |
-| `pt`, `Dataset::read` | 0.99 ms (1.0 G entries/s) | 1.1 ms (900 M entries/s) |
-| `jets`, `Dataset::read` (flat) | 59 ms | 60 ms |
-| `jets`, low-level `values()` (one `Vec` per entry) | 65 ms | 72 ms |
-| all three, `Dataset::batches` | 62 ms | 65 ms |
-| all three, `Dataset::batches`, parallel | 18 ms | 13 ms |
+| `pt`, `Dataset::read` | 7.0 ms | 7.1 ms |
+| `jets`, `Dataset::read` (flat) | 29 ms | 18 ms |
+| `jets`, low-level `values()` (one `Vec` per entry) | 37 ms | 30 ms |
+| all three, `Dataset::batches` | 39 ms | 28 ms |
+| all three, `Dataset::batches`, parallel | 13 ms | 7.9 ms |
 
 | Write (with `rayon`) | `TTree` | RNTuple |
 | --- | ---: | ---: |
-| `DatasetWriter`, one `Batch` | 42 ms | 27 ms |
-| `TreeWriter` / `NtupleWriter`, from rows | 166 ms | 104 ms |
+| `DatasetWriter`, one `Batch` | 14 ms | 4.9 ms |
+| `TreeWriter` / `NtupleWriter`, from rows | 47 ms | 29 ms |
 
-The `pt` column barely compresses, so its read is close to a memory copy;
-`jets` holds compressible values, and decompressing them is most of its
-time (see below). Reading 500 `TH1D` by name from one file takes 2.8 ms
-(about 180 k objects/s).
+Most of a read is decompressing. Zstd goes through
+[zrip](https://crates.io/crates/zrip), a pure, safe-Rust implementation within
+about 1.25× of C zstd's speed and with its compression ratio. Reading 500
+`TH1D` by name from one file takes 1.4 ms (about 350 k objects/s).
 
 ## Against uproot
 
@@ -86,31 +86,30 @@ python3 scripts/bench_uproot.py            # --entries, --repeats
 
 | File | Columns | oxiroot | uproot | oxiroot, parallel | uproot, parallel |
 | --- | --- | ---: | ---: | ---: | ---: |
-| oxiroot `TTree` | `pt` | 17 ms | 21 ms | 19 ms | 23 ms |
-| oxiroot `TTree` | all three | 552 ms | 409 ms | 150 ms | 103 ms |
-| oxiroot RNTuple | `pt` | 20 ms | 14 ms | 19 ms | 14 ms |
-| oxiroot RNTuple | all three | 680 ms | 239 ms | 115 ms | 235 ms |
-| ROOT `TTree` | `pt` | 309 ms | 77 ms | 47 ms | 33 ms |
-| ROOT `TTree` | all three | 991 ms | 559 ms | 199 ms | 353 ms |
-| ROOT RNTuple | `pt` | 71 ms | 44 ms | 38 ms | 41 ms |
-| ROOT RNTuple | all three | 452 ms | 198 ms | 187 ms | 194 ms |
+| oxiroot `TTree` (122 MiB) | `pt` | 74 ms | 78 ms | 22 ms | 31 ms |
+| oxiroot `TTree` | all three | 390 ms | 492 ms | 142 ms | 107 ms |
+| oxiroot RNTuple (100 MiB) | `pt` | 76 ms | 76 ms | 23 ms | 74 ms |
+| oxiroot RNTuple | all three | 326 ms | 283 ms | 78 ms | 277 ms |
+| ROOT `TTree` (121 MiB) | `pt` | 73 ms | 79 ms | 24 ms | 34 ms |
+| ROOT `TTree` | all three | 408 ms | 566 ms | 136 ms | 360 ms |
+| ROOT RNTuple (52 MiB) | `pt` | 44 ms | 45 ms | 35 ms | 42 ms |
+| ROOT RNTuple | all three | 182 ms | 198 ms | 108 ms | 199 ms |
 
 "Parallel" is `batches(..).parallel(true)` for oxiroot and a
 `ThreadPoolExecutor` for uproot's decompression and interpretation.
 
-On one thread, uproot is faster: 1.5–4× on data that compresses (the `jets`
-values, everything ROOT writes). Profiles put 85 % of oxiroot's time in
-decompression. uproot decompresses with the C libzstd; oxiroot with `ruzstd`,
-the pure-Rust decoder, which is about 4× slower on compressed blocks. The
-`pt` column oxiroot writes barely compresses (its encoder has only the fast
-level), so it reads at memory speed on both sides.
+On one thread, oxiroot is as fast as uproot or faster in seven of the eight
+cases (up to 1.4×, on the ROOT `TTree`), and 0.9× in the last. In parallel it
+is faster in seven of eight, up to 3.6×: it decompresses a column's baskets or
+pages across threads, where uproot's executor helps a `TTree` but barely an
+RNTuple.
 
-With C libzstd swapped in as an experiment, oxiroot's single-thread reads match
-or beat uproot's on every row: 334 ms against 559 ms for all three columns of
-the ROOT `TTree`, 204 ms against 198 ms for the ROOT RNTuple. In parallel,
-oxiroot is already faster in five of the eight rows, up to 2× on the heavy
-RNTuple and ROOT `TTree` reads: it decompresses a column's baskets or pages
-across threads, where uproot's executor helps a `TTree` but barely an RNTuple.
+Up to oxiroot 0.8, Zstd went through `ruzstd`, which decodes about 4× slower
+than C zstd: uproot (C libzstd) was then 1.5–4× faster on one thread, and the
+files oxiroot wrote were about a third larger, since `ruzstd` has a single
+fast level. Of seven Rust Zstd crates timed on these files' blocks, zrip came
+within 1.25× of C zstd both ways, with its compression ratio and no `unsafe`
+code, so it took `ruzstd`'s place.
 
 ## Compression
 
@@ -120,12 +119,13 @@ compressible the way physics columns are — through ROOT's block framing.
 | Codec | Decompress | Compress |
 | --- | ---: | ---: |
 | LZ4 | 13.9 GiB/s | 6.8 GiB/s |
-| Zstd | 6.8 GiB/s | 99 MiB/s |
+| Zstd | 1.2 GB/s | 1.4 GB/s |
 | zlib (level 6) | 454 MiB/s | 55 MiB/s |
 | LZMA (level 6) | 40 MiB/s | 10 MiB/s |
 
-The pure-Rust Zstd and LZ4 encoders run in their fast mode whatever the level
-(the level tunes zlib and LZMA). Zstd is ROOT's modern default and a good
+These doubles barely compress (about 5 % with Zstd), so most of a Zstd
+block is entropy-coded literals: the slow case. The LZ4 encoder runs in its fast
+mode whatever the level; Zstd levels above 4 use zrip's level 4. Zstd is ROOT's modern default and a good
 balance; LZ4 is the fastest to read back; LZMA gives the smallest files at a
 large CPU cost. See
 [Compression](../guide/compression.md) for the settings.

@@ -72,9 +72,11 @@ assert!(!Compression::None.is_enabled());
 
 !!! note "Level handling differs per backend"
     The level tunes the zlib and LZMA backends (LZMA maps the level straight onto
-    the XZ preset). The pure-Rust Zstd and LZ4 backends are fast-mode only and
-    ignore the level — the output is always valid ROOT framing and reads back
-    correctly in ROOT, uproot, and oxiroot.
+    the XZ preset). Zstd levels 1–4 are zrip's; higher levels use its level 4,
+    which compresses physics data about as well as C zstd's level 5, ROOT's
+    default. The LZ4 backend is fast-mode only and ignores the level. The output
+    is always valid ROOT framing and reads back correctly in ROOT, uproot, and
+    oxiroot.
 
 ## Read vs. write coverage
 
@@ -131,7 +133,7 @@ All codecs are pure Rust, so the no-libROOT promise holds with no C toolchain:
 
 | Codec        | Crate                                                |
 |--------------|------------------------------------------------------|
-| Zstandard    | [`ruzstd`](https://crates.io/crates/ruzstd)          |
+| Zstandard    | [`zrip`](https://crates.io/crates/zrip)              |
 | zlib/DEFLATE | [`miniz_oxide`](https://crates.io/crates/miniz_oxide)|
 | LZ4          | [`lz4_flex`](https://crates.io/crates/lz4_flex)      |
 | LZMA (XZ)    | [`lzma-rust2`](https://crates.io/crates/lzma-rust2)  |

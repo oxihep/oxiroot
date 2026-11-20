@@ -124,10 +124,16 @@ Larger pieces, each worth a design note before code.
   `DataFrame` and back.
 - **A comparison with uproot** ([Performance](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot),
   `scripts/bench_uproot.py`). The same files, written by oxiroot and by ROOT,
-  read by both. In parallel, oxiroot is faster in most cases; on one thread,
-  uproot is 1.5–4× faster on compressed data, all of it down to the pure-Rust
-  Zstd decoder (see below). Writing it found a reader bug: ROOT's
+  read by both. In parallel, oxiroot was faster in most cases; on one thread,
+  uproot was 1.5–4× faster on compressed data, all of it down to the pure-Rust
+  Zstd decoder (see the next item). Writing it found a reader bug: ROOT's
   multi-page index columns ([#104](https://github.com/oxihep/oxiroot/pull/104)).
+- **Zstd at C speed, in safe Rust.** The comparison put 85 % of a one-thread
+  read in `ruzstd`. Of seven Rust Zstd crates timed on ROOT's blocks,
+  [zrip](https://crates.io/crates/zrip) came within 1.25× of C zstd both ways,
+  with its compression ratio and no `unsafe`; it replaced `ruzstd`. One-thread
+  reads are now as fast as uproot's, writes 3–6× faster, and the files oxiroot
+  writes a third smaller.
 - **API review** (oxiroot 0.6.0, with oxistats 0.2.0, oxifit 0.9.0, oxiplot
   0.11.0 and oxihist 0.13.0). Names that collided across crates are renamed,
   public fields are private behind accessors, and options builders take one
@@ -142,15 +148,6 @@ Larger pieces, each worth a design note before code.
 
 ### Still open
 
-- **Single-thread Zstd decompression.**
-  - *Today:* `ruzstd`, the pure-Rust decoder, takes 85 % of a read's time and
-    is about 4× slower than C libzstd on compressed blocks. uproot uses
-    libzstd, so it reads 1.5–4× faster on one thread.
-  - *Done when:* a one-thread read of a ROOT-written file is as fast as
-    uproot's. With libzstd swapped in as an experiment, every case already is.
-  - *Options:* an opt-in feature that decodes with libzstd (the `zstd` crate
-    builds it from source, so a C compiler but no system library), keeping the
-    pure-Rust decoder the default; or speed-ups contributed to `ruzstd`.
 - **XRootD GSI (X.509 proxy) authentication.**
   - *Today:* `unix` and token (`ztn`, over TLS) authentication ship, which
     covers open data and token-based access. WLCG is moving from X.509 to
