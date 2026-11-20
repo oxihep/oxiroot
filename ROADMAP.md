@@ -91,9 +91,30 @@ Larger pieces, each worth a design note before code.
   and option type has both (oxifit 0.8.0, oxiplot 0.10.0, oxihist 0.12.0,
   oxiroot); oxiplot's public enums that may grow are non-exhaustive.
 - **Less parallel code.** The plain histograms' shared methods (arithmetic,
-  extrema, statistics, bookkeeping) come from one macro (`family.rs`); the
-  profiles share `add` the same way. The readers and writers stay per class,
-  as ROOT's on-disk layouts differ.
+  extrema, statistics, bookkeeping) come from one macro (`family.rs`). The
+  profiles share `add` and their per-cell code — filling, value, error,
+  effective entries — the same way
+  ([oxiroot#92](https://github.com/oxihep/oxiroot/pull/92)). The readers and
+  writers stay per class, as ROOT's on-disk layouts differ.
+- **The legend keeps off text annotations**
+  ([oxiplot#30](https://github.com/oxihep/oxiplot/pull/30)). Automatic
+  placement now avoids `text` labels as well as the fit-statistics box.
+- **A ROOT-C++-confirmed RNTuple `std::map` write**
+  ([oxiroot#93](https://github.com/oxihep/oxiroot/pull/93)). ROOT 6.40 writes
+  and reads a `std::map` field once the map's dictionary is compiled in; it
+  was only the dictionary-less (and interpreted) path that crashed. The
+  interop job's ROOT oracle now reads oxiroot's map field, and ROOT-written
+  map fixtures are read in the tests.
+- **XRootD over TLS, with token authentication**
+  ([oxiroot#94](https://github.com/oxihep/oxiroot/pull/94), the `xrootd-tls`
+  feature). `roots://` and servers that require TLS switch to TLS before the
+  login, and the client authenticates with a WLCG bearer token (`ztn`). Tested
+  against a mock server in CI and a real `xrootd` locally
+  (`scripts/xrootd_tls_local.sh`).
+- **API review** (oxiroot 0.6.0, with oxistats 0.2.0, oxifit 0.9.0, oxiplot
+  0.11.0 and oxihist 0.13.0). Names that collided across crates are renamed,
+  public fields are private behind accessors, and options builders take one
+  form: toggles named after their option, taking a `bool`.
 - **Cast lints in every workspace.** `cast_possible_truncation`,
   `cast_sign_loss`, `cast_possible_wrap` and `cast_lossless` are on; each hit
   is fixed or justified where it stands. In oxiroot the `i32`/`usize` mixing
@@ -104,30 +125,19 @@ Larger pieces, each worth a design note before code.
 
 ### Still open
 
-- **XRootD authentication beyond `unix`.**
-  - *Done when:* GSI / X.509 and token (ZTN) authentication open
-    access-controlled data. `root://` with `unix` auth, and HTTP(S) range
-    reads, already ship.
-  - *Design first:* token (ZTN) authentication sends a bearer token found the
-    WLCG way (`BEARER_TOKEN`, `BEARER_TOKEN_FILE`, `$XDG_RUNTIME_DIR/bt_u$UID`)
-    over a TLS connection (`roots://`, or `kXR_ableTLS`), so it needs TLS
-    first. GSI needs X.509 proxy certificates and its own handshake. Both need
-    a server to test against.
-- **A ROOT-C++-confirmed RNTuple `std::map` write.**
-  - *Today:* oxiroot writes a spec-compliant `std::map` field that uproot reads
-    and oxiroot round-trips (`Field::map`).
-  - *Blocked on:* ROOT 6.40's `std::map` collection proxy, which can neither
-    create nor read such a field in the test build.
-  - *Done when:* a ROOT install with the `std::map` dictionary reads it back in
-    the interop job.
+- **XRootD GSI (X.509 proxy) authentication.**
+  - *Today:* `unix` and token (`ztn`, over TLS) authentication ship, which
+    covers open data and token-based access. WLCG is moving from X.509 to
+    tokens.
+  - *Done when:* a GSI-only server opens with the user's X.509 proxy.
+  - *Design first:* GSI is XRootD's own multi-step handshake (a Diffie-Hellman
+    key agreement, then the signed proxy chain), and needs a test server with
+    a grid CA and a proxy issued from it.
 
 ## Toward 1.0
 
-- **API review.** Walk each crate's public surface once more:
-  - names that collide across crates;
-  - public fields that should be private with accessors;
-  - options builders that disagree.
-  Then freeze it.
+The API review is done (see above): the surface is what 1.0 would freeze.
+
 - **Publishing.** The crates stay on GitHub until it is decided to publish.
   - *When it is:* publish in dependency order (oxistats → oxiparticle →
     oxifit → oxiplot → oxihist → oxiroot), drop the `git`/`tag` from each
