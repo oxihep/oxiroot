@@ -7,7 +7,13 @@ change the API.
 
 ## [Unreleased]
 
-API review toward 1.0 (breaking).
+## [0.6.0] — 2026-11-20
+
+API review toward 1.0 (breaking): the histogram, profile and graph state
+behind accessors, one naming scheme across the oxihep crates, oxifit's
+errors in `oxiroot::Error`, and the file format's records in a `raw`
+module. Built on oxistats 0.2.0, oxifit 0.9.0, oxiplot 0.11.0 and oxihist
+0.13.0.
 
 ### Changed
 
