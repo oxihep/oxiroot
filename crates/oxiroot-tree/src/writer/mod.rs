@@ -45,7 +45,8 @@ type LeafRefs = HashMap<String, u32>;
 /// A write [`Branch`] is only ever built through the typed constructors, none of
 /// which produce a [`BranchValues::Nested`] (a read-only doubly-nested
 /// collection), so the writer's value matches never see one.
-const NESTED_NOT_WRITABLE: &str = "a write Branch is never built with a Nested value";
+const NESTED_NOT_WRITABLE: &str =
+    "a vector<string> or vector<vector<T>> write Branch is always a std::vector branch";
 
 /// A representative `TLeafC` string value whose length yields `fLen` = `len`
 /// (longest string + 1), used for a streamed string column's leaf metadata.

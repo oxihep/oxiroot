@@ -200,3 +200,16 @@ fn write_batches_equals_one_batch_at_a_time() {
         b.finish().unwrap().into_inner()
     );
 }
+
+#[test]
+fn an_empty_first_batch_writes_an_rntuple_with_no_entries() {
+    let mut w =
+        NtupleWriter::new(Cursor::new(Vec::new()), "t.root", "ntpl", Compression::None).unwrap();
+    w.write_batch(&[Field::f64("x", vec![]), Field::vector_i32("v", vec![])])
+        .unwrap();
+    let f = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
+    let n = NtupleReader::open(&f, "ntpl").unwrap();
+    assert_eq!(n.entries(), 0);
+    assert_eq!(n.field_names(), ["x", "v"]);
+    assert_eq!(n.field("x").read::<f64>().unwrap(), Vec::<f64>::new());
+}

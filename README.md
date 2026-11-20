@@ -715,7 +715,7 @@ ax2.save("heatmap.svg")?;
   batches are sized. `DatasetObject` puts a dataset into a `FileWriter` next
   to histograms.
 - **Flat, Arrow-style columns**: scalars, strings, `Vec<T>`, `[T; N]`,
-  `Vec<Vec<T>>` and `Option<T>`, stored as offsets plus flat values, with no
+  `Vec<Vec<T>>`, `Option<T>` and structs (RNTuple records), stored as offsets plus flat values, with no
   `Vec` per entry. Read them as slices (`values::<T>`), per-entry views
   (`jagged::<T>`, `strings`, `arrays::<T>`), or the `Column` enum.
 - **Strict**: a type mismatch is an error naming the column, never a silent

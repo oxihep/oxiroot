@@ -352,10 +352,7 @@ fn nested_lists_round_trip_through_an_rntuple() {
         .read(["vv", "vs"])
         .unwrap();
     assert_eq!(back, b);
-    assert!(
-        DatasetObject::new("t", Format::Tree, &b).is_err(),
-        "a TTree writer has no vector<vector>"
-    );
+    assert_eq!(round_trip(Format::Tree, &b), b, "a TTree holds them too");
 }
 
 #[test]
@@ -481,4 +478,94 @@ fn parallel_reads_match_serial_ones() {
         }
         assert_eq!(whole, ds.read(COLUMNS).unwrap(), "{format:?}");
     }
+}
+
+fn round_trip(format: Format, batch: &Batch) -> Batch {
+    let bytes = write(format, std::slice::from_ref(batch), usize::MAX);
+    let file = FileReader::from_bytes(bytes).unwrap();
+    let ds = Dataset::open(&file, "events").unwrap();
+    let names: Vec<&str> = batch.names().collect();
+    ds.read(names).unwrap()
+}
+
+#[test]
+fn vectors_of_bools_strings_and_vectors_round_trip_through_both_formats() {
+    let b = Batch::new()
+        .column("vb", vec![vec![true, false], vec![], vec![true]])
+        .unwrap()
+        .column(
+            "vs",
+            vec![vec!["a".to_string(), "bc".into()], vec![], vec!["d".into()]],
+        )
+        .unwrap()
+        .column(
+            "vv",
+            vec![vec![vec![1.5_f32], vec![]], vec![], vec![vec![2.0, 3.0]]],
+        )
+        .unwrap()
+        .column("vu", vec![vec![1_u32, 2], vec![], vec![u32::MAX]])
+        .unwrap()
+        .column("vl", vec![vec![u64::MAX], vec![3], vec![]])
+        .unwrap();
+    for format in [Format::Tree, Format::Ntuple] {
+        assert_eq!(round_trip(format, &b), b, "{format:?}");
+    }
+}
+
+#[test]
+fn structs_round_trip_through_an_rntuple_and_are_refused_by_a_tree() {
+    let hit = Column::Struct(vec![
+        ("x".into(), Column::F32(vec![1.0, 2.0, 3.0])),
+        ("id".into(), Column::I32(vec![7, 8, 9])),
+    ]);
+    let hits = Column::List {
+        offsets: vec![0, 2, 2, 3],
+        values: Box::new(hit.clone()),
+    };
+    let b = Batch::new()
+        .column("hit", hit)
+        .unwrap()
+        .column("hits", hits)
+        .unwrap();
+    let back = round_trip(Format::Ntuple, &b);
+    assert_eq!(back, b);
+    assert_eq!(back.get("hit").unwrap().type_name(), "{x: f32, id: i32}");
+    assert_eq!(
+        back.get("hits").unwrap().type_name(),
+        "Vec<{x: f32, id: i32}>"
+    );
+    assert_eq!(
+        back.get("hit").unwrap().member("id"),
+        Some(&Column::I32(vec![7, 8, 9]))
+    );
+    assert_eq!(back.filter(&[true, false, true]).unwrap().len(), 2);
+    let err = DatasetObject::new("t", Format::Tree, &b).unwrap_err();
+    assert!(err.to_string().contains("{x: f32, id: i32}"), "{err}");
+}
+
+#[test]
+fn an_empty_dataset_is_written_with_its_columns() {
+    let b = sample(0, 0);
+    for format in [Format::Tree, Format::Ntuple] {
+        let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format);
+        w.write(&b).unwrap();
+        assert_eq!(w.entries(), 0);
+        let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
+        let ds = Dataset::open(&file, "events").unwrap();
+        assert_eq!(ds.entries(), 0, "{format:?}");
+        let back = ds.read(COLUMNS).unwrap();
+        assert_eq!(back.names().collect::<Vec<_>>(), COLUMNS, "{format:?}");
+        if format == Format::Ntuple {
+            assert_eq!(back, b);
+        } else {
+            // An empty TTree has no row to take a fixed array's width from.
+            assert_eq!(
+                back.select(["idx", "x", "v", "s"]).unwrap(),
+                b.select(["idx", "x", "v", "s"]).unwrap()
+            );
+        }
+        assert_eq!(ds.batches(COLUMNS).count(), 0);
+    }
+    let w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree);
+    assert!(w.finish().is_err(), "no batch, no columns");
 }

@@ -505,6 +505,12 @@ fn field_column(name: &str, values: FieldValues) -> Result<Column> {
             valid: present,
             values: Box::new(field_column(name, *values)?),
         },
+        FieldValues::Record(members) => Column::Struct(
+            members
+                .into_iter()
+                .map(|(n, v)| Ok((n, field_column(name, v)?)))
+                .collect::<Result<_>>()?,
+        ),
         other => {
             return Err(Error::Unsupported(format!(
                 "field {name:?} is a {}, which a batch cannot hold; read it with \

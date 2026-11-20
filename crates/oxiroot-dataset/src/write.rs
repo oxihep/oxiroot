@@ -76,6 +76,9 @@ pub struct DatasetWriter<W: Write + Seek = File> {
     large: bool,
     cluster_bytes: usize,
     schema: Option<Vec<(String, String)>>,
+    /// The first batch's columns with no entries: what an empty dataset is
+    /// written from.
+    empty: Option<Batch>,
     buffer: Option<Batch>,
     entries: u64,
 }
@@ -126,6 +129,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
             large: false,
             cluster_bytes: DEFAULT_CLUSTER_BYTES,
             schema: None,
+            empty: None,
             buffer: None,
             entries: 0,
         }
@@ -175,6 +179,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
                     check_column(self.format, name, column)?;
                 }
                 self.schema = Some(schema);
+                self.empty = Some(batch.slice(0..0));
             }
             Some(s) if *s != schema => {
                 return Err(Error::SchemaChanged {
@@ -227,7 +232,10 @@ impl<W: Write + Seek> DatasetWriter<W> {
             let chunk = batch.slice(r.clone());
             chunk
                 .into_columns()
-                .map(|(n, c)| Ok(Field::new(n, ntuple_column(c))))
+                .map(|(n, c)| {
+                    let column = ntuple_column(c, &n);
+                    Ok(Field::new(n, column))
+                })
                 .collect()
         };
         match &mut self.sink {
@@ -257,14 +265,37 @@ impl<W: Write + Seek> DatasetWriter<W> {
         Ok(())
     }
 
-    /// Write what is buffered and close the file. Returns the sink.
+    /// Write what is buffered and close the file. Returns the sink. A writer
+    /// that was only given empty batches writes a dataset with their columns
+    /// and no entries.
     ///
     /// # Errors
     ///
-    /// Nothing was written (a dataset needs at least one entry), or a write
-    /// error.
+    /// No batch at all was written (there are no columns), or a write error.
     pub fn finish(mut self) -> Result<W> {
         self.flush()?;
+        // Columns but no entries: write the schema alone.
+        if let (Sink::Pending { .. }, Some(empty)) = (&self.sink, self.empty.take()) {
+            self.open()?;
+            match &mut self.sink {
+                Sink::Tree(w) => w.write_batch(
+                    &empty
+                        .iter()
+                        .map(|(n, c)| tree_branch(n, c))
+                        .collect::<Result<Vec<_>>>()?,
+                )?,
+                Sink::Ntuple(w) => w.write_batch(
+                    &empty
+                        .into_columns()
+                        .map(|(n, c)| {
+                            let column = ntuple_column(c, &n);
+                            Field::new(n, column)
+                        })
+                        .collect::<Vec<_>>(),
+                )?,
+                Sink::Pending { .. } | Sink::Gone => unreachable!("opened above"),
+            }
+        }
         match self.sink {
             Sink::Tree(w) => w.finish(),
             Sink::Ntuple(w) => w.finish(),
@@ -331,7 +362,10 @@ impl DatasetObject {
                 batch
                     .clone()
                     .into_columns()
-                    .map(|(n, c)| Field::new(n, ntuple_column(c)))
+                    .map(|(n, c)| {
+                        let column = ntuple_column(c, &n);
+                        Field::new(n, column)
+                    })
                     .collect(),
             ),
         };
@@ -414,7 +448,11 @@ fn is_scalar(c: &Column) -> bool {
 fn tree_branch_ok(c: &Column) -> bool {
     match c {
         Column::String { .. } => true,
-        Column::List { values, .. } => is_scalar(values) && !matches!(**values, Column::Bool(_)),
+        Column::List { values, .. } => match &**values {
+            Column::String { .. } => true,
+            Column::List { values, .. } => is_scalar(values),
+            v => is_scalar(v),
+        },
         Column::Array { values, .. } => is_scalar(values),
         other => is_scalar(other),
     }
@@ -470,12 +508,26 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
     const WHAT: &str = "a TTree";
     match c {
         Column::String { offsets, bytes } => Ok(Branch::string(name, strings(offsets, bytes))),
-        Column::List { offsets, values } => {
-            by_type!(Branch, name, c, WHAT, &**values, v => rows(offsets, v);
-            I8 => vector_i8, U8 => vector_u8, I16 => vector_i16, U16 => vector_u16,
-            I32 => vector_i32, U32 => vector_u32, I64 => vector_i64, U64 => vector_u64,
-            F32 => vector_f32, F64 => vector_f64)
-        }
+        Column::List { offsets, values } => match &**values {
+            Column::String { offsets: o2, bytes } => Ok(Branch::vector_string(
+                name,
+                rows(offsets, &strings(o2, bytes)),
+            )),
+            Column::List {
+                offsets: o2,
+                values: inner,
+            } => {
+                by_type!(Branch, name, c, WHAT, &**inner, x => rows(offsets, &rows(o2, x));
+                Bool => vector_vector_bool, I8 => vector_vector_i8, U8 => vector_vector_u8,
+                I16 => vector_vector_i16, U16 => vector_vector_u16, I32 => vector_vector_i32,
+                U32 => vector_vector_u32, I64 => vector_vector_i64, U64 => vector_vector_u64,
+                F32 => vector_vector_f32, F64 => vector_vector_f64)
+            }
+            v => by_type!(Branch, name, c, WHAT, v, x => rows(offsets, x);
+                Bool => vector_bool, I8 => vector_i8, U8 => vector_u8, I16 => vector_i16,
+                U16 => vector_u16, I32 => vector_i32, U32 => vector_u32, I64 => vector_i64,
+                U64 => vector_u64, F32 => vector_f32, F64 => vector_f64),
+        },
         Column::Array { len, values } => by_type!(Branch, name, c, WHAT, &**values,
             v => v.chunks(*len).map(<[_]>::to_vec).collect();
             Bool => array_bool, I8 => array_i8, U8 => array_u8, I16 => array_i16,
@@ -489,8 +541,11 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
 
 /// A column as an RNTuple column, moved rather than copied: lists become
 /// collections over their flat values, so a `std::vector<float>` is written
-/// straight from its offsets and values.
-fn ntuple_column(c: Column) -> RnColumn {
+/// straight from its offsets and values. `class` names a struct: members
+/// `_0`, `_1`, … make a `std::pair` / `std::tuple`, named members a user class
+/// called `class` (ROOT reads it with that class's dictionary, or by type
+/// emulation without one).
+fn ntuple_column(c: Column, class: &str) -> RnColumn {
     match c {
         Column::Bool(v) => RnColumn::Bool(v),
         Column::I8(v) => RnColumn::I8(v),
@@ -506,16 +561,56 @@ fn ntuple_column(c: Column) -> RnColumn {
         Column::String { offsets, bytes } => RnColumn::Str(strings(&offsets, &bytes)),
         Column::List { offsets, values } => RnColumn::Nested {
             offsets,
-            items: Box::new(ntuple_column(*values)),
+            items: Box::new(ntuple_column(*values, class)),
         },
         Column::Array { len, values } => RnColumn::Array {
             len,
-            items: Box::new(ntuple_column(*values)),
+            items: Box::new(ntuple_column(*values, class)),
         },
         Column::Optional { valid, values } => RnColumn::Optional {
             unique: false,
             present: valid,
-            values: Box::new(ntuple_column(*values)),
+            values: Box::new(ntuple_column(*values, class)),
         },
+        Column::Struct(members) => {
+            let positional = members
+                .iter()
+                .enumerate()
+                .all(|(i, (n, _))| *n == format!("_{i}"));
+            let members: Vec<(String, RnColumn)> = members
+                .into_iter()
+                .map(|(n, c)| {
+                    let inner = format!("{class}_{n}");
+                    (n, ntuple_column(c, &inner))
+                })
+                .collect();
+            if positional {
+                RnColumn::Record(members)
+            } else {
+                RnColumn::Object {
+                    type_name: class_name(class),
+                    members,
+                }
+            }
+        }
     }
+}
+
+/// `name` as a C++ identifier: other characters become `_`, and a leading
+/// digit gets a `_` in front.
+fn class_name(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() || out.starts_with(|c: char| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
 }
