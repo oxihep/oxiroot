@@ -7,6 +7,16 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **RNTuples written by ROOT with more than one page of collection or string
+  offsets per cluster** read correctly. ROOT delta-encodes a split index column
+  page by page, storing each page's first offset whole; the reader summed the
+  deltas across pages, and failed with "collection offsets do not partition"
+  (or read wrong offsets). RDataFrame snapshots of a few hundred thousand
+  entries hit it. A ROOT-written fixture with about twenty pages per cluster
+  covers it.
+
 ## [0.8.0] — 2026-11-20
 
 Faster dataset reads and writes, more shapes in a `Batch`, and Arrow and
