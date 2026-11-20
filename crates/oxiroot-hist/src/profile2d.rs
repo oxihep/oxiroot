@@ -107,16 +107,6 @@ impl Profile2D {
         usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
-    /// Turn on per-bin `Σw²` tracking (ROOT's `Profile1D::Sumw2`), seeding each
-    /// bin from its weight sum — exact for the unit-weight fills made so far.
-    /// A no-op once tracking is on. Call before the current fill touches
-    /// `bin_entries`.
-    pub(crate) fn track_bin_sumw2(&mut self) {
-        if self.bin_sumw2.is_empty() {
-            self.bin_sumw2 = self.bin_entries.clone();
-        }
-    }
-
     /// Profile a point `(x, y, z)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64, z: f64) {
         self.fill_weight(x, y, z, 1.0);
@@ -140,19 +130,7 @@ impl Profile2D {
         let stride = self.nx() + 2;
         let (bx, by) = (self.xaxis.find_bin(x), self.yaxis.find_bin(y));
         let cell = bx + stride * by;
-        if let Some(s) = self.sums.get_mut(cell) {
-            *s += w * z;
-        }
-        if let Some(s) = self.sumz2.get_mut(cell) {
-            *s += w * z * z;
-        }
-        if let Some(e) = self.bin_entries.get_mut(cell) {
-            *e += w;
-        }
-        if let Some(s) = self.bin_sumw2.get_mut(cell) {
-            *s += w * w;
-        }
-        self.entries += 1.0;
+        self.accumulate(cell, z, w);
 
         let in_range = (1..=self.nx()).contains(&bx) && (1..=self.ny()).contains(&by);
         if in_range {
@@ -176,59 +154,10 @@ impl Profile2D {
         (1..=nx)
             .map(|ix| {
                 (1..=ny)
-                    .map(|iy| {
-                        let cell = ix + stride * iy;
-                        let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                        if e != 0.0 { self.sums[cell] / e } else { 0.0 }
-                    })
+                    .map(|iy| self.bin_value(ix + stride * iy))
                     .collect()
             })
             .collect()
-    }
-
-    /// Per-cell error of the profiled value, following ROOT's `GetBinError` for
-    /// this profile's `fErrorMode` (see [`crate::Profile1D::bin_error`] for the
-    /// formula). `cell` is the global index (flow included).
-    pub fn bin_error(&self, cell: usize) -> f64 {
-        let sumw = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-        if sumw == 0.0 {
-            return 0.0;
-        }
-        let sum = self.sums.get(cell).copied().unwrap_or(0.0);
-        let sum2 = self.sumz2.get(cell).copied().unwrap_or(0.0);
-        let sumw2 = self
-            .bin_sumw2
-            .get(cell)
-            .copied()
-            .filter(|&s| s > 0.0)
-            .unwrap_or(sumw);
-        let neff = if sumw2 > 0.0 {
-            sumw * sumw / sumw2
-        } else {
-            0.0
-        };
-        let mean = sum / sumw;
-        let var = (sum2 / sumw - mean * mean).abs();
-        match self.error_mode {
-            ErrorMode::Spread => var.sqrt(),
-            ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
-            ErrorMode::SpreadI => {
-                if var > 0.0 {
-                    (var / neff).sqrt()
-                } else if neff > 0.0 {
-                    1.0 / (12.0 * neff).sqrt()
-                } else {
-                    0.0
-                }
-            }
-            _ => {
-                if neff > 0.0 {
-                    (var / neff).sqrt()
-                } else {
-                    0.0
-                }
-            }
-        }
     }
 
     pub(crate) fn read(r: &mut RBuffer) -> Result<Profile2D> {
