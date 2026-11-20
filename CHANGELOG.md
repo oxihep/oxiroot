@@ -9,6 +9,15 @@ change the API.
 
 ### Added
 
+- **oxifit 0.8.0, oxiplot 0.10.0, oxihist 0.12.0.** `oxiroot::fit` gains
+  Hamiltonian Monte Carlo (`Nuts`, in the prelude) with `Chain::r_hat` and
+  `Chain::divergences`, and fits with an analytic gradient run about twice
+  as fast. `oxiroot::plot` gains `fill_between`, `axhline`/`axvline`,
+  `text`, `contour`, `y_categories`, the Brazil-band `limit_band`, and with
+  the fit feature `fit_limits`, `fit_pulls`, `fit_impacts` and
+  `fit_posterior`. oxiplot's public enums are now `#[non_exhaustive]`.
+- **`Hist3D::minimum_bin`**, which the 1-D and 2-D histograms had.
+
 - **oxifit 0.7.0, oxiplot 0.9.0, oxihist 0.11.0.** `oxiroot::fit` gains
   user-defined costs (`Cost`, `FnCost`, `ModelCost`, `CostSum`) run by a
   `Fitter`; CLs upper limits and discovery significances, asymptotic or from
@@ -50,6 +59,17 @@ change the API.
   500-toy pull study, a two-dimensional unbinned fit in mass and decay length
   for the non-prompt fraction and the b-hadron lifetime, five plots, and the
   histograms and toy pulls written to a ROOT file and read back.
+
+### Changed
+
+- **One implementation of the plain histograms' shared methods.** `Hist1D`,
+  `Hist2D` and `Hist3D` had their own copies of `sumw2`, `bin_error`,
+  `scale`, `add`, `integral`, the extrema, `effective_entries`, `reset` and
+  the content-type accessors; a macro now generates them from one body
+  (`family.rs`), as the profiles' `add` already was. Same public API and
+  results (iteration order kept, so sums and ties are unchanged); about 500
+  lines fewer. The on-disk readers and writers stay per class, as ROOT's
+  layouts differ.
 
 ### Fixed
 

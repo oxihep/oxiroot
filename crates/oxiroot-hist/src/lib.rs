@@ -21,6 +21,7 @@ mod base;
 mod collections;
 mod compare;
 mod convert;
+mod family;
 mod from_member;
 mod naming;
 mod ops;

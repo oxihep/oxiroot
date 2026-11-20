@@ -99,25 +99,6 @@ impl Hist1D {
         }
     }
 
-    /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the `fSumw2`
-    /// array and seed it from the current contents, after which every fill also
-    /// accumulates `weight^2`. Weighted fills and [`scale`](Hist1D::scale) turn it
-    /// on by themselves, so this is only needed to track a unit-weight
-    /// histogram. Returns `&mut self` so it can chain (`h.sumw2().fill(x)`).
-    pub fn sumw2(&mut self) -> &mut Self {
-        if self.sumw2.len() != self.contents.len() {
-            self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
-        }
-        self
-    }
-
-    /// Total cells including the under/overflow bins (`fNcells`), derived from
-    /// the contents so it can never disagree with them.
-    #[must_use]
-    pub fn ncells(&self) -> i32 {
-        self.contents.len() as i32
-    }
-
     /// The histogram's name (`fName`, its key when written).
     pub fn name(&self) -> &str {
         &self.name
@@ -126,32 +107,6 @@ impl Hist1D {
     /// The histogram's title (`fTitle`).
     pub fn title(&self) -> &str {
         &self.title
-    }
-
-    /// The exact ROOT class name (`"TH1D"`/`"TH1F"`/…), derived from the stored
-    /// [`bin_content_type`](Hist1D::bin_content_type).
-    #[must_use]
-    pub fn class_name(&self) -> String {
-        self.bin_content_type.class_name("TH1")
-    }
-
-    /// This histogram's on-disk [`BinContentType`] — the class suffix
-    /// (`Hist1D`**`D`**/`F`/`I`/`S`/`C`/`L`). [`BinContentType::F64`] by default.
-    #[must_use]
-    pub fn bin_content_type(&self) -> BinContentType {
-        self.bin_content_type
-    }
-
-    /// Change the on-disk bin content type of an existing histogram — the
-    /// post-construction counterpart of the builder's storage finalizers. Build
-    /// with a given type via [`Hist::reg(...).double().to_root_as(crate::BinContentType::F32)`](crate::Hist) (→ `TH1F`),
-    /// `BinContentType::I32` (→ `TH1I`), …; use this to retype a histogram you already
-    /// filled or read back. Bin contents stay `f64` in memory and are narrowed
-    /// only at write time.
-    #[must_use]
-    pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
-        self.bin_content_type = bin_content_type;
-        self
     }
 
     /// Fill the histogram with `x` (weight 1).
@@ -241,21 +196,6 @@ impl Hist1D {
             contents,
             sumw2: c.sumw2,
         })
-    }
-
-    /// Per-bin error: `sqrt(sumw2[bin])` when error tracking is on, otherwise the
-    /// Poisson default `sqrt(content)`. `bin` includes flow (0 = underflow).
-    pub fn bin_error(&self, bin: usize) -> f64 {
-        if let Some(&s) = self.sumw2.get(bin) {
-            s.max(0.0).sqrt()
-        } else {
-            self.contents
-                .get(bin)
-                .copied()
-                .unwrap_or(0.0)
-                .max(0.0)
-                .sqrt()
-        }
     }
 
     /// Bin contents excluding the under/overflow bins.
