@@ -174,83 +174,12 @@ impl Profile1D {
         if n < 2 {
             return Vec::new();
         }
-        (1..n - 1)
-            .map(|i| {
-                let entries = self.bin_entries.get(i).copied().unwrap_or(0.0);
-                if entries != 0.0 {
-                    self.sums[i] / entries
-                } else {
-                    0.0
-                }
-            })
-            .collect()
+        (1..n - 1).map(|i| self.bin_value(i)).collect()
     }
 
     /// The X-axis bin edges (`nbins + 1` values).
     pub fn edges(&self) -> Vec<f64> {
         self.xaxis.edges()
-    }
-
-    /// Effective number of entries in a bin, `(Σw)² / Σw²` (equal to the entry
-    /// count for unweighted fills). `bin` includes flow.
-    pub fn effective_entries(&self, bin: usize) -> f64 {
-        let sumw = self.bin_entries.get(bin).copied().unwrap_or(0.0);
-        let sumw2 = self
-            .bin_sumw2
-            .get(bin)
-            .copied()
-            .filter(|&s| s > 0.0)
-            .unwrap_or(sumw);
-        if sumw2 > 0.0 {
-            sumw * sumw / sumw2
-        } else {
-            0.0
-        }
-    }
-
-    /// Per-bin error of the profiled value, following ROOT's
-    /// `Profile1D::GetBinError` for this profile's `fErrorMode`. `bin` includes
-    /// flow (0 = underflow).
-    ///
-    /// With weight sum `sumw = Σw`, profiled value `mean = Σwy / Σw`, spread
-    /// `v = |Σwy²/Σw − mean²|`, and effective entries
-    /// `neff = (Σw)² / Σw²`:
-    /// - mean (mode 0, the default): `sqrt(v / neff)` — the error on the mean;
-    /// - spread (mode 1): `sqrt(v)` — the RMS spread itself;
-    /// - spread-i (mode 2): `sqrt(v / neff)`, or `1/sqrt(12·neff)` when `v == 0`;
-    /// - spread-g (mode 3): `1/sqrt(Σw)`.
-    pub fn bin_error(&self, bin: usize) -> f64 {
-        let sumw = self.bin_entries.get(bin).copied().unwrap_or(0.0);
-        if sumw == 0.0 {
-            return 0.0;
-        }
-        let sum = self.sums.get(bin).copied().unwrap_or(0.0);
-        let sumy2 = self.sumy2.get(bin).copied().unwrap_or(0.0);
-        let mean = sum / sumw;
-        let variance = (sumy2 / sumw - mean * mean).abs();
-        let neff = self.effective_entries(bin);
-        match self.error_mode {
-            // The RMS spread itself.
-            ErrorMode::Spread => variance.sqrt(),
-            // SpreadI with an empty spread: the uniform-bin estimate.
-            ErrorMode::SpreadI if variance <= 0.0 => {
-                if neff > 0.0 {
-                    1.0 / (12.0 * neff).sqrt()
-                } else {
-                    0.0
-                }
-            }
-            // The weighted error 1/sqrt(Σw).
-            ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
-            // Mean (default) and SpreadI with a non-zero spread.
-            _ => {
-                if neff > 0.0 {
-                    (variance / neff).sqrt()
-                } else {
-                    0.0
-                }
-            }
-        }
     }
 
     /// Create an empty `Profile1D` with `nbins` uniform x bins over `[xlo, xhi)`
@@ -280,16 +209,6 @@ impl Profile1D {
         }
     }
 
-    /// Turn on per-bin `Σw²` tracking (ROOT's `Profile1D::Sumw2`), seeding each
-    /// bin from its weight sum — exact for the unit-weight fills made so far.
-    /// A no-op once tracking is on. Call before the current fill touches
-    /// `bin_entries`.
-    pub(crate) fn track_bin_sumw2(&mut self) {
-        if self.bin_sumw2.is_empty() {
-            self.bin_sumw2 = self.bin_entries.clone();
-        }
-    }
-
     /// Profile a point `(x, y)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64) {
         self.fill_weight(x, y, 1.0);
@@ -312,19 +231,7 @@ impl Profile1D {
         }
         let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
-        if let Some(s) = self.sums.get_mut(bin) {
-            *s += w * y;
-        }
-        if let Some(s) = self.sumy2.get_mut(bin) {
-            *s += w * y * y;
-        }
-        if let Some(e) = self.bin_entries.get_mut(bin) {
-            *e += w;
-        }
-        if let Some(s) = self.bin_sumw2.get_mut(bin) {
-            *s += w * w;
-        }
-        self.entries += 1.0;
+        self.accumulate(bin, y, w);
 
         if (1..=nbins).contains(&bin) {
             self.tsumw += w;

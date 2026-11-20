@@ -7,6 +7,20 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **`Profile3D::bin_error` and `effective_entries`**, and
+  `Profile2D::effective_entries`: every profile now has the same per-cell
+  `bin_value`, `bin_error` (ROOT's error modes) and `effective_entries`.
+
+### Changed
+
+- **The profiles share their per-cell code.** Filling, the profiled value,
+  its error and the effective entries come from one macro
+  (`impl_profile_family!`) for `Profile1D`, `Profile2D` and `Profile3D`;
+  results are unchanged. The readers stay per class, as ROOT's on-disk
+  layouts differ.
+
 ## [0.6.0] — 2026-11-20
 
 API review toward 1.0 (breaking): the histogram, profile and graph state

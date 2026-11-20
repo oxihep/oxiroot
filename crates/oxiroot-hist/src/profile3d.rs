@@ -145,16 +145,6 @@ impl Profile3D {
         usize::saturating_from(self.zaxis.nbins.max(0))
     }
 
-    /// Turn on per-cell `Σw²` tracking (ROOT's `Profile3D::Sumw2`), seeding each
-    /// cell from its weight sum — exact for the unit-weight fills made so far.
-    /// A no-op once tracking is on. Call before the current fill touches
-    /// `bin_entries`.
-    pub(crate) fn track_bin_sumw2(&mut self) {
-        if self.bin_sumw2.is_empty() {
-            self.bin_sumw2 = self.bin_entries.clone();
-        }
-    }
-
     /// Profile a point `(x, y, z, t)` with unit weight.
     pub fn fill(&mut self, x: f64, y: f64, z: f64, t: f64) {
         self.fill_weight(x, y, z, t, 1.0);
@@ -179,19 +169,7 @@ impl Profile3D {
             self.zaxis.find_bin(z),
         );
         let cell = bx + sx * (by + sy * bz);
-        if let Some(s) = self.sums.get_mut(cell) {
-            *s += w * t;
-        }
-        if let Some(s) = self.sumt2.get_mut(cell) {
-            *s += w * t * t;
-        }
-        if let Some(e) = self.bin_entries.get_mut(cell) {
-            *e += w;
-        }
-        if let Some(s) = self.bin_sumw2.get_mut(cell) {
-            *s += w * w;
-        }
-        self.entries += 1.0;
+        self.accumulate(cell, t, w);
 
         let in_range = (1..=self.nx()).contains(&bx)
             && (1..=self.ny()).contains(&by)
@@ -223,11 +201,7 @@ impl Profile3D {
                 (1..=ny)
                     .map(|iy| {
                         (1..=nz)
-                            .map(|iz| {
-                                let cell = ix + sx * (iy + sy * iz);
-                                let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                                if e != 0.0 { self.sums[cell] / e } else { 0.0 }
-                            })
+                            .map(|iz| self.bin_value(ix + sx * (iy + sy * iz)))
                             .collect()
                     })
                     .collect()

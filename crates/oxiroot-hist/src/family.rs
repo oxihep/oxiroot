@@ -7,7 +7,7 @@ use oxiroot_io_core::{Error, Result};
 
 use crate::axis::Axis;
 use crate::base::BinContentType;
-use crate::{Hist1D, Hist2D, Hist3D};
+use crate::{ErrorMode, Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D};
 
 /// The number of in-range bins of `axis` (none for a malformed negative
 /// count).
@@ -264,3 +264,113 @@ mod tests {
         assert_eq!(in_range_cells(&[0, 3]).count(), 0);
     }
 }
+
+/// The per-cell core the profiles ([`Profile1D`], [`Profile2D`],
+/// [`Profile3D`]) share: they differ in their axes, the name of their `Σw·v²`
+/// array and their moment sums, not in how a cell accumulates, averages or
+/// errs.
+macro_rules! impl_profile_family {
+    ($ty:ident, value_sq: $sumv2:ident $(,)?) => {
+        impl $ty {
+            /// Seed per-cell `Σw²` from the weight sums (exact for unit
+            /// weights) the first time it is needed.
+            pub(crate) fn track_bin_sumw2(&mut self) {
+                if self.bin_sumw2.is_empty() {
+                    self.bin_sumw2 = self.bin_entries.clone();
+                }
+            }
+
+            /// Add value `v` with weight `w` to cell `cell` (flow included; an
+            /// index past the cells adds nothing) and count the entry.
+            pub(crate) fn accumulate(&mut self, cell: usize, v: f64, w: f64) {
+                if let Some(s) = self.sums.get_mut(cell) {
+                    *s += w * v;
+                }
+                if let Some(s) = self.$sumv2.get_mut(cell) {
+                    *s += w * v * v;
+                }
+                if let Some(e) = self.bin_entries.get_mut(cell) {
+                    *e += w;
+                }
+                if let Some(s) = self.bin_sumw2.get_mut(cell) {
+                    *s += w * w;
+                }
+                self.entries += 1.0;
+            }
+
+            /// The profiled value of cell `cell` (flow included): `Σw·v / Σw`,
+            /// or 0 where the cell has no entries (ROOT's `GetBinContent`).
+            #[must_use]
+            pub fn bin_value(&self, cell: usize) -> f64 {
+                let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
+                if e == 0.0 {
+                    0.0
+                } else {
+                    self.sums.get(cell).copied().unwrap_or(0.0) / e
+                }
+            }
+
+            /// Effective number of entries in cell `cell`, `(Σw)² / Σw²` (the
+            /// entry count for unweighted fills); flow included.
+            #[must_use]
+            pub fn effective_entries(&self, cell: usize) -> f64 {
+                let sumw = self.bin_entries.get(cell).copied().unwrap_or(0.0);
+                let sumw2 = self
+                    .bin_sumw2
+                    .get(cell)
+                    .copied()
+                    .filter(|&s| s > 0.0)
+                    .unwrap_or(sumw);
+                if sumw2 > 0.0 {
+                    sumw * sumw / sumw2
+                } else {
+                    0.0
+                }
+            }
+
+            /// Error of the profiled value in cell `cell` (flow included),
+            /// following ROOT's `GetBinError` for this profile's `fErrorMode`.
+            ///
+            /// With `sumw = Σw`, `mean = Σw·v / Σw`, spread
+            /// `s² = |Σw·v²/Σw − mean²|` and effective entries `neff`:
+            /// - mean (the default): `s / √neff`, the error on the mean;
+            /// - spread: `s`, the spread itself;
+            /// - spread-i: as the mean, or `1/√(12·neff)` when `s = 0`;
+            /// - spread-g: `1/√Σw`.
+            #[must_use]
+            pub fn bin_error(&self, cell: usize) -> f64 {
+                let sumw = self.bin_entries.get(cell).copied().unwrap_or(0.0);
+                if sumw == 0.0 {
+                    return 0.0;
+                }
+                let sum = self.sums.get(cell).copied().unwrap_or(0.0);
+                let sum2 = self.$sumv2.get(cell).copied().unwrap_or(0.0);
+                let mean = sum / sumw;
+                let variance = (sum2 / sumw - mean * mean).abs();
+                let neff = self.effective_entries(cell);
+                match self.error_mode {
+                    ErrorMode::Spread => variance.sqrt(),
+                    ErrorMode::SpreadI if variance <= 0.0 => {
+                        if neff > 0.0 {
+                            1.0 / (12.0 * neff).sqrt()
+                        } else {
+                            0.0
+                        }
+                    }
+                    ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
+                    _ => {
+                        if neff > 0.0 {
+                            (variance / neff).sqrt()
+                        } else {
+                            0.0
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+impl_profile_family!(Profile1D, value_sq: sumy2);
+impl_profile_family!(Profile2D, value_sq: sumz2);
+impl_profile_family!(Profile3D, value_sq: sumt2);
