@@ -146,16 +146,23 @@ fn zigzag16(u: u16) -> i16 {
     ((u >> 1) as i16) ^ -((u & 1) as i16)
 }
 
-/// Delta-decode (cumulative sum) for index/offset columns.
-fn delta_decode(deltas: Vec<u64>) -> Vec<u64> {
-    let mut acc = 0u64;
+/// Delta-decode (cumulative sum) for index/offset columns. ROOT encodes each
+/// page on its own: a page's first value is stored whole, so the sum restarts
+/// at every page boundary (`pages` gives each page's element count).
+fn delta_decode(mut deltas: Vec<u64>, pages: &[PageInfo]) -> Vec<u64> {
+    let mut start = 0usize;
+    for page in pages {
+        let end = start
+            .saturating_add(page.num_elements as usize)
+            .min(deltas.len());
+        let mut acc = 0u64;
+        for d in &mut deltas[start..end] {
+            acc = acc.wrapping_add(*d);
+            *d = acc;
+        }
+        start = end;
+    }
     deltas
-        .into_iter()
-        .map(|d| {
-            acc = acc.wrapping_add(d);
-            acc
-        })
-        .collect()
 }
 
 /// Decode all pages of one physical column (in order) into [`ColumnValues`].
@@ -250,7 +257,7 @@ pub fn read_column(
         Index64 => Ok(ColumnValues::U64(fixed(raws, bits, pages, false, le_u64)?)),
         SplitIndex64 => {
             let raw = fixed(raws, bits, pages, true, le_u64)?;
-            Ok(ColumnValues::U64(delta_decode(raw)))
+            Ok(ColumnValues::U64(delta_decode(raw, pages)))
         }
         Index32 => {
             let raw = fixed(raws, bits, pages, false, le_u32)?;
@@ -260,6 +267,7 @@ pub fn read_column(
             let raw = fixed(raws, bits, pages, true, le_u32)?;
             Ok(ColumnValues::U64(delta_decode(
                 raw.into_iter().map(u64::from).collect(),
+                pages,
             )))
         }
 

@@ -13,6 +13,7 @@ mod prefix_read;
 mod read_anchor;
 mod read_coltypes;
 mod read_fields;
+mod read_multipage;
 mod read_nested;
 mod read_realprec;
 mod read_stl;
