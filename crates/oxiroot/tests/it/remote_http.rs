@@ -175,7 +175,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
 
     // Same tree data, fetched as baskets.
     let rtree = TreeReader::open(&remote, &tname).expect("remote tree");
-    assert_eq!(rtree.num_entries(), ltree.num_entries());
+    assert_eq!(rtree.entries(), ltree.entries());
     let remote_vals = format!(
         "{:?}",
         rtree.read_branch(&remote, &branch).expect("remote branch")

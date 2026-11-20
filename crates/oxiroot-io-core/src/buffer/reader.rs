@@ -13,6 +13,7 @@ pub const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
 
 /// Header written ahead of a streamed object by ROOT's `TBuffer::WriteVersion`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct VersionHeader {
     /// Class version (`fVersion`).
     pub version: u16,

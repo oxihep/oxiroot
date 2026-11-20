@@ -17,7 +17,8 @@ use crate::object::TagReader;
 use crate::streamer::{read_named, read_object_base};
 
 /// One member (or base class) entry within a [`StreamerInfo`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct StreamerElement {
     /// The streamer-element class (e.g. `TStreamerBase`, `TStreamerBasicType`).
     pub element_class: String,
@@ -43,7 +44,8 @@ pub struct StreamerElement {
 }
 
 /// The streamer description of a single class.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct StreamerInfo {
     /// The described class name.
     pub class_name: String,

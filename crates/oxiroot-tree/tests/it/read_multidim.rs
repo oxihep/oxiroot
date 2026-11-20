@@ -11,7 +11,7 @@ fn reads_multidim_array() {
         .join("tree_multidim.root");
     let f = FileReader::open(path).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_shape("m"), Some([2usize, 3].as_slice()));
     assert_eq!(
         t.read_branch(&f, "m").expect("read m"),

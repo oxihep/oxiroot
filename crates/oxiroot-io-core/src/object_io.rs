@@ -15,7 +15,7 @@ use std::io::Cursor;
 
 use crate::error::{Error, Result, decompress_payload};
 use crate::file::{ContainerWriter, DirId, KSTART_BIG_FILE};
-use crate::streamer_gen::Cls;
+use crate::streamer_gen::ClassDef;
 use crate::{Compression, FileReader};
 
 /// Read a ROOT object of this type from an open file by key name, auto-detecting
@@ -59,7 +59,7 @@ pub trait WriteRoot {
     /// classes of any objects it contains, for readers that do not know them.
     /// The default is none. Files that store the object embed these, once per
     /// class name.
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         Vec::new()
     }
 
@@ -108,7 +108,7 @@ pub trait WriteInto {
     fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()>;
     /// The `TStreamerInfo` entries the object's classes need; see
     /// [`WriteRoot::streamer_classes`].
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         Vec::new()
     }
 }
@@ -117,7 +117,7 @@ pub trait WriteInto {
 /// [`streamer_classes`](WriteRoot::streamer_classes) describe, once.
 #[derive(Clone, Default)]
 pub struct StreamerSet {
-    classes: Vec<Cls<'static>>,
+    classes: Vec<ClassDef<'static>>,
 }
 
 impl StreamerSet {
@@ -132,7 +132,7 @@ impl StreamerSet {
     }
 
     /// Add each class not already present at the same version.
-    pub fn add_classes(&mut self, classes: impl IntoIterator<Item = Cls<'static>>) {
+    pub fn add_classes(&mut self, classes: impl IntoIterator<Item = ClassDef<'static>>) {
         for class in classes {
             if !self
                 .classes
@@ -151,7 +151,7 @@ impl StreamerSet {
 
     /// The classes, in the order they were first added.
     #[must_use]
-    pub fn classes(&self) -> &[Cls<'static>] {
+    pub fn classes(&self) -> &[ClassDef<'static>] {
         &self.classes
     }
 }
@@ -169,6 +169,7 @@ impl fmt::Debug for StreamerSet {
 
 /// One object to store in a file: its class, name, title, and streamed bytes
 /// (including the object's own byte count and version).
+#[non_exhaustive]
 pub struct ObjectRecord {
     /// ROOT class name (e.g. `"TH1D"`).
     pub class_name: String,

@@ -46,7 +46,7 @@ fn threaded_fill_matches_serial() {
         want.values(),
         "bin contents match serial fill"
     );
-    assert_eq!(got.entries, want.entries, "entry count matches");
+    assert_eq!(got.entries(), want.entries(), "entry count matches");
     // Moment sums match to floating-point rounding.
     assert!((got.mean() - want.mean()).abs() < 1e-9, "mean matches");
 }
@@ -56,9 +56,9 @@ fn merge_with_no_work_returns_empty_prototype() {
     // No thread filled → an empty histogram with the template's binning.
     let acc = ThreadedHist::new(Hist::reg(4, 0.0, 4.0).double().to_root().named("h"));
     let h = acc.merge().unwrap();
-    assert_eq!(h.entries, 0.0);
+    assert_eq!(h.entries(), 0.0);
     assert_eq!(h.values(), &[0.0, 0.0, 0.0, 0.0]);
-    assert_eq!(h.xaxis.nbins, 4, "binning preserved");
+    assert_eq!(h.xaxis().nbins(), 4, "binning preserved");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn fill_and_with_local_share_one_copy_per_thread() {
     });
     assert_eq!(acc.num_slots(), 1, "all on this thread's single copy");
     let h = acc.merge().unwrap();
-    assert_eq!(h.entries, 4.0);
+    assert_eq!(h.entries(), 4.0);
     assert_eq!(h.values()[1], 3.0); // three fills in bin [1, 2)
     assert_eq!(h.values()[8], 1.0);
 }
@@ -96,7 +96,7 @@ fn threaded_fill_2d_merges() {
         }
     });
     let h = acc.merge().unwrap();
-    assert_eq!(h.entries, 3.0);
+    assert_eq!(h.entries(), 3.0);
 }
 
 #[test]
@@ -145,6 +145,6 @@ fn fill_par_matches_serial() {
         want.values(),
         "fill_par contents match serial"
     );
-    assert_eq!(got.entries, want.entries);
+    assert_eq!(got.entries(), want.entries());
     assert!((got.mean() - want.mean()).abs() < 1e-9);
 }

@@ -4,9 +4,8 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
 
-use oxiroot_io_core::{
-    CountToken, K_BYTE_COUNT_MASK, Key, Patch, WBuffer, write_named, write_object_base,
-};
+use oxiroot_io_core::raw::{K_BYTE_COUNT_MASK, Key, write_named, write_object_base};
+use oxiroot_io_core::{CountToken, Patch, WBuffer};
 
 use super::baskets::BasketRec;
 use super::branch::{

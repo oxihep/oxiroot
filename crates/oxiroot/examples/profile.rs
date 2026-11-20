@@ -59,7 +59,7 @@ fn main() -> oxiroot::Result<()> {
         "TProfile `{}`: {} bins, {} entries",
         prof.name,
         prof.values().len(),
-        prof.entries,
+        prof.entries(),
     );
 
     // Per-bin trend: bin center, measured mean response ± error on the mean, and
@@ -69,7 +69,7 @@ fn main() -> oxiroot::Result<()> {
     let means = prof.values();
     for (i, &mean) in means.iter().enumerate() {
         let bin = i + 1; // ROOT bins are 1-based; 0 is underflow
-        let xc = prof.xaxis.bin_center(bin);
+        let xc = prof.xaxis().bin_center(bin);
         println!(
             "  {:7.2}   {:9.3}   ±{:7.4}   {:7.3}",
             xc,
@@ -128,12 +128,12 @@ fn main() -> oxiroot::Result<()> {
         prof2d.name,
         prof2d.nx(),
         prof2d.ny(),
-        prof2d.entries,
+        prof2d.entries(),
     );
     println!("  slice at y-bin 1 (mean z per x-bin, truth in parens):");
-    let yc = prof2d.yaxis.bin_center(1);
+    let yc = prof2d.yaxis().bin_center(1);
     for (ix, row) in grid.iter().enumerate() {
-        let xc = prof2d.xaxis.bin_center(ix + 1);
+        let xc = prof2d.xaxis().bin_center(ix + 1);
         println!(
             "    x = {:4.2}, y = {:4.2}:  z = {:6.3}   ({:.3})",
             xc,

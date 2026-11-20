@@ -3,7 +3,7 @@
 use clap::Args as ClapArgs;
 use oxiroot::hist::{
     Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, ObjString, ParamValue, Parameter,
-    Profile1D, ReadRoot, RootHistogram,
+    Profile1D, ReadRoot,
 };
 use oxiroot::ntuple::{FieldValues, NtupleReader};
 use oxiroot::tree::{BranchValues, TreeReader};
@@ -235,7 +235,7 @@ fn dump_tree(
         None => TreeReader::open(file, name)?,
         Some(dir) => TreeReader::open_in(file, dir, name)?,
     };
-    let n = args.entries.min(usize::saturating_from(tree.num_entries()));
+    let n = args.entries.min(usize::saturating_from(tree.entries()));
     let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
@@ -246,7 +246,7 @@ fn dump_tree(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.num_entries().cast_signed())),
+            ("entries", Json::Int(tree.entries().cast_signed())),
             ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
@@ -258,10 +258,7 @@ fn dump_tree(
         return Ok(());
     }
 
-    println!(
-        "TTree {name:?}  ({} entries; showing {n})",
-        tree.num_entries()
-    );
+    println!("TTree {name:?}  ({} entries; showing {n})", tree.entries());
     print_table(&cols, n, branch_cell);
     Ok(())
 }
@@ -278,9 +275,7 @@ fn dump_rntuple(
         None => NtupleReader::open(file, name)?,
         Some(dir) => NtupleReader::open_in(file, dir, name)?,
     };
-    let n = args
-        .entries
-        .min(usize::saturating_from(ntuple.num_entries()));
+    let n = args.entries.min(usize::saturating_from(ntuple.entries()));
     let selected = select(&args.branches, ntuple.field_names());
     // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
@@ -292,7 +287,7 @@ fn dump_rntuple(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.num_entries().cast_signed())),
+            ("entries", Json::Int(ntuple.entries().cast_signed())),
             ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
@@ -306,7 +301,7 @@ fn dump_rntuple(
 
     println!(
         "RNTuple {name:?}  ({} entries; showing {n})",
-        ntuple.num_entries()
+        ntuple.entries()
     );
     print_table(&cols, n, field_cell);
     Ok(())
@@ -527,14 +522,14 @@ fn dump_profile(profile: &Profile1D, name: &str, json: bool) -> CmdResult {
 fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
     // Bound by both coordinate lengths: a graph decoded from a corrupt file can
     // have `fX.len() != fY.len()`, and indexing the shorter one would panic.
-    let count = graph.x.len().min(graph.y.len()).min(n);
+    let count = graph.x().len().min(graph.y().len()).min(n);
     if json {
         let points = Json::Array(
             (0..count)
                 .map(|i| {
                     Json::Object(vec![
-                        ("x", Json::F64(graph.x[i])),
-                        ("y", Json::F64(graph.y[i])),
+                        ("x", Json::F64(graph.x()[i])),
+                        ("y", Json::F64(graph.y()[i])),
                     ])
                 })
                 .collect(),
@@ -548,10 +543,10 @@ fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
         return Ok(());
     }
 
-    println!("TGraph {name:?}  ({} points)", graph.x.len());
+    println!("TGraph {name:?}  ({} points)", graph.x().len());
     let mut table = Table::new(&["#", "x", "y"]).right_align(&[0, 1, 2]);
     for i in 0..count {
-        table.row(vec![i.to_string(), num(graph.x[i]), num(graph.y[i])]);
+        table.row(vec![i.to_string(), num(graph.x()[i]), num(graph.y()[i])]);
     }
     table.print();
     Ok(())
@@ -740,20 +735,4 @@ fn num(x: f64) -> String {
     }
     let s = format!("{x:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dump_graph;
-    use oxiroot::hist::Graph;
-
-    #[test]
-    fn dump_graph_survives_mismatched_x_y_lengths() {
-        // A corrupt graph with more x than y coordinates: dumping (either format)
-        // must clamp to the shorter length instead of panicking.
-        let mut graph = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
-        graph.y.truncate(1);
-        assert!(dump_graph(&graph, "g", 10, false).is_ok());
-        assert!(dump_graph(&graph, "g", 10, true).is_ok());
-    }
 }

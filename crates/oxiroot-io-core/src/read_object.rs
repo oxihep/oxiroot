@@ -31,7 +31,7 @@ use crate::streamer_info::{StreamerElement, StreamerRegistry};
 use crate::value::Value;
 
 /// Guard against a cyclic or pathologically deep streamer graph.
-const MAX_DEPTH: usize = crate::MAX_STREAMER_DEPTH;
+const MAX_DEPTH: usize = crate::raw::MAX_STREAMER_DEPTH;
 
 /// Read an object of `class` from its (decompressed) streamed `bytes` into a
 /// [`Value`] tree, using `reg` for the member layout. `keylen` is the source

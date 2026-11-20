@@ -123,7 +123,7 @@ it chains:
 
 ```rust
 let mut h = Hist::reg(100, 0.0, 1.0).double().to_root();
-h.sumw2().fill(0.5); // chain enable + fill
+h.track_sumw2().fill(0.5); // chain enable + fill
 ```
 
 `bin_error(bin)` then returns `sqrt(sumw2[bin])`; without tracking it falls back
@@ -389,12 +389,12 @@ ROOT files in both directions.
 use oxiroot::prelude::*;
 
 let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("by_region");
-h.xaxis.set_label(1, "barrel");
-h.xaxis.set_label(2, "endcap");
-h.xaxis.set_label(3, "forward");
+h.xaxis_mut().set_label(1, "barrel");
+h.xaxis_mut().set_label(2, "endcap");
+h.xaxis_mut().set_label(3, "forward");
 
-assert_eq!(h.xaxis.bin_label(2), Some("endcap"));
-assert_eq!(h.xaxis.find_label("forward"), Some(3));
+assert_eq!(h.xaxis().bin_label(2), Some("endcap"));
+assert_eq!(h.xaxis().find_label("forward"), Some(3));
 ```
 
 `set_label(bin, text)` and `bin_label(bin)` use 1-based bin numbers; `labels` is
@@ -412,10 +412,10 @@ use oxiroot::prelude::*;
 
 // One bin per hour of 2024-01-01, x in seconds from the start of that day.
 let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().named("rate");
-h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
+h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
 h.fill(3_600.0);
 
-assert!(h.xaxis.time_display);
+assert!(h.xaxis().time_display);
 ```
 
 ROOT and uproot read the axis back as a time axis, and so does oxiroot.

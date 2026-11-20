@@ -119,15 +119,15 @@ fn main() -> oxiroot::Result<()> {
     println!("read back `{}` ({} points):", back.name, back.len());
     // The error arrays live in the `errors` enum; pull the y errors out for the
     // symmetric variant we wrote (they are empty for a plain Graph).
-    let ey: &[f64] = match &back.errors {
+    let ey: &[f64] = match &back.errors() {
         GraphErrors::Symmetric { ey, .. } => ey,
         _ => &[],
     };
     for i in 0..back.len() {
         println!(
             "  E = {:.1} GeV   sigma = {:5.1} ± {:.1} pb",
-            back.x[i],
-            back.y[i],
+            back.x()[i],
+            back.y()[i],
             ey.get(i).copied().unwrap_or(0.0),
         );
     }

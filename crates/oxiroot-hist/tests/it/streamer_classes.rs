@@ -7,7 +7,7 @@ use oxiroot_hist::{
     Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist, HistStack, ObjList, ObjString,
     Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot, hist_streamer_classes,
 };
-use oxiroot_io_core::streamer_gen::{Cls, base, basic};
+use oxiroot_io_core::streamer_gen::{ClassDef, base, basic};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.
@@ -30,14 +30,14 @@ impl WriteRoot for Point {
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
         let obj = w.begin_object(1);
-        oxiroot_io_core::write_object_base(&mut w, 0);
+        oxiroot_io_core::raw::write_object_base(&mut w, 0);
         w.be_f64(self.x);
         w.be_f64(self.y);
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
-        vec![Cls {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
+        vec![ClassDef {
             name: "Point".into(),
             version: 1,
             checksum: 0x1234_5678,
@@ -158,7 +158,7 @@ fn a_collection_read_back_still_describes_its_members() {
 /// functions, members.
 fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
     let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("h");
-    h.xaxis.set_label(1, "a");
+    h.xaxis_mut().set_label(1, "a");
     let p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
     let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);

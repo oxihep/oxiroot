@@ -1,7 +1,8 @@
 //! `Axis` — a histogram axis.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, RBuffer, Result, read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::{Error, RBuffer, Result};
 
 use crate::base::end_record;
 
@@ -14,13 +15,13 @@ pub struct Axis {
     /// Axis title (`fTitle`).
     pub title: String,
     /// Number of bins (`fNbins`).
-    pub nbins: i32,
+    pub(crate) nbins: i32,
     /// Low edge of the axis range (`fXmin`).
-    pub xmin: f64,
+    pub(crate) xmin: f64,
     /// High edge of the axis range (`fXmax`).
-    pub xmax: f64,
+    pub(crate) xmax: f64,
     /// Variable bin edges (`fXbins`); empty when the axis is uniform.
-    pub xbins: Vec<f64>,
+    pub(crate) xbins: Vec<f64>,
     /// Alphanumeric bin labels (`fLabels`), one per bin (`labels[i]` labels bin
     /// `i + 1`). Empty for an ordinary numeric axis; an unlabelled bin in an
     /// otherwise-labelled axis holds an empty string.
@@ -224,8 +225,8 @@ impl Axis {
     /// use oxiroot_hist::ToRoot;
     /// # use oxiroot_hist::Hist;
     /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().named("rate");
-    /// h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
-    /// assert!(h.xaxis.time_display);
+    /// h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
+    /// assert!(h.xaxis().time_display);
     /// ```
     pub fn set_time_format(&mut self, format: &str) {
         self.time_display = true;

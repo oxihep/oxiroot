@@ -17,7 +17,7 @@ fn open(name: &str) -> FileReader {
 fn check(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 4, "{name}");
+    assert_eq!(ntpl.entries(), 4, "{name}");
     let field = |n| ntpl.read_field(&file, n).expect("read field");
 
     // std::array<int32_t, 3>: entry i = {i, i*10, i*100}.

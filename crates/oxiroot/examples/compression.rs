@@ -117,7 +117,7 @@ fn main() -> oxiroot::Result<()> {
     let f = FileReader::open(zstd_path)?;
     let tree = TreeReader::open(&f, "Events")?;
     assert_eq!(
-        usize::saturating_from(tree.num_entries()),
+        usize::saturating_from(tree.entries()),
         n,
         "entry count survived the round-trip"
     );

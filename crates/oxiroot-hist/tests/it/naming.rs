@@ -65,8 +65,8 @@ fn same_name_in_different_directories_is_fine() {
         .expect("distinct namespaces — no collision");
 
     let f = FileReader::open(&path).expect("open");
-    assert_eq!(Hist1D::read_root(&f, "h").unwrap().entries, 4.0);
-    assert_eq!(Hist1D::read_root_in(&f, "sub", "h").unwrap().entries, 4.0);
+    assert_eq!(Hist1D::read_root(&f, "h").unwrap().entries(), 4.0);
+    assert_eq!(Hist1D::read_root_in(&f, "sub", "h").unwrap().entries(), 4.0);
 }
 
 #[test]

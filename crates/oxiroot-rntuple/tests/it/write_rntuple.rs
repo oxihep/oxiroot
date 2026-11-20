@@ -57,7 +57,7 @@ fn writes_a_rich_rntuple_that_round_trips() {
 
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(ntpl.entries(), 5);
 
     let field = |n| ntpl.read_field(&f, n).expect("read field");
     assert_eq!(field("i32"), FieldValues::I32(vec![0, 10, 20, 30, 40]));
@@ -171,7 +171,7 @@ fn writes_a_zstd_compressed_rntuple_that_round_trips() {
 
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), n as u64);
+    assert_eq!(ntpl.entries(), n as u64);
     assert_eq!(ntpl.read_field(&f, "x").expect("x"), FieldValues::I32(x));
     assert_eq!(ntpl.read_field(&f, "y").expect("y"), FieldValues::F64(y));
 }

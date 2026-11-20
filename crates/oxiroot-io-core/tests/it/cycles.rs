@@ -5,7 +5,8 @@
 //! and two cycles of `sub/d` holding 10 and 20. ROOT reads `h` as `h;3`, `h;1` as
 //! the first cycle, and `gone` as nothing; the assertions here are those answers.
 
-use oxiroot_io_core::{FileReader, Value, split_cycle};
+use oxiroot_io_core::raw::split_cycle;
+use oxiroot_io_core::{FileReader, Value};
 
 fn fixture() -> String {
     format!("{}/../../fixtures/cycles.root", env!("CARGO_MANIFEST_DIR"))

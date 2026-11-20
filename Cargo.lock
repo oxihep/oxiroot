@@ -873,8 +873,8 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "oxifit"
-version = "0.8.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.8.0#e349364aad2339dc5244f9702c7bfcfe2c44eff1"
+version = "0.9.0"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.9.0#166418f4dfd76de64bd0af2ce8ccdc992ae4c637"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -886,16 +886,16 @@ dependencies = [
 
 [[package]]
 name = "oxifit-formula"
-version = "0.8.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.8.0#e349364aad2339dc5244f9702c7bfcfe2c44eff1"
+version = "0.9.0"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.9.0#166418f4dfd76de64bd0af2ce8ccdc992ae4c637"
 dependencies = [
  "oxistats",
 ]
 
 [[package]]
 name = "oxihist"
-version = "0.12.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.12.0#28dd800e7c6e3d9d60f63429ace3fc46d0410cdf"
+version = "0.13.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.13.0#357467a9c5a262f26c2927d98b23d9d8cd57247b"
 dependencies = [
  "foldhash",
  "oxifit",
@@ -911,8 +911,8 @@ source = "git+https://github.com/oxihep/oxiparticle?tag=v0.1.0#61ca817e2a2bff1d9
 
 [[package]]
 name = "oxiplot"
-version = "0.10.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.10.0#298ec29249380e7541689f4b1823eba19cfa3bad"
+version = "0.11.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.11.0#f76b988b11309506ebb4d0dd35ff59a052138a4c"
 dependencies = [
  "oxifit",
  "oxiplot-tex",
@@ -922,8 +922,8 @@ dependencies = [
 
 [[package]]
 name = "oxiplot-tex"
-version = "0.10.0"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.10.0#298ec29249380e7541689f4b1823eba19cfa3bad"
+version = "0.11.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.11.0#f76b988b11309506ebb4d0dd35ff59a052138a4c"
 dependencies = [
  "skrifa",
 ]
@@ -1030,8 +1030,8 @@ dependencies = [
 
 [[package]]
 name = "oxistats"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxistats?tag=v0.1.0#41b6f711238173d39cc79de20dd38952f4fa68f1"
+version = "0.2.0"
+source = "git+https://github.com/oxihep/oxistats?tag=v0.2.0#ee8d0c48eeace5a7e4ca0f45d6ebebc83cf400f8"
 
 [[package]]
 name = "page_size"

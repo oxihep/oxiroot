@@ -60,19 +60,22 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // --- The memory win: occupied cells vs the dense grid. ---------------------
-    let dense_cells: i64 = hs.axes.iter().map(|ax| i64::from(ax.nbins)).product();
-    let filled = hs.bins.len();
+    let dense_cells: i64 = hs.axes().iter().map(|ax| i64::from(ax.nbins())).product();
+    let filled = hs.bins().len();
     let occupancy = 100.0 * filled as f64 / dense_cells as f64;
     println!("THnSparse `{}`: \"{}\"", hs.name, hs.title);
     println!("  dimensions       : {}", hs.ndim());
-    for ax in &hs.axes {
+    for ax in hs.axes() {
         println!(
             "    {:<4} {:>3} bins over [{:>6.1}, {:>6.1}]",
-            ax.name, ax.nbins, ax.xmin, ax.xmax
+            ax.name,
+            ax.nbins(),
+            ax.xmin(),
+            ax.xmax()
         );
     }
     println!("  events filled    : {}", n_events);
-    println!("  entries          : {}", hs.entries);
+    println!("  entries          : {}", hs.entries());
     println!("  filled cells     : {filled}");
     println!("  dense grid cells : {dense_cells}  (product of per-axis bins)");
     println!(
@@ -87,7 +90,7 @@ fn main() -> oxiroot::Result<()> {
 
     // Peek at the single most-populated cell (max content over the sparse bins).
     if let Some(peak) = hs
-        .bins
+        .bins()
         .iter()
         .max_by(|a, b| a.content.total_cmp(&b.content))
     {
@@ -110,15 +113,19 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "read back `cutspace`: {} dims, {} entries, {} filled cells",
         back.ndim(),
-        back.entries,
-        back.bins.len(),
+        back.entries(),
+        back.bins().len(),
     );
 
     // The round-trip must preserve the entry count and the occupied-cell set.
     assert_eq!(back.ndim(), hs.ndim(), "ndim survived the round-trip");
-    assert_eq!(back.entries, hs.entries, "entries survived the round-trip");
     assert_eq!(
-        back.bins.len(),
+        back.entries(),
+        hs.entries(),
+        "entries survived the round-trip"
+    );
+    assert_eq!(
+        back.bins().len(),
         filled,
         "the filled-cell count survived the round-trip"
     );

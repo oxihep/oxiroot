@@ -47,7 +47,8 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use oxiroot_io_core::{Compression, Error, FileReader, KSTART_BIG_FILE, Result};
+use oxiroot_io_core::raw::KSTART_BIG_FILE;
+use oxiroot_io_core::{Compression, Error, FileReader, Result};
 
 mod histograms;
 pub use histograms::{HistMergeOutcome, merge_histogram_files};
@@ -306,7 +307,7 @@ fn merge_tree(
         .iter()
         .map(|f| TreeReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
-    let entries = trees.iter().map(TreeReader::num_entries).sum();
+    let entries = trees.iter().map(TreeReader::entries).sum();
     let pairs: Vec<(&FileReader, &TreeReader)> = files.iter().zip(&trees).collect();
 
     if entries == 0 {
@@ -349,7 +350,7 @@ fn merge_rntuple(
         .iter()
         .map(|f| NtupleReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
-    let entries = ntuples.iter().map(NtupleReader::num_entries).sum();
+    let entries = ntuples.iter().map(NtupleReader::entries).sum();
     let pairs: Vec<(&FileReader, &NtupleReader)> = files.iter().zip(&ntuples).collect();
 
     if entries == 0 {

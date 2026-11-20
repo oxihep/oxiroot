@@ -3,7 +3,8 @@
 //! `oxiroot-hist-func`) share.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{RBuffer, Result, WBuffer, read_named, skip_versioned, write_named};
+use oxiroot_io_core::raw::{read_named, skip_versioned, write_named};
+use oxiroot_io_core::{RBuffer, Result, WBuffer};
 
 use crate::graph::GraphFunction;
 use crate::write::write_object_ptr;

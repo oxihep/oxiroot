@@ -79,7 +79,7 @@ fn byte_exact_against_root() {
         ("bignum", &Parameter::i64("bignum", 9_000_000_000)),
     ];
     for (name, obj) in cases {
-        let (_, root_bytes) = oxiroot_io_core::object_bytes_any(&f, name).unwrap();
+        let (_, root_bytes) = oxiroot_io_core::raw::object_bytes_any(&f, name).unwrap();
         assert_eq!(
             obj.to_root_bytes(),
             root_bytes,

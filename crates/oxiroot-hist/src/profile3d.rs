@@ -5,7 +5,8 @@
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
+use oxiroot_io_core::raw::skip_versioned;
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
@@ -23,45 +24,45 @@ pub struct Profile3D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis.
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Z axis.
-    pub zaxis: Axis,
+    pub(crate) zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
     /// [`ncells`](Profile3D::ncells); `pub(crate)` so it cannot drift from the
     /// per-bin vectors.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of squared weights (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of `w·x` (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of `w·x²` (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Sum of `w·y` (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of `w·y²` (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Sum of `w·x·y` (`fTsumwxy`).
-    pub tsumwxy: f64,
+    pub(crate) tsumwxy: f64,
     /// Sum of `w·z` (`fTsumwz`).
-    pub tsumwz: f64,
+    pub(crate) tsumwz: f64,
     /// Sum of `w·z²` (`fTsumwz2`).
-    pub tsumwz2: f64,
+    pub(crate) tsumwz2: f64,
     /// Sum of `w·x·z` (`fTsumwxz`).
-    pub tsumwxz: f64,
+    pub(crate) tsumwxz: f64,
     /// Sum of `w·y·z` (`fTsumwyz`).
-    pub tsumwyz: f64,
+    pub(crate) tsumwyz: f64,
     /// Per-cell `Σ(w·t)` (the Hist3D contents, `fArray`); length `ncells`.
-    pub sums: Vec<f64>,
+    pub(crate) sums: Vec<f64>,
     /// Per-cell `Σ(w·t²)` (the Hist3D `fSumw2`); length `ncells`.
-    pub sumt2: Vec<f64>,
+    pub(crate) sumt2: Vec<f64>,
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
-    pub bin_entries: Vec<f64>,
+    pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
     pub error_mode: ErrorMode,
     /// Lower `t` accept bound (`fTmin`; `0` = no restriction when `tmin == tmax`).
@@ -69,11 +70,11 @@ pub struct Profile3D {
     /// Upper `t` accept bound (`fTmax`).
     pub tmax: f64,
     /// Sum of `w·t` over in-range fills (`fTsumwt`).
-    pub tsumwt: f64,
+    pub(crate) tsumwt: f64,
     /// Sum of `w·t²` over in-range fills (`fTsumwt2`).
-    pub tsumwt2: f64,
+    pub(crate) tsumwt2: f64,
     /// Per-cell `Σw²` (`fBinSumw2`); empty unless weighted-error tracking is on.
-    pub bin_sumw2: Vec<f64>,
+    pub(crate) bin_sumw2: Vec<f64>,
 }
 
 impl Profile3D {

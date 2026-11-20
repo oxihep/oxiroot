@@ -15,7 +15,7 @@ fn write_then_read_roundtrips() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
     assert_eq!(t.branch_names(), ["i4", "f8", "b1", "u4"]);
     assert_eq!(
         t.read_branch(&f, "i4").unwrap(),
@@ -58,7 +58,7 @@ fn write_then_read_arrays_and_strings() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), ["x", "s", "n"]);
     assert_eq!(t.read_branch(&f, "x").unwrap(), BranchValues::VecF64(xs));
     assert_eq!(t.read_branch(&f, "s").unwrap(), BranchValues::Str(ss));
@@ -79,7 +79,7 @@ fn write_then_read_jagged() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     // The writer inserts the count branch (ny / nn) before each jagged branch.
     assert_eq!(t.branch_names(), ["e", "ny", "y", "nn", "n"]);
     assert_eq!(t.read_branch(&f, "y").unwrap(), BranchValues::VecF64(ys));
@@ -110,7 +110,7 @@ fn write_then_read_zstd() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(
         t.read_branch(&f, "a").unwrap(),
         BranchValues::I32(vec![1, 2, 3])
@@ -137,7 +137,7 @@ fn write_then_read_std_vector() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     assert_eq!(t.branch_names(), ["n", "vf", "vi"]);
     assert_eq!(
         t.read_branch(&f, "n").unwrap(),
@@ -166,7 +166,7 @@ fn write_then_read_empty_tree() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 0);
+    assert_eq!(t.entries(), 0);
     assert_eq!(t.branch_names(), ["i4", "f8"]);
     assert_eq!(t.read_branch(&f, "i4").unwrap(), BranchValues::I32(vec![]));
     assert_eq!(t.read_branch(&f, "f8").unwrap(), BranchValues::F64(vec![]));

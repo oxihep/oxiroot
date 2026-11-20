@@ -424,7 +424,7 @@ fn payload_in_window<'a>(win: &'a [u8], key: &Key) -> Result<&'a [u8]> {
 /// stays whole.
 ///
 /// ```
-/// # use oxiroot_io_core::split_cycle;
+/// # use oxiroot_io_core::raw::split_cycle;
 /// assert_eq!(split_cycle("h"), ("h", None));
 /// assert_eq!(split_cycle("h;2"), ("h", Some(2)));
 /// assert_eq!(split_cycle("a;b"), ("a;b", None));

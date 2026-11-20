@@ -169,7 +169,7 @@ let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 // Write a columnar RNTuple, then read it back.
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
+let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.entries();
 ```
 
 Types are named as Rust, not as C++: no `T` prefix. Readers end in `Reader`
@@ -219,7 +219,7 @@ cargo run -p oxiroot --example analysis
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
 - Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics, including its
   automatic `Sumw2`: the first weight other than 1 turns on weighted per-bin
-  errors (`bin_error`). `sumw2()` (chains: `h.sumw2().fill(x)`) turns them on
+  errors (`bin_error`). `sumw2()` (chains: `h.track_sumw2().fill(x)`) turns them on
   explicitly for a unit-weight histogram.
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, the
   ROOT-free histogram library modelled on boost-histogram and scikit-hep
@@ -356,7 +356,7 @@ let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMe
 use oxiroot::prelude::*; // the `fit` feature is on by default
 
 let mut h = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass").titled("di-muon mass");
-h.sumw2();
+h.track_sumw2();
 // … fill h with events …
 
 // Gaussian peak fit (chi-square). `estimate_from` seeds (constant, mean, sigma)
@@ -370,7 +370,7 @@ println!("chi2/ndf = {:.2}, p = {:.3}", fit.chi2_per_ndf(), fit.p_value());
 let ml = h.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
 
 // Full control: fit the core ±window, keep sigma positive, and ask for MINOS.
-let opts = FitOptions::new().range(85.0, 97.0).with_minos(true);
+let opts = FitOptions::new().range(85.0, 97.0).minos(true);
 let mut peak = Model::gaussian("z").estimate_from(&h).lower_limit("sigma", 0.0);
 let r = h.fit_into(&mut peak, &opts); // writes the fit back into `peak`
 if let Some(minos) = &r.minos {
@@ -674,7 +674,7 @@ ax2.save("heatmap.svg")?;
   and `ax.fit_stats(&model, &result)` adds a ROOT-style stat box (`TPaveStats`) with
   the function name, χ²/ndf, and each fitted parameter ± its error.
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
-  (height/width ratios, spacing) with `fig.sharex()`/`sharey()` and a `suptitle`,
+  (height/width ratios, spacing) with `fig.sharex(true)`/`sharey()` and a `suptitle`,
   plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot (shared
   x-axis, the upper panel's x labels hidden). The figure makes room for every
   panel's tick labels, axis labels and title so nothing overlaps, and lines up

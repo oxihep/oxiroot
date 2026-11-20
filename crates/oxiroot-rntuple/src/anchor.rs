@@ -5,7 +5,7 @@
 //! header, then 64 bytes of **big-endian** fields, then an 8-byte XXH3-64
 //! checksum over those 64 field bytes.
 
-use oxiroot_io_core::streamer_gen::{Cls, basic};
+use oxiroot_io_core::streamer_gen::{ClassDef, basic};
 use oxiroot_io_core::{Error, RBuffer, Result};
 
 /// The ROOT class name under which the anchor is stored.
@@ -20,10 +20,10 @@ const ANCHOR_CLASS_VERSION: u16 = 2;
 
 /// The `TStreamerInfo` entry ROOT writes for the anchor class in every file that
 /// holds an RNTuple.
-pub(crate) fn anchor_streamer_class() -> Cls<'static> {
+pub(crate) fn anchor_streamer_class() -> ClassDef<'static> {
     let short = |name| basic(name, 12, 2, "unsigned short");
     let long = |name| basic(name, 17, 8, "ULong64_t");
-    Cls {
+    ClassDef {
         name: ANCHOR_CLASS.into(),
         version: i32::from(ANCHOR_CLASS_VERSION),
         checksum: 0x4ba2_1bf5,

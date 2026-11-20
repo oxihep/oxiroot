@@ -21,8 +21,8 @@ fn reads_root_graph_function() {
     let f = FileReader::open(fixture("graph_function.root")).expect("open");
     let g = Graph::read_root(&f, "gfit").expect("read gfit");
     assert_eq!(g.title, "fitted");
-    assert_eq!(g.x, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
-    assert_eq!(g.y, vec![1.0, 3.0, 5.0, 7.0, 9.0]);
+    assert_eq!(g.x(), vec![0.0, 1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(g.y(), vec![1.0, 3.0, 5.0, 7.0, 9.0]);
 
     assert_eq!(g.functions.len(), 1);
     let fun = &g.functions[0];

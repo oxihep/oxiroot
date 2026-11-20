@@ -16,10 +16,10 @@ use oxiroot_io_core::{Compression, FileReader};
 #[test]
 fn th1_weighted_fill_tracks_squared_weights() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root(); // no `.weight()`
-    assert!(h.sumw2.is_empty());
+    assert!(h.sumw2().is_none());
     h.fill_weight(0.5, 2.0);
     // One entry of weight 2: error = √Σw² = 2, not √Σw = √2.
-    assert!(!h.sumw2.is_empty(), "a weighted fill must turn tracking on");
+    assert!(h.sumw2().is_some(), "a weighted fill must turn tracking on");
     assert_eq!(h.bin_error(1), 2.0);
 }
 
@@ -28,7 +28,7 @@ fn th1_tracking_seeds_from_earlier_unit_fills() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
     h.fill(0.5); // unit weight, no tracking yet
     h.fill_weight(0.5, 3.0); // turns tracking on; the earlier fill contributes 1²
-    assert_eq!(h.sumw2[1], 1.0 + 9.0);
+    assert_eq!(h.sumw2().expect("error tracking is on")[1], 1.0 + 9.0);
     assert_eq!(h.bin_error(1), 10.0_f64.sqrt());
 }
 
@@ -37,7 +37,7 @@ fn unit_weight_fills_still_do_not_allocate() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
     h.fill(0.5);
     h.fill_weight(1.5, 1.0);
-    assert!(h.sumw2.is_empty(), "unit weights need no Σw² array");
+    assert!(h.sumw2().is_none(), "unit weights need no Σw² array");
     assert_eq!(h.bin_error(1), 1.0);
 }
 
@@ -66,7 +66,7 @@ fn tprofile_weighted_fill_counts_effective_entries() {
     // (Σw)²/Σw² = 1 effective entry. Without Σw² tracking it read 2.
     let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
     p.fill_weight(0.5, 1.0, 2.0);
-    assert_eq!(p.bin_sumw2[1], 4.0);
+    assert_eq!(p.bin_sumw2()[1], 4.0);
     assert_eq!(p.effective_entries(1), 1.0);
 }
 
@@ -87,12 +87,12 @@ fn tprofile_tracking_seeds_from_earlier_unit_fills() {
     let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
     p.fill(0.5, 1.0); // Σw = 1, Σw² = 1, not yet tracked
     p.fill_weight(0.5, 1.0, 2.0); // turns tracking on
-    assert_eq!(p.bin_entries[1], 3.0);
-    assert_eq!(p.bin_sumw2[1], 1.0 + 4.0);
+    assert_eq!(p.bin_entries()[1], 3.0);
+    assert_eq!(p.bin_sumw2()[1], 1.0 + 4.0);
     assert_eq!(p.effective_entries(1), 9.0 / 5.0);
     // Later unit fills keep accumulating into the tracked array.
     p.fill(0.5, 1.0);
-    assert_eq!(p.bin_sumw2[1], 6.0);
+    assert_eq!(p.bin_sumw2()[1], 6.0);
 }
 
 #[test]
@@ -102,8 +102,8 @@ fn tprofile_rejected_fill_does_not_turn_tracking_on() {
     p.ymin = 0.0;
     p.ymax = 10.0;
     p.fill_weight(0.5, 50.0, 2.0);
-    assert!(p.bin_sumw2.is_empty());
-    assert_eq!(p.entries, 0.0);
+    assert!(p.bin_sumw2().is_empty());
+    assert_eq!(p.entries(), 0.0);
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn tprofile_unit_fills_do_not_allocate() {
     let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
     p.fill(0.5, 1.0);
     p.fill_weight(0.5, 2.0, 1.0);
-    assert!(p.bin_sumw2.is_empty());
+    assert!(p.bin_sumw2().is_empty());
     assert_eq!(p.effective_entries(1), 2.0);
 }
 
@@ -121,7 +121,7 @@ fn tprofile2d_weighted_fill_tracks_squared_weights() {
     p.fill_weight(0.5, 0.5, 1.0, 2.0);
     p.fill_weight(0.5, 0.5, 3.0, 2.0);
     let cell = 1 + 4; // bx + (nx + 2)·by
-    assert_eq!(p.bin_sumw2[cell], 8.0);
+    assert_eq!(p.bin_sumw2()[cell], 8.0);
     // Same numbers as the 1-D case: error on the mean = √(1/2).
     let err = p.bin_error(cell);
     assert!((err - 0.5_f64.sqrt()).abs() < 1e-12, "got {err}");
@@ -137,8 +137,8 @@ fn tprofile3d_weighted_fill_tracks_squared_weights() {
     p.fill(0.5, 0.5, 0.5, 1.0); // unit, untracked
     p.fill_weight(0.5, 0.5, 0.5, 1.0, 2.0); // turns tracking on
     let cell = 1 + 4 * (1 + 4); // bx + sx·(by + sy·bz)
-    assert_eq!(p.bin_entries[cell], 3.0);
-    assert_eq!(p.bin_sumw2[cell], 1.0 + 4.0);
+    assert_eq!(p.bin_entries()[cell], 3.0);
+    assert_eq!(p.bin_sumw2()[cell], 1.0 + 4.0);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
     let back = Profile1D::read_root(&FileReader::open(&out).expect("open"), "wp").expect("read");
     let _ = std::fs::remove_file(&out);
 
-    assert_eq!(back.bin_sumw2, p.bin_sumw2);
+    assert_eq!(back.bin_sumw2(), p.bin_sumw2());
     assert_eq!(back.effective_entries(1), 1.0);
     assert_eq!(back, p);
 }
@@ -171,7 +171,7 @@ fn unit_weight_root_fixture_still_has_no_squared_weights() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tprofile2d.root");
     let f = FileReader::open(path).expect("open fixture");
     let p = oxiroot_hist::Profile2D::read_root(&f, "p2").expect("read");
-    assert!(p.bin_sumw2.is_empty());
+    assert!(p.bin_sumw2().is_empty());
 }
 
 // ------------------------------------------ derived histograms keep Σw² right
@@ -190,8 +190,8 @@ fn rebin_folds_variances_into_the_flow_bins() {
     h.fill_weight(3.5, 3.0); // bin 4: left over by rebin(3), folds into overflow
     h.fill_weight(9.0, 3.0); // overflow
     let r = h.rebin(3);
-    assert_eq!(r.contents, [2.0, 2.0, 6.0]);
-    assert_eq!(r.sumw2, [4.0, 4.0, 18.0]);
+    assert_eq!(r.contents(), [2.0, 2.0, 6.0]);
+    assert_eq!(r.sumw2().expect("error tracking is on"), [4.0, 4.0, 18.0]);
     assert_eq!(r.bin_error(0), 2.0);
     assert_eq!(r.bin_error(2), 18.0_f64.sqrt());
 }
@@ -204,8 +204,11 @@ fn slice_folds_variances_into_the_flow_bins() {
     h.fill_weight(2.5, 3.0);
     h.fill_weight(3.5, 3.0); // dropped above the slice -> overflow
     let s = h.slice(1.5, 2.5);
-    assert_eq!(s.contents, [2.0, 2.0, 3.0, 3.0]);
-    assert_eq!(s.sumw2, [4.0, 4.0, 9.0, 9.0]);
+    assert_eq!(s.contents(), [2.0, 2.0, 3.0, 3.0]);
+    assert_eq!(
+        s.sumw2().expect("error tracking is on"),
+        [4.0, 4.0, 9.0, 9.0]
+    );
     assert_eq!(s.bin_error(0), 2.0);
     assert_eq!(s.bin_error(3), 3.0);
 }
@@ -220,7 +223,7 @@ fn scale_turns_tracking_on_so_later_fills_seed_correctly() {
     // Four counts scaled by ½: content 2, variance 4·¼ = 1 (not √2 from the content).
     assert_eq!(h.bin_error(1), 1.0);
     h.fill_weight(0.5, 2.0);
-    assert_eq!(h.sumw2[1], 1.0 + 4.0);
+    assert_eq!(h.sumw2().expect("error tracking is on")[1], 1.0 + 4.0);
     assert_eq!(h.bin_error(1), 5.0_f64.sqrt());
 
     // The same through the `*=` operator, and in two dimensions.
@@ -237,24 +240,30 @@ fn cumulative_accumulates_variances() {
     h.fill_weight(1.5, 2.0);
 
     let fwd = h.cumulative(true);
-    assert_eq!(fwd.contents, [0.0, 2.0, 4.0, 0.0]);
-    assert_eq!(fwd.sumw2, [0.0, 4.0, 8.0, 0.0]);
+    assert_eq!(fwd.contents(), [0.0, 2.0, 4.0, 0.0]);
+    assert_eq!(
+        fwd.sumw2().expect("error tracking is on"),
+        [0.0, 4.0, 8.0, 0.0]
+    );
     let bwd = h.cumulative(false);
-    assert_eq!(bwd.contents, [0.0, 4.0, 2.0, 0.0]);
-    assert_eq!(bwd.sumw2, [0.0, 8.0, 4.0, 0.0]);
+    assert_eq!(bwd.contents(), [0.0, 4.0, 2.0, 0.0]);
+    assert_eq!(
+        bwd.sumw2().expect("error tracking is on"),
+        [0.0, 8.0, 4.0, 0.0]
+    );
 
     // A later weighted fill adds to the running variance instead of re-seeding
     // from the cumulative contents.
     let mut fwd = fwd;
     fwd.fill_weight(1.5, 3.0);
-    assert_eq!(fwd.sumw2[2], 8.0 + 9.0);
+    assert_eq!(fwd.sumw2().expect("error tracking is on")[2], 8.0 + 9.0);
 
     // Counts stay untracked, with √content errors.
     let mut counts = Hist::reg(2, 0.0, 2.0).double().to_root();
     counts.fill(0.5);
     counts.fill(1.5);
     let c = counts.cumulative(true);
-    assert!(c.sumw2.is_empty());
+    assert!(c.sumw2().is_none());
     assert_eq!(c.bin_error(2), 2.0_f64.sqrt());
 }
 
@@ -269,10 +278,10 @@ fn profile_of_a_weighted_th2_matches_a_direct_weighted_profile() {
     direct.fill_weight(0.5, 0.5, 2.0);
     direct.fill_weight(0.5, 1.5, 2.0);
 
-    assert_eq!(from_th2.bin_entries, direct.bin_entries);
-    assert_eq!(from_th2.sums, direct.sums);
-    assert_eq!(from_th2.sumy2, direct.sumy2);
-    assert_eq!(from_th2.bin_sumw2, direct.bin_sumw2);
+    assert_eq!(from_th2.bin_entries(), direct.bin_entries());
+    assert_eq!(from_th2.sums(), direct.sums());
+    assert_eq!(from_th2.sumy2(), direct.sumy2());
+    assert_eq!(from_th2.bin_sumw2(), direct.bin_sumw2());
     // Σw = 4 and Σw² = 8, so 2 effective entries, not 4.
     assert_eq!(from_th2.effective_entries(1), 2.0);
     assert_eq!(from_th2.bin_error(1), direct.bin_error(1));
@@ -280,11 +289,11 @@ fn profile_of_a_weighted_th2_matches_a_direct_weighted_profile() {
     // Merging keeps the bookkeeping exact: Σw² = 16, neff = 64/16.
     let mut merged = direct.clone();
     merged.add(&from_th2, 1.0).unwrap();
-    assert_eq!(merged.bin_sumw2[1], 16.0);
+    assert_eq!(merged.bin_sumw2()[1], 16.0);
     assert_eq!(merged.effective_entries(1), 4.0);
 
     // An unweighted Hist2D still profiles without tracking.
     let mut counts = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().to_root();
     counts.fill(0.5, 0.5);
-    assert!(counts.profile_x("p").bin_sumw2.is_empty());
+    assert!(counts.profile_x("p").bin_sumw2().is_empty());
 }

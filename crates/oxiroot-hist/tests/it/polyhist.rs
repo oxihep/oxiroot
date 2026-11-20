@@ -23,8 +23,8 @@ fn reads_root_written_th2poly() {
 
     assert_eq!(h.name, "hp");
     assert_eq!(h.title, "poly");
-    assert_eq!(h.entries, 2.0);
-    assert_eq!(h.tsumw, 4.0);
+    assert_eq!(h.entries(), 2.0);
+    assert_eq!(h.tsumw(), 4.0);
     assert_eq!(h.nbins(), 2);
 
     let b1 = h.bin(1).expect("bin 1");
@@ -52,9 +52,9 @@ fn reads_honeycomb_th2poly() {
     assert_eq!(h.title, "honeycomb");
     assert_eq!(h.nbins(), 14);
     // Every bin is a hexagon (6 vertices).
-    assert!(h.bins.iter().all(|b| b.x.len() == 6 && b.y.len() == 6));
+    assert!(h.bins().iter().all(|b| b.x.len() == 6 && b.y.len() == 6));
     // Numbers are the full 1..=14 set, no duplicates dropped or doubled.
-    let mut nums: Vec<i32> = h.bins.iter().map(|b| b.number).collect();
+    let mut nums: Vec<i32> = h.bins().iter().map(|b| b.number).collect();
     nums.sort_unstable();
     assert_eq!(nums, (1..=14).collect::<Vec<_>>());
 
@@ -79,10 +79,14 @@ fn th2poly_round_trips() {
         let out = std::env::temp_dir().join(format!("oxiroot_{name}.root"));
         h.write_root(&out, Compression::None).expect("write");
         let back = PolyHist::read_root(&FileReader::open(&out).unwrap(), name).unwrap();
-        assert_eq!(back.bins, h.bins, "{name} bins changed across round-trip");
+        assert_eq!(
+            back.bins(),
+            h.bins(),
+            "{name} bins changed across round-trip"
+        );
         assert_eq!(back.name, h.name);
         assert_eq!(back.title, h.title);
-        assert_eq!(back.entries, h.entries);
+        assert_eq!(back.entries(), h.entries());
     }
 }
 
@@ -112,5 +116,5 @@ fn th2poly_build_from_scratch() {
     assert_eq!(back.bin(2).unwrap().content, 4.0);
     assert_eq!(back.bin(3).unwrap().content, 2.0);
     assert_eq!(back.bin(3).unwrap().x, vec![2.0, 3.0, 2.5]);
-    assert_eq!(back.entries, 5.0);
+    assert_eq!(back.entries(), 5.0);
 }

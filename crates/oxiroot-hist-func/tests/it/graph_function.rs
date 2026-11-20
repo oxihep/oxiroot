@@ -63,8 +63,8 @@ fn to_model_works_for_a_function_with_a_free_text_title() {
     record.title = "Linear fit".to_string(); // a legend title, not a formula
     let f = Func1D::from_graph_function(record).unwrap();
     let model = f.to_model();
-    assert_eq!(model.params, vec![1.0, 2.0]);
-    assert_eq!(model.param_names.len(), 2);
+    assert_eq!(model.params(), vec![1.0, 2.0]);
+    assert_eq!(model.param_names().len(), 2);
     for x in [0.0, 0.5, 1.75] {
         assert_eq!(model.eval(x), f.eval(x));
     }
@@ -78,7 +78,7 @@ fn to_model_keeps_the_names_of_a_shortcut_formula() {
         .with_params(vec![2.0, 0.5, 1.5]);
     let model = f.to_model();
     let expected = oxifit::Model::from_formula("g", "gaus").unwrap();
-    assert_eq!(model.param_names, expected.param_names);
+    assert_eq!(model.param_names(), expected.param_names());
     assert_eq!(model.eval(0.25), f.eval(0.25));
 }
 

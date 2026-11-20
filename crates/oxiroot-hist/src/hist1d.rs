@@ -25,32 +25,32 @@ pub struct Hist1D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis (degenerate for 1-D).
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Z axis (degenerate for 1-D).
-    pub zaxis: Axis,
+    pub(crate) zaxis: Axis,
     /// Total cells, including under/overflow (`fNcells = nbins + 2`). Read it
     /// through [`ncells`](Hist1D::ncells); `pub(crate)` so it cannot drift from
     /// `contents` via outside mutation.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of squared weights (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of weight*x (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of weight*x^2 (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Bin contents including under/overflow (length `ncells`).
-    pub contents: Vec<f64>,
+    pub(crate) contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on, by [`Hist1D::sumw2`], [`Hist1D::scale`], or the first
+    /// turned on, by [`Hist1D::track_sumw2`], [`Hist1D::scale`], or the first
     /// [`fill_weight`](Hist1D::fill_weight) with a weight other than 1. When
     /// present, `bin_error = sqrt(sumw2[bin])`.
-    pub sumw2: Vec<f64>,
+    pub(crate) sumw2: Vec<f64>,
 }
 
 impl Hist1D {
@@ -127,7 +127,7 @@ impl Hist1D {
         // Before the contents change: `sumw2` seeds from them, and every earlier
         // fill had unit weight (otherwise tracking would already be on).
         if w != 1.0 && self.sumw2.is_empty() {
-            self.sumw2();
+            self.track_sumw2();
         }
         let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
@@ -210,7 +210,7 @@ impl Hist1D {
     }
 
     /// Per-in-range-bin variances (scikit-hep `hist`'s `.variances`). With
-    /// [`sumw2`](Hist1D::sumw2) on these are the stored sums of squared weights;
+    /// [`sumw2`](Hist1D::track_sumw2) on these are the stored sums of squared weights;
     /// otherwise the bin content (the Poisson variance ROOT assumes for an
     /// unweighted histogram), i.e. `bin_error(i+1)²`.
     #[must_use]

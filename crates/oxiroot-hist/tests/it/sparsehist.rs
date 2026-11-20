@@ -21,9 +21,9 @@ fn reads_root_written_thnsparse() {
     let f = FileReader::open(fixture("thnsparse.root")).expect("open");
     let h = SparseHist::read_root(&f, "hs").expect("read");
     assert_eq!(h.ndim(), 2);
-    assert_eq!(h.entries, 4.0);
+    assert_eq!(h.entries(), 4.0);
     assert_eq!(
-        sorted(h.bins),
+        sorted(h.bins().to_vec()),
         vec![
             SparseBin {
                 coords: vec![1, 1],
@@ -48,8 +48,8 @@ fn thnsparse_round_trips() {
     h.write_root(&out, Compression::None).expect("write");
     let f = FileReader::open(&out).expect("reopen");
     let back = SparseHist::read_root(&f, "hs").unwrap();
-    assert_eq!(sorted(back.bins), sorted(h.bins.clone()));
-    assert_eq!(back.entries, 4.0);
+    assert_eq!(sorted(back.bins().to_vec()), sorted(h.bins().to_vec()));
+    assert_eq!(back.entries(), 4.0);
 }
 
 /// A never-filled SparseHist (zero stored bins) must still write a valid chunk
@@ -57,11 +57,11 @@ fn thnsparse_round_trips() {
 #[test]
 fn empty_thnsparse_round_trips() {
     let h = SparseHist::new(&[(3, 0.0, 3.0), (2, -1.0, 1.0)]).named("hs");
-    assert!(h.bins.is_empty());
+    assert!(h.bins().is_empty());
     let out = PathBuf::from("/tmp/oxiroot_thnsparse_empty.root");
     h.write_root(&out, Compression::None).expect("write");
     let back = SparseHist::read_root(&FileReader::open(&out).unwrap(), "hs").unwrap();
     assert_eq!(back.ndim(), 2);
-    assert!(back.bins.is_empty());
-    assert_eq!(back.entries, 0.0);
+    assert!(back.bins().is_empty());
+    assert_eq!(back.entries(), 0.0);
 }

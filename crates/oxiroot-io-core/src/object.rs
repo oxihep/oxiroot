@@ -18,6 +18,7 @@ const K_CLASS_MASK: u32 = 0x8000_0000;
 const K_MAP_OFFSET: i64 = 2;
 
 /// The outcome of reading an object's `{byte-count, class-tag}` header.
+#[non_exhaustive]
 pub struct RecordHeader {
     /// The resolved class name, or `None` for a null/parent slot.
     pub class_name: Option<String>,
@@ -31,6 +32,7 @@ pub struct RecordHeader {
 
 /// An object already streamed in this buffer, named by a later reference to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ObjectRef {
     /// The object's class.
     pub class_name: String,

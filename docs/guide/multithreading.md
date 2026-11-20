@@ -53,7 +53,7 @@ std::thread::scope(|s| {
 
 // Combine every thread's copy into one — exact (contents + entries + moments).
 let merged = hist.merge().expect("identical binning");
-assert_eq!(merged.entries, data.len() as f64);
+assert_eq!(merged.entries(), data.len() as f64);
 ```
 
 `&ThreadedHist` is `Sync`, so it is shared across `std::thread::scope` without
@@ -129,7 +129,7 @@ println!("filled across {} thread-local copies", hist.num_slots());
     The merged histogram's bin contents match a single-threaded fill *exactly*;
     the moment sums (used for `mean`, `std_dev`, etc.) agree up to floating-point
     summation order. You can assert `merged.values() == serial.values()` and
-    `merged.entries == serial.entries` against a reference serial fill.
+    `merged.entries() == serial.entries()` against a reference serial fill.
 
 ## The `Mergeable` trait
 
@@ -182,7 +182,7 @@ let data: Vec<f64> = (0..1_000_000).map(|i| i as f64 % 100.0).collect();
 let template = Hist::reg(100, 0.0, 100.0).double().to_root().named("h");
 
 let hist = fill_par(&template, &data, |h, &x| h.fill(x));
-assert_eq!(hist.entries, data.len() as f64);
+assert_eq!(hist.entries(), data.len() as f64);
 ```
 
 The closure `|h, item|` applies one element, so it generalizes beyond 1-D — for

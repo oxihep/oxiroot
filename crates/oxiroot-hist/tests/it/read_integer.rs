@@ -53,7 +53,7 @@ fn reads_integer_histograms() {
     for (file, key, class, expected) in cases {
         let h = Hist1D::read_root(&open(file), key).expect("read integer TH1");
         assert_eq!(h.class_name(), class, "{file}");
-        assert_eq!(h.xaxis.nbins, 5, "{file}");
+        assert_eq!(h.xaxis().nbins(), 5, "{file}");
         assert_eq!(h.values(), expected, "{file}: bin contents");
     }
 }

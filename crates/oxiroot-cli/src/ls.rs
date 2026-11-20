@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use clap::Args as ClapArgs;
 use oxiroot::FileReader;
-use oxiroot::file::Key;
+use oxiroot::file::raw::Key;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::TreeReader;
 
@@ -168,8 +168,8 @@ fn collect(
 /// (`""` for the root directory), or `None` for any other class.
 fn entry_count(file: &FileReader, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
     match classify(class) {
-        Kind::Tree => open_tree(file, dir_path, leaf).map(|t| t.num_entries()),
-        Kind::RNtuple => open_ntuple(file, dir_path, leaf).map(|n| n.num_entries()),
+        Kind::Tree => open_tree(file, dir_path, leaf).map(|t| t.entries()),
+        Kind::RNtuple => open_ntuple(file, dir_path, leaf).map(|n| n.entries()),
         _ => None,
     }
 }

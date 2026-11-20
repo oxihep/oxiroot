@@ -182,7 +182,7 @@ mod analysis {
         let (mass, ct) = (column("mass")?, column("ctau")?);
         println!(
             "1. Wrote and read back {} dimuon candidates ({} J/ψ, {} ψ(2S), {} background) — {}",
-            tree.num_entries(),
+            tree.entries(),
             N_JPSI,
             n_psi2s,
             N_BKG,
@@ -195,7 +195,7 @@ mod analysis {
             .to_root()
             .named("m_mumu")
             .titled("dimuon mass");
-        m_hist.sumw2();
+        m_hist.track_sumw2();
         for &m in &mass {
             m_hist.fill(m);
         }
@@ -224,7 +224,7 @@ mod analysis {
         // The default minimizer, MIGRAD with a SIMPLEX fallback, copes with
         // the rough seed and eight parameters of very different scales.
         let opts = FitOptions::new().method(FitMethod::Likelihood);
-        let fit = m_hist.fit_opts(&model, &opts.with_minos(true));
+        let fit = m_hist.fit_opts(&model, &opts.minos(true));
         let minos = fit.minos.clone().unwrap_or_default();
         println!(
             "\n2. Mass fit (binned likelihood), χ²/ndf = {:.1}/{}",
@@ -429,7 +429,7 @@ mod analysis {
             .to_root()
             .named("ctau")
             .titled("decay length, J/#psi window");
-        t_hist.sumw2();
+        t_hist.track_sumw2();
         for &t in &sel_t {
             t_hist.fill(t);
         }
@@ -558,7 +558,7 @@ mod analysis {
             "\n6. Results file {} — m_mumu ({:.0} entries) and {} toy pulls read back",
             results.display(),
             back.integral(),
-            toys.num_entries()
+            toys.entries()
         );
         for png in [&mass_png, &ct_png, &contour_png, &profile_png, &pulls_png] {
             println!("   plot: {}", png.display());

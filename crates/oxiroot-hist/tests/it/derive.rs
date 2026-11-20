@@ -19,7 +19,7 @@ fn rebin_sums_groups_and_keeps_moments() {
     assert_eq!(h.values(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
     let r = h.rebin(2);
-    assert_eq!(r.xaxis.nbins, 3);
+    assert_eq!(r.xaxis().nbins(), 3);
     assert_eq!(r.values(), &[3.0, 7.0, 11.0], "adjacent bins summed");
     assert_eq!(r.edges(), vec![0.0, 2.0, 4.0, 6.0]);
     // Moments are the original data's, not recomputed from the coarse bins.
@@ -27,7 +27,7 @@ fn rebin_sums_groups_and_keeps_moments() {
         (r.mean() - h.mean()).abs() < 1e-12,
         "mean preserved by rebin"
     );
-    assert_eq!(r.entries, h.entries);
+    assert_eq!(r.entries(), h.entries());
 }
 
 #[test]
@@ -61,9 +61,9 @@ fn sample_th2() -> Hist2D {
 fn projection_x_sums_y_and_keeps_x_moments() {
     let h = sample_th2();
     let px = h.projection_x("px");
-    assert_eq!(px.xaxis.nbins, 2);
+    assert_eq!(px.xaxis().nbins(), 2);
     assert_eq!(px.values(), &[2.0, 3.0], "sum over y per x bin");
-    assert_eq!(px.entries, h.entries);
+    assert_eq!(px.entries(), h.entries());
     assert!(
         (px.mean() - h.mean_x()).abs() < 1e-12,
         "x mean carries over"
@@ -121,7 +121,7 @@ fn rebin2d_sums_blocks_and_keeps_moments() {
     // block (1,1)=1, block (2,2)=1+2=3, others 0.
     assert_eq!(r.values(), vec![vec![1.0, 0.0], vec![0.0, 3.0]]);
     assert!((r.mean_x() - h.mean_x()).abs() < 1e-12, "x mean preserved");
-    assert_eq!(r.entries, h.entries);
+    assert_eq!(r.entries(), h.entries());
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn rebin3d_sums_blocks() {
     let r = h.rebin3d(2, 2, 2); // → single bin
     assert_eq!((r.nx(), r.ny(), r.nz()), (1, 1, 1));
     assert_eq!(r.values()[0][0][0], 6.0, "all cells summed");
-    assert_eq!(r.entries, h.entries);
+    assert_eq!(r.entries(), h.entries());
 
     // The rebinned Hist3D has variable axes — confirm that round-trips on disk.
     let out = std::path::PathBuf::from("/tmp/oxiroot_rebin3d.root");

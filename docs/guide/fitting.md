@@ -52,7 +52,7 @@ use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
 let mut peak = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass");
-peak.sumw2(); // track per-bin errors for the chi-square
+peak.track_sumw2(); // track per-bin errors for the chi-square
 for _ in 0..10_000 {
     peak.fill(/* sample */ 91.2);
 }
@@ -297,7 +297,7 @@ use oxiroot::prelude::*;
 let opts = FitOptions::new()
     .method(FitMethod::Chi2)
     .range(85.0, 97.0)
-    .with_minos(true);
+    .minos(true);
 let fit = peak.fit_opts(&model, &opts);
 ```
 
@@ -371,7 +371,7 @@ let fit = peak.fit_opts(&model, &opts);
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let fit = peak.fit_opts(&model, &FitOptions::new().with_minos(true));
+let fit = peak.fit_opts(&model, &FitOptions::new().minos(true));
 if fit.valid {
     println!("mean   = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);
     if let Some(minos) = &fit.minos {
@@ -547,7 +547,7 @@ for name in ["constant", "mean", "sigma"] {
 }
 ```
 
-`Toys::unbinned(&truth, range, n)` draws events instead (`.extended()` for a
+`Toys::unbinned(&truth, range, n)` draws events instead (`.extended(true)` for a
 Poisson number of them).
 
 ## Profiles and contours
@@ -604,9 +604,9 @@ let model = Model::gaussian("z").estimate_from(&peak);
 let data_fit = ModelCost::new(&peak, &model, &FitOptions::new());
 let external = FnCost::new(&["sigma"], |p| ((p[0] - 0.62) / 0.03).powi(2));
 let total = CostSum::new().with(data_fit).with(external);
-let fit = Fitter::new(&total, model.params.clone())
+let fit = Fitter::new(&total, model.params().to_vec())
     .limit("sigma", 0.1, 2.0)
-    .fit(&FitOptions::new().with_minos(true));
+    .fit(&FitOptions::new().minos(true));
 ```
 
 ## Limits and significance
@@ -690,7 +690,7 @@ let limit = HypoTest::new(model.fitter(), "mu")?.upper_limit(0.95, (0.0, 10.0))?
 extended fit in a discriminating variable (a mass) into per-event weights for
 each species (sPlot, Pivk and Le Diberder). A weighted unbinned fit of another
 variable with the signal weights then measures the signal alone. Use
-`FitOptions::with_asymptotic_errors(true)` for that fit: it gives the
+`FitOptions::asymptotic_errors(true)` for that fit: it gives the
 asymptotically correct covariance (Langenbruch) for weights of any sign and
 size, where the naive and SumW2 errors are too small.
 
@@ -713,14 +713,14 @@ let fit = weighted.fit_opts(
     &FitOptions::new()
         .method(FitMethod::UnbinnedLikelihood)
         .range(0.0, 10.0)
-        .with_asymptotic_errors(true),
+        .asymptotic_errors(true),
 );
 ```
 
 ## Bin-integrated fits
 
 By default a binned fit compares each bin with the model at the bin centre.
-`FitOptions::with_bin_integration(true)` compares it with the model averaged
+`FitOptions::bin_integration(true)` compares it with the model averaged
 over the bin instead (ROOT's option `"I"`, iminuit's `BinnedNLL`). That matters
 when the model curves within a bin: a narrow peak in wide bins, or a steep
 slope. A `Hist1D` passes its real bin edges, variable-width ones included.
@@ -729,28 +729,28 @@ slope. A `Hist1D` passes its real bin edges, variable-width ones included.
 use oxiroot::prelude::*;
 
 let model = Model::gaussian("z").estimate_from(&peak);
-let fit = peak.fit_opts(&model, &FitOptions::new().with_bin_integration(true));
+let fit = peak.fit_opts(&model, &FitOptions::new().bin_integration(true));
 ```
 
 ## Efficiency fits
 
 A χ² fit to `passed/total` with binomial errors fails where the efficiency is
-near 0 or 1 or a bin has few trials. `oxiroot::fit::Efficiency` fits an
+near 0 or 1 or a bin has few trials. `oxiroot::fit::BinomialData` fits an
 efficiency curve with the **binomial likelihood** instead (ROOT's
 `TEfficiency::Fit`, RooFit's `RooEfficiency`), from pass/total counts per bin
-or from single pass/fail events. It matches ROOT. (`oxiroot::fit::Efficiency`
+or from single pass/fail events. It matches ROOT. (`oxiroot::fit::BinomialData`
 is the fit; the prelude's `Efficiency` is ROOT's `TEfficiency` object.)
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::fit::Efficiency as EffData;
+use oxiroot::fit::BinomialData;
 
 // Per-bin trigger counts: `passed` of `trials` at each pT (GeV).
 let pt = [12.0, 15.0, 18.0, 20.0, 22.0, 25.0, 30.0];
 let passed = [1.0, 4.0, 12.0, 20.0, 29.0, 37.0, 40.0];
 let trials = [40.0; 7];
-let data = EffData::new(&pt, &passed, &trials)?;
-// Or one event at a time: EffData::events(&pt, &fired)?
+let data = BinomialData::new(&pt, &passed, &trials)?;
+// Or one event at a time: BinomialData::events(&pt, &fired)?
 let turn_on = Model::new("eff", &["threshold", "width"], vec![18.0, 2.0], |x, p| {
     0.5 * (1.0 + oxiroot::stat::erf((x - p[0]) / (2f64.sqrt() * p[1])))
 })

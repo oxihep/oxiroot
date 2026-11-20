@@ -20,7 +20,7 @@ fn open(name: &str) -> FileReader {
 fn check_set_fixture(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
-    assert_eq!(ntpl.num_entries(), 4, "{name}");
+    assert_eq!(ntpl.entries(), 4, "{name}");
     // ROOT records the field as a Collection named with the set type.
     let s = &ntpl.header().fields[0];
     assert_eq!(s.struct_role, StructRole::Collection);

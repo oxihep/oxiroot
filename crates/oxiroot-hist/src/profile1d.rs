@@ -69,25 +69,25 @@ pub struct Profile1D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Total cells, including flow (`fNcells = nbins + 2`).
-    pub ncells: i32,
+    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of weight^2 (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of weight*x (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of weight*x^2 (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Per-bin sums of weight*y (the `TH1D` base contents, length `ncells`).
-    pub sums: Vec<f64>,
+    pub(crate) sums: Vec<f64>,
     /// Per-bin sums of weight*y^2 (the `Hist1D` base `fSumw2`, length `ncells`).
-    pub sumy2: Vec<f64>,
+    pub(crate) sumy2: Vec<f64>,
     /// Per-bin entry counts / sums of weight (`fBinEntries`, length `ncells`).
-    pub bin_entries: Vec<f64>,
+    pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
     pub error_mode: ErrorMode,
     /// Lower y limit (`fYmin`).
@@ -95,11 +95,11 @@ pub struct Profile1D {
     /// Upper y limit (`fYmax`).
     pub ymax: f64,
     /// Sum of weight*y (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of weight*y^2 (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Per-bin sum of squared weights (`fBinSumw2`), possibly empty.
-    pub bin_sumw2: Vec<f64>,
+    pub(crate) bin_sumw2: Vec<f64>,
 }
 
 impl Profile1D {

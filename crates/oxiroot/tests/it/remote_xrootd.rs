@@ -382,7 +382,7 @@ fn reads_a_ttree_over_xrootd() {
     assert_eq!(rkeys, lkeys, "same keys over root://");
 
     let rtree = TreeReader::open(&remote, &tname).expect("remote tree");
-    assert_eq!(rtree.num_entries(), ltree.num_entries());
+    assert_eq!(rtree.entries(), ltree.entries());
     let remote_vals = format!(
         "{:?}",
         rtree.read_branch(&remote, &branch).expect("remote branch")
@@ -424,7 +424,7 @@ fn xrootd_live_eospublic_reads_a_tree() {
     assert!(file.size() > 900_000_000, "the sample is about 966 MB");
 
     let tree = TreeReader::open(&file, "mini").expect("the mini tree");
-    assert_eq!(tree.num_entries(), 7_500_000);
+    assert_eq!(tree.entries(), 7_500_000);
     assert_eq!(tree.branch_names().len(), 46);
 
     // One branch, one entry window: the leptons per event of a Z→ee sample,

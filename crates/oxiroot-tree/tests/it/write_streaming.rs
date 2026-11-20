@@ -24,12 +24,12 @@ fn streaming_scalars_round_trip() {
         w.write_batch(&[Branch::i32("x", x.clone()), Branch::f64("y", y.clone())])
             .expect("batch");
     }
-    assert_eq!(w.num_entries(), 9);
+    assert_eq!(w.entries(), 9);
     w.finish().expect("finish");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open");
-    assert_eq!(t.num_entries(), 9);
+    assert_eq!(t.entries(), 9);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
         BranchValues::I32((0..9).collect())
@@ -61,7 +61,7 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open");
     let total = u64::saturating_from(n_batches * 4);
-    assert_eq!(t.num_entries(), total);
+    assert_eq!(t.entries(), total);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
         BranchValues::I64((0..total.cast_signed()).collect())
@@ -98,7 +98,7 @@ fn streaming_jagged_vector_string_round_trip() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open");
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     assert_eq!(
         t.read_branch(&f, "j").expect("j"),
         BranchValues::VecF64(jag)
@@ -141,7 +141,7 @@ fn streaming_create_large_writes_big_container_round_trip() {
     );
     assert_eq!(f.header().units, 8, "big-format fUnits is 8");
     let t = TreeReader::open(&f, "T").expect("open");
-    assert_eq!(t.num_entries(), 9);
+    assert_eq!(t.entries(), 9);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
         BranchValues::I32((0..9).collect())
@@ -243,7 +243,7 @@ fn streaming_real_over_two_gib() {
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big(), "a >2 GiB file must be the big form");
     let t = TreeReader::open(&f, "T").expect("open");
-    assert_eq!(t.num_entries(), total);
+    assert_eq!(t.entries(), total);
     // Read the final four entries — their basket sits past the 2 GiB mark, so
     // this proves the 64-bit fBasketSeek round-trips.
     let last = total - 4;

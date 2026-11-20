@@ -26,7 +26,7 @@ fn multi_basket_round_trips() {
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 7);
+    assert_eq!(t.entries(), 7);
 
     // Full read concatenates the three baskets back into the original column.
     assert_eq!(t.read_branch(&f, "x").expect("x"), BranchValues::I32(x));

@@ -6,7 +6,8 @@
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{ByteSource, Error, Result, decompress_payload};
+use oxiroot_io_core::raw::decompress_payload;
+use oxiroot_io_core::{ByteSource, Error, Result};
 
 use crate::column::ColumnType;
 use crate::pagelist::PageInfo;

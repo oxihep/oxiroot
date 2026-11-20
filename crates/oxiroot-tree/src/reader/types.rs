@@ -1,6 +1,6 @@
 //! Mapping ROOT type names and streamer element types to [`LeafType`].
 
-use oxiroot_io_core::StreamerElement;
+use oxiroot_io_core::raw::StreamerElement;
 
 use crate::value::LeafType;
 

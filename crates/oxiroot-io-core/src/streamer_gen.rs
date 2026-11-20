@@ -1,10 +1,10 @@
 //! Generating `TStreamerInfo` records — the write-side counterpart to
-//! [`parse_streamer_info`](crate::parse_streamer_info).
+//! [`parse_streamer_info`](crate::raw::parse_streamer_info).
 //!
 //! A written file embeds a `TList<TStreamerInfo>` describing every class it
 //! stores, so it is self-describing (uproot relies on it; the streamer-driven
 //! readers walk it). This module emits that list from a declarative table of
-//! [`Cls`] entries — the same class versions, checksums, and member layouts ROOT
+//! [`ClassDef`] entries — the same class versions, checksums, and member layouts ROOT
 //! writes — rather than shipping baked binary blobs. Each object is written with
 //! `kNewClassTag` (a full class name, never a back-reference), so the output is
 //! position-independent: [`append_streamer_infos`] can splice extra classes onto
@@ -82,9 +82,9 @@ enum Ek<'a> {
 /// One class's `TStreamerInfo`: name, on-disk version, ROOT checksum, members
 /// (in declared order, bases first). The strings are usually `'static`; a class
 /// defined at run time (a user struct) borrows or owns them instead
-/// ([`into_owned`](Cls::into_owned) detaches it from what it borrowed).
+/// ([`into_owned`](ClassDef::into_owned) detaches it from what it borrowed).
 #[derive(Clone, Debug)]
-pub struct Cls<'a> {
+pub struct ClassDef<'a> {
     /// Class name (`fName`), e.g. `"Parameter<double>"`.
     pub name: Cow<'a, str>,
     /// On-disk class version.
@@ -95,11 +95,11 @@ pub struct Cls<'a> {
     pub elements: Vec<El<'a>>,
 }
 
-impl Cls<'_> {
+impl ClassDef<'_> {
     /// This class with every string owned, so it outlives what it borrowed.
     #[must_use]
-    pub fn into_owned(self) -> Cls<'static> {
-        Cls {
+    pub fn into_owned(self) -> ClassDef<'static> {
+        ClassDef {
             name: Cow::Owned(self.name.into_owned()),
             version: self.version,
             checksum: self.checksum,
@@ -359,7 +359,7 @@ fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) 
 
 /// Write one `TStreamerInfo` (with `kNewClassTag` framing) followed by its empty
 /// `TList` option string — i.e. one entry of the list body.
-fn write_info(w: &mut WBuffer, cls: &Cls<'_>) {
+fn write_info(w: &mut WBuffer, cls: &ClassDef<'_>) {
     let info_bc = begin_object_any(w, "TStreamerInfo");
     let si = w.begin_object(10); // TStreamerInfo v10
     write_named(w, SI_BITS, &cls.name, "");
@@ -386,7 +386,7 @@ fn write_info(w: &mut WBuffer, cls: &Cls<'_>) {
 /// Serialize a `TList<TStreamerInfo>` object body (no key header) describing
 /// `classes`, in the given order (bases before the classes that use them, as
 /// ROOT writes).
-pub fn streamer_info_list(classes: &[Cls<'_>]) -> Vec<u8> {
+pub fn streamer_info_list(classes: &[ClassDef<'_>]) -> Vec<u8> {
     let mut w = WBuffer::new();
 
     let list = w.begin_object(5); // TList v5
@@ -408,7 +408,7 @@ pub fn streamer_info_list(classes: &[Cls<'_>]) -> Vec<u8> {
 /// preserved because they keep the same absolute byte offsets — and the extra
 /// entries (which use only `kNewClassTag`) are appended after them. The list's
 /// object count and outer byte count are updated.
-pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<u8>> {
+pub fn append_streamer_infos(base_list: &[u8], extra: &[ClassDef<'_>]) -> Result<Vec<u8>> {
     // Parse the TList header to find the object-count field.
     let mut r = RBuffer::new(base_list);
     r.read_version()?; // [byte count][version]
@@ -445,7 +445,7 @@ pub(crate) fn collect_stored(
     class: &str,
     version: Option<i32>,
     seen: &mut Vec<(String, i32)>,
-    out: &mut Vec<Cls<'static>>,
+    out: &mut Vec<ClassDef<'static>>,
 ) {
     let named = |s: &&StoredInfo| s.info.class_name == class;
     let Some(entry) = infos
@@ -475,7 +475,7 @@ pub(crate) fn collect_stored(
         }
     }
     if let Some(bodies) = &entry.elements {
-        out.push(Cls {
+        out.push(ClassDef {
             name: entry.info.class_name.clone().into(),
             version: entry.info.class_version,
             checksum: entry.info.checksum,
@@ -525,7 +525,7 @@ impl StreamerInfoList {
     /// first, each copied verbatim. A class the list does not describe is left
     /// out.
     #[must_use]
-    pub fn classes_for(&self, classes: &[&str]) -> Vec<Cls<'static>> {
+    pub fn classes_for(&self, classes: &[&str]) -> Vec<ClassDef<'static>> {
         let mut seen = Vec::new();
         let mut out = Vec::new();
         for class in classes {

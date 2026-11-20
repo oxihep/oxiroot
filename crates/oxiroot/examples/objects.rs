@@ -79,7 +79,7 @@ fn main() -> oxiroot::Result<()> {
     let mass_back = Hist1D::read_root(&f, "mass")?;
     println!(
         "\nread back the data:\n  mass: {} entries, integral {:.2}, mean {:.3} GeV",
-        mass_back.entries,
+        mass_back.entries(),
         mass_back.integral(),
         mass_back.mean(),
     );

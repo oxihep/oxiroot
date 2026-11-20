@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_flat_primitive_tree() {
     let f = FileReader::open(fixture("tree_flat.root")).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
     assert_eq!(t.branch_names(), ["i4", "i8", "f4", "f8", "b1", "u4"]);
     check_values(&f, &t);
 }
@@ -33,7 +33,7 @@ fn reads_compressed_tree() {
 fn reads_multi_basket_tree() {
     let f = FileReader::open(fixture("tree_multibasket.root")).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
     check_values(&f, &t);
 }
 

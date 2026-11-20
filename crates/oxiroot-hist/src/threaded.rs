@@ -96,7 +96,7 @@ impl Mergeable for Graph {
 /// });
 ///
 /// let merged = hist.merge().unwrap(); // combine every thread's copy
-/// assert_eq!(merged.entries, 1000.0);
+/// assert_eq!(merged.entries(), 1000.0);
 /// ```
 pub trait ThreadedFill1 {
     /// Fill the calling thread's copy with `x` (weight 1).

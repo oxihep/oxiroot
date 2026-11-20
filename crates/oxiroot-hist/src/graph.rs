@@ -11,9 +11,8 @@
 //! `Func1D`s — fitted functions, parsed into [`functions`](Graph::functions)),
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
-use oxiroot_io_core::{
-    Error, FileReader, RBuffer, Result, read_named, read_object_base, skip_versioned,
-};
+use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::base::{BinContentType, bin_content_type_of, check_len, object_bytes_any};
 use crate::hist1d::Hist1D;
@@ -146,11 +145,11 @@ pub struct Graph {
     /// Graph title (`fTitle`).
     pub title: String,
     /// Point x coordinates (`fX`).
-    pub x: Vec<f64>,
+    pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
-    pub y: Vec<f64>,
+    pub(crate) y: Vec<f64>,
     /// Error bars, selecting the concrete ROOT class.
-    pub errors: GraphErrors,
+    pub(crate) errors: GraphErrors,
     /// Optional display frame (`fHistogram`, a `TH1F`): the axis frame ROOT
     /// builds when a graph is drawn. `None` (the default) writes a null pointer,
     /// matching a freshly-created ROOT graph; set one with

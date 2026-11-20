@@ -19,13 +19,13 @@ fn reads_root_written_graphmultierrors() {
     let g = MultiErrorGraph::read_root(&f, "gme").expect("read gme");
     assert_eq!(g.name, "gme");
     assert_eq!(g.title, "multi");
-    assert_eq!(g.x, vec![1.0, 2.0, 3.0]);
-    assert_eq!(g.y, vec![10.0, 20.0, 30.0]);
-    assert_eq!(g.ex_low, vec![0.1, 0.1, 0.1]);
-    assert_eq!(g.ex_high, vec![0.2, 0.2, 0.2]);
+    assert_eq!(g.x(), vec![1.0, 2.0, 3.0]);
+    assert_eq!(g.y(), vec![10.0, 20.0, 30.0]);
+    assert_eq!(g.ex_low(), vec![0.1, 0.1, 0.1]);
+    assert_eq!(g.ex_high(), vec![0.2, 0.2, 0.2]);
     assert_eq!(g.n_y_errors(), 2);
-    assert_eq!(g.ey_low, vec![vec![1.0, 1.0, 1.0], vec![3.0, 3.0, 3.0]]);
-    assert_eq!(g.ey_high, vec![vec![2.0, 2.0, 2.0], vec![4.0, 4.0, 4.0]]);
+    assert_eq!(g.ey_low(), vec![vec![1.0, 1.0, 1.0], vec![3.0, 3.0, 3.0]]);
+    assert_eq!(g.ey_high(), vec![vec![2.0, 2.0, 2.0], vec![4.0, 4.0, 4.0]]);
 }
 
 #[test]

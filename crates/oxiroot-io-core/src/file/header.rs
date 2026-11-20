@@ -17,6 +17,7 @@ pub const BIG_FILE_VERSION: u32 = 1_000_000;
 /// A ROOT `TUUID`: a 16-bit version followed by 16 UUID bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[doc(alias = "TUUID")]
+#[non_exhaustive]
 pub struct Uuid {
     /// `TUUID` streamer version.
     pub version: u16,
@@ -26,6 +27,7 @@ pub struct Uuid {
 
 /// Parsed TFile header.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FileHeader {
     /// On-disk format version (`fVersion`); `>= BIG_FILE_VERSION` ⇒ 64-bit form.
     pub version: u32,

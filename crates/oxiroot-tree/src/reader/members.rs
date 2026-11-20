@@ -1,9 +1,8 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
 use oxiroot_io_core::cast::SaturatingFrom;
 
-use oxiroot_io_core::{
-    Error, RBuffer, Result, StreamerElement, StreamerRegistry, read_named, read_object_base,
-};
+use oxiroot_io_core::raw::{StreamerElement, read_named, read_object_base};
+use oxiroot_io_core::{Error, RBuffer, Result, StreamerRegistry};
 
 /// A scalar or array member captured while walking a class's streamer elements.
 /// Integers (any width) are widened to `i64`; arrays keep their element values.
@@ -102,7 +101,7 @@ pub(super) fn walk_members(
 }
 
 /// [`walk_members`] at base-class nesting `depth`, which is limited by
-/// [`MAX_STREAMER_DEPTH`](oxiroot_io_core::MAX_STREAMER_DEPTH): the file's own
+/// [`MAX_STREAMER_DEPTH`](oxiroot_io_core::raw::MAX_STREAMER_DEPTH): the file's own
 /// streamer info drives the recursion, and a class listing itself as its base
 /// would otherwise recurse until the stack overflows.
 fn walk_members_at(
@@ -114,10 +113,10 @@ fn walk_members_at(
     stop_after: &str,
     depth: usize,
 ) -> Result<()> {
-    if depth > oxiroot_io_core::MAX_STREAMER_DEPTH {
+    if depth > oxiroot_io_core::raw::MAX_STREAMER_DEPTH {
         return Err(Error::Format(format!(
             "base classes nested deeper than {} levels",
-            oxiroot_io_core::MAX_STREAMER_DEPTH
+            oxiroot_io_core::raw::MAX_STREAMER_DEPTH
         )));
     }
     for el in elements {
@@ -221,20 +220,16 @@ mod tests {
     use super::{MemberVal, Members, member_int, walk_members};
     use oxiroot_io_core::RBuffer;
     use oxiroot_io_core::Result;
-    use oxiroot_io_core::{StreamerElement, StreamerRegistry};
+    use oxiroot_io_core::StreamerRegistry;
+    use oxiroot_io_core::raw::StreamerElement;
 
     fn elem(class: &str, name: &str, el_type: i32, count: Option<&str>) -> StreamerElement {
-        StreamerElement {
-            element_class: class.to_string(),
-            name: name.to_string(),
-            title: String::new(),
-            el_type,
-            size: 0,
-            array_length: 0,
-            type_name: String::new(),
-            base_version: None,
-            count_name: count.map(str::to_string),
-        }
+        let mut e = StreamerElement::default();
+        e.element_class = class.to_string();
+        e.name = name.to_string();
+        e.el_type = el_type;
+        e.count_name = count.map(str::to_string);
+        e
     }
 
     /// The walker reads members by the streamer element list, so it adapts to a
@@ -311,13 +306,11 @@ mod tests {
     /// `MAX_STREAMER_DEPTH` levels, not recurse until the stack overflows.
     #[test]
     fn a_self_referential_base_class_is_an_error() {
-        use oxiroot_io_core::StreamerInfo;
-        let looped = StreamerInfo {
-            class_name: "Loop".into(),
-            class_version: 1,
-            checksum: 0,
-            elements: vec![elem("TStreamerBase", "Loop", 0, None)],
-        };
+        use oxiroot_io_core::raw::StreamerInfo;
+        let mut looped = StreamerInfo::default();
+        looped.class_name = "Loop".into();
+        looped.class_version = 1;
+        looped.elements = vec![elem("TStreamerBase", "Loop", 0, None)];
         let reg = StreamerRegistry::from_infos(vec![looped.clone()]);
         // Each level reads a version header: byte count (with the
         // kByteCountMask bit) then version 1. Far more levels than allowed.

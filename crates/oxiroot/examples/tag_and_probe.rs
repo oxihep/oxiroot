@@ -37,7 +37,7 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod probes {
-    use oxiroot::fit::Efficiency as EffData;
+    use oxiroot::fit::BinomialData;
     use oxiroot::plot::{
         Axes, Color, Colormap, CurveOpts, HAlign, Hist2dOpts, HistOpts, HistType, Style, TextOpts,
         VAlign,
@@ -135,7 +135,7 @@ mod probes {
         let sim = Simultaneous::new()
             .channel("pass", pass, &pass_model, &opts)
             .channel("fail", fail, &fail_model, &opts);
-        let fit = sim.fit(&opts.with_minos(true));
+        let fit = sim.fit(&opts.minos(true));
         // An efficiency near 0 or 1 has a one-sided interval: take the larger side.
         let (lo, hi) = fit.minos.as_ref().map_or((0.0, 0.0), |m| m[1]);
         let err = fit.errors[1].max(lo.abs()).max(hi.abs());
@@ -143,7 +143,7 @@ mod probes {
         let names = sim.param_names();
         let pick = |model: &Model| -> Vec<f64> {
             model
-                .param_names
+                .param_names()
                 .iter()
                 .map(|n| {
                     let i = names.iter().position(|m| m == n).expect("a parameter");
@@ -205,7 +205,7 @@ mod probes {
         );
         println!(
             "1. Wrote and read back {} probes — {}",
-            tree.num_entries(),
+            tree.entries(),
             tree_path.display()
         );
 
@@ -216,7 +216,7 @@ mod probes {
             .to_root()
             .named("efficiency_map")
             .titled("Trigger efficiency;probe p_{T} [GeV];probe |#eta|");
-        map.sumw2();
+        map.track_sumw2();
         let mut per_region: Vec<(Vec<f64>, Vec<f64>)> = vec![(Vec::new(), Vec::new()); 2];
         let mut shown = None;
         println!("\n2. Simultaneous pass/fail fits: ε per (pT, |η|) bin");
@@ -237,8 +237,8 @@ mod probes {
                 }
                 let (eps, err, pf, ff, _) = pass_fail_fit(&h_pass, &h_fail);
                 let cell = map.find_bin(0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                map.contents[cell] = eps;
-                map.sumw2[cell] = err * err;
+                map.contents_mut()[cell] = eps;
+                map.sumw2_mut().expect("error tracking is on")[cell] = err * err;
                 per_region[r].0.push(eps);
                 per_region[r].1.push(err);
                 row += &format!("   {eps:.4} ± {err:.4}");
@@ -260,7 +260,7 @@ mod probes {
                 .expect("lengths")
                 .with_bin_edges(&PT_EDGES)
                 .expect("edges");
-            let fit = points.fit_opts(&turn_on(), &FitOptions::new().with_bin_integration(true));
+            let fit = points.fit_opts(&turn_on(), &FitOptions::new().bin_integration(true));
             println!(
                 "   {:<33} {:.2} ± {:.2} ({})   {:.2} ± {:.2} ({})   {:.3} ± {:.3} ({})",
                 ["barrel |η| < 1.2", "endcap 1.2 < |η| < 2.4"][r],
@@ -288,9 +288,14 @@ mod probes {
             }
         }
         let (passed_m, total_m): (Vec<f64>, Vec<f64>) = (1..=40)
-            .map(|b| (matched.passed.contents[b], matched.total.contents[b]))
+            .map(|b| {
+                (
+                    matched.passed().contents()[b],
+                    matched.total().contents()[b],
+                )
+            })
             .unzip();
-        let binomial = EffData::new(&x, &passed_m, &total_m)
+        let binomial = BinomialData::new(&x, &passed_m, &total_m)
             .expect("lengths")
             .fit(&turn_on(), &FitOptions::new());
         println!(
@@ -308,7 +313,7 @@ mod probes {
                         .count() as f64
                 })
                 .collect();
-            let b = EffData::new(&x, &k, &vec![25.0; x.len()])
+            let b = BinomialData::new(&x, &k, &vec![25.0; x.len()])
                 .expect("lengths")
                 .fit(&turn_on(), &FitOptions::new());
             // χ² on k/n with the binomial error, which vanishes at k = 0 or n:
@@ -377,7 +382,7 @@ mod probes {
             0.92,
             "$24 < p_T < 26$ GeV, $|\\eta| < 1.2$",
             TextOpts::new()
-                .axes_coords()
+                .axes_coords(true)
                 .align(HAlign::Left, VAlign::Top),
         );
         let fits_png = dir.join("pass_fail_fit.png");
@@ -395,7 +400,7 @@ mod probes {
         for p in PT_EDGES.windows(2) {
             for e in ETA_EDGES.windows(2) {
                 let (cx, cy) = (0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                let v = map.contents[map.find_bin(cx, cy)];
+                let v = map.contents()[map.find_bin(cx, cy)];
                 ax.text_with(
                     cx,
                     cy,

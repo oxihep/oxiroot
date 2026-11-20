@@ -11,10 +11,10 @@
 //! facade).
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::streamer_gen::{Cls, base, basic, basicptr, basicptr_in};
+use oxiroot_io_core::raw::{object_bytes_any, read_object_base, write_object_base};
+use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, basicptr, basicptr_in};
 use oxiroot_io_core::{
-    Error, FileReader, FromMember, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
-    read_object_base, write_object_base,
+    Error, FileReader, FromMember, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
 };
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
@@ -156,7 +156,7 @@ impl WriteRoot for Vector {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes("TVectorT<double>")
     }
 }
@@ -290,7 +290,7 @@ impl WriteRoot for Matrix {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes("TMatrixT<double>")
     }
 }
@@ -431,7 +431,7 @@ impl WriteRoot for SymMatrix {
         }
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes("TMatrixTSym<double>")
     }
 }
@@ -514,14 +514,14 @@ impl FromMember for SymMatrix {
 
 // --- Streamer info ----------------------------------------------------------
 
-/// The `TStreamerInfo` [`Cls`] entries describing a matrix/vector `class` — the
+/// The `TStreamerInfo` [`ClassDef`] entries describing a matrix/vector `class` — the
 /// deepest base first — so a written file is self-describing (uproot reads it;
 /// ROOT C++ uses its own compiled streamers). Returns an empty vector for a
 /// non-matrix class. Each matrix/vector type's
 /// [`WriteRoot::streamer_classes`] returns these.
-pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
+pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
-    let matrix_base = || Cls {
+    let matrix_base = || ClassDef {
         name: "TMatrixTBase<double>".into(),
         version: 5,
         checksum: 2_333_786_657,
@@ -537,7 +537,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         ],
     };
     match class {
-        "TVectorT<double>" => vec![Cls {
+        "TVectorT<double>" => vec![ClassDef {
             name: "TVectorT<double>".into(),
             version: 4,
             checksum: 1_779_256_495,
@@ -550,7 +550,7 @@ pub fn streamer_classes(class: &str) -> Vec<Cls<'static>> {
         }],
         "TMatrixT<double>" => vec![
             matrix_base(),
-            Cls {
+            ClassDef {
                 name: "TMatrixT<double>".into(),
                 version: 4,
                 checksum: 135_074_716,

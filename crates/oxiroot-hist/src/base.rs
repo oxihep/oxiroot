@@ -4,12 +4,11 @@
 //! so we read the members we need and seek to `Hist1D`'s end. `TArray*` bin
 //! contents are streamed inline — just a count and the values, no header.
 
-use oxiroot_io_core::{
-    Error, FileReader, RBuffer, Result, VersionHeader, read_named, skip_versioned,
-};
+use oxiroot_io_core::raw::{VersionHeader, read_named, skip_versioned};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
 // here so the histogram modules keep addressing them as `crate::base::…`.
-pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
+pub(crate) use oxiroot_io_core::raw::{object_bytes_any, object_bytes_any_keyed};
 
 use crate::axis::Axis;
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -330,7 +329,7 @@ pub(crate) fn object_bytes(file: &FileReader, name: &str, class: &str) -> Result
 /// Like [`object_bytes`], but also return the key's header length (`fKeyLen`).
 ///
 /// ROOT keys objects relative to `-fKeyLen`, so the object-reference map (see
-/// [`oxiroot_io_core::TagReader`]) needs the key length to resolve the
+/// [`oxiroot_io_core::raw::TagReader`]) needs the key length to resolve the
 /// class/object back-references inside a streamed object (e.g. `PolyHist`'s bins).
 pub(crate) fn object_bytes_keyed(
     file: &FileReader,

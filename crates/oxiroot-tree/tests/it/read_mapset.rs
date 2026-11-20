@@ -22,7 +22,7 @@ fn fixture() -> FileReader {
 fn reads_set_and_map_branches() {
     let f = fixture();
     let t = TreeReader::open(&f, "t").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     // A set<int> branch is a single jagged integer collection.
     assert_eq!(t.branch_names(), vec!["s", "m.first", "m.second"]);
     assert!(t.unsupported_branches().is_empty());

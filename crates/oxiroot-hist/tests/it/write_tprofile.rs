@@ -40,13 +40,13 @@ fn create_fill_save_round_trips() {
     h.fill(1.5, 5.0);
     h.fill(2.5, 30.0);
 
-    assert_eq!(h.entries, 5.0);
-    assert_eq!(h.tsumw, 5.0);
-    assert_eq!(h.tsumwy, 75.0, "sum of y");
-    assert_eq!(h.tsumwy2, 1525.0, "sum of y^2");
+    assert_eq!(h.entries(), 5.0);
+    assert_eq!(h.tsumw(), 5.0);
+    assert_eq!(h.tsumwy(), 75.0, "sum of y");
+    assert_eq!(h.tsumwy2(), 1525.0, "sum of y^2");
     // values() = mean y per bin: bin1 = (20+10)/2 = 15, bin2 = (10+5)/2 = 7.5, bin3 = 30.
     assert_eq!(h.values(), [15.0, 7.5, 30.0, 0.0]);
-    assert_eq!(h.bin_entries[1..4], [2.0, 2.0, 1.0]);
+    assert_eq!(h.bin_entries()[1..4], [2.0, 2.0, 1.0]);
 
     let out = PathBuf::from("/tmp/rootrs_filled_tprofile.root");
     h.write_root(&out, oxiroot_io_core::Compression::None)

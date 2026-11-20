@@ -21,7 +21,7 @@ fn open(name: &str) -> FileReader {
 fn reads_streamer_field() {
     let file = open("rntuple_streamer.root");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
-    assert_eq!(ntpl.num_entries(), 3);
+    assert_eq!(ntpl.entries(), 3);
 
     // The field is the kStreamer role, typed with the class name.
     let blob = &ntpl.header().fields[0];

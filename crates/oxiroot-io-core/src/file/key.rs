@@ -15,7 +15,7 @@ use crate::error::{Error, Result};
 const KEY_BIG_VERSION: u16 = 1000;
 
 /// A ROOT `TDatime`: a 32-bit packed date/time (bit-fields, local time).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[doc(alias = "TDatime")]
 pub struct Datime(pub u32);
 
@@ -47,8 +47,9 @@ impl Datime {
 }
 
 /// A parsed `Key` header.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[doc(alias = "TKey")]
+#[non_exhaustive]
 pub struct Key {
     /// Total size of the key record (header + payload). Negative ⇒ deleted/free.
     pub nbytes: i32,

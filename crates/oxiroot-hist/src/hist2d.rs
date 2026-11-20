@@ -25,36 +25,36 @@ pub struct Hist2D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis.
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Z axis (degenerate for 2-D).
-    pub zaxis: Axis,
+    pub(crate) zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`). Read via
     /// [`ncells`](Hist2D::ncells); `pub(crate)` so it cannot drift from `contents`.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of weight^2 (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of weight*x (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of weight*x^2 (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Sum of weight*y (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of weight*y^2 (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Sum of weight*x*y (`fTsumwxy`).
-    pub tsumwxy: f64,
+    pub(crate) tsumwxy: f64,
     /// Bin contents including flow (length `ncells`, x fastest).
-    pub contents: Vec<f64>,
+    pub(crate) contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on by [`Hist2D::sumw2`], [`Hist2D::scale`], or a weighted fill (see
+    /// turned on by [`Hist2D::track_sumw2`], [`Hist2D::scale`], or a weighted fill (see
     /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
-    pub sumw2: Vec<f64>,
+    pub(crate) sumw2: Vec<f64>,
 }
 
 impl Hist2D {
@@ -190,7 +190,7 @@ impl Hist2D {
     pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
         // Before the contents change; see `Hist1D::fill_weight`.
         if w != 1.0 && self.sumw2.is_empty() {
-            self.sumw2();
+            self.track_sumw2();
         }
         let (nx, ny) = (self.nx(), self.ny());
         let binx = self.xaxis.find_bin(x);

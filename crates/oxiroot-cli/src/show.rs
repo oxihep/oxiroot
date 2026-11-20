@@ -61,7 +61,7 @@ fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) ->
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.num_entries().cast_signed())),
+            ("entries", Json::Int(tree.entries().cast_signed())),
             ("branches", named_type_array(&branches)),
             (
                 "unreadable",
@@ -84,7 +84,7 @@ fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) ->
 
     println!(
         "TTree {name:?}  ({} entries, {} branches)",
-        tree.num_entries(),
+        tree.entries(),
         branches.len()
     );
     let mut table = Table::new(&["branch", "type"]);
@@ -119,7 +119,7 @@ fn show_rntuple(file: &FileReader, subdir: Option<&str>, name: &str, json: bool)
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.num_entries().cast_signed())),
+            ("entries", Json::Int(ntuple.entries().cast_signed())),
             ("fields", named_type_array(&fields)),
         ]);
         println!("{}", out.render());
@@ -128,7 +128,7 @@ fn show_rntuple(file: &FileReader, subdir: Option<&str>, name: &str, json: bool)
 
     println!(
         "RNTuple {name:?}  ({} entries, {} fields)",
-        ntuple.num_entries(),
+        ntuple.entries(),
         fields.len()
     );
     let mut table = Table::new(&["field", "type"]);
@@ -166,7 +166,7 @@ fn branch_type_label(tree: &TreeReader, file: &FileReader, name: &str) -> String
         return format!("{elem}{dims}");
     }
 
-    if tree.num_entries() == 0 {
+    if tree.entries() == 0 {
         return elem.to_string();
     }
     match tree.read_branch_range(file, name, 0, 1) {

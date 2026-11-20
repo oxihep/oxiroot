@@ -8,7 +8,7 @@ use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object_io::{ReadRoot, WriteRoot, object_bytes_any};
 use crate::streamer::{read_object_base, write_object_base};
-use crate::streamer_gen::{Cls, base, basic, strf};
+use crate::streamer_gen::{ClassDef, base, basic, strf};
 
 /// `fBits` ROOT writes for a `Parameter`'s embedded `TObject` (`ObjString`'s is
 /// `0`). Cosmetic, but matched so written files equal ROOT's byte-for-byte.
@@ -74,7 +74,7 @@ impl WriteRoot for ObjString {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![tobjstring_class()]
     }
 }
@@ -232,7 +232,7 @@ impl WriteRoot for Parameter {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![tparameter_class(self.value)]
     }
 }
@@ -272,8 +272,8 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
 // entries. Checksums and versions are ROOT's own (see `scripts/gen_*.cpp`).
 
 /// The `TStreamerInfo` of `ObjString`.
-fn tobjstring_class() -> Cls<'static> {
-    Cls {
+fn tobjstring_class() -> ClassDef<'static> {
+    ClassDef {
         name: "TObjString".into(),
         version: 1,
         checksum: 2_626_570_240,
@@ -282,7 +282,7 @@ fn tobjstring_class() -> Cls<'static> {
 }
 
 /// The `TStreamerInfo` of the `Parameter<…>` holding `value`'s type.
-fn tparameter_class(value: ParamValue) -> Cls<'static> {
+fn tparameter_class(value: ParamValue) -> ClassDef<'static> {
     let (checksum, ty, size) = match value {
         ParamValue::Double(_) => (1_968_899_544, 8, 8),
         ParamValue::Float(_) => (1_396_280_242, 5, 4),
@@ -290,7 +290,7 @@ fn tparameter_class(value: ParamValue) -> Cls<'static> {
         ParamValue::Long64(_) => (3_647_805_264, 16, 8),
     };
     let type_name = value.type_name();
-    Cls {
+    ClassDef {
         name: format!("TParameter<{type_name}>").into(),
         version: 2,
         checksum,
@@ -304,7 +304,7 @@ fn tparameter_class(value: ParamValue) -> Cls<'static> {
 
 /// The `TStreamerInfo`s for a collection member known only by its class name,
 /// when it is one of this module's classes.
-pub(crate) fn member_classes(class: &str) -> Vec<Cls<'static>> {
+pub(crate) fn member_classes(class: &str) -> Vec<ClassDef<'static>> {
     let param = |value| vec![tparameter_class(value)];
     match class {
         "TObjString" => vec![tobjstring_class()],

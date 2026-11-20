@@ -9,7 +9,7 @@
 //! ```
 
 use oxiroot::Value;
-use oxiroot::file::Key;
+use oxiroot::file::raw::Key;
 use oxiroot::prelude::*;
 
 /// A ROOT `TDirectory` can appear on disk under either class name (the in-memory
@@ -135,7 +135,7 @@ fn main() -> oxiroot::Result<()> {
     let events = TreeReader::open_in(&file, "cal/run2", "Events")?;
     println!(
         "resolved deeply-nested TTree `cal/run2/Events`: {} entries",
-        events.num_entries(),
+        events.entries(),
     );
 
     // --- Generic object reader: decode ANY class from its TStreamerInfo. -------

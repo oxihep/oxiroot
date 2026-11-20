@@ -19,7 +19,7 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_split_vector_of_struct() {
     let f = FileReader::open(fixture("tree_split.root")).expect("open");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     // The split parent `hits` contributes its member sub-branches.
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
 

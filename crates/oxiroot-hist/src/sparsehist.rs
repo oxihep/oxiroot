@@ -9,7 +9,8 @@
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{FileReader, RBuffer, Result, read_named, read_object_base};
+use oxiroot_io_core::raw::{read_named, read_object_base};
+use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{BinContentType, check_len, object_bytes, object_bytes_in, read_tarray};
@@ -33,21 +34,21 @@ pub struct SparseHist {
     /// Title (`fTitle`).
     pub title: String,
     /// One axis per dimension (`fAxes`).
-    pub axes: Vec<Axis>,
+    pub(crate) axes: Vec<Axis>,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of squared weights (`fTsumw2`; ROOT writes `-1` when not tracked).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Per-axis `Σ(w·x)` (`fTsumwx`).
-    pub tsumwx: Vec<f64>,
+    pub(crate) tsumwx: Vec<f64>,
     /// Per-axis `Σ(w·x²)` (`fTsumwx2`).
-    pub tsumwx2: Vec<f64>,
+    pub(crate) tsumwx2: Vec<f64>,
     /// The filled cells (sparse storage). Editing it directly is allowed; a
     /// fill notices cells added or removed, but not an edit that changes one
     /// cell's coordinates to another cell's, which would duplicate that cell.
-    pub bins: Vec<SparseBin>,
+    pub(crate) bins: Vec<SparseBin>,
     /// Where each cell's coordinates sit in `bins`, so a fill finds its cell
     /// without scanning every filled one. Derived from `bins` (which is
     /// public), so it is checked on use and rebuilt when it no longer matches.

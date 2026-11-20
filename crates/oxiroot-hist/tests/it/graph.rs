@@ -22,14 +22,14 @@ fn reads_root_written_graphs() {
     let g = Graph::read_root(&f, "g").expect("read g");
     assert_eq!(g.class_name(), "TGraph");
     assert_eq!(g.title, "plain");
-    assert_eq!(g.x, vec![1.0, 2.0, 3.0, 4.0]);
-    assert_eq!(g.y, vec![10.0, 20.0, 30.0, 40.0]);
-    assert_eq!(g.errors, GraphErrors::None);
+    assert_eq!(g.x(), vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(g.y(), vec![10.0, 20.0, 30.0, 40.0]);
+    assert_eq!(*g.errors(), GraphErrors::None);
 
     let ge = Graph::read_root(&f, "ge").expect("read ge");
     assert_eq!(ge.class_name(), "TGraphErrors");
     assert_eq!(
-        ge.errors,
+        *ge.errors(),
         GraphErrors::Symmetric {
             ex: vec![0.1, 0.2, 0.3, 0.4],
             ey: vec![1.0, 2.0, 3.0, 4.0],
@@ -39,7 +39,7 @@ fn reads_root_written_graphs() {
     let gae = Graph::read_root(&f, "gae").expect("read gae");
     assert_eq!(gae.class_name(), "TGraphAsymmErrors");
     assert_eq!(
-        gae.errors,
+        *gae.errors(),
         GraphErrors::Asymmetric {
             ex_low: vec![0.1, 0.1, 0.1, 0.1],
             ex_high: vec![0.2, 0.2, 0.2, 0.2],
@@ -132,7 +132,7 @@ fn reads_root_graph_histogram() {
         .histogram
         .expect("graph carries an fHistogram display frame");
     assert_eq!(h.class_name(), "TH1F"); // ROOT's fHistogram is a TH1F
-    assert_eq!(h.xaxis.nbins, 100); // ROOT's default frame binning
+    assert_eq!(h.xaxis().nbins(), 100); // ROOT's default frame binning
     // The plain graphs in graphs.root were never drawn, so they have no frame.
     let g0 = Graph::read_root(&FileReader::open(fixture("graphs.root")).unwrap(), "g").unwrap();
     assert!(g0.histogram.is_none());
@@ -162,6 +162,6 @@ fn graph_histogram_round_trips() {
     g.write_root(&out, Compression::Zstd(3)).expect("write");
     let back = Graph::read_root(&FileReader::open(&out).unwrap(), "g").unwrap();
     assert_eq!(back, g); // exact round-trip, including the TH1F frame
-    assert_eq!(back.histogram.unwrap().xaxis.nbins, 20);
+    assert_eq!(back.histogram.unwrap().xaxis().nbins(), 20);
     let _ = std::fs::remove_file(&out);
 }

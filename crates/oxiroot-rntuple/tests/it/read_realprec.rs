@@ -24,7 +24,7 @@ fn f32s(fv: FieldValues) -> Vec<f32> {
 fn check(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 5, "{name}");
+    assert_eq!(ntpl.entries(), 5, "{name}");
     let field = |n| ntpl.read_field(&file, n).expect("read field");
 
     // half (Real16) and trunc (Real32Trunc, 16-bit) are exact for these values

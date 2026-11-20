@@ -204,8 +204,8 @@ use oxiroot::stat;
 fn correlate(path: &str) -> oxiroot::Result<f64> {
     let file = FileReader::open(path)?;          // oxiroot::Error
     let h = Hist1D::read_root(&file, "h")?;
-    let x: Vec<f64> = (1..=h.xaxis.nbins as usize).map(|i| h.bin_center(i)).collect();
-    let y = &h.contents[1..=x.len()];
+    let x: Vec<f64> = (1..=h.xaxis().nbins() as usize).map(|i| h.bin_center(i)).collect();
+    let y = &h.contents()[1..=x.len()];
     let (r, _) = stat::pearsonr(&x, y)?;    // StatError, converted
     Ok(r)
 }

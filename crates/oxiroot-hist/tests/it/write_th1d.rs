@@ -72,15 +72,15 @@ fn create_fill_save_round_trips() {
     h.fill(-1.0); // underflow
     h.fill(10.0); // overflow
 
-    assert_eq!(h.entries, 8.0, "all fills counted");
+    assert_eq!(h.entries(), 8.0, "all fills counted");
     assert_eq!(
         h.values(),
         [1.0, 2.0, 3.0, 0.0, 0.0],
         "in-range bin contents"
     );
-    assert_eq!(h.contents[0], 1.0, "underflow");
-    assert_eq!(*h.contents.last().unwrap(), 1.0, "overflow");
-    assert_eq!(h.tsumw, 6.0, "in-range weight sum");
+    assert_eq!(h.contents()[0], 1.0, "underflow");
+    assert_eq!(*h.contents().last().unwrap(), 1.0, "overflow");
+    assert_eq!(h.tsumw(), 6.0, "in-range weight sum");
     assert!((h.mean() - 11.0 / 6.0).abs() < 1e-12, "mean = tsumwx/tsumw");
 
     // Save and read back through our own reader.
@@ -153,7 +153,7 @@ fn empty_th1d_round_trips() {
     let out = std::path::PathBuf::from("/tmp/oxiroot_empty_th1d.root");
     h.write_root(&out, Compression::None).expect("write");
     let back = Hist1D::read_root(&FileReader::open(&out).unwrap(), "empty").expect("read");
-    assert_eq!(back.contents.len(), 12); // nbins + 2 flow cells
-    assert!(back.contents.iter().all(|&c| c == 0.0));
-    assert_eq!(back.entries, 0.0);
+    assert_eq!(back.contents().len(), 12); // nbins + 2 flow cells
+    assert!(back.contents().iter().all(|&c| c == 0.0));
+    assert_eq!(back.entries(), 0.0);
 }

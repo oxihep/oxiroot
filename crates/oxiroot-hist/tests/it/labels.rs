@@ -17,26 +17,26 @@ fn reads_alphanumeric_axis_labels() {
     let f = FileReader::open(fixture("analysis.root")).expect("open");
     let h = Hist1D::read_root(&f, "hl").expect("read labelled TH1D");
 
-    assert!(h.xaxis.is_labelled());
-    assert_eq!(h.xaxis.labels, ["apple", "banana", "cherry"]);
-    assert_eq!(h.xaxis.bin_label(1), Some("apple"));
-    assert_eq!(h.xaxis.bin_label(2), Some("banana"));
-    assert_eq!(h.xaxis.find_label("cherry"), Some(3));
-    assert_eq!(h.xaxis.find_label("durian"), None);
+    assert!(h.xaxis().is_labelled());
+    assert_eq!(h.xaxis().labels, ["apple", "banana", "cherry"]);
+    assert_eq!(h.xaxis().bin_label(1), Some("apple"));
+    assert_eq!(h.xaxis().bin_label(2), Some("banana"));
+    assert_eq!(h.xaxis().find_label("cherry"), Some(3));
+    assert_eq!(h.xaxis().find_label("durian"), None);
 
     // Labels line up with the filled bin contents.
-    assert_eq!(h.contents[1], 5.0); // apple
-    assert_eq!(h.contents[2], 2.0); // banana
-    assert_eq!(h.contents[3], 8.0); // cherry
+    assert_eq!(h.contents()[1], 5.0); // apple
+    assert_eq!(h.contents()[2], 2.0); // banana
+    assert_eq!(h.contents()[3], 8.0); // cherry
 }
 
 #[test]
 fn numeric_axis_has_no_labels() {
     let f = FileReader::open(fixture("analysis.root")).expect("open");
     let h = Hist1D::read_root(&f, "h").expect("read numeric TH1D");
-    assert!(!h.xaxis.is_labelled());
-    assert!(h.xaxis.labels.is_empty());
-    assert_eq!(h.xaxis.bin_label(1), None);
+    assert!(!h.xaxis().is_labelled());
+    assert!(h.xaxis().labels.is_empty());
+    assert_eq!(h.xaxis().bin_label(1), None);
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn writes_and_round_trips_labels() {
     let out = std::env::temp_dir().join("oxiroot_labels_rt.root");
     src.write_root(&out, Compression::None).expect("write");
     let back = Hist1D::read_root(&FileReader::open(&out).unwrap(), "hl").unwrap();
-    assert_eq!(back.xaxis.labels, src.xaxis.labels);
+    assert_eq!(back.xaxis().labels, src.xaxis().labels);
 
     // Build a labelled histogram from scratch.
     let mut h = Hist::reg(3, 0.0, 3.0)
@@ -58,12 +58,12 @@ fn writes_and_round_trips_labels() {
         .to_root()
         .named("cuts")
         .titled("selection");
-    h.xaxis.set_label(1, "trigger");
-    h.xaxis.set_label(2, "vertex");
-    h.xaxis.set_label(3, "isolation");
+    h.xaxis_mut().set_label(1, "trigger");
+    h.xaxis_mut().set_label(2, "vertex");
+    h.xaxis_mut().set_label(3, "isolation");
     let out = std::env::temp_dir().join("oxiroot_labels_scratch.root");
     h.write_root(&out, Compression::None).expect("write");
     let r = Hist1D::read_root(&FileReader::open(&out).unwrap(), "cuts").unwrap();
-    assert_eq!(r.xaxis.labels, ["trigger", "vertex", "isolation"]);
-    assert_eq!(r.xaxis.bin_label(2), Some("vertex"));
+    assert_eq!(r.xaxis().labels, ["trigger", "vertex", "isolation"]);
+    assert_eq!(r.xaxis().bin_label(2), Some("vertex"));
 }

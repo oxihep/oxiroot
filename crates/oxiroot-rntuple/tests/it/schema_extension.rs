@@ -22,7 +22,7 @@ fn reads_late_added_field() {
     let nt = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     // The late field "y" (in the footer schema-extension record) is visible.
     assert_eq!(nt.field_names(), vec!["x", "y"]);
-    assert_eq!(nt.num_entries(), 4);
+    assert_eq!(nt.entries(), 4);
 
     // "x" is in the header and present for every entry.
     assert_eq!(

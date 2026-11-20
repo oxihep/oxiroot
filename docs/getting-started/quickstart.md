@@ -18,7 +18,7 @@ every writable object a `write_root` and every readable object a `read_root`.
 
 ```rust
 let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
-h.sumw2();                                  // per-bin (weighted) errors
+h.track_sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
 
@@ -61,7 +61,7 @@ let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
 
-let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
+let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.entries();
 ```
 
 ## Run the worked example

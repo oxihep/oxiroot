@@ -23,7 +23,7 @@
 //! write_rntuple_file("data.root", "events", &fields, Compression::None)?;
 //! let f = FileReader::open("data.root")?;
 //! let ntpl = NtupleReader::open(&f, "events")?;
-//! assert_eq!(ntpl.num_entries(), 2);
+//! assert_eq!(ntpl.entries(), 2);
 //! # Ok::<(), oxiroot::Error>(())
 //! ```
 //!
@@ -151,7 +151,7 @@ pub mod prelude {
     #[cfg(feature = "fit")]
     // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
     // read as a profile histogram here, next to `Profile1D`. So do the
-    // generic `Channel`, `Sample` and `Chain`, and oxifit's `Efficiency`,
+    // generic `Channel`, `Sample` and `Chain`, and oxifit's `BinomialData`,
     // which would clash with ROOT's `Efficiency` (TEfficiency) below.
     pub use oxifit::{
         CmaEs, Cost, CostSum, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd,

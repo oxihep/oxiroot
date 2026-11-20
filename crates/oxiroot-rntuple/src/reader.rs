@@ -2,7 +2,8 @@
 //! page-list envelopes → on-demand column decoding.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, Result, decompress_payload, find_key};
+use oxiroot_io_core::raw::{decompress_payload, find_key};
+use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
 use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
@@ -53,7 +54,7 @@ impl NtupleReader {
     }
 
     /// Read an RNTuple given its already-located anchor `key`.
-    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::Key) -> Result<NtupleReader> {
+    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::raw::Key) -> Result<NtupleReader> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::WrongClass {
                 name: key.name.clone(),
@@ -165,7 +166,7 @@ impl NtupleReader {
     }
 
     /// Total number of entries across all clusters.
-    pub fn num_entries(&self) -> u64 {
+    pub fn entries(&self) -> u64 {
         self.summaries.iter().map(|s| s.num_entries).sum()
     }
 
@@ -209,10 +210,7 @@ impl NtupleReader {
                 // past every element its field could hold: cap it at a generous
                 // number of elements per entry before allocating that many
                 // defaults (and allocate fallibly, below).
-                let limit = self
-                    .num_entries()
-                    .max(1)
-                    .saturating_mul(MAX_ELEMENTS_PER_ENTRY);
+                let limit = self.entries().max(1).saturating_mul(MAX_ELEMENTS_PER_ENTRY);
                 let first = u64::try_from(first)
                     .ok()
                     .filter(|&f| f <= limit)
@@ -221,7 +219,7 @@ impl NtupleReader {
                         Error::Format(format!(
                             "deferred column {column_index} starts at element {first}, \
                              beyond {limit} for {} entries",
-                            self.num_entries()
+                            self.entries()
                         ))
                     })?;
                 backfill_leading(values, first)
@@ -261,11 +259,11 @@ impl NtupleReader {
         let values = self.read_field_tree(file, idx)?;
         // A top-level field carries exactly one element per entry; a mismatch
         // means a truncated or corrupt index/leaf column.
-        if values.len() as u64 != self.num_entries() {
+        if values.len() as u64 != self.entries() {
             return Err(Error::Format(format!(
                 "field {name:?}: decoded {} entries, expected {}",
                 values.len(),
-                self.num_entries()
+                self.entries()
             )));
         }
         Ok(values)
@@ -274,7 +272,7 @@ impl NtupleReader {
     /// Read the first `max_entries` entries of top-level field `name`, decoding
     /// only the clusters that cover them — unlike [`read_field`](Self::read_field),
     /// which decodes the whole field. Returns exactly `min(max_entries,
-    /// num_entries)` entries (so `read_field_prefix(.., m)` equals
+    /// entries)` entries (so `read_field_prefix(.., m)` equals
     /// `read_field(..)` truncated to `m`).
     ///
     /// The bound is at cluster granularity: the fewest whole clusters whose
@@ -288,7 +286,7 @@ impl NtupleReader {
         name: &str,
         max_entries: usize,
     ) -> Result<FieldValues> {
-        if max_entries as u64 >= self.num_entries() {
+        if max_entries as u64 >= self.entries() {
             return self.read_field(file, name);
         }
 
@@ -322,7 +320,7 @@ impl NtupleReader {
     }
 
     /// A lightweight view of this RNTuple limited to its first `kept` clusters:
-    /// the same schema, but `num_entries` and every column read cover only those
+    /// the same schema, but `entries` and every column read cover only those
     /// clusters. Cloning the schema is cheap next to decoding pages.
     fn cluster_prefix(&self, kept: usize) -> NtupleReader {
         NtupleReader {

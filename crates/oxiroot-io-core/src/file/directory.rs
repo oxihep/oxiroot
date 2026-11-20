@@ -23,6 +23,7 @@ const DIR_RECORD_MAX: usize = 64;
 
 /// A parsed `TDirectory` record together with its key list.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Directory {
     /// Directory version (`> 1000` ⇒ 64-bit seek pointers).
     pub version: i16,

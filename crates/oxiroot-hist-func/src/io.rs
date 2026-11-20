@@ -4,10 +4,9 @@
 
 use oxiroot_hist::{GraphFunction, hist_streamer_classes};
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::streamer_gen::{Cls, any, base, basic, objanyptr, objptr, stl, strf};
-use oxiroot_io_core::{
-    Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
-};
+use oxiroot_io_core::raw::object_bytes_any;
+use oxiroot_io_core::streamer_gen::{ClassDef, any, base, basic, objanyptr, objptr, stl, strf};
+use oxiroot_io_core::{Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
 
 use crate::func::{Func1D, Func2D, Func3D, FuncCore};
 
@@ -30,7 +29,7 @@ impl WriteRoot for Func1D {
             .write_tf1_body(&mut w, 1, 100);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         function_classes(1)
     }
 }
@@ -51,7 +50,7 @@ impl WriteRoot for Func2D {
         write_tf2_body(&mut w, &record, 2, self.ymin, self.ymax);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         function_classes(2)
     }
 }
@@ -72,7 +71,7 @@ impl WriteRoot for Func3D {
         write_tf3_body(&mut w, &record, self.ymin, self.ymax, self.zmin, self.zmax);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         function_classes(3)
     }
 }
@@ -111,7 +110,7 @@ fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin
 /// its `TFormula`, `TF1Parameters` and bases, then the generated `TF2`/`TF3`.
 /// The generated `TFormula` and `TF1` are the same class versions as the
 /// captured ones, which a file describes once.
-fn function_classes(dim: usize) -> Vec<Cls<'static>> {
+fn function_classes(dim: usize) -> Vec<ClassDef<'static>> {
     let mut classes = hist_streamer_classes(&["TF1"]);
     for class in tf_classes(dim) {
         if !classes
@@ -124,8 +123,8 @@ fn function_classes(dim: usize) -> Vec<Cls<'static>> {
     classes
 }
 
-fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
-    let tformula = Cls {
+fn tf_classes(dim: usize) -> Vec<ClassDef<'static>> {
+    let tformula = ClassDef {
         name: "TFormula".into(),
         version: 14,
         checksum: 3_342_972_029,
@@ -141,7 +140,7 @@ fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
             basic("fVectorized", 18, 1, "bool"),
         ],
     };
-    let tf1 = Cls {
+    let tf1 = ClassDef {
         name: "TF1".into(),
         version: 12,
         checksum: 1_914_961_880,
@@ -172,7 +171,7 @@ fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
             objptr("fComposition", "TF1AbsComposition*"),
         ],
     };
-    let tf2 = Cls {
+    let tf2 = ClassDef {
         name: "TF2".into(),
         version: 4,
         checksum: 3_115_609_752,
@@ -184,7 +183,7 @@ fn tf_classes(dim: usize) -> Vec<Cls<'static>> {
             any("fContour", 24, "TArrayD"),
         ],
     };
-    let tf3 = Cls {
+    let tf3 = ClassDef {
         name: "TF3".into(),
         version: 3,
         checksum: 3_522_165_386,

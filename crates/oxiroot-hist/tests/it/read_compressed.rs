@@ -39,7 +39,7 @@ fn decodes_every_compressed_block_format() {
         );
 
         let h = Hist1D::read_root(&f, "h").unwrap_or_else(|e| panic!("read {name}: {e}"));
-        assert_eq!(h.xaxis.nbins, 500);
+        assert_eq!(h.xaxis().nbins(), 500);
 
         // Content written by gen_compressed_fixtures.cpp: bin i = (i%7) + 0.5*(i%3).
         let values = h.values();

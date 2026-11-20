@@ -4,7 +4,8 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_io_core::{FileHeader, FileReader, RBuffer, WBuffer};
+use oxiroot_io_core::raw::FileHeader;
+use oxiroot_io_core::{FileReader, RBuffer, WBuffer};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

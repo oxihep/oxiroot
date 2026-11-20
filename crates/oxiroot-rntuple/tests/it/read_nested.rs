@@ -18,7 +18,7 @@ fn open(name: &str) -> FileReader {
 fn check_nested(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 5, "{name} entries");
+    assert_eq!(ntpl.entries(), 5, "{name} entries");
     assert_eq!(
         ntpl.field_names(),
         ["vs", "vvi", "vp"],

@@ -143,7 +143,7 @@ let f = FileReader::open("graph.root")?;
 let g = Graph::read_root(&f, "resolution")?;
 
 println!("{} points, class {}", g.len(), g.class_name());
-match &g.errors {
+match g.errors() {
     GraphErrors::Symmetric { ex, ey } => {
         println!("symmetric errors: ex={ex:?}, ey={ey:?}");
     }

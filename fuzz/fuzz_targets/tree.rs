@@ -14,7 +14,7 @@ fuzz_target!(|data: &[u8]| {
         let Ok(t) = TreeReader::open(&f, name) else {
             continue;
         };
-        let _ = t.num_entries();
+        let _ = t.entries();
         let branches: Vec<String> = t
             .branch_names()
             .into_iter()

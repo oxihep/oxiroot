@@ -16,6 +16,7 @@ const K_IS_REFERENCED: u32 = 0x10;
 /// A streamed `TObject` base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[doc(alias = "TObject")]
+#[non_exhaustive]
 pub struct ObjectBase {
     /// `TObject` streamer version.
     pub version: u16,
@@ -45,6 +46,7 @@ pub fn read_object_base(r: &mut RBuffer) -> Result<ObjectBase> {
 /// A streamed `Named` (name + title).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[doc(alias = "TNamed")]
+#[non_exhaustive]
 pub struct Named {
     /// Object name (`fName`).
     pub name: String,

@@ -119,7 +119,7 @@ pub fn append_trees<W: Write + Seek>(
             batch.push(build_branch(name, &meta, tree.read_branch(file, name)?)?);
         }
         writer.write_batch(&batch)?;
-        appended += tree.num_entries();
+        appended += tree.entries();
     }
     Ok(appended)
 }

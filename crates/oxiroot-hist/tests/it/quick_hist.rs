@@ -96,8 +96,8 @@ fn builder_sets_name_title_and_axis_labels() {
         .label("y [cm]")
         .double()
         .to_root();
-    assert_eq!(h2.xaxis.title, "x [cm]");
-    assert_eq!(h2.yaxis.title, "y [cm]");
+    assert_eq!(h2.xaxis().title, "x [cm]");
+    assert_eq!(h2.yaxis().title, "y [cm]");
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn batch_fill_and_uhi_slicing() {
     h.fill_many(&[0.5, 0.5, 1.5, 9.5]);
     assert_eq!(h.values()[0], 2.0);
     let mut hw = Hist::reg(4, 0.0, 4.0).double().to_root();
-    hw.sumw2();
+    hw.track_sumw2();
     hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]).unwrap();
     assert_eq!(hw.variances(), vec![4.0, 9.0, 0.0, 0.0]);
 
@@ -143,7 +143,7 @@ fn batch_fill_and_uhi_slicing() {
     let s = g.slice(2.5, 4.5);
     assert_eq!(s.values(), &[1.0, 1.0, 1.0]);
     assert!((s.mean() - 3.5).abs() < 1e-9); // centre of the kept range
-    let total = s.contents[0] + s.integral() + s.contents[s.contents.len() - 1];
+    let total = s.contents()[0] + s.integral() + s.contents()[s.contents().len() - 1];
     assert_eq!(total, g.integral()); // flow preserves the total
 }
 
@@ -159,7 +159,7 @@ fn profile_finalizer_builds_a_tprofile() {
     p.fill(0.5, 10.0);
     p.fill(0.5, 20.0);
     assert_eq!(p.values()[0], 15.0); // the mean of (10, 20)
-    assert_eq!(p.xaxis.title, "x [cm]");
+    assert_eq!(p.xaxis().title, "x [cm]");
 
     // It is an ordinary Profile1D and writes to ROOT.
     let out = std::env::temp_dir().join("oxiroot_quick_profile.root");

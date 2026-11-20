@@ -17,7 +17,7 @@ fn reads_std_vector_branches() {
     let t = TreeReader::open(&f, "T").expect("open tree");
     let read = |n| t.read_branch(&f, n).expect("read branch");
 
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     // The scalar branch and the three vector branches are all visible.
     assert_eq!(t.branch_names(), ["n", "vf", "vd", "vi"]);
 

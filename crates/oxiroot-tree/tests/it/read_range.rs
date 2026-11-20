@@ -19,7 +19,7 @@ fn open(name: &str) -> FileReader {
 fn reads_entry_ranges() {
     let f = open("tree_multibasket.root");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
 
     // Full range equals read_branch.
     let full = t.read_branch(&f, "i4").expect("full");

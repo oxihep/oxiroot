@@ -8,7 +8,8 @@
 //! `fHistogram` display frame is transient in ROOT and not persisted.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, read_named, skip_versioned};
+use oxiroot_io_core::raw::{read_named, skip_versioned};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::base::{check_len, object_bytes_any};
 
@@ -21,11 +22,11 @@ pub struct Graph2D {
     /// Graph title (`fTitle`).
     pub title: String,
     /// Point x coordinates (`fX`).
-    pub x: Vec<f64>,
+    pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
-    pub y: Vec<f64>,
+    pub(crate) y: Vec<f64>,
     /// Point z coordinates (`fZ`).
-    pub z: Vec<f64>,
+    pub(crate) z: Vec<f64>,
 }
 
 impl Graph2D {

@@ -85,7 +85,7 @@ pub fn append_ntuples<W: Write + Seek>(
             batch.push(build_field(field, values)?);
         }
         writer.write_batch(&batch)?;
-        appended += ntuple.num_entries();
+        appended += ntuple.entries();
     }
     Ok(appended)
 }

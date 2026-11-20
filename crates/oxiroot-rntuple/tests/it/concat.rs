@@ -42,7 +42,7 @@ fn concatenates_scalar_vector_and_string_fields() {
     let fo = FileReader::open(&path).unwrap();
     let no = NtupleReader::open(&fo, "ntpl").unwrap();
 
-    assert_eq!(no.num_entries(), 5);
+    assert_eq!(no.entries(), 5);
     assert_eq!(
         no.read_field(&fo, "i").unwrap(),
         FieldValues::I32(vec![0, 1, 2, 3, 4])

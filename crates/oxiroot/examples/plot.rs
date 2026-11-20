@@ -46,7 +46,7 @@ fn main() -> oxiroot::Result<()> {
         .to_root()
         .named("mass")
         .titled("di-muon mass");
-    mc.sumw2();
+    mc.track_sumw2();
     let mut rng = Lcg::new(0x1234_5678_9abc_def0);
     for _ in 0..40_000 {
         mc.fill(91.0 + 7.5 * rng.gauss());
@@ -86,7 +86,7 @@ fn main() -> oxiroot::Result<()> {
     //        A collaboration's name belongs only on its own results, so a
     //        demo uses a neutral one. ---
     let mut hep = Axes::with_style(Style::mplhep());
-    hep.hist_with(&mc, HistOpts::new().yerr().label("MC"));
+    hep.hist_with(&mc, HistOpts::new().yerr(true).label("MC"));
     hep.hep_label("Demo", "Simulation")
         .hep_rhs("138 fb$^{-1}$ (13 TeV)");
     hep.xlabel("$m_{\\mu\\mu}$ [GeV]");
@@ -197,8 +197,8 @@ fn main() -> oxiroot::Result<()> {
     axs[2].ylabel("Events");
     axs[3].plot(&dx, &dy)?;
     let gfig = gfig
-        .sharex()
-        .sharey()
+        .sharex(true)
+        .sharey(true)
         .suptitle("$Z \\rightarrow \\mu\\mu$ — subplot grid")
         .with_axes(axs);
     gfig.save(out.join("grid.png"))?;

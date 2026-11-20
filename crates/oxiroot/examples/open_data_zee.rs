@@ -34,7 +34,7 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "opened {:.0} MB file, tree `mini` with {} entries, in {:.1?}",
         file.size() as f64 / 1e6,
-        tree.num_entries(),
+        tree.entries(),
         start.elapsed()
     );
 
@@ -63,7 +63,7 @@ fn main() -> oxiroot::Result<()> {
         .to_root()
         .named("m_ee")
         .titled("dielectron mass");
-    mass.sumw2();
+    mass.track_sumw2();
     for i in 0..pt.len() {
         if kind[i].len() != 2 || kind[i].iter().any(|&t| t != 11) || charge[i][0] == charge[i][1] {
             continue;

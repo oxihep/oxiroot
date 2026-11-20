@@ -22,7 +22,7 @@ fn fixture(name: &str) -> FileReader {
 fn reads_vector_of_vector_int() {
     let f = fixture("tree_vecvec.root");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), vec!["vi", "vd"]);
     assert!(t.unsupported_branches().is_empty());
 

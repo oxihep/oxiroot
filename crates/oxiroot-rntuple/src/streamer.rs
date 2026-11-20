@@ -10,7 +10,8 @@
 //! classes, nested objects, arrays, or STL collections beyond `std::string`.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, RBuffer, Result, StreamerElement, StreamerInfo};
+use oxiroot_io_core::raw::{StreamerElement, StreamerInfo};
+use oxiroot_io_core::{Error, RBuffer, Result};
 
 use crate::field::FieldValues;
 
