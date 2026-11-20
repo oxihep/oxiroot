@@ -9,6 +9,22 @@ change the API.
 
 ### Added
 
+- **oxifit 0.7.0, oxiplot 0.9.0, oxihist 0.11.0.** `oxiroot::fit` gains
+  user-defined costs (`Cost`, `FnCost`, `ModelCost`, `CostSum`) run by a
+  `Fitter`; CLs upper limits and discovery significances, asymptotic or from
+  toys (`HypoTest`); HistFactory-style template fits with systematics
+  (`TemplateModel`, `Channel`, `Sample`; pyhf JSON via oxifit's `pyhf`
+  feature); sWeights with asymptotically correct weighted-fit errors
+  (`SWeights`, `FitOptions::with_asymptotic_errors`); bin-integrated fits
+  (`FitOptions::with_bin_integration`, ROOT's option `"I"`), for which a
+  `Hist1D` now passes its real bin edges; binomial efficiency fits
+  (`oxiroot::fit::Efficiency`); and an ensemble MCMC sampler (`Sampler`).
+  The prelude exports `Cost`, `CostSum`, `FnCost`, `ModelCost`, `Fitter`,
+  `HypoTest`, `TemplateModel`, `SWeights` and `Sampler`; the fitting guide
+  has a section on each. The default minimizer is now `Minuit2Combined`
+  (MIGRAD with a SIMPLEX fallback), so `charmonium_analysis` no longer sets
+  it.
+
 - **oxifit 0.5.0, oxiplot 0.8.0, oxihist 0.10.0.** `oxiroot::fit` gains
   analytic gradients (`Model::with_gradient`) and `Minimizer::LBfgsB`,
   convolution (`Model::convolve`, `Model::normal`), 2-D and 3-D fits

@@ -582,6 +582,206 @@ failed. With the `plot` feature, `ax.fit_contour(&region)` and
 `ax.fit_profile(&profile)` draw them (see
 [Plotting → Fit contours and profiles](plotting.md#fit-contours-and-profiles)).
 
+## Your own cost
+
+Any `−2 ln L` or χ² can be minimized with every backend below, HESSE, MINOS,
+profiles and contours, as iminuit's `Minuit(fcn)` does. A cost is anything
+that implements `Cost` (parameter names and a value, optionally a gradient):
+
+- `FnCost::new(&names, closure)` wraps a closure;
+- `ModelCost::new(&data, &model, &opts)` turns a data fit into a cost
+  (`ModelCost::new(&d, &m, &o).fitter().fit(&o)` is exactly `d.fit_opts(&m, &o)`);
+- `CostSum::new().with(a).with(b)` adds costs, merging parameters by name.
+
+`Fitter` holds the seeds and the per-parameter settings (`set`, `limit`, `fix`,
+`release`, `step`, `constrain`) and runs `fit`, `profile` and `contour`.
+
+```rust
+use oxiroot::prelude::*;
+
+// The peak's width also measured elsewhere: 0.62 ± 0.03.
+let model = Model::gaussian("z").estimate_from(&peak);
+let data_fit = ModelCost::new(&peak, &model, &FitOptions::new());
+let external = FnCost::new(&["sigma"], |p| ((p[0] - 0.62) / 0.03).powi(2));
+let total = CostSum::new().with(data_fit).with(external);
+let fit = Fitter::new(&total, model.params.clone())
+    .limit("sigma", 0.1, 2.0)
+    .fit(&FitOptions::new().with_minos(true));
+```
+
+## Limits and significance
+
+`HypoTest::new(fitter, "mu")` tests a parameter of interest, typically a
+signal strength, on any cost with the profile likelihood ratio (the pyhf and
+RooStats recipe):
+
+- `discovery(1.0)`: the observed `q₀`, its p-value and significance, and the
+  median significance expected for a signal of strength 1;
+- `cls(mu)`: CLs+b, CLb and CLs at `mu`, with the expected −2σ…+2σ band;
+- `upper_limit(0.95, (lo, hi))`: the observed 95 % CL upper limit and its
+  expected band (the "Brazil band");
+- `cls_toys` and `discovery_toys`: the same from pseudo-experiments, for small
+  counts (in parallel with the `rayon` feature).
+
+The asymptotic formulas (Cowan, Cranmer, Gross, Vitells) use the cost's Asimov
+dataset, which `ModelCost` builds for binned and unbinned data. The `Fitter`'s
+Gaussian constraints act as auxiliary measurements. CLs, the limits and the
+discovery p-value match pyhf. For a mass scan, `upcrossings` and
+`global_significance` give the look-elsewhere correction (Gross–Vitells).
+
+```rust
+use oxiroot::prelude::*;
+
+// Signal strength μ times a known peak, on a flat background.
+let s_plus_b = Model::new("sb", &["mu", "bkg"], vec![1.0, 20.0], |x, p| {
+    p[0] * 50.0 * (-0.5 * ((x - 91.0) / 2.5_f64).powi(2)).exp() + p[1]
+});
+let cost = ModelCost::new(&peak, &s_plus_b, &FitOptions::new().method(FitMethod::Likelihood));
+let test = HypoTest::new(cost.fitter().limit("mu", 0.0, 10.0), "mu")?;
+let limit = test.upper_limit(0.95, (0.0, 5.0))?;
+println!("μ < {:.2} (expected {:.2})", limit.observed, limit.expected[2]);
+let found = test.discovery(1.0)?;
+println!("Z = {:.1}σ (expected {:.1}σ)", found.z, found.z_expected);
+```
+
+## Template fits
+
+`TemplateModel` is the HistFactory model of ROOT and pyhf: channels of observed
+counts, each with samples (simulated templates) scaled and deformed by
+modifiers. `norm_factor` is a free normalization; `norm_sys` and `histo_sys`
+are normalization and shape uncertainties, interpolated as pyhf does;
+`stat_error` covers the templates' finite statistics (Barlow–Beeston lite);
+`shape_sys`, `lumi` and `shape_factor` complete the set. A `TemplateModel` is a
+`Cost`, so `model.fitter()` fits it and `HypoTest` sets limits on it. `pulls`,
+`impacts` (the ranking on the parameter of interest) and `yields` (pre- and
+post-fit, with errors) summarize the fit. With the `pyhf` feature of `oxifit`,
+`oxiroot::fit::Workspace::from_json` reads a pyhf JSON workspace. Best fits,
+CLs and limits match pyhf on two reference workspaces.
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::fit::{Channel, Sample};
+
+// Bin contents of the signal-region histogram and of the simulated templates.
+let (observed, sig, bkg, bkg_err) = (
+    vec![52.0, 61.0, 49.0],
+    vec![2.0, 9.0, 3.0],
+    vec![50.0, 52.0, 47.0],
+    vec![3.0, 3.0, 3.0],
+);
+let model = TemplateModel::new(vec![Channel::new("SR", &observed)
+    .sample(Sample::new("signal", &sig).norm_factor("mu"))
+    .sample(
+        Sample::new("background", &bkg)
+            .norm_sys("xsec", 0.9, 1.1)
+            .stat_error("mc", &bkg_err),
+    )])?;
+let fitter = model.fitter();
+let fit = fitter.fit(&FitOptions::new());
+for (name, pull, error) in model.pulls(&fit) {
+    println!("{name}: {pull:+.2} ± {error:.2}");
+}
+let limit = HypoTest::new(model.fitter(), "mu")?.upper_limit(0.95, (0.0, 10.0))?;
+```
+
+## sWeights
+
+`SWeights::compute(&events, &[&signal, &background], &yields, &opts)` turns an
+extended fit in a discriminating variable (a mass) into per-event weights for
+each species (sPlot, Pivk and Le Diberder). A weighted unbinned fit of another
+variable with the signal weights then measures the signal alone. Use
+`FitOptions::with_asymptotic_errors(true)` for that fit: it gives the
+asymptotically correct covariance (Langenbruch) for weights of any sign and
+size, where the naive and SumW2 errors are too small.
+
+```rust
+use oxiroot::prelude::*;
+
+// Mass and decay time of the same events (in practice, two TTree branches).
+let mass = [5.27, 5.29, 5.31, 5.12, 5.28, 5.44, 5.26, 5.20, 5.30, 5.37];
+let time = [1.2, 0.4, 2.3, 0.1, 0.9, 0.2, 3.1, 0.3, 1.7, 0.1];
+let signal = Model::gaussian("sig").with_params(vec![1.0, 5.28, 0.02]);
+let background = Model::exponential("bkg").with_params(vec![1.0, -2.0]);
+// The yields from an extended fit of the mass (fit separately).
+let yields = [5.8, 4.2];
+let opts = FitOptions::new().range(5.1, 5.5);
+let sw = SWeights::compute(&Events::new(&mass), &[&signal, &background], &yields, &opts)?;
+let weighted = Events::weighted(&time, sw.weights(0))?;
+let decay = Model::exponential("decay").with_params(vec![0.0, -0.7]).fix("constant");
+let fit = weighted.fit_opts(
+    &decay,
+    &FitOptions::new()
+        .method(FitMethod::UnbinnedLikelihood)
+        .range(0.0, 10.0)
+        .with_asymptotic_errors(true),
+);
+```
+
+## Bin-integrated fits
+
+By default a binned fit compares each bin with the model at the bin centre.
+`FitOptions::with_bin_integration(true)` compares it with the model averaged
+over the bin instead (ROOT's option `"I"`, iminuit's `BinnedNLL`). That matters
+when the model curves within a bin: a narrow peak in wide bins, or a steep
+slope. A `Hist1D` passes its real bin edges, variable-width ones included.
+
+```rust
+use oxiroot::prelude::*;
+
+let model = Model::gaussian("z").estimate_from(&peak);
+let fit = peak.fit_opts(&model, &FitOptions::new().with_bin_integration(true));
+```
+
+## Efficiency fits
+
+A χ² fit to `passed/total` with binomial errors fails where the efficiency is
+near 0 or 1 or a bin has few trials. `oxiroot::fit::Efficiency` fits an
+efficiency curve with the **binomial likelihood** instead (ROOT's
+`TEfficiency::Fit`, RooFit's `RooEfficiency`), from pass/total counts per bin
+or from single pass/fail events. It matches ROOT. (`oxiroot::fit::Efficiency`
+is the fit; the prelude's `Efficiency` is ROOT's `TEfficiency` object.)
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::fit::Efficiency as EffData;
+
+// Per-bin trigger counts: `passed` of `trials` at each pT (GeV).
+let pt = [12.0, 15.0, 18.0, 20.0, 22.0, 25.0, 30.0];
+let passed = [1.0, 4.0, 12.0, 20.0, 29.0, 37.0, 40.0];
+let trials = [40.0; 7];
+let data = EffData::new(&pt, &passed, &trials)?;
+// Or one event at a time: EffData::events(&pt, &fired)?
+let turn_on = Model::new("eff", &["threshold", "width"], vec![18.0, 2.0], |x, p| {
+    0.5 * (1.0 + oxiroot::stat::erf((x - p[0]) / (2f64.sqrt() * p[1])))
+})
+.lower_limit("width", 0.1);
+let fit = data.fit(&turn_on, &FitOptions::new());
+```
+
+## Bayesian sampling
+
+`Sampler::new(fitter).run(burn_in, steps)` samples a `Fitter`'s posterior: its
+cost as `−2 ln L`, its limits as flat priors, its Gaussian constraints as
+Gaussian priors. It uses the affine-invariant ensemble sampler of emcee
+(Goodman–Weare stretch moves), which needs no tuning and copes with
+correlations; it is reproducible from `seed` and runs walkers in parallel with
+`rayon`. The `Chain` gives means, quantiles, central credible intervals, the
+covariance, the acceptance and each parameter's autocorrelation time.
+
+```rust
+use oxiroot::prelude::*;
+
+let model = Model::gaussian("z").estimate_from(&peak).limit("sigma", 0.1, 5.0);
+let cost = ModelCost::new(&peak, &model, &FitOptions::new().method(FitMethod::Likelihood));
+let chain = Sampler::new(cost.fitter()).seed(1).run(500, 3000)?;
+let (lo, hi) = chain.interval("mean", 0.6827).expect("a parameter");
+println!(
+    "mean: median {:.3}, 68 % in [{lo:.3}, {hi:.3}], τ = {:.0} steps",
+    chain.quantile("mean", 0.5).expect("a parameter"),
+    chain.autocorrelation_time("mean").expect("a parameter"),
+);
+```
+
 ## Minimizer backends
 
 `FitOptions::minimizer(...)` selects the optimizer. Every Minuit-based backend
@@ -590,8 +790,8 @@ the same thing whichever one found the minimum.
 
 | `Minimizer` | What it does | When |
 | --- | --- | --- |
-| `Minuit2` (default) | MIGRAD from the model's parameters | A seed near the answer |
-| `Minuit2Combined` | MIGRAD, falling back to SIMPLEX when it fails (ROOT's `"Minimize"`) | MIGRAD sometimes fails |
+| `Minuit2Combined` (default) | MIGRAD, falling back to SIMPLEX when it fails (ROOT's `"Minimize"`) | Almost always |
+| `Minuit2` | MIGRAD alone, from the model's parameters | A seed near the answer, and no fallback wanted |
 | `Simplex` | Minuit2's SIMPLEX | A rough, noisy cost |
 | `MultiStart(MultiStart::new(n))` | `n` local fits from points spread over the parameter limits; the lowest wins | A few competing minima |
 | `DifferentialEvolution(…)` | A population-based global search over the limits, then MIGRAD | The seed may sit in the wrong basin |

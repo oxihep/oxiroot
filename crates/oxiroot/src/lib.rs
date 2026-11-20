@@ -150,11 +150,14 @@ pub mod prelude {
 
     #[cfg(feature = "fit")]
     // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
-    // read as a profile histogram here, next to `Profile1D`.
+    // read as a profile histogram here, next to `Profile1D`. So do the
+    // generic `Channel`, `Sample` and `Chain`, and oxifit's `Efficiency`,
+    // which would clash with ROOT's `Efficiency` (TEfficiency) below.
     pub use oxifit::{
-        CmaEs, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd, FitError,
-        FitExt, FitMethod, FitOptions, FitResult, Loss, Minimizer, Model, MultiStart, Point,
-        PointNd, Points, Points2, Points3, Simultaneous, Toys,
+        CmaEs, Cost, CostSum, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd,
+        FitError, FitExt, FitMethod, FitOptions, FitResult, Fitter, FnCost, HypoTest, Loss,
+        Minimizer, Model, ModelCost, MultiStart, Point, PointNd, Points, Points2, Points3,
+        SWeights, Sampler, Simultaneous, TemplateModel, Toys,
     };
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
