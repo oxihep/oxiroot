@@ -44,8 +44,8 @@ impl<'a> ChainReader<'a> {
 
     /// Total number of entries across all trees in the chain.
     #[must_use]
-    pub fn num_entries(&self) -> u64 {
-        self.trees.iter().map(|(_, t)| t.num_entries()).sum()
+    pub fn entries(&self) -> u64 {
+        self.trees.iter().map(|(_, t)| t.entries()).sum()
     }
 
     /// The number of trees (files) in the chain.

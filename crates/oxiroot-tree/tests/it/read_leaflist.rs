@@ -14,7 +14,7 @@ fn reads_leaflist_branch() {
         .join("tree_leaflist.root");
     let f = FileReader::open(path).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     assert_eq!(t.branch_names(), ["s.a", "s.b", "s.c"]);
     assert!(t.unsupported_branches().is_empty());
 

@@ -12,9 +12,8 @@
 //! *split* (`fSplitLevel > 0`) `std::vector<MyStruct>` branches, which are
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
-use oxiroot_io_core::{
-    Error, FileReader, Key, Result, StreamerElement, decompress_payload, find_key,
-};
+use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload, find_key};
+use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::value::{BranchValues, Jagged, LeafType};
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -302,7 +301,7 @@ impl TreeReader {
     }
 
     /// Total number of entries in the tree (`fEntries`).
-    pub fn num_entries(&self) -> u64 {
+    pub fn entries(&self) -> u64 {
         self.entries
     }
 

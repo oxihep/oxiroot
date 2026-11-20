@@ -18,7 +18,7 @@ use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::object_io::{ReadRoot, StreamerSet, WriteRoot, object_bytes_any_keyed};
 use crate::streamer::{read_object_base, write_object_any, write_object_base};
-use crate::streamer_gen::{Cls, collect_stored};
+use crate::streamer_gen::{ClassDef, collect_stored};
 
 use super::scalars::{ObjString, Parameter, decode_tobjstring, decode_tparameter, member_classes};
 
@@ -171,7 +171,7 @@ impl WriteRoot for ObjList {
         }
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         member_streamer_classes(&self.streamers, self.members.iter().map(|(c, _)| c))
     }
 }
@@ -182,7 +182,7 @@ impl WriteRoot for ObjList {
 fn member_streamer_classes<'a>(
     added: &StreamerSet,
     names: impl Iterator<Item = &'a String>,
-) -> Vec<Cls<'static>> {
+) -> Vec<ClassDef<'static>> {
     let mut set = added.clone();
     for class in names {
         set.add_classes(member_classes(class));
@@ -198,7 +198,7 @@ fn member_streamer_classes<'a>(
 fn source_classes<'a>(
     file: &FileReader,
     members: impl Iterator<Item = (&'a str, &'a [u8])>,
-) -> Vec<Cls<'static>> {
+) -> Vec<ClassDef<'static>> {
     let Ok(infos) = file.stored_streamer_infos() else {
         return Vec::new();
     };
@@ -487,7 +487,7 @@ impl WriteRoot for ObjMap {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         member_streamer_classes(
             &self.streamers,
             self.pairs.iter().flat_map(|((kc, _), (vc, _))| [kc, vc]),

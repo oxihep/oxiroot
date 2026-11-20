@@ -40,7 +40,7 @@ fn prefix_read_equals_truncated_full_read() {
     for &fx in FIXTURES {
         let file = FileReader::from_bytes(fixture(fx)).expect("parse file");
         let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
-        let total = usize::saturating_from(ntpl.num_entries());
+        let total = usize::saturating_from(ntpl.entries());
 
         // 0, a few, mid-file (splits the multi-cluster file across clusters),
         // last, exactly all, and past the end.

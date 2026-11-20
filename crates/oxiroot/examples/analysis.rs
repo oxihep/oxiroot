@@ -176,14 +176,14 @@ fn main() -> oxiroot::Result<()> {
 
     let g = FileReader::open(&ntuple_path)?;
     let events = NtupleReader::open(&g, "events")?;
-    println!("RNTuple `events`: {} entries", events.num_entries());
+    println!("RNTuple `events`: {} entries", events.entries());
     if let FieldValues::VecF64(jets) = events.read_field(&g, "jet_pt")? {
         println!("  jet_pt per event: {jets:?}");
     }
 
     let h = FileReader::open(&tree_path)?;
     let tree = TreeReader::open(&h, "Events")?;
-    println!("TTree `Events`: {} entries", tree.num_entries());
+    println!("TTree `Events`: {} entries", tree.entries());
     if let BranchValues::F64(mass) = tree.read_branch(&h, "mass")? {
         println!("  mass per entry: {mass:?}");
     }

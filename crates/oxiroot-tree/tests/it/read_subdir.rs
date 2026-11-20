@@ -15,7 +15,7 @@ fn opens_a_tree_in_a_nested_subdirectory() {
     // fixtures/tree_subdir.root holds the tree at `cal/run2/Events` (ROOT-written).
     let f = FileReader::open(fixture("tree_subdir.root")).expect("open");
     let t = TreeReader::open_in(&f, "cal/run2", "Events").expect("open nested tree");
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
     assert_eq!(
         t.read_branch(&f, "i").unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])

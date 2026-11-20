@@ -47,7 +47,7 @@ The API mirrors matplotlib but reads as idiomatic Rust:
   (`ax.hist_with(&h, HistOpts::new()…)`).
 - **Ranges, not pairs** — limits and sampling intervals take a `Range`:
   `ax.xlim(0.0..100.0)`, `ax.function(f, 0.0..10.0)`.
-- **No-arg toggles** — `ax.grid()`, `ax.legend()`, `fig.sharex()`, like
+- **No-arg toggles** — `ax.grid()`, `ax.legend()`, `fig.sharex(true)`, like
   matplotlib's own no-argument forms.
 
 ## A first plot
@@ -98,12 +98,12 @@ ax.hist_with(
         .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
         .label("MC"),
 );
-ax.hist_with(&data_hist, HistOpts::new().yerr().label("data")); // √N / Sumw2 bars
+ax.hist_with(&data_hist, HistOpts::new().yerr(true).label("data")); // √N / Sumw2 bars
 ```
 
 Error bars come from `√N` (or the Sumw2 per-bin error when the histogram tracks
 it); `Errorbar` and `Band` draw them without being asked, `Step` and `Fill` when
-given `.yerr()`. `hist`/`hist_with` snap the x-axis to the bin edges and start
+given `.yerr(true)`. `hist`/`hist_with` snap the x-axis to the bin edges and start
 the y-axis at zero, the mplhep convention; a histogram with negative bins (a
 weighted or background-subtracted one) extends below zero. Limits you set with
 `xlim`/`ylim` always win, whether set before or after plotting. Bins holding
@@ -344,8 +344,8 @@ axs[0].hist(&h);
 axs[1].errorbar(&g);
 axs[2].hist2d(&h2);
 axs[3].plot(&x, &y)?;
-fig.sharex()                           // common x range, x labels on the bottom row only
-    .sharey()                          // common y range, y labels on the left column only
+fig.sharex(true)                           // common x range, x labels on the bottom row only
+    .sharey(true)                          // common y range, y labels on the left column only
     .suptitle("$Z \\to \\mu\\mu$")     // a figure-level title (LaTeX)
     .with_axes(axs)
     .save("grid.png")?;
@@ -400,7 +400,7 @@ use oxiroot::plot::SaveOpts;
 
 ax.save("plot.pdf")?;                                       // vector PDF
 ax.save_with("plot.png", SaveOpts::new().dpi(300.0))?;      // 300-DPI raster
-ax.save_with("plot.png", SaveOpts::new().transparent())?;
+ax.save_with("plot.png", SaveOpts::new().transparent(true))?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 

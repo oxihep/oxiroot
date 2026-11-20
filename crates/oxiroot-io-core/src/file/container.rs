@@ -19,7 +19,7 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 use crate::Compression;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
-use crate::streamer_gen::{Cls, append_streamer_infos, streamer_info_list};
+use crate::streamer_gen::{ClassDef, append_streamer_infos, streamer_info_list};
 use crate::streamer_info::{StreamerRegistry, parse_streamer_info};
 
 use super::header::{BIG_FILE_VERSION, MAGIC, Uuid};
@@ -130,7 +130,7 @@ struct DirState {
 /// [`build`](ContainerWriter::build).
 ///
 /// ```
-/// use oxiroot_io_core::{Compression, ContainerWriter, DirId, FileReader};
+/// use oxiroot_io_core::{Compression, raw::ContainerWriter, raw::DirId, FileReader};
 ///
 /// let bytes = ContainerWriter::build("demo.root", Compression::None, u64::MAX, |c| {
 ///     c.place_key(DirId::TOP, "ObjString", "note", "", b"payload")?;
@@ -433,14 +433,14 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// used: the file's own entries are kept, and only the `extra` classes they
     /// lack are added after them. Nothing is written when none are missing, or
     /// when the existing record cannot be read.
-    pub fn place_streamer_info(&mut self, list: &[u8], extra: &[Cls<'_>]) -> Result<()> {
+    pub fn place_streamer_info(&mut self, list: &[u8], extra: &[ClassDef<'_>]) -> Result<()> {
         match &self.existing_info {
             Some(ExistingInfo::Readable {
                 list: existing,
                 key_len,
                 classes,
             }) => {
-                let missing: Vec<Cls<'_>> = extra
+                let missing: Vec<ClassDef<'_>> = extra
                     .iter()
                     .filter(|c| !describes(classes, c))
                     .cloned()
@@ -463,7 +463,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
                 } else {
                     described_classes(list, STREAMER_INFO_KEY_LEN)
                 };
-                let extra: Vec<Cls<'_>> = extra
+                let extra: Vec<ClassDef<'_>> = extra
                     .iter()
                     .filter(|c| !describes(&listed, c))
                     .cloned()
@@ -921,7 +921,7 @@ fn versions_of(registry: &StreamerRegistry) -> Vec<(String, i32)> {
 /// Whether `listed` already describes `class` at its version. A file may hold
 /// several versions of a class (objects written by older releases keep theirs),
 /// so a class listed at another version is still added.
-fn describes(listed: &[(String, i32)], class: &Cls<'_>) -> bool {
+fn describes(listed: &[(String, i32)], class: &ClassDef<'_>) -> bool {
     listed
         .iter()
         .any(|(name, version)| *name == class.name && *version == class.version)

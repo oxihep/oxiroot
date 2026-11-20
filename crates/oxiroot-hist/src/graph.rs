@@ -11,9 +11,8 @@
 //! `Func1D`s — fitted functions, parsed into [`functions`](Graph::functions)),
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
-use oxiroot_io_core::{
-    Error, FileReader, RBuffer, Result, read_named, read_object_base, skip_versioned,
-};
+use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::base::{BinContentType, bin_content_type_of, check_len, object_bytes_any};
 use crate::hist1d::Hist1D;

@@ -1268,7 +1268,7 @@ fn read_big(path: &Path) {
         die("big file did not parse as 64-bit format (fEND ≤ 2 GiB?)");
     }
     let t = TreeReader::open(&f, "T").unwrap_or_else(|e| die(&format!("open tree: {e}")));
-    let n = t.num_entries();
+    let n = t.entries();
     if n < 1 {
         die("big tree has no entries");
     }

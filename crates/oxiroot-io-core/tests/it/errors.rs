@@ -1,9 +1,9 @@
 //! The typed errors a caller can match on: a missing key or subdirectory, a key
 //! holding another class, invalid input and an unsupported URL scheme.
 
+use oxiroot_io_core::raw::object_bytes_any;
 use oxiroot_io_core::{
-    Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue, Parameter,
-    ReadRoot, object_bytes_any,
+    Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue, Parameter, ReadRoot,
 };
 
 /// A file with a string `s` and a list `l` at the top, and a string `t` in the

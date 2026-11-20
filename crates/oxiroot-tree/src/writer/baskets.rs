@@ -3,7 +3,8 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::{ContainerWriter, DATIME, DirId, Key, Result, WBuffer, compress_if_smaller};
+use oxiroot_io_core::raw::{ContainerWriter, DATIME, DirId, Key, compress_if_smaller};
+use oxiroot_io_core::{Result, WBuffer};
 
 use super::NESTED_NOT_WRITABLE;
 use super::branch::{Branch, BranchKind, vec_row_lengths};

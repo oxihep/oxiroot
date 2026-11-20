@@ -86,7 +86,7 @@ fn reads_fields_zstd_split() {
 fn reads_real_root_multicluster_collection() {
     let file = open("rntuple_multicluster_vec.root");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 9);
+    assert_eq!(ntpl.entries(), 9);
 
     assert_eq!(
         ntpl.read_field(&file, "n").expect("n"),

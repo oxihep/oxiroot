@@ -7,8 +7,9 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::sync::LazyLock;
 
-use oxiroot_io_core::streamer_gen::{Cls, StreamerInfoList};
-use oxiroot_io_core::{ObjString, WBuffer, write_named, write_object_base};
+use oxiroot_io_core::raw::{write_named, write_object_base};
+use oxiroot_io_core::streamer_gen::{ClassDef, StreamerInfoList};
+use oxiroot_io_core::{ObjString, WBuffer};
 // The object framework (the `WriteRoot` trait and `FileWriter`) lives
 // in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
 // and the in-crate `crate::write::WriteRoot` path keep resolving.
@@ -47,14 +48,14 @@ static HIST_INFO: LazyLock<StreamerInfoList> = LazyLock::new(|| {
 /// (an `Efficiency`'s `TH1D`s, say), so a file describes only the classes it
 /// holds.
 #[must_use]
-pub fn hist_streamer_classes(classes: &[&str]) -> Vec<Cls<'static>> {
+pub fn hist_streamer_classes(classes: &[&str]) -> Vec<ClassDef<'static>> {
     HIST_INFO.classes_for(classes)
 }
 
 /// `ObjString`'s description, when any of `axes` carries bin labels: they are
 /// stored as a `THashList` of `ObjString`s, and the captured list does not
 /// describe `ObjString`.
-fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<Cls<'static>> {
+fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<ClassDef<'static>> {
     if axes.into_iter().any(|a| !a.labels.is_empty()) {
         ObjString::new("").streamer_classes()
     } else {
@@ -88,7 +89,7 @@ macro_rules! impl_write_root_hist {
                 }
                 w.into_vec()
             }
-            fn streamer_classes(&self) -> Vec<Cls<'static>> {
+            fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
                 let mut classes = hist_streamer_classes(&[&self.class_name()]);
                 classes.extend(label_classes([&self.xaxis, &self.yaxis, &self.zaxis]));
                 classes
@@ -126,7 +127,7 @@ macro_rules! impl_write_root_fixed {
             fn to_root_bytes(&self) -> Vec<u8> {
                 $bytes(self)
             }
-            fn streamer_classes(&self) -> Vec<Cls<'static>> {
+            fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
                 let mut classes = hist_streamer_classes(&[$class $(, $holds)*]);
                 classes.extend(label_classes([$(&self.$axis),*]));
                 classes
@@ -187,7 +188,7 @@ impl WriteRoot for Graph {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph_to_bytes(self)
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         // Attached functions are `Func1D`s in the `fFunctions` list.
         let functions = if self.functions.is_empty() {
             None
@@ -930,7 +931,7 @@ impl WriteRoot for Graph2D {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraph2d_to_bytes(self)
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         hist_streamer_classes(&["TGraph2D"])
     }
 }
@@ -1007,7 +1008,7 @@ impl WriteRoot for MultiErrorGraph {
     fn to_root_bytes(&self) -> Vec<u8> {
         tgraphmultierrors_to_bytes(self)
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         hist_streamer_classes(&["TGraphMultiErrors"])
     }
 }

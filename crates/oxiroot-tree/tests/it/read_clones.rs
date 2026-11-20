@@ -23,7 +23,7 @@ fn fixture(name: &str) -> FileReader {
 fn reads_tclonesarray_subbranches() {
     let f = fixture("tree_clones.root");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
 
     assert_eq!(
         t.read_branch(&f, "parts.px").unwrap(),

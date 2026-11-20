@@ -9,7 +9,8 @@
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{FileReader, RBuffer, Result, read_named, read_object_base};
+use oxiroot_io_core::raw::{read_named, read_object_base};
+use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{BinContentType, check_len, object_bytes, object_bytes_in, read_tarray};

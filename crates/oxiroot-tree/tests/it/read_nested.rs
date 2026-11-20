@@ -21,7 +21,7 @@ fn fixture(name: &str) -> FileReader {
 fn reads_nested_struct_subbranches() {
     let f = fixture("tree_nested.root");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     // The nested `Inner` member is flattened to `v.inner.a` / `v.inner.b`.
     assert_eq!(
         t.branch_names(),

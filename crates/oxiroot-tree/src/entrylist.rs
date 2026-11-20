@@ -10,9 +10,8 @@
 //! yet expanded.
 use oxiroot_io_core::cast::SaturatingFrom;
 
-use oxiroot_io_core::{
-    Error, FileReader, RBuffer, Result, TagReader, decompress_payload, read_named, read_object_base,
-};
+use oxiroot_io_core::raw::{TagReader, decompress_payload, read_named, read_object_base};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 /// Entries per `TEntryListBlock` window (ROOT's `TEntryListBlock::kBlockSize`).
 const K_BLOCK_SIZE: u64 = 64000;

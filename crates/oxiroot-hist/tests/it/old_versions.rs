@@ -14,8 +14,9 @@
 use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D, WriteRoot};
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::streamer_gen::{Cls, El, any, base, basic};
-use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer, write_named};
+use oxiroot_io_core::raw::write_named;
+use oxiroot_io_core::streamer_gen::{ClassDef, El, any, base, basic};
+use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
 
 // --- Axis -------------------------------------------------------------------
 
@@ -104,7 +105,7 @@ fn an_axis_older_than_streamer_info_is_an_error() {
 struct OldObject {
     class: &'static str,
     bytes: Vec<u8>,
-    info: Cls<'static>,
+    info: ClassDef<'static>,
 }
 
 impl WriteRoot for OldObject {
@@ -122,7 +123,7 @@ impl WriteRoot for OldObject {
     }
     // Only the old class version is described: ROOT knows the current versions
     // of the other classes (TH1D, Axis, …) the profile contains.
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![self.info.clone()]
     }
 }
@@ -210,7 +211,7 @@ fn downgrade(m: &Members, mut bytes: Vec<u8>, n_sumw2: usize, version: u16) -> O
     OldObject {
         class: m.class,
         bytes,
-        info: Cls {
+        info: ClassDef {
             name: m.class.into(),
             version: i32::from(version),
             checksum: 0x0DD0_0000 | u32::from(version),
@@ -348,7 +349,7 @@ fn a_root_1_th2d_is_an_error() {
     let old = OldObject {
         class: "TH2D",
         bytes,
-        info: Cls {
+        info: ClassDef {
             name: "TH2D".into(),
             version: 1,
             checksum: 1,

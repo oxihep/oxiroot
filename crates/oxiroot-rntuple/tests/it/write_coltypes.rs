@@ -95,7 +95,7 @@ fn writes_a_variant_field() {
     )];
     let file = round_trip(&fields, "variant");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
-    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(ntpl.entries(), 5);
 
     // Reads back as the same columnar variant the read path produces.
     assert_eq!(

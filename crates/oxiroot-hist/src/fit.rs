@@ -98,7 +98,7 @@ impl FitData for Hist1D {
     }
 
     /// Each bin's `(lo, hi)`, so bin-integrated fits
-    /// (`FitOptions::with_bin_integration`, ROOT's option `"I"`) average the
+    /// (`FitOptions::bin_integration`, ROOT's option `"I"`) average the
     /// model over the real bins, variable-width ones included.
     fn bin_edges(&self) -> Option<Vec<(f64, f64)>> {
         Some(self.edges().windows(2).map(|w| (w[0], w[1])).collect())

@@ -34,7 +34,7 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "opened {:.0} MB file, tree `mini` with {} entries, in {:.1?}",
         file.size() as f64 / 1e6,
-        tree.num_entries(),
+        tree.entries(),
         start.elapsed()
     );
 

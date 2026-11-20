@@ -11,11 +11,12 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::ops::Range;
 
-use oxiroot_io_core::streamer_gen::{Cls, base, basic, objptr};
-use oxiroot_io_core::{
-    Error, FileReader, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerSet, TagReader, WBuffer,
-    read_object_base, write_named, write_object_any, write_object_base,
+use oxiroot_io_core::raw::{
+    K_BYTE_COUNT_MASK, TagReader, read_object_base, write_named, write_object_any,
+    write_object_base,
 };
+use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, objptr};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerSet, WBuffer};
 
 use crate::base::object_bytes_any_keyed;
 use crate::graph::{Graph, decode_tgraph};
@@ -34,8 +35,8 @@ const UNSET_LIMIT: f64 = -1111.0;
 // store one embed these entries (versions and checksums as ROOT writes them).
 
 /// The `TStreamerInfo` of `HistStack`.
-fn thstack_class() -> Cls<'static> {
-    Cls {
+fn thstack_class() -> ClassDef<'static> {
+    ClassDef {
         name: "THStack".into(),
         version: 2,
         checksum: 1_918_797_077,
@@ -50,8 +51,8 @@ fn thstack_class() -> Cls<'static> {
 }
 
 /// The `TStreamerInfo` of `GraphStack`.
-fn tmultigraph_class() -> Cls<'static> {
-    Cls {
+fn tmultigraph_class() -> ClassDef<'static> {
+    ClassDef {
         name: "TMultiGraph".into(),
         version: 2,
         checksum: 3_767_090_389,
@@ -252,7 +253,7 @@ impl WriteRoot for HistStack {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         // Its bases and list, the stacked histograms' classes, then its own.
         let mut set = StreamerSet::default();
         set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));
@@ -379,7 +380,7 @@ impl WriteRoot for GraphStack {
         w.end_object(obj);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         // Its bases and list, the graphs' classes, then its own.
         let mut set = StreamerSet::default();
         set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));

@@ -251,7 +251,7 @@ use oxiroot::prelude::*;
 let file = FileReader::open("data.root")?;
 let ntpl = NtupleReader::open(&file, "events")?;
 
-println!("{} entries", ntpl.num_entries());
+println!("{} entries", ntpl.entries());
 println!("fields: {:?}", ntpl.field_names());
 
 match ntpl.read_field(&file, "mass")? {

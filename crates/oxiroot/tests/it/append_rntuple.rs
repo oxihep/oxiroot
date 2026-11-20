@@ -41,7 +41,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
 
     // The RNTuple still reads — its anchor/page offsets were not relocated.
     let nt = NtupleReader::open(&f, "events").expect("rntuple survived the append");
-    assert_eq!(nt.num_entries(), 3);
+    assert_eq!(nt.entries(), 3);
     assert_eq!(
         nt.read_field(&f, "mass").unwrap(),
         FieldValues::F64(vec![91.2, 125.0, 80.4])

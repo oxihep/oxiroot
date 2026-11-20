@@ -5,7 +5,8 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::{Compression, ContainerWriter, DirId, Error, Result};
+use oxiroot_io_core::raw::{ContainerWriter, DirId};
+use oxiroot_io_core::{Compression, Error, Result};
 
 use super::baskets::{BasketRec, chunk_values, write_basket};
 use super::branch::{Branch, BranchKind};
@@ -183,7 +184,7 @@ impl<W: Write + Seek> TreeWriter<W> {
 
     /// Total entries appended so far.
     #[must_use]
-    pub fn num_entries(&self) -> i64 {
+    pub fn entries(&self) -> i64 {
         self.total_entries
     }
 

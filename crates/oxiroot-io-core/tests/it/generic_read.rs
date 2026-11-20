@@ -213,7 +213,7 @@ fn reads_root_cpp_written_file() {
 #[test]
 fn each_object_is_decoded_with_its_own_class_version() {
     use oxiroot_io_core::WBuffer;
-    use oxiroot_io_core::streamer_gen::{Cls, basic};
+    use oxiroot_io_core::streamer_gen::{ClassDef, basic};
     use oxiroot_io_core::{Compression, FileWriter, WriteRoot};
 
     /// `MyHit` at class version 1 (`fE`) or 2 (`fE`, then `fId`).
@@ -238,12 +238,12 @@ fn each_object_is_decoded_with_its_own_class_version() {
             w.end_object(hit);
             w.into_vec()
         }
-        fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
             let mut elements = vec![basic("fE", 8, 8, "double")];
             if self.0 >= 2 {
                 elements.push(basic("fId", 3, 4, "int"));
             }
-            vec![Cls {
+            vec![ClassDef {
                 name: "MyHit".into(),
                 version: i32::from(self.0),
                 checksum: u32::from(self.0),

@@ -23,7 +23,7 @@ fn assert_par_matches_serial(f: &FileReader, t: &TreeReader) {
     for name in t.branch_names() {
         let serial = t.read_branch(f, name);
         assert_eq!(t.read_branch_par(f, name), serial, "branch {name}");
-        let n = t.num_entries();
+        let n = t.entries();
         assert_eq!(
             t.read_branch_range_par(f, name, 1, n.saturating_sub(1)),
             t.read_branch_range(f, name, 1, n.saturating_sub(1)),

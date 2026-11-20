@@ -264,7 +264,7 @@ fn minos_errors_and_covariance() {
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
-    let r = hg.fit_opts(&model, &FitOptions::new().with_minos(true));
+    let r = hg.fit_opts(&model, &FitOptions::new().minos(true));
     assert!(r.valid);
 
     // MINOS errors: one (lower ≤ 0 ≤ upper) pair per parameter. Near this almost
@@ -318,20 +318,24 @@ fn ergonomics_estimate_seed_and_fit_into() {
     let mut model = Model::gaussian("g").estimate_from(&hg);
     // A clone shares the closure and fits identically.
     assert_eq!(model.clone().eval(0.5), model.eval(0.5));
-    assert!(model.params[2] > 0.0, "sigma seed must be positive");
+    assert!(model.params()[2] > 0.0, "sigma seed must be positive");
     assert!(format!("{model:?}").contains("Model")); // Debug prints (closure hidden)
 
     // fit_into writes the best-fit parameters back into the model.
     let r = hg.fit_into(&mut model, &FitOptions::new());
     assert!(r.valid);
     assert!(
-        rel_close(model.params[1], 0.5, 5e-3),
+        rel_close(model.params()[1], 0.5, 5e-3),
         "mean = {}",
-        model.params[1]
+        model.params()[1]
     );
-    assert_eq!(model.params, r.params, "model holds the fitted parameters");
+    assert_eq!(
+        model.params(),
+        r.params,
+        "model holds the fitted parameters"
+    );
     // The model now evaluates the fitted curve: its peak == the fitted constant.
-    assert!(rel_close(model.eval(model.params[1]), r.params[0], 1e-9));
+    assert!(rel_close(model.eval(model.params()[1]), r.params[0], 1e-9));
 }
 
 #[test]
@@ -386,7 +390,7 @@ fn variable_bins_are_integrated_over_their_edges() {
     let model = Model::new("e", &["n", "tau"], vec![80.0, 1.5], |x, p| {
         p[0] * (-x / p[1]).exp()
     });
-    let fit = h.fit_opts(&model, &FitOptions::new().with_bin_integration(true));
+    let fit = h.fit_opts(&model, &FitOptions::new().bin_integration(true));
     assert!(
         fit.valid && (fit.params[1] - 2.0).abs() < 1e-4,
         "{:?}",

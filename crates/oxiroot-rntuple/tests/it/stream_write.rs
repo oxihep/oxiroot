@@ -37,7 +37,7 @@ fn streams_multiple_clusters() {
 
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 12, "all entries across clusters");
+    assert_eq!(ntpl.entries(), 12, "all entries across clusters");
     assert_eq!(
         ntpl.read_field(&f, "x").unwrap(),
         FieldValues::I32(expect_x)
@@ -88,7 +88,7 @@ fn streams_collections_and_strings_across_clusters() {
 
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(ntpl.entries(), 5);
 
     let mut expect_v = v0;
     expect_v.extend(v1);
@@ -153,7 +153,7 @@ fn streaming_large_writes_big_format() {
         "create_large writes the 64-bit container"
     );
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open");
-    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(ntpl.entries(), 5);
     assert_eq!(
         ntpl.read_field(&f, "x").unwrap(),
         FieldValues::I32(vec![1, 2, 3, 4, 5])

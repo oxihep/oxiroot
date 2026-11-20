@@ -9,7 +9,7 @@
 //! ROOT, uproot, and this crate).
 
 use oxiroot_io_core::streamer_gen::{
-    Cls, any, base, basic, basicptr, object, objptr, streamer_info_list, strf,
+    ClassDef, any, base, basic, basicptr, object, objptr, streamer_info_list, strf,
 };
 
 /// A `TLeaf<T>` subclass: the `TLeaf` base then `fMinimum`/`fMaximum` of the
@@ -20,8 +20,8 @@ fn leaf_subclass(
     min_ty: i32,
     min_size: i32,
     min_tn: &'static str,
-) -> Cls<'static> {
-    Cls {
+) -> ClassDef<'static> {
+    ClassDef {
         name: name.into(),
         version: 1,
         checksum,
@@ -35,9 +35,9 @@ fn leaf_subclass(
 
 /// The canonical class list, in dependency order (bases before the classes that
 /// use them, as ROOT writes). Checksums and versions are ROOT's own values.
-pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
+pub(crate) fn tree_classes() -> Vec<ClassDef<'static>> {
     vec![
-        Cls {
+        ClassDef {
             name: "TObject".into(),
             version: 1,
             checksum: 2417737773,
@@ -46,19 +46,19 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fBits", 15, 4, "unsigned int"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TString".into(),
             version: 2,
             checksum: 95257,
             elements: vec![],
         },
-        Cls {
+        ClassDef {
             name: "TNamed".into(),
             version: 1,
             checksum: 3753331260,
             elements: vec![base("TObject", 1), strf("fName"), strf("fTitle")],
         },
-        Cls {
+        ClassDef {
             name: "TCollection".into(),
             version: 3,
             checksum: 1474546588,
@@ -68,13 +68,13 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fSize", 3, 4, "int"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TSeqCollection".into(),
             version: 0,
             checksum: 4234951622,
             elements: vec![base("TCollection", 3)],
         },
-        Cls {
+        ClassDef {
             name: "TObjArray".into(),
             version: 3,
             checksum: 2845730130,
@@ -84,13 +84,13 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fLast", 3, 4, "int"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TList".into(),
             version: 5,
             checksum: 1774568379,
             elements: vec![base("TSeqCollection", 0)],
         },
-        Cls {
+        ClassDef {
             name: "TAttLine".into(),
             version: 2,
             checksum: 2483504457,
@@ -100,7 +100,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fLineWidth", 2, 2, "short"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TAttFill".into(),
             version: 2,
             checksum: 4292422290,
@@ -109,7 +109,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fFillStyle", 2, 2, "short"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TAttMarker".into(),
             version: 2,
             checksum: 689802220,
@@ -119,13 +119,13 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fMarkerSize", 5, 4, "float"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "ROOT::TIOFeatures".into(),
             version: 1,
             checksum: 446770960,
             elements: vec![basic("fIOBits", 11, 1, "unsigned char")],
         },
-        Cls {
+        ClassDef {
             name: "TLeaf".into(),
             version: 2,
             checksum: 1830715730,
@@ -147,7 +147,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
         leaf_subclass("TLeafF", 987602290, 5, 4, "float"),
         leaf_subclass("TLeafD", 294553462, 8, 8, "double"),
         leaf_subclass("TLeafC", 4226003699, 3, 4, "int"),
-        Cls {
+        ClassDef {
             name: "TLeafElement".into(),
             version: 1,
             checksum: 2689566867,
@@ -157,7 +157,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 basic("fType", 3, 4, "int"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TBranch".into(),
             version: 13,
             checksum: 278366892,
@@ -186,7 +186,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 strf("fFileName"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TBranchElement".into(),
             version: 10,
             checksum: 3880738403,
@@ -205,7 +205,7 @@ pub(crate) fn tree_classes() -> Vec<Cls<'static>> {
                 objptr("fBranchCount2", "TBranchElement*"),
             ],
         },
-        Cls {
+        ClassDef {
             name: "TTree".into(),
             version: 20,
             checksum: 1919213695,
@@ -257,7 +257,7 @@ pub(crate) fn tree_streamer_info() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use oxiroot_io_core::parse_streamer_info;
+    use oxiroot_io_core::raw::parse_streamer_info;
 
     /// The generated bytes parse back (via the same parser the reader uses) to a
     /// registry with the right classes, versions, checksums, and member layouts —

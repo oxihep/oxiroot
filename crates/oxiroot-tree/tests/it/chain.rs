@@ -40,7 +40,7 @@ fn chain_concatenates_across_files() {
     chain.add(&f2, "Events").expect("add 2");
 
     assert_eq!(chain.num_trees(), 2);
-    assert_eq!(chain.num_entries(), 10);
+    assert_eq!(chain.entries(), 10);
     assert_eq!(chain.branch_names(), ["i4", "i8", "f4", "f8", "b1", "u4"]);
 
     // The branch spans both trees, in add order.

@@ -5,7 +5,7 @@ use std::error::Error;
 use std::path::Path;
 
 use oxiroot::FileReader;
-use oxiroot::file::find_key;
+use oxiroot::file::raw::find_key;
 use oxiroot::tree::LeafType;
 
 /// Every command returns this: `Ok(())` on success, else a boxed error printed

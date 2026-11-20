@@ -18,6 +18,7 @@ const FREE_BIG_VERSION: i16 = 1000;
 
 /// A single free byte range `[first, last]` (inclusive of `first`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FreeSegment {
     /// First free byte offset.
     pub first: u64,

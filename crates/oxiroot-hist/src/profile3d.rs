@@ -5,7 +5,8 @@
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
+use oxiroot_io_core::raw::skip_versioned;
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{

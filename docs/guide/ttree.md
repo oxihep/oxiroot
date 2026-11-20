@@ -144,7 +144,7 @@ for batch in 0..1_000 {
     let x: Vec<f64> = (0..10_000).map(|i| (base + i) as f64).collect();
     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
 }
-let entries = w.num_entries();
+let entries = w.entries();
 w.finish()?; // commit metadata + header
 ```
 
@@ -164,7 +164,7 @@ use oxiroot::prelude::*;
 let file = FileReader::open("tree.root")?;
 let t = TreeReader::open(&file, "Events")?;
 
-println!("{} entries: {:?}", t.num_entries(), t.branch_names());
+println!("{} entries: {:?}", t.entries(), t.branch_names());
 
 let energy = t.read_branch(&file, "energy")?;
 let values: &[f64] = energy.as_f64().expect("energy is a TLeafD branch");
@@ -330,7 +330,7 @@ let mut chain = ChainReader::new();
 chain.add(&f1, "Events")?;
 chain.add(&f2, "Events")?;
 
-println!("{} entries over {} files", chain.num_entries(), chain.num_trees());
+println!("{} entries over {} files", chain.entries(), chain.num_trees());
 let pt = chain.read_branch("pt")?; // values from both files, in add order
 ```
 

@@ -13,10 +13,9 @@ use std::collections::HashMap;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::streamer_gen::Cls;
-use oxiroot_io_core::{
-    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, WriteInto,
-};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
+use oxiroot_io_core::streamer_gen::ClassDef;
+use oxiroot_io_core::{Compression, Error, Result, WriteInto};
 
 use crate::value::BranchValues;
 
@@ -216,10 +215,10 @@ impl WriteInto for Tree {
         check_branches(&self.branches)?;
         write_tree_records(file, dir, &self.name, &self.branches, 0)
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         tree_streamer_classes(&self.branches)
             .into_iter()
-            .map(Cls::into_owned)
+            .map(ClassDef::into_owned)
             .collect()
     }
 }
@@ -287,7 +286,7 @@ fn check_branches(branches: &[Branch]) -> Result<()> {
 /// The `TStreamerInfo` entries a tree with these branches needs: the canonical
 /// TTree hierarchy (including the TBranchElement/TLeafElement `std::vector`
 /// streamers), then each split branch's struct.
-fn tree_streamer_classes(branches: &[Branch]) -> Vec<Cls<'_>> {
+fn tree_streamer_classes(branches: &[Branch]) -> Vec<ClassDef<'_>> {
     let mut classes = crate::streamer_gen::tree_classes();
     classes.extend(branches.iter().filter_map(Branch::split).map(split_class));
     classes

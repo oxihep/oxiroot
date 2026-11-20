@@ -77,7 +77,7 @@ fn writes_a_top_level_record() {
     let fields = vec![Field::new("p", rec)];
     let file = round_trip(&fields, "rec");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
-    assert_eq!(ntpl.num_entries(), 3);
+    assert_eq!(ntpl.entries(), 3);
     assert_eq!(
         ntpl.read_field(&file, "p").expect("p"),
         FieldValues::Record(vec![

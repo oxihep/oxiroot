@@ -1,7 +1,8 @@
 //! `Axis` — a histogram axis.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, RBuffer, Result, read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::{Error, RBuffer, Result};
 
 use crate::base::end_record;
 

@@ -2,7 +2,7 @@
 //! members of a split `std::vector<MyStruct>` branch ([`SplitMember`]).
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::streamer_gen::{Cls, basic};
+use oxiroot_io_core::streamer_gen::{ClassDef, basic};
 use oxiroot_io_core::{Error, Result};
 
 use crate::value::BranchValues;
@@ -315,8 +315,8 @@ pub(super) fn class_checksum(class_name: &str, members: &[SplitMember]) -> u32 {
 
 /// The `TStreamerInfo` entry for a split branch's struct: version 1, one basic
 /// member per struct member, as ROOT writes it for a class without `ClassDef`.
-pub(super) fn split_class(spec: &SplitSpec) -> Cls<'_> {
-    Cls {
+pub(super) fn split_class(spec: &SplitSpec) -> ClassDef<'_> {
+    ClassDef {
         name: spec.class_name.as_str().into(),
         version: 1,
         checksum: class_checksum(&spec.class_name, &spec.members),

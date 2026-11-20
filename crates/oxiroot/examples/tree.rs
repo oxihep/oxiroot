@@ -39,11 +39,7 @@ fn main() -> oxiroot::Result<()> {
 
     let file = FileReader::open(&path)?;
     let t = TreeReader::open(&file, "Events")?;
-    println!(
-        "{} entries, branches: {:?}",
-        t.num_entries(),
-        t.branch_names()
-    );
+    println!("{} entries, branches: {:?}", t.entries(), t.branch_names());
 
     // Introspect each branch's type and shape without reading its data.
     for b in t.branch_names() {
@@ -73,7 +69,7 @@ fn main() -> oxiroot::Result<()> {
         let x: Vec<f64> = (0..1_000).map(|i| f64::from(base + i)).collect();
         w.write_batch(&[Branch::f64("x", x)])?; // flushed to disk now
     }
-    let entries = w.num_entries();
+    let entries = w.entries();
     w.finish()?;
     println!("\nstreamed {entries} entries to {stream_path}");
 

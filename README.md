@@ -169,7 +169,7 @@ let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
 // Write a columnar RNTuple, then read it back.
 let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
 Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.num_entries();
+let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.entries();
 ```
 
 Types are named as Rust, not as C++: no `T` prefix. Readers end in `Reader`
@@ -370,7 +370,7 @@ println!("chi2/ndf = {:.2}, p = {:.3}", fit.chi2_per_ndf(), fit.p_value());
 let ml = h.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
 
 // Full control: fit the core ±window, keep sigma positive, and ask for MINOS.
-let opts = FitOptions::new().range(85.0, 97.0).with_minos(true);
+let opts = FitOptions::new().range(85.0, 97.0).minos(true);
 let mut peak = Model::gaussian("z").estimate_from(&h).lower_limit("sigma", 0.0);
 let r = h.fit_into(&mut peak, &opts); // writes the fit back into `peak`
 if let Some(minos) = &r.minos {
@@ -674,7 +674,7 @@ ax2.save("heatmap.svg")?;
   and `ax.fit_stats(&model, &result)` adds a ROOT-style stat box (`TPaveStats`) with
   the function name, χ²/ndf, and each fitted parameter ± its error.
 - **Multi-panel layouts** — `subplots_grid(rows, cols)` and a custom `GridSpec`
-  (height/width ratios, spacing) with `fig.sharex()`/`sharey()` and a `suptitle`,
+  (height/width ratios, spacing) with `fig.sharex(true)`/`sharey()` and a `suptitle`,
   plus a one-call `ratio_subplots()` for the HEP main-over-ratio plot (shared
   x-axis, the upper panel's x labels hidden). The figure makes room for every
   panel's tick labels, axis labels and title so nothing overlaps, and lines up

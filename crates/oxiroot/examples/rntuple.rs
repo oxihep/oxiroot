@@ -55,7 +55,7 @@ fn main() -> oxiroot::Result<()> {
     let ntpl = NtupleReader::open(&f, "events")?;
     println!(
         "reopened: {} entries, fields = {:?}",
-        ntpl.num_entries(),
+        ntpl.entries(),
         ntpl.field_names(),
     );
 
@@ -82,7 +82,7 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Print it as an event loop would see it: one row per entry. ------------
     println!("per-entry values:");
-    for i in 0..usize::saturating_from(ntpl.num_entries()) {
+    for i in 0..usize::saturating_from(ntpl.entries()) {
         println!(
             "  {:>3}: label = {:>3}  mass = {:>7.2} GeV  charge = {:+}  jets = {:?}",
             i, labels[i], masses[i], charges[i], jets[i],
@@ -122,14 +122,14 @@ fn main() -> oxiroot::Result<()> {
     let runs = NtupleReader::open(&g, "runs")?;
     println!(
         "  `events`: {} entries {:?}",
-        ev.num_entries(),
+        ev.entries(),
         ev.field_names(),
     );
     if let FieldValues::I64(n) = runs.read_field(&g, "n_events")? {
         let total: i64 = n.iter().sum();
         println!(
             "  `runs`:   {} entries, {total} events recorded across all runs",
-            runs.num_entries(),
+            runs.entries(),
         );
     }
 

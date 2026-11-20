@@ -1,6 +1,6 @@
 //! The streamer classes an RNTuple's record fields need, and their checksums.
 
-use oxiroot_io_core::streamer_gen::{Cls, basic, streamer_info_list};
+use oxiroot_io_core::streamer_gen::{ClassDef, basic, streamer_info_list};
 
 use super::fields::{Column, Field};
 use crate::anchor::anchor_streamer_class;
@@ -55,7 +55,7 @@ fn checksum_type_name(col: &Column) -> &'static str {
 /// `classes`, once per class name. A class is described when every member is a
 /// plain number, as ROOT writes it for a struct without `ClassDef` (version 1);
 /// its checksum is the one the field record carries.
-fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
+fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<ClassDef<'a>>) {
     match col {
         Column::Object { type_name, members } => {
             for (_, member) in members {
@@ -71,7 +71,7 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
             if let Some(elements) = elements
                 && !classes.iter().any(|c| c.name == type_name.as_str())
             {
-                classes.push(Cls {
+                classes.push(ClassDef {
                     name: type_name.into(),
                     version: 1,
                     checksum: class_checksum(type_name, members),
@@ -103,7 +103,7 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<Cls<'a>>) {
 /// The `TStreamerInfo` entries a file holding RNTuples with these fields needs:
 /// the anchor class, which ROOT describes in every RNTuple file, then the user
 /// classes of `fields`.
-pub(super) fn ntuple_classes<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<Cls<'a>> {
+pub(super) fn ntuple_classes<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<ClassDef<'a>> {
     let mut classes = vec![anchor_streamer_class()];
     for field in fields {
         collect_classes(&field.data, &mut classes);

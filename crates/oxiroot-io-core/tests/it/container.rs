@@ -4,8 +4,9 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::Cursor;
 
-use oxiroot_io_core::streamer_gen::{Cls, basic, streamer_info_list};
-use oxiroot_io_core::{Compression, ContainerWriter, DirId, FileReader, Key, compress_if_smaller};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, Key, compress_if_smaller};
+use oxiroot_io_core::streamer_gen::{ClassDef, basic, streamer_info_list};
+use oxiroot_io_core::{Compression, FileReader};
 
 /// Build a file in the small form (`big = false`) or the big form.
 fn build(
@@ -163,8 +164,8 @@ fn threshold_picks_the_form_from_the_finished_size() {
 }
 
 /// A one-member class, for streamer-info lists.
-fn class(name: &str) -> Cls<'_> {
-    Cls {
+fn class(name: &str) -> ClassDef<'_> {
+    ClassDef {
         name: name.into(),
         version: 1,
         checksum: 7,

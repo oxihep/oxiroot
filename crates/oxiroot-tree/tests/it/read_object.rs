@@ -16,7 +16,7 @@ fn reads_split_single_object_scalars() {
     )
     .expect("open fixture");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), vec!["id", "inner.a", "inner.b", "w"]);
     assert!(t.unsupported_branches().is_empty());
 

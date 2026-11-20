@@ -21,7 +21,7 @@ fn fixture() -> FileReader {
 fn reads_tbranchobject_members() {
     let f = fixture();
     let t = TreeReader::open(&f, "t").expect("open tree");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     // Each TBranchObject expands into one column per (basic/string) member.
     assert_eq!(
         t.branch_names(),

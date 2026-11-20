@@ -13,11 +13,9 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::streamer_gen::Cls;
-use oxiroot_io_core::{
-    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, WriteInto,
-    compress_if_smaller,
-};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, compress_if_smaller};
+use oxiroot_io_core::streamer_gen::ClassDef;
+use oxiroot_io_core::{Compression, Error, Result, WriteInto};
 
 use crate::anchor::ANCHOR_CLASS;
 
@@ -458,10 +456,10 @@ impl WriteInto for Ntuple {
         let prep = prep_ntuple(&self.name, &self.fields, file.compression_setting())?;
         write_one_rntuple(file, dir, &prep)
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         ntuple_classes(&self.fields)
             .into_iter()
-            .map(Cls::into_owned)
+            .map(ClassDef::into_owned)
             .collect()
     }
 }
@@ -499,7 +497,7 @@ mod tests {
         let f = FileReader::from_bytes(bytes).unwrap();
         assert!(f.header().is_big(), "forced into big-format container");
         let ntpl = NtupleReader::open(&f, "ntpl").unwrap();
-        assert_eq!(ntpl.num_entries(), 4);
+        assert_eq!(ntpl.entries(), 4);
         assert_eq!(
             ntpl.read_field(&f, "x").unwrap(),
             FieldValues::I32(vec![1, 2, 3, 4])

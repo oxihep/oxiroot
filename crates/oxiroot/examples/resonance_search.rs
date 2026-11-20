@@ -115,10 +115,10 @@ mod search {
     fn signal_plus_background(order: usize) -> Model {
         let bkg = background(order);
         let mut names = vec!["mu".to_string(), "mass".to_string()];
-        names.extend(bkg.param_names.iter().cloned());
+        names.extend(bkg.param_names().iter().cloned());
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let mut seed = vec![1.0, TRUE_MASS];
-        seed.extend(bkg.params.iter());
+        seed.extend(bkg.params().iter());
         Model::new("s+b", &refs, seed, |m, p| {
             p[0] * peak(m, p[1]) + poly_exp(m, &p[2..])
         })
@@ -172,7 +172,7 @@ mod search {
         println!(
             "1. Wrote and read back {} diphoton candidates ({N_BACKGROUND} background, \
              {N_SIGNAL} signal at {TRUE_MASS} GeV) — {}",
-            tree.num_entries(),
+            tree.entries(),
             tree_path.display()
         );
 
@@ -223,7 +223,7 @@ mod search {
             .map(|(&m, &q)| (m, q))
             .expect("a scan point");
         let fitter = fitter.set("mass", best);
-        let fit = fitter.fit(&FitOptions::new().with_minos(true));
+        let fit = fitter.fit(&FitOptions::new().minos(true));
         let (lo, hi) = fit.minos.as_ref().map_or((f64::NAN, f64::NAN), |m| m[0]);
         println!(
             "\n3. Largest local excess at {best:.1} GeV: Z_local = {:.2}",
@@ -378,7 +378,12 @@ mod search {
             .ylabel("95 % CL limit on $\\mu$")
             .hep_label("Demo", "Simulation")
             .legend();
-        ax.text_with(0.04, 0.06, "CLs, asymptotic", TextOpts::new().axes_coords());
+        ax.text_with(
+            0.04,
+            0.06,
+            "CLs, asymptotic",
+            TextOpts::new().axes_coords(true),
+        );
         let limits_png = dir.join("limits.png");
         ax.save(&limits_png)?;
 

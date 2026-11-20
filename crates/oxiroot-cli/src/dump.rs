@@ -235,7 +235,7 @@ fn dump_tree(
         None => TreeReader::open(file, name)?,
         Some(dir) => TreeReader::open_in(file, dir, name)?,
     };
-    let n = args.entries.min(usize::saturating_from(tree.num_entries()));
+    let n = args.entries.min(usize::saturating_from(tree.entries()));
     let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
@@ -246,7 +246,7 @@ fn dump_tree(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.num_entries().cast_signed())),
+            ("entries", Json::Int(tree.entries().cast_signed())),
             ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
@@ -258,10 +258,7 @@ fn dump_tree(
         return Ok(());
     }
 
-    println!(
-        "TTree {name:?}  ({} entries; showing {n})",
-        tree.num_entries()
-    );
+    println!("TTree {name:?}  ({} entries; showing {n})", tree.entries());
     print_table(&cols, n, branch_cell);
     Ok(())
 }
@@ -278,9 +275,7 @@ fn dump_rntuple(
         None => NtupleReader::open(file, name)?,
         Some(dir) => NtupleReader::open_in(file, dir, name)?,
     };
-    let n = args
-        .entries
-        .min(usize::saturating_from(ntuple.num_entries()));
+    let n = args.entries.min(usize::saturating_from(ntuple.entries()));
     let selected = select(&args.branches, ntuple.field_names());
     // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
@@ -292,7 +287,7 @@ fn dump_rntuple(
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.num_entries().cast_signed())),
+            ("entries", Json::Int(ntuple.entries().cast_signed())),
             ("showing", Json::Int(i64::saturating_from(n))),
             (
                 "columns",
@@ -306,7 +301,7 @@ fn dump_rntuple(
 
     println!(
         "RNTuple {name:?}  ({} entries; showing {n})",
-        ntuple.num_entries()
+        ntuple.entries()
     );
     print_table(&cols, n, field_cell);
     Ok(())

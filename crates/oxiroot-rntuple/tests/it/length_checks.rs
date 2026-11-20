@@ -149,7 +149,7 @@ fn a_zero_size_array_does_not_set_the_entry_count() {
     write_rntuple_file(&path, "events", &fields, Compression::None).unwrap();
     let f = FileReader::open(&path).unwrap();
     let nt = NtupleReader::open(&f, "events").unwrap();
-    assert_eq!(nt.num_entries(), 3);
+    assert_eq!(nt.entries(), 3);
     assert_eq!(
         nt.read_field(&f, "x").unwrap(),
         FieldValues::I32(vec![1, 2, 3])

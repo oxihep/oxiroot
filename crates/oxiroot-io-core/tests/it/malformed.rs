@@ -5,7 +5,8 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_io_core::{Datime, FileReader, Key, WBuffer};
+use oxiroot_io_core::raw::{Datime, Key};
+use oxiroot_io_core::{FileReader, WBuffer};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -70,42 +71,32 @@ fn single_byte_flips_never_panic() {
 
 #[test]
 fn tkey_payload_rejects_inconsistent_headers() {
-    let base = Key {
-        nbytes: 100,
-        version: 4,
-        obj_len: 50,
-        datime: Datime(0),
-        key_len: 32,
-        cycle: 1,
-        seek_key: 0,
-        seek_pdir: 0,
-        class_name: "TH1D".into(),
-        name: "h".into(),
-        title: String::new(),
-    };
+    let mut base = Key::default();
+    base.nbytes = 100;
+    base.version = 4;
+    base.obj_len = 50;
+    base.datime = Datime(0);
+    base.key_len = 32;
+    base.cycle = 1;
+    base.class_name = "TH1D".into();
+    base.name = "h".into();
     let data = vec![0u8; 64];
 
     // key_len > |nbytes| would underflow payload_len — must Err, not panic.
-    let bad_len = Key {
-        key_len: 200,
-        ..base.clone()
-    };
+    let mut bad_len = base.clone();
+    bad_len.key_len = 200;
     assert!(bad_len.payload(&data).is_err());
 
     // seek_key + key_len + payload runs past the buffer — must Err.
-    let past_end = Key {
-        seek_key: 1_000_000,
-        ..base.clone()
-    };
+    let mut past_end = base.clone();
+    past_end.seek_key = 1_000_000;
     assert!(past_end.payload(&data).is_err());
 
     // A consistent key inside the buffer succeeds.
-    let ok = Key {
-        nbytes: 40,
-        key_len: 32,
-        seek_key: 0,
-        ..base
-    };
+    let mut ok = base;
+    ok.nbytes = 40;
+    ok.key_len = 32;
+    ok.seek_key = 0;
     assert_eq!(ok.payload(&data).unwrap().len(), 8); // 40 - 32
 }
 

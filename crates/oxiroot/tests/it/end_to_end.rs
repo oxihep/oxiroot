@@ -91,7 +91,7 @@ fn tree_round_trips_through_the_facade() {
 
     let f = FileReader::open(tmp("tree")).unwrap();
     let t = TreeReader::open(&f, "Events").unwrap();
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(
         t.read_branch(&f, "i").unwrap(),
         BranchValues::I32(vec![1, 2, 3])
@@ -121,7 +121,7 @@ fn rntuple_round_trips_through_the_facade() {
 
     let f = FileReader::open(tmp("rn")).unwrap();
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
-    assert_eq!(nt.num_entries(), 2);
+    assert_eq!(nt.entries(), 2);
     assert_eq!(
         nt.read_field(&f, "mass").unwrap(),
         FieldValues::F64(vec![91.2, 125.0])

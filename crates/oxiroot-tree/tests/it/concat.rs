@@ -42,7 +42,7 @@ fn concatenates_flat_scalar_branches() {
     let fo = write_merged("flat_out", &merged);
     let to = TreeReader::open(&fo, "Events").unwrap();
 
-    assert_eq!(to.num_entries(), 5);
+    assert_eq!(to.entries(), 5);
     assert_eq!(
         to.read_branch(&fo, "i").unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])
@@ -91,7 +91,7 @@ fn preserves_and_concatenates_jagged_and_vector_branches() {
     let fo = write_merged("jag_out", &merged);
     let to = TreeReader::open(&fo, "Events").unwrap();
 
-    assert_eq!(to.num_entries(), 3);
+    assert_eq!(to.entries(), 3);
     assert_eq!(
         to.read_branch(&fo, "j").unwrap(),
         BranchValues::VecF64(vec![vec![1.0], vec![2.0, 3.0], vec![4.0, 5.0, 6.0]])
@@ -111,7 +111,7 @@ fn single_input_round_trips_the_values() {
     let fo = write_merged("solo_out", &merged);
     let to = TreeReader::open(&fo, "Events").unwrap();
 
-    assert_eq!(to.num_entries(), 3);
+    assert_eq!(to.entries(), 3);
     assert_eq!(
         to.read_branch(&fo, "q").unwrap(),
         BranchValues::F32(vec![1.5, 2.5, 3.5])

@@ -34,14 +34,14 @@ fn several_rntuples_in_top_directory() {
 
     // Both top-directory RNTuples open and read.
     let events = NtupleReader::open(&f, "events").unwrap();
-    assert_eq!(events.num_entries(), 3);
+    assert_eq!(events.entries(), 3);
     assert_eq!(events.field_names(), vec!["x", "y"]);
     assert_eq!(
         events.read_field(&f, "x").unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
     let runs = NtupleReader::open(&f, "runs").unwrap();
-    assert_eq!(runs.num_entries(), 2);
+    assert_eq!(runs.entries(), 2);
     assert_eq!(
         runs.read_field(&f, "run").unwrap(),
         FieldValues::I32(vec![7, 8])
@@ -59,7 +59,7 @@ fn rntuple_inside_a_subdirectory() {
     let cal = f.subdir("cal").unwrap();
     assert!(cal.keys.iter().any(|k| k.name == "pedestals"));
     let ped = NtupleReader::open_in(&f, "cal", "pedestals").unwrap();
-    assert_eq!(ped.num_entries(), 2);
+    assert_eq!(ped.entries(), 2);
     assert_eq!(
         ped.read_field(&f, "p").unwrap(),
         FieldValues::F64(vec![9.5, 8.5])
@@ -72,7 +72,7 @@ fn compressed_multi_file_round_trips() {
     let path = path.to_str().unwrap();
     write(path, Compression::Zstd(5));
     let f = FileReader::open(path).unwrap();
-    assert_eq!(NtupleReader::open(&f, "events").unwrap().num_entries(), 3);
+    assert_eq!(NtupleReader::open(&f, "events").unwrap().entries(), 3);
     assert_eq!(
         NtupleReader::open_in(&f, "cal", "pedestals")
             .unwrap()

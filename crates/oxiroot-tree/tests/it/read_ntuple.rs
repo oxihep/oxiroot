@@ -21,7 +21,7 @@ fn fixture() -> FileReader {
 fn reads_tntuple_float() {
     let f = fixture();
     let t = TreeReader::open(&f, "nt").expect("open TNtuple");
-    assert_eq!(t.num_entries(), 4);
+    assert_eq!(t.entries(), 4);
     assert_eq!(t.branch_names(), vec!["x", "y", "z"]);
     assert_eq!(
         t.read_branch(&f, "x").unwrap(),
@@ -37,7 +37,7 @@ fn reads_tntuple_float() {
 fn reads_tntupled_double() {
     let f = fixture();
     let t = TreeReader::open(&f, "ntd").expect("open TNtupleD");
-    assert_eq!(t.num_entries(), 3);
+    assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), vec!["a", "b"]);
     assert_eq!(
         t.read_branch(&f, "a").unwrap(),

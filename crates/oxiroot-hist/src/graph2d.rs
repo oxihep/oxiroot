@@ -8,7 +8,8 @@
 //! `fHistogram` display frame is transient in ROOT and not persisted.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, read_named, skip_versioned};
+use oxiroot_io_core::raw::{read_named, skip_versioned};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::base::{check_len, object_bytes_any};
 

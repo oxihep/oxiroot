@@ -1,7 +1,8 @@
 //! Decoding branch data: from basket payloads to [`BranchValues`] columns.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerRegistry};
+use oxiroot_io_core::raw::K_BYTE_COUNT_MASK;
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry};
 
 use super::members::{MemberVal, Members, walk_members};
 use super::parse::skip_object;

@@ -204,7 +204,7 @@ mod splot {
         let (m, t) = (column("mass")?, column("time")?);
         println!(
             "1. Wrote and read back {} B⁰ candidates — {}",
-            tree.num_entries(),
+            tree.entries(),
             tree_path.display()
         );
 
@@ -238,8 +238,8 @@ mod splot {
         // ---- 4. The lifetime ---------------------------------------------------
         let variants = [
             ("naive", FitOptions::new()),
-            ("SumW2", FitOptions::new().with_sumw2(true)),
-            ("asymptotic", FitOptions::new().with_asymptotic_errors(true)),
+            ("SumW2", FitOptions::new().sumw2(true)),
+            ("asymptotic", FitOptions::new().asymptotic_errors(true)),
         ];
         println!("\n4. Signal lifetime from the sWeighted decay times (truth {TAU_B} ps)");
         let fits: Vec<FitResult> = variants

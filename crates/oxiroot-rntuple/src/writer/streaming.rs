@@ -5,9 +5,8 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::{
-    Compression, ContainerWriter, DirId, Error, KSTART_BIG_FILE, Result, compress_if_smaller,
-};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, compress_if_smaller};
+use oxiroot_io_core::{Compression, Error, Result};
 
 use super::classes::ntuple_streamer_info;
 use super::envelopes::{

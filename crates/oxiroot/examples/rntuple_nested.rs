@@ -61,7 +61,7 @@ fn main() -> oxiroot::Result<()> {
     let ntpl = NtupleReader::open(&file, "events")?;
     println!(
         "{} entries, fields: {:?}",
-        ntpl.num_entries(),
+        ntpl.entries(),
         ntpl.field_names()
     );
     for name in ["tags", "hits", "clusters"] {

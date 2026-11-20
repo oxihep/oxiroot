@@ -37,7 +37,7 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod probes {
-    use oxiroot::fit::Efficiency as EffData;
+    use oxiroot::fit::BinomialData;
     use oxiroot::plot::{
         Axes, Color, Colormap, CurveOpts, HAlign, Hist2dOpts, HistOpts, HistType, Style, TextOpts,
         VAlign,
@@ -135,7 +135,7 @@ mod probes {
         let sim = Simultaneous::new()
             .channel("pass", pass, &pass_model, &opts)
             .channel("fail", fail, &fail_model, &opts);
-        let fit = sim.fit(&opts.with_minos(true));
+        let fit = sim.fit(&opts.minos(true));
         // An efficiency near 0 or 1 has a one-sided interval: take the larger side.
         let (lo, hi) = fit.minos.as_ref().map_or((0.0, 0.0), |m| m[1]);
         let err = fit.errors[1].max(lo.abs()).max(hi.abs());
@@ -143,7 +143,7 @@ mod probes {
         let names = sim.param_names();
         let pick = |model: &Model| -> Vec<f64> {
             model
-                .param_names
+                .param_names()
                 .iter()
                 .map(|n| {
                     let i = names.iter().position(|m| m == n).expect("a parameter");
@@ -205,7 +205,7 @@ mod probes {
         );
         println!(
             "1. Wrote and read back {} probes — {}",
-            tree.num_entries(),
+            tree.entries(),
             tree_path.display()
         );
 
@@ -260,7 +260,7 @@ mod probes {
                 .expect("lengths")
                 .with_bin_edges(&PT_EDGES)
                 .expect("edges");
-            let fit = points.fit_opts(&turn_on(), &FitOptions::new().with_bin_integration(true));
+            let fit = points.fit_opts(&turn_on(), &FitOptions::new().bin_integration(true));
             println!(
                 "   {:<33} {:.2} ± {:.2} ({})   {:.2} ± {:.2} ({})   {:.3} ± {:.3} ({})",
                 ["barrel |η| < 1.2", "endcap 1.2 < |η| < 2.4"][r],
@@ -290,7 +290,7 @@ mod probes {
         let (passed_m, total_m): (Vec<f64>, Vec<f64>) = (1..=40)
             .map(|b| (matched.passed.contents[b], matched.total.contents[b]))
             .unzip();
-        let binomial = EffData::new(&x, &passed_m, &total_m)
+        let binomial = BinomialData::new(&x, &passed_m, &total_m)
             .expect("lengths")
             .fit(&turn_on(), &FitOptions::new());
         println!(
@@ -308,7 +308,7 @@ mod probes {
                         .count() as f64
                 })
                 .collect();
-            let b = EffData::new(&x, &k, &vec![25.0; x.len()])
+            let b = BinomialData::new(&x, &k, &vec![25.0; x.len()])
                 .expect("lengths")
                 .fit(&turn_on(), &FitOptions::new());
             // χ² on k/n with the binomial error, which vanishes at k = 0 or n:
@@ -377,7 +377,7 @@ mod probes {
             0.92,
             "$24 < p_T < 26$ GeV, $|\\eta| < 1.2$",
             TextOpts::new()
-                .axes_coords()
+                .axes_coords(true)
                 .align(HAlign::Left, VAlign::Top),
         );
         let fits_png = dir.join("pass_fail_fit.png");

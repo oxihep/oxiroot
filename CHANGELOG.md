@@ -7,6 +7,30 @@ change the API.
 
 ## [Unreleased]
 
+API review toward 1.0 (breaking).
+
+### Changed
+
+- **oxistats 0.2.0, oxifit 0.9.0, oxiplot 0.11.0, oxihist 0.13.0** (the
+  same review): oxifit's `Efficiency` is `BinomialData`, `TemplateError` is
+  part of `FitError`, `Model`'s parameters are read with `params()` /
+  `param_names()`, toggles are named after their option and take a `bool`
+  (`FitOptions::minos(true)`, `HistOpts::yerr(true)`, …), oxiplot's `Points`
+  is `XyPoints`, and standard deviations are `std_dev` everywhere.
+- **`oxiroot::Error` wraps oxifit's `FitError`** (a `Fit` variant, with the
+  `fit` feature), so `?` works on scans, tests, samplers and template models
+  in a function returning `oxiroot::Result`.
+- **io-core's format records move to `oxiroot_io_core::raw`**
+  (`oxiroot::file::raw`): the file header, keys, directories, free segments,
+  streamer info and elements, object and record headers, the format
+  constants and the helpers that read and write them. They are
+  `#[non_exhaustive]`; reading and writing objects needs none of them.
+- **`entries()` everywhere**: the tree and RNTuple readers' and writers'
+  `num_entries()` is now `entries()`, ROOT's `GetEntries`.
+- **`streamer_gen::Cls` is `ClassDef`**, and `streamer_gen` (plumbing shared
+  by the crates that write ROOT classes) is hidden from the docs.
+
+
 ## [0.5.0] — 2026-11-20
 
 Fitting grown into an analysis toolkit, complete analysis examples, and a

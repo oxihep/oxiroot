@@ -22,7 +22,7 @@ fn array_field_round_trips() {
         "array",
         vec![Field::array_i32("arr", vec![vec![10, 20, 30], vec![40, 50, 60]]).unwrap()],
     );
-    assert_eq!(ntpl.num_entries(), 2);
+    assert_eq!(ntpl.entries(), 2);
     assert_eq!(
         ntpl.read_field(&file, "arr").unwrap(),
         FieldValues::VecI32(vec![vec![10, 20, 30], vec![40, 50, 60]])
@@ -90,7 +90,7 @@ fn all_three_in_one_ntuple() {
             ),
         ],
     );
-    assert_eq!(ntpl.num_entries(), 2);
+    assert_eq!(ntpl.entries(), 2);
     assert_eq!(
         ntpl.read_field(&file, "xyz").unwrap(),
         FieldValues::VecF64(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]])

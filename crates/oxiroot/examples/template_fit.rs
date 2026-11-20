@@ -253,7 +253,7 @@ mod templates {
 
         // ---- 3. The fit, pulls and impacts -----------------------------------
         let fitter = model.fitter();
-        let fit = fitter.fit(&FitOptions::new().with_minos(true));
+        let fit = fitter.fit(&FitOptions::new().minos(true));
         let names = model.param_names();
         let idx = |n: &str| names.iter().position(|m| m == n).expect("a parameter");
         let (i_mu, i_tt) = (idx("mu"), idx("mu_ttbar"));

@@ -1,10 +1,10 @@
 //! Parsing the `TTree` object: the tree, its branches, leaves, friends and
 //! aliases.
 
-use oxiroot_io_core::{
-    Error, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerElement, StreamerRegistry, TagReader,
-    read_named, read_object_base,
+use oxiroot_io_core::raw::{
+    K_BYTE_COUNT_MASK, StreamerElement, TagReader, read_named, read_object_base,
 };
+use oxiroot_io_core::{Error, RBuffer, Result, StreamerRegistry};
 
 use super::members::{Members, member_int, member_str, walk_members};
 use super::types::{

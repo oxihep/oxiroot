@@ -64,7 +64,7 @@ fn concatenates_tree_files() {
 
     let fo = FileReader::open(&out).unwrap();
     let t = TreeReader::open(&fo, "Events").unwrap();
-    assert_eq!(t.num_entries(), 5);
+    assert_eq!(t.entries(), 5);
     assert_eq!(
         t.read_branch(&fo, "i").unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])
@@ -88,7 +88,7 @@ fn concatenates_rntuple_files() {
 
     let fo = FileReader::open(&out).unwrap();
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
-    assert_eq!(nt.num_entries(), 5);
+    assert_eq!(nt.entries(), 5);
     assert_eq!(
         nt.read_field(&fo, "x").unwrap(),
         FieldValues::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0])
@@ -233,7 +233,7 @@ fn empty_inputs_merge_to_an_empty_tree() {
     .unwrap();
     assert_eq!(report.entries, Some(0));
     let fo = FileReader::open(&out).unwrap();
-    assert_eq!(TreeReader::open(&fo, "T").unwrap().num_entries(), 0);
+    assert_eq!(TreeReader::open(&fo, "T").unwrap().entries(), 0);
 }
 
 #[test]
@@ -246,5 +246,5 @@ fn the_output_cannot_be_an_input() {
     assert!(err.to_string().contains("also an input"), "{err}");
     // The input is untouched.
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(TreeReader::open(&f, "T").unwrap().num_entries(), 1);
+    assert_eq!(TreeReader::open(&f, "T").unwrap().entries(), 1);
 }

@@ -2,10 +2,10 @@
 //! its members — and for the classes they depend on — so that, written again,
 //! it still describes members of classes this crate knows nothing about.
 
-use oxiroot_io_core::streamer_gen::{Cls, any, base, basic};
+use oxiroot_io_core::raw::{StreamerInfo, write_named};
+use oxiroot_io_core::streamer_gen::{ClassDef, any, base, basic};
 use oxiroot_io_core::{
-    Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot, StreamerInfo,
-    WBuffer, WriteRoot, write_named,
+    Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot, WBuffer, WriteRoot,
 };
 
 /// An object of a class only this test knows: `MyEvent` (version 3), a `Named`
@@ -14,8 +14,8 @@ struct MyEvent {
     name: String,
 }
 
-fn my_hit() -> Cls<'static> {
-    Cls {
+fn my_hit() -> ClassDef<'static> {
+    ClassDef {
         name: "MyHit".into(),
         version: 1,
         checksum: 0x1111,
@@ -23,8 +23,8 @@ fn my_hit() -> Cls<'static> {
     }
 }
 
-fn my_event() -> Cls<'static> {
-    Cls {
+fn my_event() -> ClassDef<'static> {
+    ClassDef {
         name: "MyEvent".into(),
         version: 3,
         checksum: 0x3333,
@@ -57,7 +57,7 @@ impl WriteRoot for MyEvent {
         w.end_object(event);
         w.into_vec()
     }
-    fn streamer_classes(&self) -> Vec<Cls<'static>> {
+    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![my_hit(), my_event()]
     }
 }
@@ -157,7 +157,7 @@ fn two_versions_of_a_class_are_both_described() {
             w.end_object(hit);
             w.into_vec()
         }
-        fn streamer_classes(&self) -> Vec<Cls<'static>> {
+        fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
             let mut cls = my_hit();
             cls.version = self.0;
             vec![cls]

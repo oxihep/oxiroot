@@ -128,5 +128,5 @@ fn compacting_a_file_that_holds_a_tree_is_refused() {
     // The file is untouched: the tree still reads.
     let file = FileReader::open(&path).expect("reopen");
     let tree = TreeReader::open(&file, "T").expect("tree");
-    assert_eq!(tree.num_entries(), 3);
+    assert_eq!(tree.entries(), 3);
 }

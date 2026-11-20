@@ -33,6 +33,10 @@ pub enum Error {
     /// Building or saving a figure failed (the `plot` feature).
     #[cfg(feature = "plot")]
     Plot(oxiplot::Error),
+    /// A fit-side operation failed: a scan, a hypothesis test, a sampler or
+    /// a template model (the `fit` feature).
+    #[cfg(feature = "fit")]
+    Fit(oxifit::FitError),
 }
 
 /// The result type of the oxiroot API.
@@ -58,6 +62,8 @@ impl fmt::Display for Error {
             Error::Hist(e) => write!(f, "histogram: {e}"),
             #[cfg(feature = "plot")]
             Error::Plot(e) => write!(f, "plotting: {e}"),
+            #[cfg(feature = "fit")]
+            Error::Fit(e) => write!(f, "fitting: {e}"),
         }
     }
 }
@@ -71,6 +77,8 @@ impl std::error::Error for Error {
             Error::Hist(e) => Some(e),
             #[cfg(feature = "plot")]
             Error::Plot(e) => Some(e),
+            #[cfg(feature = "fit")]
+            Error::Fit(e) => Some(e),
         }
     }
 }
@@ -92,6 +100,8 @@ from!(
     Hist(oxihist::Error),
     #[cfg(feature = "plot")]
     Plot(oxiplot::Error),
+    #[cfg(feature = "fit")]
+    Fit(oxifit::FitError),
 );
 
 /// I/O errors (e.g. from `std::fs`) arrive as ROOT-side I/O errors.

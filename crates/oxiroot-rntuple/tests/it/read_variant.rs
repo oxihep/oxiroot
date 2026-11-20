@@ -18,7 +18,7 @@ fn open(name: &str) -> FileReader {
 fn reads_variant_field() {
     let file = open("rntuple_variant_uncompressed.root");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
-    assert_eq!(ntpl.num_entries(), 5);
+    assert_eq!(ntpl.entries(), 5);
 
     let v = ntpl.read_field(&file, "v").expect("read v");
 
