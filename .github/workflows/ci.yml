@@ -349,13 +349,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install actionlint
-        uses: taiki-e/install-action@v2
-        with:
-          tool: actionlint
-
       - name: Lint the workflows
-        run: actionlint
+        # The official image, with shellcheck for the `run:` scripts.
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
 
   spelling:
     name: spelling (typos)
