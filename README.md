@@ -1027,10 +1027,10 @@ Pre-1.0: the API may still change between minor versions. The full list,
 with what "done" means for each item, is in [ROADMAP.md](ROADMAP.md). In
 short:
 
-- **Next:** XRootD token and GSI authentication (needs TLS first), less
-  duplicated 1-D/2-D/3-D histogram code, and stricter lints. Batched remote
-  reads, hostile-server tests and the small items before them are done.
-- **Toward 1.0:** an API review, then publishing to crates.io.
+- **Next:** XRootD GSI (X.509 proxy) authentication. Token authentication
+  over TLS, the API review, shared histogram and profile code, cast lints and
+  a ROOT-confirmed RNTuple `std::map` write are done.
+- **Toward 1.0:** publishing to crates.io, once it is decided to.
 - **Far future:** an `RDataFrame`-style lazy analysis front-end.
 
 Out of scope:
