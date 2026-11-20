@@ -41,27 +41,28 @@ let g = FileReader::open("out.root")?;
 let p = Profile1D::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 ```
 
-## A TTree
+## A TTree or an RNTuple
+
+Columns go in a `Batch`; the format is one argument when writing and detected
+when reading (see [Datasets](../guide/datasets.md)).
 
 ```rust
-let branches = vec![
-    Branch::i32("n", vec![1, 2, 3]),
-    Branch::f64("pt", vec![10.5, 20.1, 33.7]),
-];
-Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
+let batch = Batch::new()
+    .column("n", vec![1_i32, 2, 3])?
+    .column("pt", vec![10.5_f64, 20.1, 33.7])?
+    .column("jets", vec![vec![30.0_f32], vec![], vec![55.0, 41.2]])?;
+let mut out = DatasetWriter::create("tree.root", "Events", Format::Tree)?; // or Format::Ntuple
+out.write(&batch)?;
+out.finish()?;
 
 let f = FileReader::open("tree.root")?;
-let t = TreeReader::open(&f, "Events")?;
-let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
-```
-
-## A columnar RNTuple
-
-```rust
-let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-
-let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.entries();
+let events = Dataset::open(&f, "Events")?;
+let back = events.read(["pt", "jets"])?;
+let pt: &[f64] = back.values("pt")?;
+let jets = back.jagged::<f32>("jets")?;
+for batch in events.batches(["pt"]) {          // cluster by cluster, for big files
+    let total: f64 = batch?.values::<f64>("pt")?.iter().sum();
+}
 ```
 
 ## Run the worked example

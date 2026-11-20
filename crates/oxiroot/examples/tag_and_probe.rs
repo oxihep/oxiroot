@@ -179,24 +179,19 @@ mod probes {
         let mut rng = Rng(7);
         let [pt, eta, mass, passed] = generate(&mut rng);
         let tree_path = dir.join("probes.root");
-        Tree::new(
-            "probes",
-            vec![
-                Branch::f64("pt", pt),
-                Branch::f64("abs_eta", eta),
-                Branch::f64("m_mumu", mass),
-                Branch::f64("passed", passed),
-            ],
-        )
-        .write_root(&tree_path, Compression::Zstd(5))?;
+        let probes = Batch::new()
+            .column("pt", pt)?
+            .column("abs_eta", eta)?
+            .column("m_mumu", mass)?
+            .column("passed", passed)?;
+        let mut out = DatasetWriter::create(&tree_path, "probes", Format::Tree)?;
+        out.write(&probes)?;
+        out.finish()?;
         let file = FileReader::open(&tree_path)?;
-        let tree = TreeReader::open(&file, "probes")?;
-        let column = |name: &str| -> oxiroot::Result<Vec<f64>> {
-            match tree.read_branch(&file, name)? {
-                BranchValues::F64(v) => Ok(v),
-                other => panic!("{name} is {:?}, not a double branch", other.leaf_type()),
-            }
-        };
+        let tree = Dataset::open(&file, "probes")?;
+        let data = tree.read(["pt", "abs_eta", "m_mumu", "passed"])?;
+        let column =
+            |name: &str| -> oxiroot::Result<Vec<f64>> { Ok(data.values::<f64>(name)?.to_vec()) };
         let (pt, eta, mass, passed) = (
             column("pt")?,
             column("abs_eta")?,

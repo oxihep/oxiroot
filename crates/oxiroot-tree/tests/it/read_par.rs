@@ -4,9 +4,9 @@
 //! silently).
 #![cfg(feature = "rayon")]
 
+use crate::support::write_tree_file_baskets;
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
-use crate::support::{write_tree_file_baskets};
 
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_tree::{Branch, TreeReader};
@@ -20,13 +20,20 @@ fn fixture(name: &str) -> FileReader {
     .expect("open fixture")
 }
 
-fn assert_par_matches_serial(f: &FileReader, t: &TreeReader) {
+fn assert_par_matches_serial(t: &TreeReader) {
     for name in t.branch_names() {
         let serial = t.branch(name).values();
-        assert_eq!(t.branch(name).parallel(true).values(), serial, "branch {name}");
+        assert_eq!(
+            t.branch(name).parallel(true).values(),
+            serial,
+            "branch {name}"
+        );
         let n = t.entries();
         assert_eq!(
-            t.branch(name).range(1..n.saturating_sub(1)).parallel(true).values(),
+            t.branch(name)
+                .range(1..n.saturating_sub(1))
+                .parallel(true)
+                .values(),
             t.branch(name).range(1..n.saturating_sub(1)).values(),
             "range of {name}"
         );
@@ -42,7 +49,7 @@ fn assert_par_matches_serial(f: &FileReader, t: &TreeReader) {
 fn parallel_reads_match_serial_on_a_root_written_tree() {
     let f = fixture("tree_multibasket.root");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    assert_par_matches_serial(&f, &t);
+    assert_par_matches_serial(&t);
 }
 
 #[test]
@@ -69,5 +76,5 @@ fn parallel_reads_match_serial_across_many_baskets() {
     let f = FileReader::open(&out).expect("open");
     let _ = std::fs::remove_file(&out);
     let t = TreeReader::open(&f, "T").expect("open tree");
-    assert_par_matches_serial(&f, &t);
+    assert_par_matches_serial(&t);
 }

@@ -49,7 +49,7 @@ fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) ->
     };
     let mut branches = Vec::new();
     for b in tree.branch_names() {
-        branches.push((b.to_string(), branch_type_label(&tree, file, b)));
+        branches.push((b.to_string(), branch_type_label(&tree, b)));
     }
     let unreadable: Vec<(String, String)> = tree
         .unsupported_branches()
@@ -157,7 +157,7 @@ fn named_type_array(items: &[(String, String)]) -> Json {
 /// The C++-ish type label of a branch: `double`, `double[3]` (fixed array),
 /// `double[]` (variable), `char*`, or a nested/vector form. Peeks at the first
 /// entry to tell a scalar from a collection when the title carries no shape.
-fn branch_type_label(tree: &TreeReader, file: &FileReader, name: &str) -> String {
+fn branch_type_label(tree: &TreeReader<'_>, name: &str) -> String {
     let elem = leaf_type_name(tree.branch_type(name).unwrap_or(LeafType::Str));
 
     let shape = tree.branch_shape(name).unwrap_or(&[]);
@@ -169,7 +169,7 @@ fn branch_type_label(tree: &TreeReader, file: &FileReader, name: &str) -> String
     if tree.entries() == 0 {
         return elem.to_string();
     }
-    match tree.read_branch_range(file, name, 0, 1) {
+    match tree.branch(name).range(0..1).values() {
         Ok(values) => values_label(elem, &values),
         Err(_) => elem.to_string(),
     }

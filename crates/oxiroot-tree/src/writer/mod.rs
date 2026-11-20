@@ -212,14 +212,6 @@ mod tests {
         })
     }
 
-    fn tree_file_bytes(
-        file_name: &str,
-        tree_name: &str,
-        branches: &[Branch],
-        compression: Compression,
-    ) -> Result<Vec<u8>> {
-        tree_bytes(file_name, tree_name, branches, compression, 0, KSTART_BIG_FILE)
-    }
     use crate::TreeReader;
     use oxiroot_io_core::FileReader;
     use std::io::Cursor;

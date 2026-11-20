@@ -1,9 +1,9 @@
 //! The typed errors a caller can match on when reading an RNTuple: a missing
 //! RNTuple, field or column, a key holding another class, and corrupt data.
 
+use crate::support::rntuple_file_bytes;
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
 use oxiroot_rntuple::{Field, NtupleReader};
-use crate::support::{rntuple_file_bytes};
 
 fn bytes() -> Vec<u8> {
     let fields = [Field::f64("x", vec![1.0, 2.0, 3.0])];

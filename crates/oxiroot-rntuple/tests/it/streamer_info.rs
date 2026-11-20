@@ -2,8 +2,8 @@
 //! class, plus each user class with plain-number members. The entries must be
 //! the ones ROOT wrote for the same classes in `rntuple_user_uncompressed.root`.
 
+use crate::support::NtupleObject;
 use std::path::PathBuf;
-use crate::support::{NtupleObject};
 
 use oxiroot_io_core::{Compression, FileReader, FileWriter, StreamerRegistry};
 use oxiroot_rntuple::{Column, Field, NtupleWriter};
@@ -88,7 +88,10 @@ fn classes_with_other_members_are_not_described() {
     let bytes = FileWriter::create("t.root")
         .put(NtupleObject::new("a", vec![Field::new("t", tagged)]))
         .dir("d", |d| {
-            d.put(NtupleObject::new("b", vec![Field::new("hit", hit(vec![3]))]))
+            d.put(NtupleObject::new(
+                "b",
+                vec![Field::new("hit", hit(vec![3]))],
+            ))
         })
         .to_bytes(Compression::None)
         .unwrap();

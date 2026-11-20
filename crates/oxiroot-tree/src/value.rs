@@ -267,8 +267,8 @@ impl BranchValues {
         use BranchValues::*;
         match self {
             Nested { .. } => format!("Vec<Vec<{elem}>>"),
-            VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_)
-            | VecU32(_) | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) | VecStr(_) => {
+            VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
+            | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) | VecStr(_) => {
                 format!("Vec<{elem}>")
             }
             _ => elem.to_string(),
@@ -360,7 +360,7 @@ impl BranchValues {
     ///
     /// Both columns must be the same variant (same element type and nesting);
     /// otherwise an error is returned. This is the per-branch building block for
-    /// concatenating trees (see [`concat_trees`](crate::concat_trees)). For a
+    /// concatenating trees, as a chain does. For a
     /// [`Nested`](BranchValues::Nested) column the inner `items` are appended and
     /// the `offsets` rebased so the two entry ranges join seamlessly.
     pub fn append(&mut self, other: BranchValues) -> Result<()> {

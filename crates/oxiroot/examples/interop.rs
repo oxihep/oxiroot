@@ -33,7 +33,13 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::Path;
 use std::process::exit;
 
+use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
 use oxiroot::prelude::*;
+use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader};
+
+#[path = "support/whole_file.rs"]
+mod whole_file;
+use whole_file::{write_rntuple_file, write_tree_file};
 
 /// In-range bin contents of the canonical histogram.
 const HIST_BINS: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
@@ -196,8 +202,8 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         &[
             Branch::i32("ti", NTPL_X.to_vec()),
             Branch::f64("tf", NTPL_Y.to_vec()),
-            Branch::vec_f64("tv", TREE_TV.iter().map(|r| r.to_vec()).collect()),
-            Branch::strings("ts", TREE_TS.iter().map(|s| s.to_string()).collect()),
+            Branch::array_f64("tv", TREE_TV.iter().map(|r| r.to_vec()).collect()),
+            Branch::string("ts", TREE_TS.iter().map(|s| s.to_string()).collect()),
             Branch::jagged_f64("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()),
             Branch::vector_f64("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
             Branch::split_vector(
@@ -291,11 +297,11 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     }
     let f = FileReader::open(ntuple_path)?;
     let ntpl = NtupleReader::open(&f, "ntpl")?;
-    match ntpl.read_field(&f, "x")? {
+    match ntpl.field("x").values()? {
         FieldValues::I32(v) => assert_eq_or_die("ntuple x", &v, &NTPL_X),
         other => die(&format!("ntuple x: expected I32, got {other:?}")),
     }
-    match ntpl.read_field(&f, "y")? {
+    match ntpl.field("y").values()? {
         FieldValues::F64(v) => assert_close("ntuple y", &v, &NTPL_Y),
         other => die(&format!("ntuple y: expected F64, got {other:?}")),
     }
@@ -306,15 +312,15 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
 fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
     let f = FileReader::open(dir.join("oracle_tree.root"))?;
     let t = TreeReader::open(&f, "otree")?;
-    match t.read_branch(&f, "oi")? {
+    match t.branch("oi").values()? {
         BranchValues::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
         other => die(&format!("otree oi: expected I32, got {other:?}")),
     }
-    match t.read_branch(&f, "oj")? {
+    match t.branch("oj").values()? {
         BranchValues::VecF64(v) => assert_nested("otree oj", &v, &OTREE_OJ),
         other => die(&format!("otree oj: expected VecF64, got {other:?}")),
     }
-    match t.read_branch(&f, "os")? {
+    match t.branch("os").values()? {
         BranchValues::Str(v) => {
             let got: Vec<&str> = v.iter().map(String::as_str).collect();
             assert_eq_or_die("otree os", &got, &OTREE_OS);
@@ -323,7 +329,7 @@ fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
     }
     // The std::vector<double> branch is written only by the ROOT C++ oracle.
     if t.branch_names().contains(&"ov") {
-        match t.read_branch(&f, "ov")? {
+        match t.branch("ov").values()? {
             BranchValues::VecF64(v) => assert_nested("otree ov", &v, &OTREE_OV),
             other => die(&format!("otree ov: expected VecF64, got {other:?}")),
         }

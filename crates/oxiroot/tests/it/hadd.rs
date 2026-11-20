@@ -1,6 +1,9 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
+use crate::support::{NtupleObject, TreeObject};
 use oxiroot::hadd::{MergeKind, Merger, merge_files};
+use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
 use oxiroot::prelude::*;
+use oxiroot::tree::{Branch, BranchValues, TreeReader};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -44,10 +47,10 @@ fn sums_histograms_and_copies_other_objects() {
 
 #[test]
 fn concatenates_tree_files() {
-    Tree::new("Events", vec![Branch::i32("i", vec![0, 1])])
+    TreeObject::new("Events", vec![Branch::i32("i", vec![0, 1])])
         .write_root(tmp("tree_a"), Compression::None)
         .unwrap();
-    Tree::new("Events", vec![Branch::i32("i", vec![2, 3, 4])])
+    TreeObject::new("Events", vec![Branch::i32("i", vec![2, 3, 4])])
         .write_root(tmp("tree_b"), Compression::None)
         .unwrap();
 
@@ -66,17 +69,17 @@ fn concatenates_tree_files() {
     let t = TreeReader::open(&fo, "Events").unwrap();
     assert_eq!(t.entries(), 5);
     assert_eq!(
-        t.read_branch(&fo, "i").unwrap(),
+        t.branch("i").values().unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])
     );
 }
 
 #[test]
 fn concatenates_rntuple_files() {
-    Ntuple::new("ntpl", vec![Field::f64("x", vec![0.0, 1.0])])
+    NtupleObject::new("ntpl", vec![Field::f64("x", vec![0.0, 1.0])])
         .write_root(tmp("rn_a"), Compression::None)
         .unwrap();
-    Ntuple::new("ntpl", vec![Field::f64("x", vec![2.0, 3.0, 4.0])])
+    NtupleObject::new("ntpl", vec![Field::f64("x", vec![2.0, 3.0, 4.0])])
         .write_root(tmp("rn_b"), Compression::None)
         .unwrap();
 
@@ -90,14 +93,14 @@ fn concatenates_rntuple_files() {
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
     assert_eq!(nt.entries(), 5);
     assert_eq!(
-        nt.read_field(&fo, "x").unwrap(),
+        nt.field("x").values().unwrap(),
         FieldValues::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0])
     );
 }
 
 #[test]
 fn refuses_a_fileset_mixing_a_tree_with_histograms() {
-    Tree::new("Events", vec![Branch::i32("i", vec![0, 1])])
+    TreeObject::new("Events", vec![Branch::i32("i", vec![0, 1])])
         .write_root(tmp("mix_tree"), Compression::None)
         .unwrap();
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
@@ -117,7 +120,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
         .map(|k| {
             let path = tmp(&format!("stream_tree_{k}"));
             let n = k + 1;
-            Tree::new(
+            TreeObject::new(
                 "Events",
                 vec![
                     Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
@@ -127,7 +130,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
                             .map(|x| vec![x as f32; usize::saturating_from(x)])
                             .collect(),
                     ),
-                    Branch::strings("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
+                    Branch::string("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
                     Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
                 ],
             )
@@ -144,11 +147,11 @@ fn a_tree_merge_streams_one_batch_per_input() {
     let fo = FileReader::open(&out).unwrap();
     let t = TreeReader::open(&fo, "Events").unwrap();
     assert_eq!(
-        t.read_branch(&fo, "i").unwrap(),
+        t.branch("i").values().unwrap(),
         BranchValues::I32(vec![0, 10, 11, 20, 21, 22])
     );
     assert_eq!(
-        t.read_branch(&fo, "hits").unwrap(),
+        t.branch("hits").values().unwrap(),
         BranchValues::VecF32(vec![
             vec![],
             vec![],
@@ -159,7 +162,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
         ])
     );
     assert_eq!(
-        t.read_branch(&fo, "tag").unwrap(),
+        t.branch("tag").values().unwrap(),
         BranchValues::Str(
             ["t00", "t10", "t11", "t20", "t21", "t22"]
                 .map(String::from)
@@ -167,7 +170,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
         )
     );
     assert_eq!(
-        t.read_branch(&fo, "vec").unwrap(),
+        t.branch("vec").values().unwrap(),
         BranchValues::VecF64(vec![
             vec![0.0; 2],
             vec![0.0; 2],
@@ -184,11 +187,11 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
     let inputs: Vec<_> = (0..3)
         .map(|k| {
             let path = tmp(&format!("stream_rn_{k}"));
-            Ntuple::new(
+            NtupleObject::new(
                 "ntpl",
                 vec![
                     Field::i64("id", vec![k, k + 100]),
-                    Field::strings("s", vec![format!("a{k}"), format!("b{k}")]),
+                    Field::string("s", vec![format!("a{k}"), format!("b{k}")]),
                 ],
             )
             .write_root(&path, Compression::None)
@@ -204,11 +207,11 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
     assert_eq!(nt.footer().cluster_groups[0].num_clusters, 3);
     assert_eq!(
-        nt.read_field(&fo, "id").unwrap(),
+        nt.field("id").values().unwrap(),
         FieldValues::I64(vec![0, 100, 1, 101, 2, 102])
     );
     assert_eq!(
-        nt.read_field(&fo, "s").unwrap(),
+        nt.field("s").values().unwrap(),
         FieldValues::Str(
             ["a0", "b0", "a1", "b1", "a2", "b2"]
                 .map(String::from)
@@ -220,7 +223,7 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
 #[test]
 fn empty_inputs_merge_to_an_empty_tree() {
     for k in 0..2 {
-        Tree::new("T", vec![Branch::f64("x", vec![])])
+        TreeObject::new("T", vec![Branch::f64("x", vec![])])
             .write_root(tmp(&format!("empty_tree_{k}")), Compression::None)
             .unwrap();
     }
@@ -239,7 +242,7 @@ fn empty_inputs_merge_to_an_empty_tree() {
 #[test]
 fn the_output_cannot_be_an_input() {
     let path = tmp("self_merge");
-    Tree::new("T", vec![Branch::i32("x", vec![1])])
+    TreeObject::new("T", vec![Branch::i32("x", vec![1])])
         .write_root(&path, Compression::None)
         .unwrap();
     let err = merge_files(&path, &[&path], Compression::None).unwrap_err();

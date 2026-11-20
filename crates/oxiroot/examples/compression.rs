@@ -48,18 +48,11 @@ fn main() -> oxiroot::Result<()> {
         id.push((rng.uniform() * 8.0) as i32); // 0..7
     }
 
-    // Assemble the tree once; each codec re-writes these same branches. A `Tree`
-    // holds its columns, so we clone the source vectors per write.
-    let make_tree = || {
-        Tree::new(
-            "Events",
-            vec![
-                Branch::f64("energy", energy.clone()),
-                Branch::i32("index", index.clone()),
-                Branch::i32("id", id.clone()),
-            ],
-        )
-    };
+    // Assemble the batch once; each codec re-writes these same columns.
+    let batch = Batch::new()
+        .column("energy", energy.clone())?
+        .column("index", index.clone())?
+        .column("id", id)?;
 
     // --- Write the same tree once per codec, recording the file size. ----------
     // Every entry is `(label, Compression)`; the writer maps each to ROOT's
@@ -78,7 +71,9 @@ fn main() -> oxiroot::Result<()> {
     for (label, comp) in codecs {
         // A distinct temp file per codec, all removed before we return.
         let path = dir.join(format!("oxiroot_ex_compression_{}.root", comp.setting()));
-        make_tree().write_root(&path, comp)?;
+        let mut out = DatasetWriter::create(&path, "Events", Format::Tree)?.compression(comp);
+        out.write(&batch)?;
+        out.finish()?;
         let bytes = std::fs::metadata(&path)?.len();
         sizes.push(bytes);
         paths.push(path);
@@ -115,19 +110,16 @@ fn main() -> oxiroot::Result<()> {
     // vectors we wrote. If decompression altered a single bit, an assert fires.
     let (zstd_label, zstd_path) = (codecs[2].0, &paths[2]);
     let f = FileReader::open(zstd_path)?;
-    let tree = TreeReader::open(&f, "Events")?;
+    let tree = Dataset::open(&f, "Events")?;
     assert_eq!(
         usize::saturating_from(tree.entries()),
         n,
         "entry count survived the round-trip"
     );
 
-    let BranchValues::F64(energy_back) = tree.read_branch(&f, "energy")? else {
-        panic!("`energy` should read back as an f64 branch");
-    };
-    let BranchValues::I32(index_back) = tree.read_branch(&f, "index")? else {
-        panic!("`index` should read back as an i32 branch");
-    };
+    let back = tree.read(["energy", "index"])?;
+    let energy_back = back.values::<f64>("energy")?;
+    let index_back = back.values::<i32>("index")?;
     assert_eq!(
         energy_back, energy,
         "f64 values identical after {zstd_label}"

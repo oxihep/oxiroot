@@ -4,9 +4,9 @@
 //! `std::atomic<T>` is stored as the bare `T`. Round-tripped here; the written
 //! files are also read by ROOT C++ (`RNTupleReader`) and uproot.
 
+use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_rntuple::{Field, FieldValues, NtupleReader};
-use crate::support::{NtupleObject};
 
 fn write(path: &str, compression: Compression) {
     NtupleObject::new(

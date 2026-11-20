@@ -3,8 +3,11 @@
 //! exercise sampling and the `hadd` merge — one flow per subsystem, so a
 //! regression anywhere (writer, reader, or a feature added on top) surfaces here.
 
+use crate::support::{NtupleObject, TreeObject};
 use oxiroot::hadd::merge_files;
+use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
 use oxiroot::prelude::*;
+use oxiroot::tree::{Branch, BranchValues, TreeReader};
 
 fn tmp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("oxiroot_e2e_{name}.root"))
@@ -77,12 +80,12 @@ fn writes_and_reads_a_mixed_object_file() {
 
 #[test]
 fn tree_round_trips_through_the_facade() {
-    Tree::new(
+    TreeObject::new(
         "Events",
         vec![
             Branch::i32("i", vec![1, 2, 3]),
             Branch::f64("x", vec![1.5, 2.5, 3.5]),
-            Branch::strings("s", vec!["a".into(), "b".into(), "c".into()]),
+            Branch::string("s", vec!["a".into(), "b".into(), "c".into()]),
             Branch::jagged_f64("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]),
         ],
     )
@@ -93,27 +96,27 @@ fn tree_round_trips_through_the_facade() {
     let t = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(t.entries(), 3);
     assert_eq!(
-        t.read_branch(&f, "i").unwrap(),
+        t.branch("i").values().unwrap(),
         BranchValues::I32(vec![1, 2, 3])
     );
     assert_eq!(
-        t.read_branch(&f, "s").unwrap(),
+        t.branch("s").values().unwrap(),
         BranchValues::Str(vec!["a".into(), "b".into(), "c".into()])
     );
     assert_eq!(
-        t.read_branch(&f, "v").unwrap(),
+        t.branch("v").values().unwrap(),
         BranchValues::VecF64(vec![vec![1.0], vec![], vec![2.0, 3.0]])
     );
 }
 
 #[test]
 fn rntuple_round_trips_through_the_facade() {
-    Ntuple::new(
+    NtupleObject::new(
         "ntpl",
         vec![
             Field::f64("mass", vec![91.2, 125.0]),
-            Field::vec_i32("hits", vec![vec![1, 2], vec![3]]),
-            Field::strings("tag", vec!["z".into(), "h".into()]),
+            Field::vector_i32("hits", vec![vec![1, 2], vec![3]]),
+            Field::string("tag", vec!["z".into(), "h".into()]),
         ],
     )
     .write_root(tmp("rn"), Compression::Zstd(5))
@@ -123,11 +126,11 @@ fn rntuple_round_trips_through_the_facade() {
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(nt.entries(), 2);
     assert_eq!(
-        nt.read_field(&f, "mass").unwrap(),
+        nt.field("mass").values().unwrap(),
         FieldValues::F64(vec![91.2, 125.0])
     );
     assert_eq!(
-        nt.read_field(&f, "hits").unwrap(),
+        nt.field("hits").values().unwrap(),
         FieldValues::VecI32(vec![vec![1, 2], vec![3]])
     );
 }

@@ -291,10 +291,7 @@ impl Batch {
         for ((name, col), more) in self.names.iter().zip(&mut self.columns).zip(other.columns) {
             let found = more.type_name();
             col.append(more).map_err(|_| Error::SchemaChanged {
-                detail: format!(
-                    "column {name:?} is {}, not {found}",
-                    col.type_name()
-                ),
+                detail: format!("column {name:?} is {}, not {found}", col.type_name()),
             })?;
         }
         self.entries += other.entries;
@@ -313,5 +310,4 @@ impl Batch {
     pub fn byte_size(&self) -> usize {
         self.columns.iter().map(Column::byte_size).sum()
     }
-
 }

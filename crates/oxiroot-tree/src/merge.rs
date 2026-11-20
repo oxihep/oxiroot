@@ -25,10 +25,13 @@ impl BranchRead<'_, '_> {
     /// [`Error::Unsupported`].
     pub fn to_branch(self) -> Result<Branch> {
         let name = self.name();
-        let meta = self.tree().branch_meta(name).ok_or_else(|| Error::NotFound {
-            what: "branch",
-            name: name.to_string(),
-        })?;
+        let meta = self
+            .tree()
+            .branch_meta(name)
+            .ok_or_else(|| Error::NotFound {
+                what: "branch",
+                name: name.to_string(),
+            })?;
         build_branch(name, &meta, self.values()?)
     }
 }

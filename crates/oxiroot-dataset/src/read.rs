@@ -64,9 +64,12 @@ impl<'f> Dataset<'f> {
             })?
             .class_name
             .clone();
-        Self::open_class(&class, name, || TreeReader::open(file, name), || {
-            NtupleReader::open(file, name)
-        })
+        Self::open_class(
+            &class,
+            name,
+            || TreeReader::open(file, name),
+            || NtupleReader::open(file, name),
+        )
     }
 
     /// Open the `TTree` or RNTuple named `name` in subdirectory `subdir` (a
@@ -171,7 +174,10 @@ impl<'f> Dataset<'f> {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let names: Vec<String> = columns.into_iter().map(|s| s.as_ref().to_string()).collect();
+        let names: Vec<String> = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
         self.read_window(&names, 0..self.entries(), false)
     }
 
@@ -186,7 +192,10 @@ impl<'f> Dataset<'f> {
     {
         Batches {
             dataset: self,
-            columns: columns.into_iter().map(|s| s.as_ref().to_string()).collect(),
+            columns: columns
+                .into_iter()
+                .map(|s| s.as_ref().to_string())
+                .collect(),
             step: 0,
             range: 0..self.entries(),
             parallel: false,
@@ -207,7 +216,10 @@ impl<'f> Dataset<'f> {
                     let b = t.basket_boundaries(name)?;
                     common = Some(match common {
                         None => b,
-                        Some(c) => c.into_iter().filter(|x| b.binary_search(x).is_ok()).collect(),
+                        Some(c) => c
+                            .into_iter()
+                            .filter(|x| b.binary_search(x).is_ok())
+                            .collect(),
                     });
                 }
                 Ok(common.unwrap_or_else(|| vec![0, t.entries()]))
@@ -322,7 +334,12 @@ impl Iterator for Batches<'_, '_> {
 
 /// Read one tree branch's window as a flat column: straight to offsets and
 /// values where the layout allows, through [`BranchValues`] otherwise.
-fn tree_column(t: &TreeReader<'_>, name: &str, range: Range<u64>, parallel: bool) -> Result<Column> {
+fn tree_column(
+    t: &TreeReader<'_>,
+    name: &str,
+    range: Range<u64>,
+    parallel: bool,
+) -> Result<Column> {
     let layout = t.branch_layout(name).ok_or_else(|| Error::NotFound {
         what: "column",
         name: name.to_string(),
@@ -426,7 +443,11 @@ fn ntuple_column(n: &NtupleReader<'_>, name: &str, range: Range<u64>) -> Result<
         .1
         .array_size;
     if let Some(len) = array_size {
-        return array_of(field_column(name, field().values()?)?, usize::saturating_from(len), name);
+        return array_of(
+            field_column(name, field().values()?)?,
+            usize::saturating_from(len),
+            name,
+        );
     }
     match field().flat() {
         Ok(j) => Ok(Column::List {

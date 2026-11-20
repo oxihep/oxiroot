@@ -7,6 +7,71 @@ change the API.
 
 ## [Unreleased]
 
+One API to read and write `TTree` and RNTuple (breaking).
+
+### Added
+
+- **`oxiroot::data` (the new `oxiroot-dataset` crate): one way to read and
+  write both columnar formats.** A `Batch` of named, flat, Arrow-style columns
+  is what `Dataset` reads and `DatasetWriter` writes. The format is detected
+  when reading and is one argument (`Format::Tree` / `Format::Ntuple`) when
+  writing.
+  - `Dataset::open` / `open_in`; `read(columns)` returns one batch, and
+    `batches(columns)` iterates one cluster at a time, with `.step(n)`,
+    `.range(a..b)` and, with `rayon`, `.parallel(true)`.
+  - `DatasetWriter::create` / `new` buffers batches and closes a cluster
+    every ~32 MiB of values (`.cluster_bytes`, `.compression`, `.large`).
+  - `DatasetObject` places a dataset in a `FileWriter` next to other
+    objects.
+  - Typed views: `values::<T>` (slices, no copy), `jagged::<T>`, `arrays::<T>`,
+    `strings`. `filter`, `slice`, `select` and `append` work on whole batches.
+  - Reads are strict, and a column a format cannot hold is refused before
+    anything is written.
+  - `Dataset::read` is as fast as the fastest low-level read (`flat()`) for
+    `std::vector` columns, 12–16 % faster than `values()`, and equal for
+    scalars (Criterion `read` bench).
+- **A read builder on the low-level readers**, which now hold their file:
+  - `TreeReader::branch(name)` and `NtupleReader::field(name)`, with
+    `.range(a..b)`, `.parallel(true)` (TTree, `rayon`), then `.read::<T>()`
+    (typed; `Error::TypeMismatch` on the wrong type), `.values()`, `.flat()`
+    (`std::vector` fields too, for RNTuple), or `.to_branch()` / `.to_field()`
+    (the read → write round trip);
+  - RNTuple gains entry-range reads over any cluster window, and
+    `FieldValues::skip`.
+- `TreeReader::branch_layout` (`BranchLayout`), `TreeReader::basket_boundaries`
+  and `NtupleReader::cluster_boundaries`; `ChainReader::branch`.
+- `Error::TypeMismatch`; `tree::raw::write_tree` and `ntuple::raw::write_ntuple`
+  write a whole tree or RNTuple (split branches, schema extension) into an open
+  container; `TreeWriter`/`NtupleWriter` both have `entries() -> u64` and
+  `finish() -> W`.
+
+### Removed
+
+- The old high-level writers and readers, replaced by `oxiroot::data`:
+  - `Tree`, `Ntuple`, `write_tree_file`, `write_tree_file_baskets`,
+    `tree_file_bytes`, `write_rntuple_file`, `rntuple_file_bytes`;
+  - `concat_trees` and `concat_ntuples` (the streaming `append_*` remain);
+  - `TreeReader::read_branch`, `read_branch_range`, `read_branch_flat` and
+    their `_par` forms;
+  - `NtupleReader::read_field` and `read_field_prefix`.
+- The prelude now exports the dataset API (`Batch`, `Dataset`,
+  `DatasetWriter`, `DatasetObject`, `Format`) instead of the `TTree` and
+  RNTuple types, which stay under `oxiroot::tree` and `oxiroot::ntuple`.
+
+### Changed
+
+- **One naming scheme for the format writers.**
+  - TTree fixed arrays are `Branch::array_*` (were `vec_*`).
+  - RNTuple `std::vector`s are `Field::vector_*` and `vector_vector_*` (were
+    `vec_*`, `vec_vec_*`), and `Field::set_str` is `Field::set_string`.
+  - `bools` / `strings` are `bool` / `string` on both.
+  - `Branch::name` and `Field::name` / `data` are private, with accessors.
+- `TreeReader`, `NtupleReader` and `ChainReader` take the file once, at
+  `open`. `TreeReader::join_by_index` takes only the friend tree, and
+  `NtupleReader::read_column` only the column index.
+- `TreeWriter::entries` returns `u64`; `NtupleWriter::finish` returns the sink.
+- `append_trees` / `append_ntuples` take the readers alone.
+
 ## [0.6.1] — 2026-11-20
 
 XRootD over TLS with token authentication, a ROOT-confirmed RNTuple

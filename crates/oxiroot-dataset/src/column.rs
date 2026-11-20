@@ -265,7 +265,11 @@ impl Column {
     /// have one value per entry.
     pub(crate) fn filter(&self, mask: &[bool]) -> Column {
         fn keep<T: Copy>(v: &[T], mask: &[bool]) -> Vec<T> {
-            v.iter().zip(mask).filter(|&(_, &m)| m).map(|(&x, _)| x).collect()
+            v.iter()
+                .zip(mask)
+                .filter(|&(_, &m)| m)
+                .map(|(&x, _)| x)
+                .collect()
         }
         map_scalar!(self, v => keep(v, mask), other => match other {
             Column::String { offsets, bytes } => {
@@ -339,10 +343,22 @@ impl Column {
                 values.append(*v2)?;
                 rebase(offsets, &o2);
             }
-            (Column::Array { len, values }, Column::Array { len: l2, values: v2 }) if *len == l2 => {
+            (
+                Column::Array { len, values },
+                Column::Array {
+                    len: l2,
+                    values: v2,
+                },
+            ) if *len == l2 => {
                 values.append(*v2)?;
             }
-            (Column::Optional { valid, values }, Column::Optional { valid: m2, values: v2 }) => {
+            (
+                Column::Optional { valid, values },
+                Column::Optional {
+                    valid: m2,
+                    values: v2,
+                },
+            ) => {
                 values.append(*v2)?;
                 valid.extend(m2);
             }

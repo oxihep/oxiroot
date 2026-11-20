@@ -2,9 +2,9 @@
 //! different lengths, and composite fields whose parts disagree — instead of
 //! writing a file whose columns do not match its entry count.
 
+use crate::support::write_rntuple_file;
 use oxiroot_io_core::{Compression, Error, FileReader};
 use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
-use crate::support::{write_rntuple_file};
 
 fn write(fields: &[Field]) -> oxiroot_io_core::Result<()> {
     let path = std::env::temp_dir().join("oxiroot_rntuple_length_checks.root");

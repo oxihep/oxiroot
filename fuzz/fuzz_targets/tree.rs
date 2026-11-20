@@ -22,9 +22,9 @@ fuzz_target!(|data: &[u8]| {
             .map(str::to_string)
             .collect();
         for b in &branches {
-            let _ = t.read_branch(&f, b);
-            let _ = t.read_branch_flat(&f, b);
-            let _ = t.read_branch_range(&f, b, 1, 3);
+            let _ = t.branch(b).values();
+            let _ = t.branch(b).flat();
+            let _ = t.branch(b).range(1..3).values();
         }
     }
 });

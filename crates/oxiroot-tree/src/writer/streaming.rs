@@ -73,7 +73,7 @@ struct StreamCol {
 /// Every batch must share the first batch's schema: branch names, element
 /// types, the jagged / `std::vector` flags, and fixed-array widths. Split
 /// `std::vector<Struct>` branches are not supported here — use
-/// [`write_tree_file`](super::write_tree_file) for those.
+/// [`raw::write_tree`](super::raw::write_tree) for those.
 ///
 /// ```no_run
 /// use oxiroot_io_core::Compression;
@@ -195,7 +195,7 @@ impl<W: Write + Seek> TreeWriter<W> {
             if b.split().is_some() {
                 return Err(Error::Unsupported(format!(
                     "branch {:?}: TreeWriter does not support split std::vector<Struct> branches; \
-                     use write_tree_file for those",
+                     use oxiroot_tree::raw::write_tree for those",
                     b.name
                 )));
             }

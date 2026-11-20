@@ -302,7 +302,13 @@ impl<'f> TreeReader<'f> {
 
         let payload = file.key_payload(key)?;
         let object = decompress_payload(&payload, key.obj_len as usize, "TTree")?;
-        let mut tree = read_tree(file, &object, key.key_len as usize, &registry, &key.class_name)?;
+        let mut tree = read_tree(
+            file,
+            &object,
+            key.key_len as usize,
+            &registry,
+            &key.class_name,
+        )?;
         tree.streamer_classes = registry
             .infos()
             .iter()
@@ -456,7 +462,11 @@ impl<'f> TreeReader<'f> {
                 // A `TLeafC`'s fLen is its longest string, not an array length.
                 BranchLayout::Scalar
             } else if b.leaf_len > 1 || !b.dims.is_empty() {
-                let n = b.dims.iter().product::<usize>().max(usize::saturating_from(b.leaf_len));
+                let n = b
+                    .dims
+                    .iter()
+                    .product::<usize>()
+                    .max(usize::saturating_from(b.leaf_len));
                 BranchLayout::Array(n)
             } else {
                 BranchLayout::Scalar
@@ -563,7 +573,12 @@ impl<'f> TreeReader<'f> {
 
     /// The baskets of `branch` overlapping entries `[start, stop)` (clamped to
     /// the entry count), and the first entry the first of them holds.
-    fn select_baskets(&self, branch: &Branch, start: u64, stop: u64) -> (Vec<usize>, u64, u64, u64) {
+    fn select_baskets(
+        &self,
+        branch: &Branch,
+        start: u64,
+        stop: u64,
+    ) -> (Vec<usize>, u64, u64, u64) {
         let stop = stop.min(self.entries);
         let start = start.min(stop);
 
@@ -600,13 +615,21 @@ impl<'f> TreeReader<'f> {
         (indices, first_entry, start, stop)
     }
 
-    fn read_values(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<BranchValues> {
+    fn read_values(
+        &self,
+        name: &str,
+        range: Option<Range<u64>>,
+        decode: Decode,
+    ) -> Result<BranchValues> {
         let branch = self.require_branch(name)?;
+        // A window covering every entry is the whole branch: skip the slicing.
+        let range = range.filter(|r| r.start > 0 || r.end < self.entries);
         let Some(range) = range else {
             let baskets = read_baskets(self.file, branch, 0..branch.n_baskets, decode)?;
             return decode_baskets(branch, &baskets);
         };
-        let (indices, first_entry, start, stop) = self.select_baskets(branch, range.start, range.end);
+        let (indices, first_entry, start, stop) =
+            self.select_baskets(branch, range.start, range.end);
         let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
         let values = decode_baskets(branch, &baskets)?;
         // `values` covers [first_entry, ..); slice out [start, stop).
@@ -627,6 +650,7 @@ impl<'f> TreeReader<'f> {
                 "branch {name:?} has no flat form; use values()"
             )));
         }
+        let range = range.filter(|r| r.start > 0 || r.end < self.entries);
         let (indices, first_entry, start, stop) = match range {
             Some(r) => self.select_baskets(branch, r.start, r.end),
             None => ((0..branch.n_baskets).collect(), 0, 0, self.entries),
@@ -703,7 +727,11 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     /// Decompress the baskets in parallel on rayon's global thread pool.
     #[cfg(feature = "rayon")]
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.decode = if parallel { Decode::Parallel } else { Decode::Serial };
+        self.decode = if parallel {
+            Decode::Parallel
+        } else {
+            Decode::Serial
+        };
         self
     }
 

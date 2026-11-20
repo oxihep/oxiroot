@@ -4,9 +4,9 @@
 //! `Hit` class) and uproot, which both read the oxiroot-written file — ROOT's
 //! strict reader accepts the computed `Hit` class checksum.
 
+use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
-use crate::support::NtupleObject;
 
 fn write_and_reopen(tag: &str, fields: Vec<Field>) -> FileReader {
     let nt = NtupleObject::new("ntpl", fields);

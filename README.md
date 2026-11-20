@@ -70,6 +70,10 @@ None of them is on crates.io yet; depend on them from GitHub (see
   `Func1D` turns into a fit `Model`.
 - ⚛️ **Particle data** (`oxiroot::particle`) — [oxiparticle](https://github.com/oxihep/oxiparticle),
   re-exported: PDG ID decoding and a bundled particle table.
+- 📊 **Datasets** (`oxiroot::data`) — one API to read and write `TTree` and
+  RNTuple: a `Batch` of flat, Arrow-style columns is what `Dataset` reads and
+  `DatasetWriter` writes, whatever the format. Typed slices with no copies,
+  cluster-by-cluster iteration, strict types, and skims with no per-type code.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -85,7 +89,7 @@ None of them is on crates.io yet; depend on them from GitHub (see
   fields, compressed, multi-cluster via a streaming writer, **several RNTuples per
   file / inside a `TDirectory`**, and **schema late extensions** (read and write
   fields added via the footer's schema-extension record). A **bounded prefix
-  read** (`NtupleReader::read_field_prefix(name, n)`) decodes only the clusters
+  read** (`ntuple.field(name).range(0..n)`) decodes only the clusters
   covering the first *n* entries, so previewing a huge file (`oxroot dump -n 10`)
   never touches the whole field.
 - 🗜 **Compression** — decode *and* encode Zstd / zlib / LZ4 / LZMA — all pure
@@ -156,27 +160,29 @@ FileWriter::create("out.root")
 let g = FileReader::open("out.root")?;
 let p = Profile1D::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
 
-// Write a TTree, then read a branch back.
-let branches = vec![
-    Branch::i32("n", vec![1, 2, 3]),
-    Branch::f64("pt", vec![10.5, 20.1, 33.7]),
-];
-Tree::new("Events", branches).write_root("tree.root", Compression::None)?;
+// Write a TTree (or, with Format::Ntuple, an RNTuple), then read it back.
+let batch = Batch::new()
+    .column("n", vec![1_i32, 2, 3])?
+    .column("pt", vec![10.5_f64, 20.1, 33.7])?
+    .column("jets", vec![vec![30.0_f32], vec![], vec![55.0, 41.2]])?;
+let mut out = DatasetWriter::create("tree.root", "Events", Format::Tree)?;
+out.write(&batch)?;
+out.finish()?;
 let f = FileReader::open("tree.root")?;
-let t = TreeReader::open(&f, "Events")?;
-let BranchValues::F64(pt) = t.read_branch(&f, "pt")? else { panic!() };
-
-// Write a columnar RNTuple, then read it back.
-let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-let n = NtupleReader::open(&FileReader::open("data.root")?, "events")?.entries();
+let events = Dataset::open(&f, "Events")?;               // the format is detected
+let back = events.read(["pt", "jets"])?;
+let pt: &[f64] = back.values("pt")?;                      // a slice, no copy
+let jets = back.jagged::<f32>("jets")?;                   // offsets + flat values
+for batch in events.batches(["pt"]) {                     // cluster by cluster
+    let total: f64 = batch?.values::<f64>("pt")?.iter().sum();
+}
 ```
 
 Types are named as Rust, not as C++: no `T` prefix. Readers end in `Reader`
 (`FileReader`, `TreeReader`, `NtupleReader`, `ChainReader`) and writers in
-`Writer` (`FileWriter`, `TreeWriter`, `NtupleWriter`); the rest is in-memory
-data named for what it is — `Hist1D`, `Profile1D`, `Graph`, `Func1D`, `Axis`,
-`Matrix`. **Every ROOT class name is a doc alias of the type that models it**,
+`Writer` (`FileWriter`, `DatasetWriter`, `TreeWriter`, `NtupleWriter`); the rest
+is in-memory data named for what it is — `Hist1D`, `Profile1D`, `Graph`,
+`Func1D`, `Axis`, `Matrix`, `Batch`. **Every ROOT class name is a doc alias of the type that models it**,
 so searching the API docs for `TH1`, `TProfile`, `TGraph`, `TF1`, `TFile`,
 `TTree` or `TChain` still lands on the right page.
 
@@ -699,6 +705,26 @@ ax2.save("heatmap.svg")?;
   cargo run -p oxiroot --example plot
   ```
 
+### Datasets (`oxiroot::data`)
+
+- **One API for `TTree` and RNTuple.** `Dataset::open(&file, name)` detects
+  the format; `read(columns)` returns one `Batch`, and `batches(columns)`
+  iterates one cluster at a time (`.step(n)`, `.range(a..b)`, and
+  `.parallel(true)` with `rayon`). `DatasetWriter::create(path, name, format)`
+  takes `Batch`es and closes a cluster every ~32 MiB of values, however the
+  batches are sized. `DatasetObject` puts a dataset into a `FileWriter` next
+  to histograms.
+- **Flat, Arrow-style columns**: scalars, strings, `Vec<T>`, `[T; N]`,
+  `Vec<Vec<T>>` and `Option<T>`, stored as offsets plus flat values, with no
+  `Vec` per entry. Read them as slices (`values::<T>`), per-entry views
+  (`jagged::<T>`, `strings`, `arrays::<T>`), or the `Column` enum.
+- **Strict**: a type mismatch is an error naming the column, never a silent
+  conversion; a column the format cannot hold is refused before anything is
+  written.
+- `filter`, `slice`, `select` and `append` work on whole batches, so a skim or
+  a TTree → RNTuple conversion needs no per-type code. Worked examples:
+  `cargo run -p oxiroot --example tree`, `--example rntuple`.
+
 ### TTree (`oxiroot::tree`)
 
 - **Read & write** scalar, fixed-size array (`x[N]`, incl. multidimensional
@@ -710,26 +736,26 @@ ax2.save("heatmap.svg")?;
 - **Split `std::vector<MyStruct>`** branches written as per-member sub-branches
   (`TBranchElement`), with a generated `TStreamerInfo` for the element class —
   ROOT-C++- and uproot-verified, both directions.
-- `Branch::{i32, f64, bools, strings, …}` for scalars, `Branch::vec_*` for
-  fixed arrays, `Branch::jagged_*` for variable arrays, `Branch::vector_*` for
-  `std::vector<T>`, and `Branch::split_vector` for split structs.
-- `Tree::new(name, branches).write_root(path, compression)` is the method form
-  (mirroring `hist.write_root`); `.write_root_baskets(…, entries_per_basket)`
-  writes several baskets per branch, and `.to_root_bytes(…)` returns the file
-  bytes. The free `write_tree_file`/`write_tree_file_baskets` functions remain.
+- The low-level layer under [Datasets](#datasets-oxirootdata), for what only a
+  tree has. `Branch::{i32, f64, bool, string, …}` for scalars,
+  `Branch::array_*` for fixed arrays, `Branch::jagged_*` for C-style variable
+  arrays, `Branch::vector_*` for `std::vector<T>`, and `Branch::split_vector`
+  for split structs; `tree::raw::write_tree` places a whole tree (split
+  branches included) into an open container.
 - `TreeWriter` streams a tree in batches (`write_batch` emits one basket per
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
   uproot-verified across many baskets, compressed and not. Use
   `TreeWriter::create_large` for a tree that will exceed 2 GiB — it writes the
   64-bit container form (again ROOT-C++/uproot-verified).
-- `read_branch` reads a whole branch,
-  `read_branch_range(start, stop)` only the baskets covering a window, and
-  `read_branch_flat` an offsets+flat (no `Vec<Vec>`) view; `ChainReader` spans many
-  files. With the `rayon` feature, `read_branch_par` (and the `_range_par` /
-  `_flat_par` variants) decompress baskets in parallel. Introspect with
-  `branch_type`/`branch_shape`/`branch_title`, and see what was skipped via
-  `unsupported_branches()`. Worked example: `cargo run -p oxiroot --example tree`.
+- `tree.branch(name)` reads a branch: `.range(a..b)` fetches only the baskets
+  covering a window, `.parallel(true)` (with `rayon`) decompresses them in
+  parallel, then `.read::<T>()` gives a typed `Vec<T>` (a type mismatch is an
+  error), `.values()` the `BranchValues` enum, `.flat()` an offsets+flat view,
+  and `.to_branch()` a writable `Branch` of the same layout. `ChainReader`
+  spans many files. Introspect with `branch_type`/`branch_layout`/
+  `branch_shape`/`branch_title`/`basket_boundaries`, and see what was skipped
+  via `unsupported_branches()`.
 - `friends()` returns the friend trees attached with `TTree::AddFriend` (read
   from the persisted `fFriends` list). A friend is read **positionally** — entry
   *i* of the main tree pairs with entry *i* of the friend — so opening the friend
@@ -761,7 +787,8 @@ ax2.save("heatmap.svg")?;
   Every physical column encoding decodes — split/zigzag/delta, all integer widths
   (8/16/32/64-bit, signed & unsigned), reduced-precision reals (half, truncated,
   quantized), and the `Switch` column — on Zstd-compressed pages.
-- Typed field API (`read_field`) for scalars, `std::string`, `std::vector<T>`,
+- Typed field API (`ntuple.field(name)` with `.range(a..b)`, then `.read::<T>()`,
+  `.values()`, `.flat()` or `.to_field()`) for scalars, `std::string`, `std::vector<T>`,
   nested collections — `std::vector<std::string>`, `std::vector<std::vector<T>>`,
   and vectors of records (`std::vector<MyStruct>`/`std::pair`) — `std::variant`,
   the nullable / "late" fields `std::optional<T>` / `std::unique_ptr<T>` (read as
@@ -774,19 +801,17 @@ ax2.save("heatmap.svg")?;
 - Write the same surface it reads: `bool`, every integer width (8/16/32/64-bit,
   signed & unsigned), `f32`/`f64`, reduced-precision reals (`Field::half` /
   `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
-  collections (`Field::vec_str` / `vec_vec_*`, `Column::Record`/`Nested`),
+  collections (`Field::vector_string` / `vector_vector_*`, `Column::Record`/`Nested`),
   `std::variant` (`Field::variant`), and the nullable / atomic fields
   (`Field::optional_*` / `unique_ptr_*` from a `Vec<Option<T>>`, `Field::atomic_*`)
   — optionally Zstd-compressed.
-- `Ntuple::write_root_extended` writes a **schema late extension**: this RNTuple's
-  fields go in the header, and each late `(first_entry, field)` is added through
+- `ntuple::raw::write_ntuple` writes a whole RNTuple into an open container,
+  including a **schema late extension**: the base fields go in the header, and
+  each late `(first_entry, field)` is added through
   the footer's schema-extension record as a deferred column (its data covers
   entries `first_entry..N`; earlier ones default). ROOT reads the result as if the
   field had been added mid-writing with a model updater.
-- `Ntuple::new(name, fields).write_root(path, compression)` is the method form
-  (mirroring `hist.write_root`), with `.to_root_bytes(…)` for the file bytes; the
-  free `write_rntuple_file` remains.
-- `FileWriter::put` writes **several RNTuples per file**, RNTuples **inside a
+- `FileWriter::put` (with a `DatasetObject`) writes **several RNTuples per file**, RNTuples **inside a
   `TDirectory`**, and RNTuples next to histograms and trees —
   `FileWriter::create(path).put(events).put(runs).dir("cal", |d|
   d.put(pedestals)).write(…)`. Read a nested one with
@@ -806,8 +831,8 @@ ax2.save("heatmap.svg")?;
   functions, strings, matrices, …) are copied from the first file; unknown
   classes are **skipped and listed in the report**, never silently dropped.
 - Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
-  `std::vector<T>`, string). The standalone `oxiroot_tree::concat_trees`,
-  `oxiroot_rntuple::concat_ntuples`, and `oxiroot::hadd::merge_histogram_files`
+  `std::vector<T>`, string). The streaming `oxiroot_tree::append_trees`,
+  `oxiroot_rntuple::append_ntuples`, and `oxiroot::hadd::merge_histogram_files`
   do the per-format work and can be called directly.
 - `Merger::new().inputs(paths).compression(c).merge("all.root")?` is the
   composable builder; `merge_files` returns a `MergeReport` (what was summed /
@@ -955,7 +980,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | Feature | Default | Effect |
 |---------|:---:|--------|
 | `mmap` | — | Memory-mapped read path (`unsafe FileReader::open_mmap`) for large files; adds `memmap2`. Opt-in: the file must not change while mapped. `FileReader::open_ranged` reads lazily with no such contract. |
-| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel TTree reads (`TreeReader::read_branch_par` and friends); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
+| `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel dataset and TTree reads (`Batches::parallel`, `BranchRead::parallel`); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Adds the gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `skrifa`, and the ReX TeX engine. |

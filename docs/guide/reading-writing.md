@@ -6,12 +6,14 @@ persistence model: the `WriteRoot` and `ReadRoot` traits for single objects, and
 appending. There is one way to do each thing, and the files produced open in
 official ROOT and uproot.
 
-`TTree` and RNTuple have their own dedicated writers (they stream rather than
-hold a whole dataset in memory); see [TTree](ttree.md) and [RNTuple](rntuple.md).
+`TTree` and RNTuple datasets are read and written through one API,
+`Dataset` and `DatasetWriter` (they stream rather than hold a whole dataset in
+memory); see [Datasets](datasets.md), and [TTree](ttree.md) and
+[RNTuple](rntuple.md) for the format-specific layer.
 
 Types that read a file end in `Reader` (`FileReader`, `TreeReader`,
 `NtupleReader`, `ChainReader`) and types that write one end in `Writer`
-(`FileWriter`, `TreeWriter`, `NtupleWriter`).
+(`FileWriter`, `DatasetWriter`, `TreeWriter`, `NtupleWriter`).
 
 ## One object: `WriteRoot` / `ReadRoot`
 
@@ -38,7 +40,7 @@ let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
 !!! note "Reading an older cycle"
     Writing a name a file already holds keeps the old object under a lower
     *cycle*. Every read takes a name — `FileReader::key`, `get_value`,
-    `read_root`, `TreeReader::open`, `NtupleReader::open` — and a plain name
+    `read_root`, `Dataset::open`, `TreeReader::open`, `NtupleReader::open` — and a plain name
     reads the current (highest) cycle. Ask for an older one the way ROOT does,
     with `"name;2"`; a name that carries a `;` of its own is left whole, and a
     cycle the file does not hold is `Error::NotFound` rather than a silent

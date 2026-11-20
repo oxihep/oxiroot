@@ -1,10 +1,10 @@
 # TTree
 
-The classic ROOT columnar store. `oxiroot` reads and writes `TTree`s holding
-scalar, fixed- and variable-length array, string, and `std::vector<T>` branches —
-across any number of baskets, compressed or not — and reads them back in ROOT,
-uproot, and this crate. This page covers building branches, the write paths
-(one-shot, multi-basket, and streaming), and the read API.
+The classic ROOT columnar store. For reading and writing columns the same way
+for a `TTree` and an RNTuple, use [Datasets](datasets.md). This page covers
+the `TTree`-specific layer underneath (`oxiroot::tree`): every branch kind,
+including split `std::vector<Struct>` branches and C-style `x[n]` arrays, the
+low-level reader, friends and indices, and chains.
 
 ## Branches
 
@@ -14,32 +14,33 @@ constructor family encodes the column shape:
 
 | Constructor family | Shape | On-disk form |
 |---|---|---|
-| `Branch::i32`, `Branch::f64`, `Branch::bools`, … | scalar (one value per entry) | `TLeafI`/`TLeafD`/… |
-| `Branch::strings` | one string per entry | `TLeafC` |
-| `Branch::vec_i32`, `Branch::vec_f64`, … | fixed array `x[N]` (every row length `N`) | `TLeaf*` with `fLen = N` |
+| `Branch::i32`, `Branch::f64`, `Branch::bool`, … | scalar (one value per entry) | `TLeafI`/`TLeafD`/… |
+| `Branch::string` | one string per entry | `TLeafC` |
+| `Branch::array_i32`, `Branch::array_f64`, … | fixed array `x[N]` (every row length `N`) | `TLeaf*` with `fLen = N` |
 | `Branch::jagged_i32`, `Branch::jagged_f64`, … | variable array `x[n]` (rows differ) | `TLeaf*` + auto `n<name>` count branch |
 | `Branch::vector_i32`, `Branch::vector_f64`, … | `std::vector<T>` | `TBranchElement` |
 | `Branch::split_vector` | split `std::vector<MyStruct>` | parent `TBranchElement` + per-member sub-branches |
 
-The scalar, `vec_*`, `jagged_*`, and `vector_*` families exist for each numeric
-type: `bool` (as `bools`/`vec_bool`/`jagged_bool`), `i8`/`u8`, `i16`/`u16`,
-`i32`/`u32`, `i64`/`u64`, `f32`/`f64`. (`vector_*` covers the integer and float
-types; there is no `vector_bool`.)
+The scalar, `array_*`, `jagged_*`, and `vector_*` families exist for each
+numeric type: `bool`, `i8`/`u8`, `i16`/`u16`, `i32`/`u32`, `i64`/`u64`,
+`f32`/`f64`. (`vector_*` covers the integer and float types; there is no
+`vector_bool`.)
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::tree::Branch;
 
 let branches = vec![
     Branch::i32("event", (0..10).collect()),
     Branch::f64("energy", vec![10.5, 20.1, 5.0, /* … */]),
     // Variable-length rows — written with a paired `nhits` count branch.
     Branch::jagged_f64("hits", (0..10).map(|i| vec![i as f64; i % 3]).collect()),
-    Branch::strings("label", (0..10).map(|i| format!("e{i}")).collect()),
+    Branch::string("label", (0..10).map(|i| format!("e{i}")).collect()),
 ];
 ```
 
 !!! note
-    A fixed-array constructor (`Branch::vec_*`) requires every inner vector to
+    A fixed-array constructor (`Branch::array_*`) requires every inner vector to
     have the same length `N`. If the rows differ, the write fails — use the
     matching `Branch::jagged_*` constructor instead, which records per-row
     lengths in an auto-generated `n<name>` count branch (uproot's convention).
@@ -50,8 +51,6 @@ let branches = vec![
 entry carries the streamer header ROOT writes for a streamed collection:
 
 ```rust
-use oxiroot::prelude::*;
-
 let tracks = Branch::vector_f64(
     "pt",
     vec![vec![1.0, 2.0], vec![3.5], vec![]], // one inner Vec per entry
@@ -67,7 +66,6 @@ lengths. A `TStreamerInfo` for the element class is generated so the file is
 self-describing.
 
 ```rust
-use oxiroot::prelude::*;
 use oxiroot::tree::SplitMember;
 
 // Three events, each with a differing number of hits.
@@ -90,53 +88,14 @@ as a `Vec<Vec<T>>`.
 
 ## Writing a tree
 
-`Tree::new` bundles a name and its branches; the write methods mirror the
-histogram `write_root` ergonomics.
+`TreeWriter` writes a tree to its own file in batches. Each `write_batch` call
+emits one basket per branch straight to the sink, so only the current batch is
+in memory, the way ROOT's `TTree::Fill` flushes baskets as they fill. `finish`
+writes the `TTree` metadata, the streamer info and the key list, then patches
+the file header.
 
 ```rust
-use oxiroot::prelude::*;
-
-let branches = vec![
-    Branch::i32("event", vec![1, 2, 3]),
-    Branch::f64("energy", vec![10.5, 20.1, 5.0]),
-];
-Tree::new("Events", branches).write_root("tree.root", Compression::Zstd(5))?;
-```
-
-| Method | Effect |
-|---|---|
-| `Tree::write_root(path, compression)` | Write a single-tree file, one basket per branch. |
-| `Tree::write_root_baskets(path, compression, entries_per_basket)` | Split each branch into baskets of at most `entries_per_basket` entries (`0` = one basket). |
-| `Tree::to_root_bytes(file_name, compression)` | Return the complete ROOT-file bytes instead of writing to disk. |
-
-The free functions `write_tree_file` and `write_tree_file_baskets` are the
-function-style counterparts (they take the tree name and a `&[Branch]` directly)
-and remain available; the `Tree` methods are thin wrappers over them.
-
-<!-- fragment -->
-```rust
-use oxiroot::prelude::*;
-
-// Function form — equivalent to Tree::new(...).write_root(...).
-write_tree_file("tree.root", "Events", &branches, Compression::None)?;
-```
-
-!!! warning
-    The single-tree writers produce the small (32-bit) ROOT container, so the
-    total file must stay under 2 GiB; the writer returns an error otherwise.
-    Split `std::vector<Struct>` branches are always one basket — their
-    per-member alignment is not chunked.
-
-## Streaming writes
-
-For trees too large to hold in memory, `TreeWriter` appends entries in
-batches. Each `write_batch` call emits one basket per branch straight to the
-sink, so only the current batch is resident — the way ROOT's `TTree::Fill`
-flushes baskets as they fill. `finish` writes the small `TTree` metadata, the
-streamer info, and the key list, then patches the file header.
-
-```rust
-use oxiroot::prelude::*;
+use oxiroot::tree::TreeWriter;
 
 let mut w = TreeWriter::create("big.root", "Events", Compression::Zstd(5))?;
 for batch in 0..1_000 {
@@ -144,54 +103,58 @@ for batch in 0..1_000 {
     let x: Vec<f64> = (0..10_000).map(|i| (base + i) as f64).collect();
     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
 }
-let entries = w.entries();
-w.finish()?; // commit metadata + header
+let entries: u64 = w.entries();
+w.finish()?; // commit metadata + header; returns the sink
 ```
 
-`TreeWriter::new` takes any `Write + Seek` sink if you do not want a file path.
+`TreeWriter::new` takes any `Write + Seek` sink if you do not want a file path,
+and `create_large`/`new_large` write ROOT's 64-bit layout for files past 2 GiB.
 Every batch must share the first batch's schema: branch names, element types,
-the jagged / `std::vector` flags, and fixed-array widths — a mismatch is an
-error. Split `std::vector<Struct>` branches are not supported here; use
-`write_tree_file` for those.
+the jagged / `std::vector` flags, and fixed-array widths. A mismatch is an
+error.
+
+Split `std::vector<Struct>` branches are written whole, into an open
+container, by `oxiroot::tree::raw::write_tree`, which a
+[`FileWriter`](../api/oxiroot/file/struct.FileWriter.html) object calls; see
+the `raw` module's docs.
 
 ## Reading a tree
 
-Open a `TTree` by name from a `FileReader`, then read branches by name.
+Open a `TTree` by name from a `FileReader`; the reader keeps the file. Then
+read a branch with `branch(name)`, optionally narrowed, and take its values in
+the form you need.
 
 ```rust
-use oxiroot::prelude::*;
+use oxiroot::tree::{BranchValues, TreeReader};
 
 let file = FileReader::open("tree.root")?;
 let t = TreeReader::open(&file, "Events")?;
 
 println!("{} entries: {:?}", t.entries(), t.branch_names());
 
-let energy = t.read_branch(&file, "energy")?;
-let values: &[f64] = energy.as_f64().expect("energy is a TLeafD branch");
+let energy: Vec<f64> = t.branch("energy").read()?;
 ```
 
-### Read methods
+### Read forms
 
-| Method | Returns |
+| Call | Returns |
 |---|---|
-| `read_branch(file, name)` | All entries of one branch as `BranchValues`. |
-| `read_branch_range(file, name, start, stop)` | Only entries `[start, stop)`, fetching just the baskets that cover the window. |
-| `read_branch_flat(file, name)` | A `Jagged` view — cumulative `offsets` over one flat scalar `BranchValues`, no `Vec<Vec<_>>` allocation (numeric branches only). |
+| `branch(name).read::<T>()` | `Vec<T>`: `f64` for a `double` branch, `Vec<f32>` for an array or `std::vector<float>`, `String` for a string. Another type than the branch holds is an `Error::TypeMismatch`; nothing is converted. |
+| `branch(name).values()` | The `BranchValues` enum, for code that does not know the type in advance. |
+| `branch(name).flat()` | A `Jagged`: cumulative `offsets` over one flat scalar `BranchValues`, with no allocation per entry (numeric branches only). |
+| `branch(name).to_branch()` | A writable `Branch` of the same name and layout, for a `TreeWriter`: the round trip of a skim. |
 
-`read_branch_range` clamps `stop` to the entry count and `start` to `stop`, so an
-out-of-range window yields fewer (or no) entries rather than an error.
+Before any of them, `.range(a..b)` reads only entries `[a, b)`, fetching just
+the baskets that cover the window (clamped to the entry count), and
+`.parallel(true)` (with the `rayon` feature) decompresses the baskets in
+parallel.
 
 ```rust
-use oxiroot::prelude::*;
 // Just the baskets covering entries 3..7.
-let window = t.read_branch_range(&file, "event", 3, 7)?;
-let evts: &[i32] = window.as_i32().unwrap();
+let window: Vec<i32> = t.branch("event").range(3..7).read()?;
 
-// Several columns — read_branch in a loop.
-for name in ["event", "energy"] {
-    let col = t.read_branch(&file, name)?;
-    // …use col…
-}
+// A variable-length branch, typed.
+let hits: Vec<Vec<f64>> = t.branch("hits").read()?;
 ```
 
 ### `BranchValues`
@@ -203,30 +166,23 @@ inner vector per entry); `TLeafC` yields `Vec<String>`, and
 use the typed `as_*` accessors that return `Option<&[T]>`:
 
 ```rust
-use oxiroot::prelude::*;
-let hits = t.read_branch(&file, "hits")?;
+let hits = t.branch("hits").values()?;
 match hits {
     BranchValues::VecF64(rows) => {
         for (i, row) in rows.iter().enumerate() {
             println!("entry {i}: {} hits", row.len());
         }
     }
-    other => println!("unexpected variant: {:?}", other.leaf_type()),
+    other => println!("unexpected variant: {:?}", other.type_name()),
 }
 ```
-
-The scalar accessors are `as_bool`, `as_i8`/`as_u8`, `as_i16`/`as_u16`,
-`as_i32`/`as_u32`, `as_i64`/`as_u64`, `as_f32`/`as_f64`, and `as_str`. Each
-returns `Some(&[T])` only for the matching scalar variant. `BranchValues` also
-offers `len()`, `is_empty()`, and `leaf_type()`.
 
 The flat view returns `Jagged` with an `offsets` vector of `num_entries + 1`
 cumulative boundaries (`offsets[0] == 0`) over a single scalar `values`; entry
 `i`'s elements are `values[offsets[i] .. offsets[i+1]]`:
 
 ```rust
-use oxiroot::prelude::*;
-let jagged = t.read_branch_flat(&file, "hits")?;
+let jagged = t.branch("hits").flat()?;
 let flat: &[f64] = jagged.values.as_f64().unwrap();
 for i in 0..jagged.len() {
     let (a, b) = (jagged.offsets[i] as usize, jagged.offsets[i + 1] as usize);
@@ -243,6 +199,8 @@ A `TTree` reports each branch's type and shape without reading its data:
 |---|---|
 | `branch_names()` | The names of the readable branches, in tree order. |
 | `branch_type(name)` | The element `LeafType` (`I32`, `F64`, `Str`, …), or `None`. |
+| `branch_layout(name)` | The entry shape: `Scalar`, `Array(n)`, `List` (variable length) or `ListOfLists`. |
+| `basket_boundaries(name)` | The entries where the branch's baskets start, then the entry count. |
 | `branch_len(name)` | `fLen` — the per-entry element count of a fixed array (`1` for a scalar). |
 | `branch_shape(name)` | The fixed-array shape: `[N]` for `x[N]`, `[N, M]` for `x[N][M]`, `[]` for scalar/variable. |
 | `branch_title(name)` | `fTitle` — the leaf-list / shape string (e.g. `x[3]`, `n`). |
@@ -250,7 +208,6 @@ A `TTree` reports each branch's type and shape without reading its data:
 | `streamer_classes()` | The `(class, version)` pairs declared in the file's `TStreamerInfo`. |
 
 ```rust
-use oxiroot::prelude::*;
 for name in t.branch_names() {
     println!(
         "{name}: type={:?} shape={:?}",
@@ -283,9 +240,6 @@ covering only some events — ROOT joins them on a key instead, with
 `TTree::BuildIndex(major, minor)`. oxiroot reads that index and joins on it:
 
 ```rust
-use oxiroot::prelude::*;
-use oxiroot::tree::BranchValues;
-
 let file = FileReader::open("events.root")?;
 let main = TreeReader::open(&file, "main")?;
 let friend = TreeReader::open(&file, "fr")?;
@@ -295,11 +249,9 @@ let index = friend.index().expect("the friend was built with BuildIndex");
 println!("{} + {}: {} keys", index.major_name(), index.minor_name(), index.len());
 
 // For each entry of `main`, the friend entry with the same key.
-let rows = main.join_by_index(&file, &friend, &file)?;
+let rows = main.join_by_index(&friend)?;
 
-let BranchValues::F64(weight) = friend.read_branch(&file, "weight")? else {
-    unreachable!("weight is a double branch")
-};
+let weight: Vec<f64> = friend.branch("weight").read()?;
 // One weight per entry of `main`, in `main`'s order; `None` where the friend
 // has no such key.
 let aligned: Vec<Option<f64>> = rows
@@ -321,7 +273,7 @@ concatenated column, the way ROOT's `TChain` spans a dataset split over many
 files. The files are borrowed, so keep them alive for the chain's lifetime.
 
 ```rust
-use oxiroot::prelude::*;
+use oxiroot::tree::ChainReader;
 
 let f1 = FileReader::open("part1.root")?;
 let f2 = FileReader::open("part2.root")?;
@@ -331,21 +283,15 @@ chain.add(&f1, "Events")?;
 chain.add(&f2, "Events")?;
 
 println!("{} entries over {} files", chain.entries(), chain.num_trees());
-let pt = chain.read_branch("pt")?; // values from both files, in add order
+let pt: Vec<f32> = chain.branch("pt").read()?; // both files, in add order
 ```
 
-`read_branch` fails if a tree lacks the branch or yields a different element type
-than the others.
-
-!!! tip
-    With the `rayon` feature enabled, `read_branch_par`, `read_branch_range_par`
-    and `read_branch_flat_par` decompress a branch's baskets in parallel and
-    return exactly what their serial counterparts do. The plain methods always
-    read on the calling thread. See [Compression](compression.md) for the
-    supported codecs.
+A chain read fails if a tree lacks the branch or yields a different element
+type than the others.
 
 ## See also
 
+- [Datasets](datasets.md) — one API for `TTree` and RNTuple.
 - [Quickstart](../getting-started/quickstart.md) — the end-to-end write/read tour.
 - [RNTuple](rntuple.md) — ROOT's modern columnar format.
 - [Compression](compression.md) — codecs shared by every writer.

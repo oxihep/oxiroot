@@ -8,15 +8,27 @@ use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter};
 use crate::support::write_tree_file_baskets;
 
 fn file(tag: &str) -> FileReader {
-    let path = std::env::temp_dir().join(format!("oxiroot_read_typed_{tag}_{}.root", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "oxiroot_read_typed_{tag}_{}.root",
+        std::process::id()
+    ));
     write_tree_file_baskets(
         &path,
         "T",
         &[
             Branch::f32("pt", vec![1.0, 2.0, 3.0, 4.0, 5.0]),
-            Branch::vector_i32("idx", vec![vec![1], vec![], vec![2, 3], vec![4], vec![5, 6, 7]]),
-            Branch::jagged_f64("w", vec![vec![0.5], vec![1.5, 2.5], vec![], vec![3.5], vec![4.5]]),
-            Branch::string("tag", vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()]),
+            Branch::vector_i32(
+                "idx",
+                vec![vec![1], vec![], vec![2, 3], vec![4], vec![5, 6, 7]],
+            ),
+            Branch::jagged_f64(
+                "w",
+                vec![vec![0.5], vec![1.5, 2.5], vec![], vec![3.5], vec![4.5]],
+            ),
+            Branch::string(
+                "tag",
+                vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
+            ),
         ],
         Compression::Zstd(1),
         2,
@@ -31,12 +43,18 @@ fn file(tag: &str) -> FileReader {
 fn reads_typed_values() {
     let f = file("typed");
     let t = TreeReader::open(&f, "T").unwrap();
-    assert_eq!(t.branch("pt").read::<f32>().unwrap(), [1.0, 2.0, 3.0, 4.0, 5.0]);
+    assert_eq!(
+        t.branch("pt").read::<f32>().unwrap(),
+        [1.0, 2.0, 3.0, 4.0, 5.0]
+    );
     assert_eq!(
         t.branch("idx").range(2..4).read::<Vec<i32>>().unwrap(),
         [vec![2, 3], vec![4]]
     );
-    assert_eq!(t.branch("tag").range(3..10).read::<String>().unwrap(), ["d", "e"]);
+    assert_eq!(
+        t.branch("tag").range(3..10).read::<String>().unwrap(),
+        ["d", "e"]
+    );
 }
 
 #[test]
@@ -89,9 +107,19 @@ fn a_read_branch_writes_back_the_same_way() {
     let out = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
     let o = TreeReader::open(&out, "T").unwrap();
     assert_eq!(o.branch("pt").read::<f32>().unwrap(), [2.0, 3.0]);
-    assert_eq!(o.branch("idx").read::<Vec<i32>>().unwrap(), [vec![], vec![2, 3]]);
-    assert_eq!(o.branch("w").read::<Vec<f64>>().unwrap(), [vec![1.5, 2.5], vec![]]);
-    assert_eq!(o.branch_title("w"), t.branch_title("w"), "still a jagged x[n] leaf");
+    assert_eq!(
+        o.branch("idx").read::<Vec<i32>>().unwrap(),
+        [vec![], vec![2, 3]]
+    );
+    assert_eq!(
+        o.branch("w").read::<Vec<f64>>().unwrap(),
+        [vec![1.5, 2.5], vec![]]
+    );
+    assert_eq!(
+        o.branch_title("w"),
+        t.branch_title("w"),
+        "still a jagged x[n] leaf"
+    );
     assert_eq!(o.branch("tag").read::<String>().unwrap(), ["b", "c"]);
 }
 
@@ -103,7 +131,11 @@ fn reports_branch_layouts() {
     assert_eq!(t.branch_layout("pt"), Some(BranchLayout::Scalar));
     assert_eq!(t.branch_layout("idx"), Some(BranchLayout::List));
     assert_eq!(t.branch_layout("w"), Some(BranchLayout::List));
-    assert_eq!(t.branch_layout("nw"), Some(BranchLayout::Scalar), "the count branch");
+    assert_eq!(
+        t.branch_layout("nw"),
+        Some(BranchLayout::Scalar),
+        "the count branch"
+    );
     assert_eq!(t.branch_layout("tag"), Some(BranchLayout::Scalar));
     assert_eq!(t.branch_layout("nope"), None);
 }

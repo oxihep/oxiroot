@@ -41,19 +41,19 @@
 //! cluster, per input), so memory holds a single input's entries. A large
 //! merge is written in ROOT's 64-bit container form. The output must not be
 //! one of the inputs. For finer control, merge the pieces yourself with
-//! [`merge_histogram_files`], [`oxiroot_tree::concat_trees`], or
-//! [`oxiroot_rntuple::concat_ntuples`].
+//! [`merge_histogram_files`], [`oxiroot_tree::append_trees`], or
+//! [`oxiroot_rntuple::append_ntuples`].
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use oxiroot_io_core::raw::KSTART_BIG_FILE;
+use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use oxiroot_io_core::{Compression, Error, FileReader, Result};
 
 mod histograms;
 pub use histograms::{HistMergeOutcome, merge_histogram_files};
-use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader, NtupleWriter, append_ntuples, concat_ntuples};
-use oxiroot_tree::{TreeReader, TreeWriter, append_trees, concat_trees};
+use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader, NtupleWriter, append_ntuples};
+use oxiroot_tree::{TreeReader, TreeWriter, append_trees};
 
 /// Inputs larger than this in total are merged straight into the 64-bit
 /// container form; smaller ones switch to it only if the output turns out not to
@@ -260,7 +260,7 @@ pub fn merge_files<P: AsRef<Path>>(
             "merge_files: this fileset mixes objects oxiroot cannot combine into one file yet \
              ({} TTree(s): {trees:?}; {} RNTuple(s): {rntuples:?}; {others} other object(s)). \
              oxiroot merges either an all-histogram fileset, a single TTree, or a single RNTuple \
-             per call; merge the pieces separately with concat_trees / concat_ntuples / \
+             per call; merge the pieces separately with append_trees / append_ntuples / \
              merge_histogram_files.",
             trees.len(),
             rntuples.len(),
@@ -295,6 +295,21 @@ fn with_form_fallback(large: bool, mut write: impl FnMut(bool) -> Result<()>) ->
     }
 }
 
+/// Write a whole file laid out by `layout` to `output`.
+fn write_whole(
+    output: &Path,
+    compression: Compression,
+    layout: impl FnMut(&mut ContainerWriter<std::io::Cursor<Vec<u8>>>) -> Result<()>,
+) -> Result<()> {
+    let file_name = output
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root");
+    let bytes = ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, layout)?;
+    std::fs::write(output, bytes)?;
+    Ok(())
+}
+
 fn merge_tree(
     output: &Path,
     files: &[FileReader],
@@ -308,11 +323,21 @@ fn merge_tree(
         .map(|f| TreeReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
     let entries = trees.iter().map(TreeReader::entries).sum();
-    let pairs: Vec<(&FileReader, &TreeReader)> = files.iter().zip(&trees).collect();
+    let inputs_ref: Vec<&TreeReader> = trees.iter().collect();
 
     if entries == 0 {
-        // The streaming writer needs at least one entry; an empty tree is small.
-        concat_trees(&pairs)?.write_root(output, compression)?;
+        // The streaming writer needs at least one entry; write the empty tree
+        // whole, its branches rebuilt as they were read.
+        let first = &trees[0];
+        let branches = first
+            .branch_names()
+            .into_iter()
+            .map(|b| first.branch(b).to_branch())
+            .collect::<Result<Vec<_>>>()?;
+        write_whole(output, compression, |file| {
+            oxiroot_tree::raw::write_tree(file, DirId::TOP, first.name(), &branches, 0)?;
+            file.place_streamer_info(&[], &oxiroot_tree::raw::tree_streamer_classes(&branches))
+        })?;
     } else {
         // Stream one input at a time: one batch of baskets per input.
         let tree_name = trees[0].name();
@@ -322,7 +347,7 @@ fn merge_tree(
             } else {
                 TreeWriter::create(output, tree_name, compression)?
             };
-            append_trees(&mut writer, &pairs)?;
+            append_trees(&mut writer, &inputs_ref)?;
             writer.finish().map(drop)
         })?;
     }
@@ -351,11 +376,21 @@ fn merge_rntuple(
         .map(|f| NtupleReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
     let entries = ntuples.iter().map(NtupleReader::entries).sum();
-    let pairs: Vec<(&FileReader, &NtupleReader)> = files.iter().zip(&ntuples).collect();
+    let inputs_ref: Vec<&NtupleReader> = ntuples.iter().collect();
 
     if entries == 0 {
-        // The streaming writer needs at least one entry; an empty RNTuple is small.
-        concat_ntuples(name, &pairs)?.write_root(output, compression)?;
+        // The streaming writer needs at least one entry; write the empty
+        // RNTuple whole, its fields rebuilt as they were read.
+        let first = &ntuples[0];
+        let fields = first
+            .field_names()
+            .into_iter()
+            .map(|f| first.field(f).to_field())
+            .collect::<Result<Vec<_>>>()?;
+        write_whole(output, compression, |file| {
+            oxiroot_rntuple::raw::write_ntuple(file, DirId::TOP, name, &fields, &[])?;
+            file.place_streamer_info(&[], &oxiroot_rntuple::raw::ntuple_streamer_classes(&fields))
+        })?;
     } else {
         // Stream one input at a time: one cluster per input.
         with_form_fallback(large, |big| {
@@ -364,8 +399,8 @@ fn merge_rntuple(
             } else {
                 NtupleWriter::create(output, name, compression)?
             };
-            append_ntuples(&mut writer, &pairs)?;
-            writer.finish()
+            append_ntuples(&mut writer, &inputs_ref)?;
+            writer.finish().map(drop)
         })?;
     }
 

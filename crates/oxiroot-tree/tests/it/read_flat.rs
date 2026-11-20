@@ -17,7 +17,7 @@ fn reads_flat_primitive_tree() {
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 5);
     assert_eq!(t.branch_names(), ["i4", "i8", "f4", "f8", "b1", "u4"]);
-    check_values(&f, &t);
+    check_values(&t);
 }
 
 /// A Zstd-compressed tree exercises the basket decompression path.
@@ -25,7 +25,7 @@ fn reads_flat_primitive_tree() {
 fn reads_compressed_tree() {
     let f = FileReader::open(fixture("tree_zstd.root")).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
-    check_values(&f, &t);
+    check_values(&t);
 }
 
 /// Two baskets per branch exercises cross-basket concatenation.
@@ -34,10 +34,10 @@ fn reads_multi_basket_tree() {
     let f = FileReader::open(fixture("tree_multibasket.root")).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 5);
-    check_values(&f, &t);
+    check_values(&t);
 }
 
-fn check_values(f: &FileReader, t: &TreeReader) {
+fn check_values(t: &TreeReader) {
     let read = |n| t.branch(n).values().expect("read branch");
     assert_eq!(read("i4"), BranchValues::I32(vec![0, 1, 2, 3, 4]));
     assert_eq!(read("i8"), BranchValues::I64(vec![10, 11, 12, 13, 14]));

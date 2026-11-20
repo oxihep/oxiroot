@@ -25,7 +25,6 @@ fn main() -> oxiroot::Result<()> {
     use oxiroot::fit::{FitMethod, FitOptions, Model};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;
-    use oxiroot::tree::BranchValues;
 
     let dir = std::env::temp_dir().join("oxiroot-dimuon");
     std::fs::create_dir_all(&dir)?;
@@ -33,7 +32,10 @@ fn main() -> oxiroot::Result<()> {
     // --- 1. Generate and write the events. --------------------------------
     let mut toy = Toy(2026);
     let n_events = 100_000;
-    let (mut pt, mut eta, mut phi, mut charge) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut pt: Vec<Vec<f32>> = Vec::new();
+    let mut eta: Vec<Vec<f32>> = Vec::new();
+    let mut phi: Vec<Vec<f32>> = Vec::new();
+    let mut charge: Vec<Vec<i32>> = Vec::new();
     for _ in 0..n_events {
         let mut muons: Vec<(f64, f64, f64, i32)> = Vec::new();
         let r = toy.uniform();
@@ -73,35 +75,24 @@ fn main() -> oxiroot::Result<()> {
         charge.push(kept.iter().map(|m| m.3).collect());
     }
     let tree_path = dir.join("nano.root");
-    write_tree_file(
-        &tree_path,
-        "Events",
-        &[
-            Branch::jagged_f32("Muon_pt", pt),
-            Branch::jagged_f32("Muon_eta", eta),
-            Branch::jagged_f32("Muon_phi", phi),
-            Branch::jagged_i32("Muon_charge", charge),
-        ],
-        Compression::Zstd(5),
-    )?;
+    let muons = Batch::new()
+        .column("Muon_pt", pt)?
+        .column("Muon_eta", eta)?
+        .column("Muon_phi", phi)?
+        .column("Muon_charge", charge)?;
+    let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
+    out.write(&muons)?;
+    out.finish()?;
     println!("wrote {n_events} events to {}", tree_path.display());
 
-    // --- 2. Read them back: one branch at a time, columnar. ---------------
+    // --- 2. Read them back: flat columns, one view per entry. -----------
     let file = FileReader::open(&tree_path)?;
-    let tree = TreeReader::open(&file, "Events")?;
-    let floats = |name: &str| -> oxiroot::Result<Vec<Vec<f32>>> {
-        match tree.read_branch(&file, name)? {
-            BranchValues::VecF32(v) => Ok(v),
-            other => panic!(
-                "{name} is {:?}, not a jagged float branch",
-                other.leaf_type()
-            ),
-        }
-    };
-    let (pt, eta, phi) = (floats("Muon_pt")?, floats("Muon_eta")?, floats("Muon_phi")?);
-    let BranchValues::VecI32(charge) = tree.read_branch(&file, "Muon_charge")? else {
-        panic!("Muon_charge is a jagged int branch");
-    };
+    let events = Dataset::open(&file, "Events")?;
+    let data = events.read(["Muon_pt", "Muon_eta", "Muon_phi", "Muon_charge"])?;
+    let pt = data.jagged::<f32>("Muon_pt")?;
+    let eta = data.jagged::<f32>("Muon_eta")?;
+    let phi = data.jagged::<f32>("Muon_phi")?;
+    let charge = data.jagged::<i32>("Muon_charge")?;
 
     // --- 3. Select: the two leading muons, pT > 25 and 15 GeV, opposite sign.
     let mut mass = Hist::reg(60, 60.0, 120.0)
@@ -112,13 +103,14 @@ fn main() -> oxiroot::Result<()> {
     mass.track_sumw2();
     let mut selected = 0;
     for i in 0..pt.len() {
-        if pt[i].len() < 2 || pt[i][0] < 25.0 || pt[i][1] < 15.0 || charge[i][0] == charge[i][1] {
+        let (pt, eta, phi, q) = (pt.row(i), eta.row(i), phi.row(i), charge.row(i));
+        if pt.len() < 2 || pt[0] < 25.0 || pt[1] < 15.0 || q[0] == q[1] {
             continue;
         }
         let m = (2.0
-            * f64::from(pt[i][0])
-            * f64::from(pt[i][1])
-            * (f64::from(eta[i][0] - eta[i][1]).cosh() - f64::from(phi[i][0] - phi[i][1]).cos()))
+            * f64::from(pt[0])
+            * f64::from(pt[1])
+            * (f64::from(eta[0] - eta[1]).cosh() - f64::from(phi[0] - phi[1]).cos()))
         .sqrt();
         mass.fill(m);
         selected += 1;

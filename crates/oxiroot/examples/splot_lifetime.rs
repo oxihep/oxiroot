@@ -191,17 +191,16 @@ mod splot {
         // ---- 1. The candidates ---------------------------------------------
         let (m, t) = sample(2026);
         let tree_path = dir.join("b0_candidates.root");
-        Tree::new("b0", vec![Branch::f64("mass", m), Branch::f64("time", t)])
-            .write_root(&tree_path, Compression::Zstd(5))?;
+        let mut out = DatasetWriter::create(&tree_path, "b0", Format::Tree)?;
+        out.write(&Batch::new().column("mass", m)?.column("time", t)?)?;
+        out.finish()?;
         let file = FileReader::open(&tree_path)?;
-        let tree = TreeReader::open(&file, "b0")?;
-        let column = |name: &str| -> oxiroot::Result<Vec<f64>> {
-            match tree.read_branch(&file, name)? {
-                BranchValues::F64(v) => Ok(v),
-                other => panic!("{name} is {:?}, not a double branch", other.leaf_type()),
-            }
-        };
-        let (m, t) = (column("mass")?, column("time")?);
+        let tree = Dataset::open(&file, "b0")?;
+        let data = tree.read(["mass", "time"])?;
+        let (m, t) = (
+            data.values::<f64>("mass")?.to_vec(),
+            data.values::<f64>("time")?.to_vec(),
+        );
         println!(
             "1. Wrote and read back {} B⁰ candidates — {}",
             tree.entries(),
@@ -220,14 +219,13 @@ mod splot {
         let sw = sweights(&m, &fit);
         let (w_sig, w_bkg) = (sw.weights(0).to_vec(), sw.weights(1).to_vec());
         let sw_path = dir.join("b0_sweights.root");
-        Tree::new(
-            "sweights",
-            vec![
-                Branch::f64("n_sig_sw", w_sig.clone()),
-                Branch::f64("n_bkg_sw", w_bkg.clone()),
-            ],
-        )
-        .write_root(&sw_path, Compression::Zstd(5))?;
+        let mut out = DatasetWriter::create(&sw_path, "sweights", Format::Tree)?;
+        out.write(
+            &Batch::new()
+                .column("n_sig_sw", w_sig.clone())?
+                .column("n_bkg_sw", w_bkg.clone())?,
+        )?;
+        out.finish()?;
         println!(
             "\n3. sWeights: signal weights sum to {:.1}, {} negative — written to {}",
             w_sig.iter().sum::<f64>(),

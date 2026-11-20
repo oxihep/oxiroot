@@ -60,7 +60,9 @@ fn prefix_read_equals_truncated_full_read() {
 
             for &m in &ms {
                 let prefix = ntpl
-                    .field(field).range(0..m as u64).values()
+                    .field(field)
+                    .range(0..m as u64)
+                    .values()
                     .expect("prefix read");
                 let mut want = full.clone();
                 want.truncate(m);

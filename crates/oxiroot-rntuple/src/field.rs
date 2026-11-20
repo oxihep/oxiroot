@@ -359,9 +359,7 @@ impl FieldValues {
     /// Both fields must be the same scalar or vector variant; otherwise an error
     /// is returned. Structural fields ([`Record`](FieldValues::Record),
     /// [`Nested`](FieldValues::Nested), [`Variant`](FieldValues::Variant), and
-    /// [`Opt`](FieldValues::Opt)) are not concatenable here — the RNTuple half
-    /// of a file merge ([`concat_ntuples`](crate::concat_ntuples)) rejects them
-    /// before reaching this point.
+    /// [`Opt`](FieldValues::Opt)) are not concatenable here.
     pub fn append(&mut self, other: FieldValues) -> Result<()> {
         use FieldValues::*;
         macro_rules! join {
@@ -627,7 +625,12 @@ fn split_by_offsets<T>(offsets: &[u64], items: Vec<T>) -> Vec<Vec<T>> {
     let mut out = Vec::with_capacity(offsets.len().saturating_sub(1));
     let mut items = items.into_iter();
     for w in offsets.windows(2) {
-        out.push(items.by_ref().take(usize::saturating_from(w[1].saturating_sub(w[0]))).collect());
+        out.push(
+            items
+                .by_ref()
+                .take(usize::saturating_from(w[1].saturating_sub(w[0])))
+                .collect(),
+        );
     }
     out
 }

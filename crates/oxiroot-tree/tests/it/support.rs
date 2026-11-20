@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Whole-tree writing for the tests, on top of the low-level
 //! [`raw::write_tree`]: a tree written in one go (every branch kind, split
 //! branches included) to a file, to bytes, or into a `FileWriter`.
@@ -25,7 +26,9 @@ fn bytes(
 }
 
 fn file_name(path: &Path) -> &str {
-    path.file_name().and_then(|s| s.to_str()).unwrap_or("file.root")
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root")
 }
 
 /// The bytes of a file holding one tree, one basket per branch.
@@ -46,7 +49,10 @@ pub fn write_tree_file(
     compression: Compression,
 ) -> Result<()> {
     let path = path.as_ref();
-    std::fs::write(path, bytes(file_name(path), tree, branches, compression, 0)?)?;
+    std::fs::write(
+        path,
+        bytes(file_name(path), tree, branches, compression, 0)?,
+    )?;
     Ok(())
 }
 
@@ -59,7 +65,13 @@ pub fn write_tree_file_baskets(
     entries_per_basket: usize,
 ) -> Result<()> {
     let path = path.as_ref();
-    let data = bytes(file_name(path), tree, branches, compression, entries_per_basket)?;
+    let data = bytes(
+        file_name(path),
+        tree,
+        branches,
+        compression,
+        entries_per_basket,
+    )?;
     std::fs::write(path, data)?;
     Ok(())
 }

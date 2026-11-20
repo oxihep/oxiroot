@@ -4,8 +4,8 @@
 //! ones written before the field existed), which ROOT defaults to 0. The fixture
 //! is ROOT-C++-written (scripts/gen_rntuple_ext.cpp); cross-checked with uproot.
 
+use crate::support::NtupleObject;
 use std::path::PathBuf;
-use crate::support::{NtupleObject};
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::{FieldValues, NtupleReader};
@@ -40,7 +40,7 @@ fn reads_late_added_field() {
 #[test]
 fn writes_a_schema_extended_rntuple() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::{Field};
+    use oxiroot_rntuple::Field;
 
     let path = std::env::temp_dir().join("oxiroot_ext_write.root");
     let path = path.to_str().unwrap();
@@ -70,15 +70,16 @@ fn writes_a_schema_extended_rntuple() {
 #[test]
 fn late_field_value_count_is_validated() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::{Field};
+    use oxiroot_rntuple::Field;
     // `y` claims to start at entry 2 of a 4-entry RNTuple but supplies 3 values.
-    let err = NtupleObject::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])]).write_root_extended(
-        std::env::temp_dir()
-            .join("oxiroot_ext_bad.root")
-            .to_str()
-            .unwrap(),
-        &[(2, Field::f32("y", vec![1.0, 2.0, 3.0]))],
-        Compression::None,
-    );
+    let err = NtupleObject::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])])
+        .write_root_extended(
+            std::env::temp_dir()
+                .join("oxiroot_ext_bad.root")
+                .to_str()
+                .unwrap(),
+            &[(2, Field::f32("y", vec![1.0, 2.0, 3.0]))],
+            Compression::None,
+        );
     assert!(err.is_err());
 }

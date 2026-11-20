@@ -15,19 +15,25 @@ fn writes_a_rich_rntuple_that_round_trips() {
         Field::new("f32", Column::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5])),
         Field::new("f64", Column::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0])),
         Field::new("b", Column::Bool(vec![true, false, true, false, true])),
-        Field::new("s", Column::Str(
+        Field::new(
+            "s",
+            Column::Str(
                 ["row0", "row1", "row2", "row3", "row4"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-            )),
-        Field::new("vf", Column::VecF32(vec![
+            ),
+        ),
+        Field::new(
+            "vf",
+            Column::VecF32(vec![
                 vec![],
                 vec![1.0],
                 vec![2.0, 2.0],
                 vec![3.0, 3.0, 3.0],
                 vec![4.0, 4.0, 4.0, 4.0],
-            ])),
+            ]),
+        ),
     ];
 
     let out = PathBuf::from("/tmp/rootrs_written_rich_ntuple.root");
@@ -81,7 +87,10 @@ fn writes_unsigned_and_more_vector_types() {
         Field::new("u32", Column::U32(vec![1, 2, 3_000_000_000])),
         Field::new("u64", Column::U64(vec![1, 2, 10_000_000_000])),
         Field::new("vi64", Column::VecI64(vec![vec![], vec![-1], vec![2, 3]])),
-        Field::new("vb", Column::VecBool(vec![vec![true], vec![], vec![false, true]])),
+        Field::new(
+            "vb",
+            Column::VecBool(vec![vec![true], vec![], vec![false, true]]),
+        ),
     ];
 
     let out = PathBuf::from("/tmp/rootrs_more_types.root");

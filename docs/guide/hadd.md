@@ -54,12 +54,12 @@ println!("{report}"); // TTree "Events" with <n1 + n2> entries
 
 Each branch is reconstructed with its original kind — scalar, fixed array
 (`x[N]`), jagged (`x[n]`), `std::vector<T>`, or string. An RNTuple fileset works
-the same way (fields concatenated). Under the hood these are the standalone
-[`oxiroot_tree::concat_trees`] and [`oxiroot_rntuple::concat_ntuples`] functions,
+the same way (fields concatenated). Under the hood these are the streaming
+[`oxiroot_tree::append_trees`] and [`oxiroot_rntuple::append_ntuples`] functions,
 which you can call directly for finer control.
 
-[`oxiroot_tree::concat_trees`]: https://docs.rs/oxiroot-tree
-[`oxiroot_rntuple::concat_ntuples`]: https://docs.rs/oxiroot-rntuple
+[`oxiroot_tree::append_trees`]: https://oxihep.github.io/oxiroot/api/oxiroot_tree/fn.append_trees.html
+[`oxiroot_rntuple::append_ntuples`]: https://oxihep.github.io/oxiroot/api/oxiroot_rntuple/fn.append_ntuples.html
 
 ## The `Merger` builder
 
@@ -98,8 +98,8 @@ must be one of:
 Anything else — a tree or RNTuple alongside histograms, or more than one of them
 — is refused with an error that names the offending keys, rather than writing a
 partial file. To merge such a fileset, merge the pieces separately with
-`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::append_trees` (or
-`concat_trees`), and `oxiroot_rntuple::append_ntuples` (or `concat_ntuples`).
+`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::append_trees`, and
+`oxiroot_rntuple::append_ntuples`.
 
 ## Memory
 

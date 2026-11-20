@@ -25,7 +25,9 @@ fn bytes(
 }
 
 fn file_name(path: &Path) -> &str {
-    path.file_name().and_then(|s| s.to_str()).unwrap_or("file.root")
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root")
 }
 
 /// The bytes of a file holding one RNTuple, in one cluster.
@@ -46,7 +48,10 @@ pub fn write_rntuple_file(
     compression: Compression,
 ) -> Result<()> {
     let path = path.as_ref();
-    std::fs::write(path, bytes(file_name(path), name, fields, &[], compression)?)?;
+    std::fs::write(
+        path,
+        bytes(file_name(path), name, fields, &[], compression)?,
+    )?;
     Ok(())
 }
 
@@ -81,7 +86,10 @@ impl NtupleObject {
         compression: Compression,
     ) -> Result<()> {
         let path = path.as_ref();
-        std::fs::write(path, bytes(file_name(path), &self.name, &self.fields, late, compression)?)?;
+        std::fs::write(
+            path,
+            bytes(file_name(path), &self.name, &self.fields, late, compression)?,
+        )?;
         Ok(())
     }
 }

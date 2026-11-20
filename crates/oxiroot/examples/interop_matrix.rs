@@ -20,8 +20,13 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::exit;
 
+use oxiroot::ntuple::{Field, NtupleWriter};
 use oxiroot::prelude::*;
-use oxiroot::tree::BranchValues;
+use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader};
+
+#[path = "support/whole_file.rs"]
+mod whole_file;
+use whole_file::{write_rntuple_file, write_tree_file};
 
 // ---------------------------------------------------------------------------
 // Minimal JSON value + emitter (the workspace pulls in no serde).
@@ -854,14 +859,14 @@ fn rntuple_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
     let f64s = vec![1.25f64, 2.5, 3.75, 5.0];
     let strs: Vec<String> = vec!["a".into(), "bb".into(), "ccc".into(), "dddd".into()];
     let fields = vec![
-        Field::bools("fb", bools.clone()),
+        Field::bool("fb", bools.clone()),
         Field::i32("fi32", i32s.clone()),
         Field::i64("fi64", i64s.clone()),
         Field::u32("fu32", u32s.clone()),
         Field::u64("fu64", u64s.clone()),
         Field::f32("ff32", f32s.clone()),
         Field::f64("ff64", f64s.clone()),
-        Field::strings("fs", strs.clone()),
+        Field::string("fs", strs.clone()),
     ];
     write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -915,11 +920,11 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
     let vf32 = vec![vec![0.5f32], vec![], vec![1.5, 2.5]];
     let vf64 = vec![vec![1.0f64, 2.0], vec![3.0], vec![]];
     let fields = vec![
-        Field::vec_bool("vb", vb.clone()),
-        Field::vec_i32("vi32", vi32.clone()),
-        Field::vec_i64("vi64", vi64.clone()),
-        Field::vec_f32("vf32", vf32.clone()),
-        Field::vec_f64("vf64", vf64.clone()),
+        Field::vector_bool("vb", vb.clone()),
+        Field::vector_i32("vi32", vi32.clone()),
+        Field::vector_i64("vi64", vi64.clone()),
+        Field::vector_f32("vf32", vf32.clone()),
+        Field::vector_f64("vf64", vf64.clone()),
     ];
     write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1065,7 +1070,7 @@ fn tree_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
     let bf32 = vec![0.5f32, 1.5, 2.5];
     let bf64 = vec![0.25f64, 1.25, 2.25];
     let branches = vec![
-        Branch::bools("bb", bb.clone()),
+        Branch::bool("bb", bb.clone()),
         Branch::i8("bi8", bi8.clone()),
         Branch::u8("bu8", bu8.clone()),
         Branch::i16("bi16", bi16.clone()),
@@ -1154,9 +1159,9 @@ fn tree_arrays(id: &'static str, comp: Compression, dir: &Path) -> J {
     let jy = vec![vec![1.0f64], vec![2.0, 3.0], vec![]];
     let bs = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
     let branches = vec![
-        Branch::vec_f64("fx", fx.clone()),
+        Branch::array_f64("fx", fx.clone()),
         Branch::jagged_f64("jy", jy.clone()),
-        Branch::strings("bs", bs.clone()),
+        Branch::string("bs", bs.clone()),
     ];
     write_tree_file(dir.join(&file), "T", &branches, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1311,7 +1316,8 @@ fn read_big(path: &Path) {
         die("big tree has no entries");
     }
     match t
-        .read_branch(&f, "n")
+        .branch("n")
+        .values()
         .unwrap_or_else(|e| die(&format!("read n: {e}")))
     {
         BranchValues::I32(v) => {

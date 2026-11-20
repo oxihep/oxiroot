@@ -2,9 +2,9 @@
 //! (`FileWriter::put`). Round-tripped through oxiroot here; the same files are
 //! read by ROOT C++ (`RNTupleReader`) and uproot.
 
+use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader, FileWriter};
 use oxiroot_rntuple::{Field, FieldValues, NtupleReader};
-use crate::support::{NtupleObject};
 
 fn write(path: &str, compression: Compression) {
     FileWriter::create(path)
@@ -15,7 +15,10 @@ fn write(path: &str, compression: Compression) {
                 Field::f64("y", vec![0.5, 1.5, 2.5]),
             ],
         ))
-        .put(NtupleObject::new("runs", vec![Field::i32("run", vec![7, 8])]))
+        .put(NtupleObject::new(
+            "runs",
+            vec![Field::i32("run", vec![7, 8])],
+        ))
         .dir("cal", |d| {
             d.put(NtupleObject::new(
                 "pedestals",
@@ -77,7 +80,8 @@ fn compressed_multi_file_round_trips() {
     assert_eq!(
         NtupleReader::open_in(&f, "cal", "pedestals")
             .unwrap()
-            .field("p").values()
+            .field("p")
+            .values()
             .unwrap(),
         FieldValues::F64(vec![9.5, 8.5])
     );

@@ -239,7 +239,7 @@ fn dump_tree(
     let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
-        .map(|b| (b.clone(), tree.read_branch_range(file, b, 0, n as u64).ok()))
+        .map(|b| (b.clone(), tree.branch(b).range(0..n as u64).values().ok()))
         .collect();
 
     if json {
@@ -280,7 +280,7 @@ fn dump_rntuple(
     // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
         .iter()
-        .map(|f| (f.clone(), ntuple.read_field_prefix(file, f, n).ok()))
+        .map(|f| (f.clone(), ntuple.field(f).range(0..n as u64).values().ok()))
         .collect();
 
     if json {

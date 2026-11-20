@@ -123,7 +123,7 @@ fn main() -> oxiroot::Result<()> {
     )?;
 
     // Beyond listing, the high-level accessors make targeted look-ups trivial.
-    // `key()` returns the newest cycle of a name; `TreeReader::open_in` resolves an
+    // `key()` returns the newest cycle of a name; `Dataset::open_in` resolves an
     // object several directories deep — the sort of thing `oxroot ls -l` reports.
     let file = FileReader::open(nested_path)?;
     if let Some(top) = file.key("cal") {
@@ -132,7 +132,7 @@ fn main() -> oxiroot::Result<()> {
             top.name, top.cycle, top.class_name,
         );
     }
-    let events = TreeReader::open_in(&file, "cal/run2", "Events")?;
+    let events = Dataset::open_in(&file, "cal/run2", "Events")?;
     println!(
         "resolved deeply-nested TTree `cal/run2/Events`: {} entries",
         events.entries(),

@@ -1,8 +1,8 @@
 //! Write a tree with several baskets per branch (B8), then read it back.
 
+use crate::support::write_tree_file_baskets;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_tree::{Branch, BranchValues, TreeReader};
-use crate::support::{write_tree_file_baskets};
 
 #[test]
 fn multi_basket_round_trips() {

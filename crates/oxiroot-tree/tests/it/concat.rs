@@ -1,9 +1,9 @@
 //! Concatenating trees with [`append_trees`] — the `hadd` building block.
 use std::io::Cursor;
 
+use crate::support::write_tree_file;
 use oxiroot_io_core::{Compression, FileReader, Result};
 use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter, append_trees};
-use crate::support::write_tree_file;
 
 /// Write `branches` as tree `Events` to a fresh temp file and reopen it.
 fn write_open(tag: &str, branches: Vec<Branch>) -> (FileReader, &'static str) {
@@ -14,7 +14,12 @@ fn write_open(tag: &str, branches: Vec<Branch>) -> (FileReader, &'static str) {
 
 /// Merge `inputs` into one in-memory file holding tree `Events`.
 fn concat_trees(inputs: &[&TreeReader<'_>]) -> Result<Vec<u8>> {
-    let mut w = TreeWriter::new(Cursor::new(Vec::new()), "merged.root", "Events", Compression::None)?;
+    let mut w = TreeWriter::new(
+        Cursor::new(Vec::new()),
+        "merged.root",
+        "Events",
+        Compression::None,
+    )?;
     append_trees(&mut w, inputs)?;
     Ok(w.finish()?.into_inner())
 }

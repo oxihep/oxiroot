@@ -18,14 +18,25 @@
 //! h.fill_weight(42.0, 1.5);
 //! h.write_root("out.root", Compression::Zstd(5))?; // WriteRoot trait
 //!
-//! // Write a columnar dataset, then read it back.
-//! let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-//! write_rntuple_file("data.root", "events", &fields, Compression::None)?;
+//! // Write a columnar dataset — an RNTuple here, `Format::Tree` for a TTree —
+//! // then read it back.
+//! let batch = Batch::new().column("mass", vec![91.2_f64, 125.0])?;
+//! let mut out = DatasetWriter::create("data.root", "events", Format::Ntuple)?;
+//! out.write(&batch)?;
+//! out.finish()?;
 //! let f = FileReader::open("data.root")?;
-//! let ntpl = NtupleReader::open(&f, "events")?;
-//! assert_eq!(ntpl.entries(), 2);
+//! let events = Dataset::open(&f, "events")?;
+//! assert_eq!(events.read(["mass"])?.values::<f64>("mass")?, [91.2, 125.0]);
 //! # Ok::<(), oxiroot::Error>(())
 //! ```
+//!
+//! # Datasets
+//!
+//! [`data`] reads and writes ROOT's two columnar formats, `TTree` and RNTuple,
+//! through one API: a [`Batch`](data::Batch) of flat columns is what
+//! [`Dataset`](data::Dataset) reads and [`DatasetWriter`](data::DatasetWriter)
+//! writes, whatever the format. The format-specific readers and writers in
+//! [`tree`] and [`ntuple`] remain for what only one format has.
 //!
 //! # Naming
 //!
@@ -33,12 +44,10 @@
 //! end in `Reader` ([`FileReader`], [`TreeReader`](tree::TreeReader),
 //! [`NtupleReader`](ntuple::NtupleReader), [`ChainReader`](tree::ChainReader)),
 //! and types that write one end in `Writer` ([`FileWriter`](file::FileWriter),
-//! [`TreeWriter`](tree::TreeWriter), [`NtupleWriter`](ntuple::NtupleWriter)).
-//! The rest is in-memory data named for what it is —
-//! [`Hist1D`](hist::Hist1D), [`Profile1D`](hist::Profile1D),
-//! [`Graph`](hist::Graph), [`Func1D`](hist::Func1D) — and a
-//! [`Tree`](tree::Tree) or [`Ntuple`](ntuple::Ntuple) holds a whole tree or
-//! RNTuple to write in one go.
+//! [`DatasetWriter`](data::DatasetWriter), [`TreeWriter`](tree::TreeWriter),
+//! [`NtupleWriter`](ntuple::NtupleWriter)). The rest is in-memory data named
+//! for what it is — [`Hist1D`](hist::Hist1D), [`Profile1D`](hist::Profile1D),
+//! [`Graph`](hist::Graph), [`Func1D`](hist::Func1D), [`Batch`](data::Batch).
 //!
 //! Every ROOT class name is a doc alias of the type that models it, so searching
 //! the docs for `TH1`, `TProfile`, `TGraph`, `TF1`, `TFile`, `TTree`, `TChain`
@@ -48,9 +57,9 @@
 //! the dynamic [`Value`] tree, whose member keys (`fName`, `fBins`, …) are the
 //! file's own field names, read from its `TStreamerInfo`.
 //!
-//! The flat [`prelude`] covers the common read/write surface; the [`hist`],
-//! [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file) modules expose
-//! everything else.
+//! The flat [`prelude`] covers the common read/write surface; the [`data`],
+//! [`hist`], [`ntuple`], [`tree`], [`compress`], and [`file`](mod@file)
+//! modules expose everything else.
 
 mod error;
 
@@ -66,6 +75,13 @@ pub mod file {
 }
 
 pub mod hadd;
+
+/// One API to read and write `TTree` and RNTuple: [`Batch`](data::Batch)es of
+/// flat columns, read by [`Dataset`](data::Dataset) and written by
+/// [`DatasetWriter`](data::DatasetWriter) (from `oxiroot-dataset`).
+pub mod data {
+    pub use oxiroot_dataset::*;
+}
 
 /// ROOT compression framing and codecs (re-exported from `oxiroot-compress`).
 pub mod compress {
@@ -86,12 +102,14 @@ pub mod linalg {
     pub use oxiroot_linalg::*;
 }
 
-/// RNTuple, ROOT's columnar event-data format (from `oxiroot-rntuple`).
+/// RNTuple, ROOT's columnar event-data format, low level (from
+/// `oxiroot-rntuple`). For one API over `TTree` and RNTuple, see [`data`].
 pub mod ntuple {
     pub use oxiroot_rntuple::*;
 }
 
-/// Classic `TTree` columnar storage (from `oxiroot-tree`).
+/// Classic `TTree` columnar storage, low level (from `oxiroot-tree`). For one
+/// API over `TTree` and RNTuple, see [`data`].
 pub mod tree {
     pub use oxiroot_tree::*;
 }
@@ -136,8 +154,10 @@ pub mod plot {
 ///
 /// `use oxiroot::prelude::*;` brings in the file reader and writer
 /// ([`FileReader`], [`FileWriter`](crate::file::FileWriter)), [`Compression`],
-/// the histogram types with their `read_*`/`write_*` helpers, and the tree and
-/// RNTuple readers and writers.
+/// the histogram types with their `read_*`/`write_*` helpers, and the dataset
+/// API for `TTree` and RNTuple ([`Dataset`](crate::data::Dataset),
+/// [`DatasetWriter`](crate::data::DatasetWriter), [`Batch`](crate::data::Batch),
+/// [`Format`](crate::data::Format)).
 pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
@@ -174,12 +194,5 @@ pub mod prelude {
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
-    pub use oxiroot_rntuple::{
-        Column, Field, FieldValues, Ntuple, NtupleReader, NtupleWriter, write_rntuple_file,
-    };
-
-    pub use oxiroot_tree::{
-        Branch, BranchValues, ChainReader, EntryList, Friend, Jagged, LeafType, SplitMember, Tree,
-        TreeIndex, TreeReader, TreeWriter, write_tree_file, write_tree_file_baskets,
-    };
+    pub use oxiroot_dataset::{Batch, Dataset, DatasetObject, DatasetWriter, Format};
 }

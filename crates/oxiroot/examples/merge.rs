@@ -47,10 +47,14 @@ fn main() -> oxiroot::Result<()> {
     println!("{report}");
 
     // --- Two tree files, entries concatenated --------------------------------
-    Tree::new("Events", vec![Branch::f64("mass", vec![91.2, 125.0])])
-        .write_root(path("evt1.root"), Compression::Zstd(5))?;
-    Tree::new("Events", vec![Branch::f64("mass", vec![80.4, 172.0, 4.18])])
-        .write_root(path("evt2.root"), Compression::Zstd(5))?;
+    for (file, mass) in [
+        ("evt1.root", vec![91.2, 125.0]),
+        ("evt2.root", vec![80.4, 172.0, 4.18]),
+    ] {
+        let mut out = DatasetWriter::create(path(file), "Events", Format::Tree)?;
+        out.write(&Batch::new().column("mass", mass)?)?;
+        out.finish()?;
+    }
 
     // The Merger builder is the composable form of `merge_files`.
     let report = Merger::new()

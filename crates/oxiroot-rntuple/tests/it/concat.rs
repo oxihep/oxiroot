@@ -1,13 +1,18 @@
 //! Concatenating RNTuples with [`append_ntuples`] — the `hadd` building block.
 use std::io::Cursor;
 
+use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader, Result};
 use oxiroot_rntuple::{Field, FieldValues, NtupleReader, NtupleWriter, append_ntuples};
-use crate::support::NtupleObject;
 
 /// Merge `inputs` into one in-memory file holding RNTuple `name`.
 fn concat_ntuples(name: &str, inputs: &[&NtupleReader<'_>]) -> Result<Vec<u8>> {
-    let mut w = NtupleWriter::new(Cursor::new(Vec::new()), "merged.root", name, Compression::None)?;
+    let mut w = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "merged.root",
+        name,
+        Compression::None,
+    )?;
     append_ntuples(&mut w, inputs)?;
     Ok(w.finish()?.into_inner())
 }

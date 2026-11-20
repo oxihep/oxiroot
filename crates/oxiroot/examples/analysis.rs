@@ -137,31 +137,23 @@ fn main() -> oxiroot::Result<()> {
         .write(Compression::Zstd(5))?;
     println!("appended `{}` to {}", sig.name, multi_path.display());
 
-    // --- Write a columnar event dataset: build an `Ntuple`, then `write_root`. -
-    // The method form of `write_rntuple_file`, mirroring `hist.write_root`.
+    // --- Write a columnar event dataset: a `Batch`, written as an RNTuple. ----
+    let events_batch = Batch::new()
+        .column("mass", vec![91.2, 125.1, 173.0])?
+        .column("charge", vec![0_i32, -1, 1])?
+        .column("label", vec!["Z", "H", "top"])?
+        .column("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]])?;
     let ntuple_path = dir.join("analysis_events.root");
-    let events_ntuple = Ntuple::new(
-        "events",
-        vec![
-            Field::f64("mass", vec![91.2, 125.1, 173.0]),
-            Field::i32("charge", vec![0, -1, 1]),
-            Field::strings("label", vec!["Z".into(), "H".into(), "top".into()]),
-            Field::vec_f64("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]]),
-        ],
-    );
-    events_ntuple.write_root(&ntuple_path, Compression::Zstd(5))?;
+    let mut out = DatasetWriter::create(&ntuple_path, "events", Format::Ntuple)?;
+    out.write(&events_batch)?;
+    out.finish()?;
     println!("wrote RNTuple -> {}", ntuple_path.display());
 
-    // --- Same events as a classic TTree: build a `Tree`, then `write_root`. ----
+    // --- The same batch as a classic TTree: only the format changes. -----------
     let tree_path = dir.join("analysis_tree.root");
-    Tree::new(
-        "Events",
-        vec![
-            Branch::f64("mass", vec![91.2, 125.1, 173.0]),
-            Branch::i32("charge", vec![0, -1, 1]),
-        ],
-    )
-    .write_root(&tree_path, Compression::Zstd(5))?;
+    let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
+    out.write(&events_batch)?;
+    out.finish()?;
     println!("wrote TTree   -> {}", tree_path.display());
 
     // --- Read it all back (idiomatic `Hist1D::read_root`; subdir via `read_root_in`).
@@ -174,18 +166,18 @@ fn main() -> oxiroot::Result<()> {
         sig_back.integral(),
     );
 
-    let g = FileReader::open(&ntuple_path)?;
-    let events = NtupleReader::open(&g, "events")?;
-    println!("RNTuple `events`: {} entries", events.entries());
-    if let FieldValues::VecF64(jets) = events.read_field(&g, "jet_pt")? {
-        println!("  jet_pt per event: {jets:?}");
-    }
-
-    let h = FileReader::open(&tree_path)?;
-    let tree = TreeReader::open(&h, "Events")?;
-    println!("TTree `Events`: {} entries", tree.entries());
-    if let BranchValues::F64(mass) = tree.read_branch(&h, "mass")? {
-        println!("  mass per entry: {mass:?}");
+    // Both read back the same way.
+    for (path, name) in [(&ntuple_path, "events"), (&tree_path, "Events")] {
+        let file = FileReader::open(path)?;
+        let events = Dataset::open(&file, name)?;
+        let batch = events.read(["mass", "jet_pt"])?;
+        let jets: Vec<&[f64]> = batch.jagged::<f64>("jet_pt")?.rows().collect();
+        println!(
+            "{:?} `{name}`: {} entries, mass {:?}, jet_pt {jets:?}",
+            events.format(),
+            events.entries(),
+            batch.values::<f64>("mass")?
+        );
     }
 
     Ok(())

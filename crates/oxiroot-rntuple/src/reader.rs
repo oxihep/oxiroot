@@ -389,12 +389,17 @@ impl<'f> NtupleReader<'f> {
         let last = self.summaries.iter().rposition(|s| s.first_entry < stop);
         let (jagged, from) = match (deferred, first, last) {
             (false, Some(k0), Some(k1)) if k0 <= k1 => (
-                self.cluster_window(k0, k1 + 1).read_flat_top(self.file, name)?,
+                self.cluster_window(k0, k1 + 1)
+                    .read_flat_top(self.file, name)?,
                 self.summaries[k0].first_entry,
             ),
             _ => (self.read_flat_top(self.file, name)?, 0),
         };
-        let Some(Jagged { offsets, mut values }) = jagged else {
+        let Some(Jagged {
+            offsets,
+            mut values,
+        }) = jagged
+        else {
             return Ok(None);
         };
         let a = usize::saturating_from(start - from);

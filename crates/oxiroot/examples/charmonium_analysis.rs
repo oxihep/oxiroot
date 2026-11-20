@@ -165,21 +165,23 @@ mod analysis {
             ct.push(rng.decay_length(BKG_LONG, CT_BKG) as f32);
         }
         let tree_path = dir.join("dimuons.root");
-        Tree::new(
-            "dimuons",
-            vec![Branch::f32("mass", mass), Branch::f32("ctau", ct)],
-        )
-        .write_root(&tree_path, Compression::Zstd(5))?;
+        let candidates = Batch::new().column("mass", mass)?.column("ctau", ct)?;
+        let mut out = DatasetWriter::create(&tree_path, "dimuons", Format::Tree)?;
+        out.write(&candidates)?;
+        out.finish()?;
 
         let file = FileReader::open(&tree_path)?;
-        let tree = TreeReader::open(&file, "dimuons")?;
-        let column = |name: &str| -> oxiroot::Result<Vec<f64>> {
-            match tree.read_branch(&file, name)? {
-                BranchValues::F32(v) => Ok(v.into_iter().map(f64::from).collect()),
-                other => panic!("{name} is {:?}, not a float branch", other.leaf_type()),
-            }
+        let tree = Dataset::open(&file, "dimuons")?;
+        let data = tree.read(["mass", "ctau"])?;
+        let widen = |name: &str| -> oxiroot::Result<Vec<f64>> {
+            Ok(data
+                .values::<f32>(name)?
+                .iter()
+                .copied()
+                .map(f64::from)
+                .collect())
         };
-        let (mass, ct) = (column("mass")?, column("ctau")?);
+        let (mass, ct) = (widen("mass")?, widen("ctau")?);
         println!(
             "1. Wrote and read back {} dimuon candidates ({} J/ψ, {} ψ(2S), {} background) — {}",
             tree.entries(),
@@ -543,16 +545,16 @@ mod analysis {
             .add(&m_hist)
             .add(&t_hist)
             .add(&pulls)
-            .put(Tree::new(
+            .put(DatasetObject::new(
                 "toys",
-                vec![
-                    Branch::f64("ratio_pull", ratio_pulls.clone()),
-                    Branch::f64("mass_pull", mass_pulls.clone()),
-                ],
-            ))
+                Format::Tree,
+                &Batch::new()
+                    .column("ratio_pull", ratio_pulls.clone())?
+                    .column("mass_pull", mass_pulls.clone())?,
+            )?)
             .write(Compression::Zstd(5))?;
         let check = FileReader::open(&results)?;
-        let toys = TreeReader::open(&check, "toys")?;
+        let toys = Dataset::open(&check, "toys")?;
         let back = Hist1D::read_root(&check, "m_mumu")?;
         println!(
             "\n6. Results file {} — m_mumu ({:.0} entries) and {} toy pulls read back",

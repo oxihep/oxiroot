@@ -4,8 +4,8 @@
 //! (ROOT 6.40 needs the map's dictionary compiled in to write or read a
 //! `std::map` RNTuple: `scripts/rntuple_map_LinkDef.h`.)
 
+use crate::support::NtupleObject;
 use std::path::PathBuf;
-use crate::support::{NtupleObject};
 
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_rntuple::{Field, FieldValues, NtupleReader, StructRole};

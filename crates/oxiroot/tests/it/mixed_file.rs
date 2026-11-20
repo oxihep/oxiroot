@@ -1,7 +1,10 @@
 //! Histograms, a `TTree` and an RNTuple in one file, through one `FileWriter`.
 
+use crate::support::{NtupleObject, TreeObject};
 use oxiroot::file::Error;
+use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
 use oxiroot::prelude::*;
+use oxiroot::tree::{Branch, BranchValues, TreeReader};
 
 fn hist() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("pt");
@@ -15,17 +18,22 @@ fn histograms_trees_and_rntuples_share_a_file() {
     let path = std::env::temp_dir().join("oxiroot_mixed_all.root");
     FileWriter::create(&path)
         .add(&hist())
-        .put(Tree::new(
+        .put(TreeObject::new(
             "Events",
             vec![
                 Branch::f64("energy", vec![10.5, 20.1, 5.0]),
                 Branch::jagged_i32("hits", vec![vec![1], vec![], vec![2, 3]]),
             ],
         ))
-        .put(Ntuple::new("ntuple", vec![Field::i32("x", vec![1, 2])]))
+        .put(NtupleObject::new(
+            "ntuple",
+            vec![Field::i32("x", vec![1, 2])],
+        ))
         .dir("cal", |d| {
-            d.add(&Parameter::f64("gain", 1.5))
-                .put(Tree::new("Pedestals", vec![Branch::i32("adc", vec![3, 4])]))
+            d.add(&Parameter::f64("gain", 1.5)).put(TreeObject::new(
+                "Pedestals",
+                vec![Branch::i32("adc", vec![3, 4])],
+            ))
         })
         .write(Compression::Zstd(5))
         .unwrap();
@@ -34,17 +42,18 @@ fn histograms_trees_and_rntuples_share_a_file() {
     assert_eq!(Hist1D::read_root(&f, "pt").unwrap(), hist());
     let tree = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(
-        tree.read_branch(&f, "energy").unwrap(),
+        tree.branch("energy").values().unwrap(),
         BranchValues::F64(vec![10.5, 20.1, 5.0])
     );
     assert_eq!(
-        tree.read_branch(&f, "hits").unwrap(),
+        tree.branch("hits").values().unwrap(),
         BranchValues::VecI32(vec![vec![1], vec![], vec![2, 3]])
     );
     assert_eq!(
         NtupleReader::open(&f, "ntuple")
             .unwrap()
-            .read_field(&f, "x")
+            .field("x")
+            .values()
             .unwrap(),
         FieldValues::I32(vec![1, 2])
     );
@@ -57,7 +66,7 @@ fn histograms_trees_and_rntuples_share_a_file() {
     );
     let ped = TreeReader::open_in(&f, "cal", "Pedestals").unwrap();
     assert_eq!(
-        ped.read_branch(&f, "adc").unwrap(),
+        ped.branch("adc").values().unwrap(),
         BranchValues::I32(vec![3, 4])
     );
 
@@ -78,7 +87,7 @@ fn histograms_trees_and_rntuples_share_a_file() {
 fn a_tree_and_a_histogram_cannot_share_a_name() {
     let err = FileWriter::create("clash.root")
         .add(&hist())
-        .put(Tree::new("pt", vec![Branch::i32("x", vec![1])]))
+        .put(TreeObject::new("pt", vec![Branch::i32("x", vec![1])]))
         .to_bytes(Compression::None);
     assert!(matches!(err, Err(Error::DuplicateName { .. })), "{err:?}");
 }
@@ -89,7 +98,7 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
     hist().write_root(&path, Compression::None).unwrap();
     FileWriter::open(&path)
         .unwrap()
-        .put(Tree::new("T", vec![Branch::u8("flag", vec![1, 0])]))
+        .put(TreeObject::new("T", vec![Branch::u8("flag", vec![1, 0])]))
         .write(Compression::None)
         .unwrap();
     let f = FileReader::open(&path).unwrap();
@@ -97,7 +106,8 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
     assert_eq!(
         TreeReader::open(&f, "T")
             .unwrap()
-            .read_branch(&f, "flag")
+            .branch("flag")
+            .values()
             .unwrap(),
         BranchValues::U8(vec![1, 0])
     );
@@ -110,7 +120,7 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
 fn compacting_a_file_that_holds_a_tree_is_refused() {
     let path = std::env::temp_dir().join("oxiroot_compact_with_tree.root");
     FileWriter::create(&path)
-        .put(Tree::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
+        .put(TreeObject::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
         .write(Compression::None)
         .expect("write");
 

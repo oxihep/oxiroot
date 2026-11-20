@@ -1,9 +1,9 @@
 //! The typed errors a caller can match on when reading a tree: a missing tree or
 //! branch, and a key holding another class.
 
+use crate::support::tree_file_bytes;
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
 use oxiroot_tree::{Branch, TreeReader};
-use crate::support::{tree_file_bytes};
 
 #[test]
 fn a_missing_tree_or_branch_is_not_found() {

@@ -2,8 +2,8 @@
 //! then read it back through our own reader. The /tmp file is also checked by
 //! uproot / ROOT C++ when run by hand (see `scripts/`).
 
+use crate::support::write_tree_file;
 use std::path::PathBuf;
-use crate::support::{write_tree_file};
 
 use oxiroot_io_core::{Compression, Error, FileReader};
 use oxiroot_tree::{Branch, BranchValues, SplitMember, TreeReader};

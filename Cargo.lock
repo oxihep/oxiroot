@@ -939,6 +939,7 @@ dependencies = [
  "oxiparticle",
  "oxiplot",
  "oxiroot-compress",
+ "oxiroot-dataset",
  "oxiroot-hist",
  "oxiroot-hist-func",
  "oxiroot-io-core",

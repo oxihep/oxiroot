@@ -15,8 +15,8 @@ oxiroot-io-core = { workspace = true }
 rayon = { version = "1", optional = true }
 
 [features]
-# Add `TreeReader::read_branch_par` and friends, which decompress a branch's baskets
-# in parallel. The plain read methods stay serial either way.
+# Add `BranchRead::parallel`, which decompresses a branch's baskets in parallel.
+# Reads stay serial unless asked.
 rayon = ["dep:rayon"]
 
 # Render the parallel reads (`rayon`) in the docs.rs API reference.

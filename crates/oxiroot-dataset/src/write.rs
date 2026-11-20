@@ -53,7 +53,10 @@ pub struct DatasetWriter<W: Write + Seek = File> {
 
 enum Sink<W: Write + Seek> {
     /// Not opened yet: options can still change.
-    Pending { sink: W, file_name: String },
+    Pending {
+        sink: W,
+        file_name: String,
+    },
     Tree(TreeWriter<W>),
     Ntuple(NtupleWriter<W>),
     /// Taken while being opened.
@@ -146,7 +149,9 @@ impl<W: Write + Seek> DatasetWriter<W> {
             }
             Some(s) if *s != schema => {
                 return Err(Error::SchemaChanged {
-                    detail: format!("this batch's columns {schema:?} differ from the first's {s:?}"),
+                    detail: format!(
+                        "this batch's columns {schema:?} differ from the first's {s:?}"
+                    ),
                 });
             }
             Some(_) => {}
@@ -160,7 +165,11 @@ impl<W: Write + Seek> DatasetWriter<W> {
             None => self.buffer = Some(batch.clone()),
             Some(buffer) => buffer.append(batch.clone())?,
         }
-        if self.buffer.as_ref().is_some_and(|b| b.byte_size() >= self.cluster_bytes) {
+        if self
+            .buffer
+            .as_ref()
+            .is_some_and(|b| b.byte_size() >= self.cluster_bytes)
+        {
             self.flush()?;
         }
         Ok(())
@@ -199,7 +208,8 @@ impl<W: Write + Seek> DatasetWriter<W> {
         if !matches!(self.sink, Sink::Pending { .. }) {
             return Ok(());
         }
-        let Sink::Pending { sink, file_name } = std::mem::replace(&mut self.sink, Sink::Gone) else {
+        let Sink::Pending { sink, file_name } = std::mem::replace(&mut self.sink, Sink::Gone)
+        else {
             unreachable!("checked above")
         };
         let (c, name) = (self.compression, self.name.as_str());
@@ -395,7 +405,12 @@ fn ntuple_field_ok(c: &Column) -> bool {
         },
         Column::Array { values, .. } => matches!(
             **values,
-            Column::I32(_) | Column::I64(_) | Column::U32(_) | Column::U64(_) | Column::F32(_) | Column::F64(_)
+            Column::I32(_)
+                | Column::I64(_)
+                | Column::U32(_)
+                | Column::U64(_)
+                | Column::F32(_)
+                | Column::F64(_)
         ),
         Column::Optional { values, .. } => matches!(
             **values,
@@ -423,8 +438,10 @@ fn strings(offsets: &[u64], bytes: &[u8]) -> Vec<String> {
     offsets
         .windows(2)
         .map(|w| {
-            String::from_utf8_lossy(&bytes[usize::saturating_from(w[0])..usize::saturating_from(w[1])])
-                .into_owned()
+            String::from_utf8_lossy(
+                &bytes[usize::saturating_from(w[0])..usize::saturating_from(w[1])],
+            )
+            .into_owned()
         })
         .collect()
 }
@@ -454,10 +471,12 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
     const WHAT: &str = "a TTree";
     match c {
         Column::String { offsets, bytes } => Ok(Branch::string(name, strings(offsets, bytes))),
-        Column::List { offsets, values } => by_type!(Branch, name, c, WHAT, &**values, v => rows(offsets, v);
+        Column::List { offsets, values } => {
+            by_type!(Branch, name, c, WHAT, &**values, v => rows(offsets, v);
             I8 => vector_i8, U8 => vector_u8, I16 => vector_i16, U16 => vector_u16,
             I32 => vector_i32, U32 => vector_u32, I64 => vector_i64, U64 => vector_u64,
-            F32 => vector_f32, F64 => vector_f64),
+            F32 => vector_f32, F64 => vector_f64)
+        }
         Column::Array { len, values } => by_type!(Branch, name, c, WHAT, &**values,
             v => v.chunks(*len).map(<[_]>::to_vec).collect();
             Bool => array_bool, I8 => array_i8, U8 => array_u8, I16 => array_i16,
@@ -475,10 +494,14 @@ fn ntuple_field(name: &str, c: &Column) -> Result<Field> {
     match c {
         Column::String { offsets, bytes } => Ok(Field::string(name, strings(offsets, bytes))),
         Column::List { offsets, values } => match &**values {
-            Column::String { offsets: o2, bytes } => {
-                Ok(Field::vector_string(name, rows(offsets, &strings(o2, bytes))))
-            }
-            Column::List { offsets: o2, values: inner } => match &**inner {
+            Column::String { offsets: o2, bytes } => Ok(Field::vector_string(
+                name,
+                rows(offsets, &strings(o2, bytes)),
+            )),
+            Column::List {
+                offsets: o2,
+                values: inner,
+            } => match &**inner {
                 Column::String { offsets: o3, bytes } => Ok(Field::vector_vector_string(
                     name,
                     rows(offsets, &rows(o2, &strings(o3, bytes))),
