@@ -1,7 +1,8 @@
 //! Write a tree with several baskets per branch (B8), then read it back.
 
+use crate::support::write_tree_file_baskets;
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, BranchValues, TreeReader, write_tree_file_baskets};
+use oxiroot_tree::{Branch, BranchValues, TreeReader};
 
 #[test]
 fn multi_basket_round_trips() {
@@ -29,12 +30,12 @@ fn multi_basket_round_trips() {
     assert_eq!(t.entries(), 7);
 
     // Full read concatenates the three baskets back into the original column.
-    assert_eq!(t.read_branch(&f, "x").expect("x"), BranchValues::I32(x));
-    assert_eq!(t.read_branch(&f, "y").expect("y"), BranchValues::VecF64(y));
+    assert_eq!(t.branch("x").values().expect("x"), BranchValues::I32(x));
+    assert_eq!(t.branch("y").values().expect("y"), BranchValues::VecF64(y));
 
     // A ranged read across a basket boundary still works.
     assert_eq!(
-        t.read_branch_range(&f, "x", 2, 5).expect("range"),
+        t.branch("x").range(2..5).values().expect("range"),
         BranchValues::I32(vec![2, 3, 4])
     );
 }

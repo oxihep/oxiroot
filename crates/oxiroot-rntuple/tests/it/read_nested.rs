@@ -24,7 +24,7 @@ fn check_nested(name: &str) {
         ["vs", "vvi", "vp"],
         "{name} field names"
     );
-    let field = |n| ntpl.read_field(&file, n).expect("read field");
+    let field = |n| ntpl.field(n).values().expect("read field");
 
     // std::vector<std::string>: one Vec<String> per entry.
     assert_eq!(

@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_arrays_and_strings() {
     let f = FileReader::open(fixture("tree_arrays.root")).expect("open");
     let t = TreeReader::open(&f, "T").expect("open tree");
-    let read = |n| t.read_branch(&f, n).expect("read branch");
+    let read = |n| t.branch(n).values().expect("read branch");
 
     // Fixed-size array x[3].
     assert_eq!(

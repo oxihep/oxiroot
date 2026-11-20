@@ -18,7 +18,7 @@ fn check(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 4, "{name}");
-    let field = |n| ntpl.read_field(&file, n).expect("read field");
+    let field = |n| ntpl.field(n).values().expect("read field");
 
     // std::array<int32_t, 3>: entry i = {i, i*10, i*100}.
     assert_eq!(

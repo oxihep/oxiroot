@@ -18,7 +18,7 @@ fn reads_leaflist_branch() {
     assert_eq!(t.branch_names(), ["s.a", "s.b", "s.c"]);
     assert!(t.unsupported_branches().is_empty());
 
-    let read = |n| t.read_branch(&f, n).expect("read branch");
+    let read = |n| t.branch(n).values().expect("read branch");
     assert_eq!(read("s.a"), BranchValues::F32(vec![0.5, 1.5, 2.5, 3.5]));
     assert_eq!(read("s.b"), BranchValues::I32(vec![0, 10, 20, 30]));
     assert_eq!(read("s.c"), BranchValues::F64(vec![0.0, 1.25, 2.5, 3.75]));

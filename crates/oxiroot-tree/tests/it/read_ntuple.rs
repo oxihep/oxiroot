@@ -24,11 +24,11 @@ fn reads_tntuple_float() {
     assert_eq!(t.entries(), 4);
     assert_eq!(t.branch_names(), vec!["x", "y", "z"]);
     assert_eq!(
-        t.read_branch(&f, "x").unwrap(),
+        t.branch("x").values().unwrap(),
         BranchValues::F32(vec![1.5, 11.5, 21.5, 31.5])
     );
     assert_eq!(
-        t.read_branch(&f, "z").unwrap(),
+        t.branch("z").values().unwrap(),
         BranchValues::F32(vec![3.5, 13.5, 23.5, 33.5])
     );
 }
@@ -40,11 +40,11 @@ fn reads_tntupled_double() {
     assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), vec!["a", "b"]);
     assert_eq!(
-        t.read_branch(&f, "a").unwrap(),
+        t.branch("a").values().unwrap(),
         BranchValues::F64(vec![100.25, 300.25, 500.25])
     );
     assert_eq!(
-        t.read_branch(&f, "b").unwrap(),
+        t.branch("b").values().unwrap(),
         BranchValues::F64(vec![200.25, 400.25, 600.25])
     );
 }

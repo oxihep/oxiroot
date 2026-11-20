@@ -1,0 +1,28 @@
+[package]
+name = "oxiroot-dataset"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["root", "cern", "hep", "ttree", "rntuple"]
+categories = ["science", "parser-implementations", "encoding"]
+description = "One API to read and write ROOT TTree and RNTuple: columnar batches"
+
+[dependencies]
+oxiroot-io-core = { workspace = true }
+oxiroot-tree = { workspace = true }
+oxiroot-rntuple = { workspace = true }
+rayon = { version = "1", optional = true }
+
+[features]
+# Read a batch's columns concurrently (`Batches::parallel`), decompressing
+# each TTree branch's baskets in parallel too.
+rayon = ["dep:rayon", "oxiroot-tree/rayon"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

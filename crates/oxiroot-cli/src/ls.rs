@@ -175,7 +175,7 @@ fn entry_count(file: &FileReader, class: &str, leaf: &str, dir_path: &str) -> Op
 }
 
 /// Open a `TTree` from the root directory or a subdirectory (`Ok`s only).
-fn open_tree(file: &FileReader, dir_path: &str, leaf: &str) -> Option<TreeReader> {
+fn open_tree<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<TreeReader<'f>> {
     if dir_path.is_empty() {
         TreeReader::open(file, leaf)
     } else {
@@ -185,7 +185,7 @@ fn open_tree(file: &FileReader, dir_path: &str, leaf: &str) -> Option<TreeReader
 }
 
 /// Open an RNTuple from the root directory or a subdirectory (`Ok`s only).
-fn open_ntuple(file: &FileReader, dir_path: &str, leaf: &str) -> Option<NtupleReader> {
+fn open_ntuple<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<NtupleReader<'f>> {
     if dir_path.is_empty() {
         NtupleReader::open(file, leaf)
     } else {

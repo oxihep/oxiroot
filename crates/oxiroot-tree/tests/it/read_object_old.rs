@@ -38,25 +38,25 @@ fn reads_tbranchobject_members() {
 
     // Named: two string members.
     assert_eq!(
-        t.read_branch(&f, "nm.fName").unwrap(),
+        t.branch("nm.fName").values().unwrap(),
         BranchValues::Str(vec!["name0".into(), "name1".into(), "name2".into()])
     );
     assert_eq!(
-        t.read_branch(&f, "nm.fTitle").unwrap(),
+        t.branch("nm.fTitle").values().unwrap(),
         BranchValues::Str(vec!["ttl0".into(), "ttl1".into(), "ttl2".into()])
     );
     // Parameter<double>: a string name and a double value.
     assert_eq!(
-        t.read_branch(&f, "pd.fName").unwrap(),
+        t.branch("pd.fName").values().unwrap(),
         BranchValues::Str(vec!["pd".into(), "pd".into(), "pd".into()])
     );
     assert_eq!(
-        t.read_branch(&f, "pd.fVal").unwrap(),
+        t.branch("pd.fVal").values().unwrap(),
         BranchValues::F64(vec![0.5, 1.5, 2.5])
     );
     // Parameter<int>: a string name and an int value.
     assert_eq!(
-        t.read_branch(&f, "pi.fVal").unwrap(),
+        t.branch("pi.fVal").values().unwrap(),
         BranchValues::I32(vec![0, 10, 20])
     );
 }
@@ -70,7 +70,7 @@ fn object_member_introspection_and_range() {
     assert_eq!(t.branch_type("nm.fName"), Some(oxiroot_tree::LeafType::Str));
     // A range read slices the decoded column.
     assert_eq!(
-        t.read_branch_range(&f, "pi.fVal", 1, 3).unwrap(),
+        t.branch("pi.fVal").range(1..3).values().unwrap(),
         BranchValues::I32(vec![10, 20])
     );
 }

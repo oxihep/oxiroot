@@ -7,7 +7,7 @@ use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
 
 fn round_trip(fields: &[Field], tag: &str) -> FileReader {
     let out = std::env::temp_dir().join(format!("oxiroot_write_nested_{tag}.root"));
-    oxiroot_rntuple::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
+    crate::support::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
     FileReader::open(&out).expect("reopen")
 }
 
@@ -18,11 +18,11 @@ fn writes_vector_of_strings() {
         vec!["a".to_string()],
         vec!["b".to_string(), "c".to_string()],
     ];
-    let fields = vec![Field::vec_str("vs", vs.clone())];
+    let fields = vec![Field::vector_string("vs", vs.clone())];
     let file = round_trip(&fields, "vs");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
-        ntpl.read_field(&file, "vs").expect("vs"),
+        ntpl.field("vs").values().expect("vs"),
         FieldValues::VecStr(vs)
     );
 }
@@ -30,11 +30,11 @@ fn writes_vector_of_strings() {
 #[test]
 fn writes_vector_of_vectors() {
     let vvi = vec![vec![], vec![vec![1]], vec![vec![2], vec![3, 3]]];
-    let fields = vec![Field::vec_vec_i32("vvi", vvi)];
+    let fields = vec![Field::vector_vector_i32("vvi", vvi)];
     let file = round_trip(&fields, "vvi");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
-        ntpl.read_field(&file, "vvi").expect("vvi"),
+        ntpl.field("vvi").values().expect("vvi"),
         FieldValues::Nested {
             offsets: vec![0, 0, 1, 3],
             items: Box::new(FieldValues::VecI32(vec![vec![1], vec![2], vec![3, 3]])),
@@ -56,7 +56,7 @@ fn writes_vector_of_records() {
     let file = round_trip(&fields, "vp");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
-        ntpl.read_field(&file, "vp").expect("vp"),
+        ntpl.field("vp").values().expect("vp"),
         FieldValues::Nested {
             offsets: vec![0, 0, 1, 3],
             items: Box::new(FieldValues::Record(vec![
@@ -79,7 +79,7 @@ fn writes_a_top_level_record() {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(ntpl.entries(), 3);
     assert_eq!(
-        ntpl.read_field(&file, "p").expect("p"),
+        ntpl.field("p").values().expect("p"),
         FieldValues::Record(vec![
             ("_0".to_string(), FieldValues::I32(vec![1, 2, 3])),
             ("_1".to_string(), FieldValues::F64(vec![1.5, 2.5, 3.5])),

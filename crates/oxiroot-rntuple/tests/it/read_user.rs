@@ -18,7 +18,7 @@ fn reads_user_class() {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     // Top-level struct -> Record of named sub-fields.
     assert_eq!(
-        ntpl.read_field(&file, "hit").expect("hit"),
+        ntpl.field("hit").values().expect("hit"),
         FieldValues::Record(vec![
             ("id".into(), FieldValues::I32(vec![0, 1, 2])),
             ("energy".into(), FieldValues::F64(vec![0.5, 1.5, 2.5])),
@@ -26,7 +26,7 @@ fn reads_user_class() {
     );
     // vector<struct> -> Nested over a Record.
     assert_eq!(
-        ntpl.read_field(&file, "vhit").expect("vhit"),
+        ntpl.field("vhit").values().expect("vhit"),
         FieldValues::Nested {
             offsets: vec![0, 1, 3, 6],
             items: Box::new(FieldValues::Record(vec![

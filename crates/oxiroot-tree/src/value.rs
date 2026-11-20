@@ -139,7 +139,7 @@ pub enum BranchValues {
 ///
 /// `offsets` has `num_entries + 1` values with `offsets[0] == 0`; entry `i`'s
 /// elements are `values[offsets[i] .. offsets[i+1]]`. Built by
-/// [`TreeReader::read_branch_flat`](crate::TreeReader::read_branch_flat). `values` is
+/// [`BranchRead::flat`](crate::BranchRead::flat). `values` is
 /// always a *scalar* variant (e.g. `F64`), never a `Vec*`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Jagged {
@@ -163,7 +163,118 @@ impl Jagged {
     }
 }
 
+/// A Rust type a branch can be read as with
+/// [`BranchRead::read`](crate::BranchRead::read): the scalar types for scalar
+/// branches, `Vec<T>` for arrays and `std::vector<T>`, `String` and
+/// `Vec<String>` for strings, `Vec<Vec<T>>` for `std::vector<std::vector<T>>`.
+pub trait FromBranch: Sized {
+    /// How the type is named in a type-mismatch error.
+    const TYPE_NAME: &'static str;
+
+    /// Take the values out of `values`, or fail with
+    /// [`Error::TypeMismatch`] naming `name` if they are another type.
+    fn from_values(name: &str, values: BranchValues) -> Result<Vec<Self>>;
+}
+
+fn mismatch(name: &str, found: &BranchValues, expected: &str) -> Error {
+    Error::TypeMismatch {
+        name: name.to_string(),
+        found: found.type_name(),
+        expected: expected.to_string(),
+    }
+}
+
+macro_rules! from_branch {
+    ($($t:ty => $scalar:ident, $vec:ident;)*) => {$(
+        impl FromBranch for $t {
+            const TYPE_NAME: &'static str = stringify!($t);
+            fn from_values(name: &str, values: BranchValues) -> Result<Vec<Self>> {
+                match values {
+                    BranchValues::$scalar(v) => Ok(v),
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+        impl FromBranch for Vec<$t> {
+            const TYPE_NAME: &'static str = concat!("Vec<", stringify!($t), ">");
+            fn from_values(name: &str, values: BranchValues) -> Result<Vec<Self>> {
+                match values {
+                    BranchValues::$vec(v) => Ok(v),
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+        impl FromBranch for Vec<Vec<$t>> {
+            const TYPE_NAME: &'static str = concat!("Vec<Vec<", stringify!($t), ">>");
+            fn from_values(name: &str, values: BranchValues) -> Result<Vec<Self>> {
+                match values {
+                    BranchValues::Nested { offsets, items } => match *items {
+                        BranchValues::$vec(inner) => Ok(split_by_offsets(&offsets, inner)),
+                        other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                    },
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+    )*};
+}
+
+from_branch! {
+    bool => Bool, VecBool;
+    i8 => I8, VecI8;
+    u8 => U8, VecU8;
+    i16 => I16, VecI16;
+    u16 => U16, VecU16;
+    i32 => I32, VecI32;
+    u32 => U32, VecU32;
+    i64 => I64, VecI64;
+    u64 => U64, VecU64;
+    f32 => F32, VecF32;
+    f64 => F64, VecF64;
+    String => Str, VecStr;
+}
+
+/// Split `items` into one `Vec` per entry at the cumulative `offsets`.
+fn split_by_offsets<T>(offsets: &[u64], items: Vec<T>) -> Vec<Vec<T>> {
+    let mut out = Vec::with_capacity(offsets.len().saturating_sub(1));
+    let mut items = items.into_iter();
+    for w in offsets.windows(2) {
+        let n = usize::try_from(w[1].saturating_sub(w[0])).unwrap_or(usize::MAX);
+        out.push(items.by_ref().take(n).collect());
+    }
+    out
+}
+
 impl BranchValues {
+    /// How this column's type reads in an error: `f32`, `Vec<f32>`,
+    /// `Vec<Vec<f32>>`, `String`.
+    #[must_use]
+    pub fn type_name(&self) -> String {
+        let elem = match self.leaf_type() {
+            LeafType::Bool => "bool",
+            LeafType::I8 => "i8",
+            LeafType::U8 => "u8",
+            LeafType::I16 => "i16",
+            LeafType::U16 => "u16",
+            LeafType::I32 => "i32",
+            LeafType::U32 => "u32",
+            LeafType::I64 => "i64",
+            LeafType::U64 => "u64",
+            LeafType::F32 => "f32",
+            LeafType::F64 => "f64",
+            LeafType::Str => "String",
+        };
+        use BranchValues::*;
+        match self {
+            Nested { .. } => format!("Vec<Vec<{elem}>>"),
+            VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
+            | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) | VecStr(_) => {
+                format!("Vec<{elem}>")
+            }
+            _ => elem.to_string(),
+        }
+    }
+
     /// The number of entries (top-level rows).
     #[must_use]
     pub fn len(&self) -> usize {
@@ -249,7 +360,7 @@ impl BranchValues {
     ///
     /// Both columns must be the same variant (same element type and nesting);
     /// otherwise an error is returned. This is the per-branch building block for
-    /// concatenating trees (see [`concat_trees`](crate::concat_trees)). For a
+    /// concatenating trees, as a chain does. For a
     /// [`Nested`](BranchValues::Nested) column the inner `items` are appended and
     /// the `offsets` rebased so the two entry ranges join seamlessly.
     pub fn append(&mut self, other: BranchValues) -> Result<()> {

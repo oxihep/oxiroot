@@ -1,15 +1,19 @@
-//! Read throughput: TTree branches and an RNTuple, written once under Zstd
-//! into a temporary directory, then read back; plus reading histograms out of
-//! a file holding many keys.
+//! Read throughput: a `TTree` and an RNTuple holding the same columns —
+//! scalars and a `std::vector<double>` — written once under Zstd into a
+//! temporary directory, then read back three ways: the format's own reader
+//! (`values()`, one `Vec` per entry for a vector), its flat read, and the
+//! `Dataset` API (flat columns, cluster by cluster). Plus reading histograms
+//! out of a file holding many keys.
 //!
 //!   cargo bench -p oxiroot --bench read
 
-use oxiroot_io_core::cast::SaturatingFrom;
 use std::hint::black_box;
 use std::path::PathBuf;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use oxiroot::ntuple::NtupleReader;
 use oxiroot::prelude::*;
+use oxiroot::tree::TreeReader;
 
 const ENTRIES: usize = 1_000_000;
 
@@ -32,33 +36,25 @@ fn write_files() -> Files {
     let pt: Vec<f64> = (0..ENTRIES)
         .map(|i| (i as f64 * 0.37).sin().abs() * 100.0)
         .collect();
-    let n: Vec<i32> = (0..ENTRIES).map(|i| i32::saturating_from(i % 17)).collect();
-    let jets: Vec<Vec<f64>> = (0..ENTRIES / 10).map(|i| vec![i as f64; i % 5]).collect();
+    let n: Vec<i32> = (0..ENTRIES)
+        .map(|i| i32::try_from(i % 17).unwrap())
+        .collect();
+    let jets: Vec<Vec<f64>> = (0..ENTRIES).map(|i| vec![i as f64; i % 5]).collect();
+    let batch = Batch::new()
+        .column("pt", pt)
+        .unwrap()
+        .column("n", n)
+        .unwrap()
+        .column("jets", jets)
+        .unwrap();
 
     let tree = dir.join("tree.root");
-    write_tree_file(
-        &tree,
-        "events",
-        &[Branch::f64("pt", pt.clone()), Branch::i32("n", n.clone())],
-        Compression::Zstd(5),
-    )
-    .unwrap();
-    write_tree_file(
-        dir.join("jagged.root"),
-        "events",
-        &[Branch::jagged_f64("jets", jets)],
-        Compression::Zstd(5),
-    )
-    .unwrap();
-
     let ntuple = dir.join("ntuple.root");
-    write_rntuple_file(
-        &ntuple,
-        "ntpl",
-        &[Field::f64("pt", pt), Field::i32("n", n)],
-        Compression::Zstd(5),
-    )
-    .unwrap();
+    for (path, format) in [(&tree, Format::Tree), (&ntuple, Format::Ntuple)] {
+        let mut out = DatasetWriter::create(path, "events", format).unwrap();
+        out.write(&batch).unwrap();
+        out.finish().unwrap();
+    }
 
     let hists = dir.join("hists.root");
     let mut w = FileWriter::create(&hists);
@@ -88,50 +84,97 @@ fn write_files() -> Files {
 fn bench(c: &mut Criterion) {
     let files = write_files();
 
-    let mut g = c.benchmark_group("read/ttree");
-    g.throughput(Throughput::Elements(ENTRIES as u64));
-    g.sample_size(20);
-    g.bench_function("f64 branch, 1M entries", |b| {
-        b.iter(|| {
-            let file = FileReader::open(&files.tree).unwrap();
-            let tree = TreeReader::open(&file, "events").unwrap();
-            black_box(tree.read_branch(&file, "pt").unwrap())
-        });
-    });
-    g.bench_function("i32 branch, 1M entries", |b| {
-        b.iter(|| {
-            let file = FileReader::open(&files.tree).unwrap();
-            let tree = TreeReader::open(&file, "events").unwrap();
-            black_box(tree.read_branch(&file, "n").unwrap())
-        });
-    });
-    g.finish();
+    for (label, path) in [("ttree", &files.tree), ("rntuple", &files.ntuple)] {
+        let mut g = c.benchmark_group(format!("read/{label}"));
+        g.throughput(Throughput::Elements(ENTRIES as u64));
+        g.sample_size(20);
+        let file = FileReader::open(path).unwrap();
 
-    let mut g = c.benchmark_group("read/ttree-jagged");
-    g.throughput(Throughput::Elements((ENTRIES / 10) as u64));
-    g.sample_size(20);
-    g.bench_function("jagged f64 branch, 100k entries", |b| {
-        let path = files.dir.join("jagged.root");
-        b.iter(|| {
-            let file = FileReader::open(&path).unwrap();
-            let tree = TreeReader::open(&file, "events").unwrap();
-            black_box(tree.read_branch(&file, "jets").unwrap())
+        g.bench_function("f64 column, low level", |b| {
+            b.iter(|| match label {
+                "ttree" => black_box(
+                    TreeReader::open(&file, "events")
+                        .unwrap()
+                        .branch("pt")
+                        .values()
+                        .map(drop),
+                ),
+                _ => black_box(
+                    NtupleReader::open(&file, "events")
+                        .unwrap()
+                        .field("pt")
+                        .values()
+                        .map(drop),
+                ),
+            });
         });
-    });
-    g.finish();
-
-    let mut g = c.benchmark_group("read/rntuple");
-    g.throughput(Throughput::Elements(ENTRIES as u64));
-    g.sample_size(20);
-    g.bench_function("f64 + i32 fields, 1M entries", |b| {
-        b.iter(|| {
-            let file = FileReader::open(&files.ntuple).unwrap();
-            let ntuple = NtupleReader::open(&file, "ntpl").unwrap();
-            black_box(ntuple.read_field(&file, "pt").unwrap());
-            black_box(ntuple.read_field(&file, "n").unwrap())
+        g.bench_function("f64 column, Dataset::read", |b| {
+            b.iter(|| {
+                let ds = Dataset::open(&file, "events").unwrap();
+                black_box(ds.read(["pt"]).unwrap())
+            });
         });
-    });
-    g.finish();
+        g.bench_function("vector<f64> column, low level values", |b| {
+            b.iter(|| match label {
+                "ttree" => black_box(
+                    TreeReader::open(&file, "events")
+                        .unwrap()
+                        .branch("jets")
+                        .values()
+                        .map(drop),
+                ),
+                _ => black_box(
+                    NtupleReader::open(&file, "events")
+                        .unwrap()
+                        .field("jets")
+                        .values()
+                        .map(drop),
+                ),
+            });
+        });
+        g.bench_function("vector<f64> column, low level flat", |b| {
+            b.iter(|| match label {
+                "ttree" => black_box(
+                    TreeReader::open(&file, "events")
+                        .unwrap()
+                        .branch("jets")
+                        .flat()
+                        .map(drop),
+                ),
+                _ => black_box(
+                    NtupleReader::open(&file, "events")
+                        .unwrap()
+                        .field("jets")
+                        .flat()
+                        .map(drop),
+                ),
+            });
+        });
+        g.bench_function("vector<f64> column, Dataset::read", |b| {
+            b.iter(|| {
+                let ds = Dataset::open(&file, "events").unwrap();
+                black_box(ds.read(["jets"]).unwrap())
+            });
+        });
+        g.bench_function("3 columns, Dataset::batches", |b| {
+            b.iter(|| {
+                let ds = Dataset::open(&file, "events").unwrap();
+                let mut sum = 0.0;
+                for batch in ds.batches(["pt", "n", "jets"]) {
+                    let batch = batch.unwrap();
+                    sum += batch.values::<f64>("pt").unwrap().iter().sum::<f64>();
+                    sum += batch
+                        .jagged::<f64>("jets")
+                        .unwrap()
+                        .values()
+                        .iter()
+                        .sum::<f64>();
+                }
+                black_box(sum)
+            });
+        });
+        g.finish();
+    }
 
     let mut g = c.benchmark_group("read/keys");
     g.throughput(Throughput::Elements(500));

@@ -2,10 +2,11 @@
 //! then read it back through our own reader. The /tmp file is also checked by
 //! uproot / ROOT C++ when run by hand (see `scripts/`).
 
+use crate::support::write_tree_file;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_tree::{Branch, BranchValues, SplitMember, TreeReader, write_tree_file};
+use oxiroot_tree::{Branch, BranchValues, SplitMember, TreeReader};
 
 fn split_branch() -> Branch {
     // Mirrors `fixtures/tree_split.root`: Hit = {float x; float y; int id;}.
@@ -28,11 +29,11 @@ fn assert_hits_roundtrip(f: &FileReader) {
     assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
     assert_eq!(
-        t.read_branch(f, "hits.x").unwrap(),
+        t.branch("hits.x").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
     );
     assert_eq!(
-        t.read_branch(f, "hits.id").unwrap(),
+        t.branch("hits.id").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
     );
 }
@@ -57,15 +58,15 @@ fn writes_split_vector_of_struct() {
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
 
     assert_eq!(
-        t.read_branch(&f, "hits.x").unwrap(),
+        t.branch("hits.x").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
     );
     assert_eq!(
-        t.read_branch(&f, "hits.y").unwrap(),
+        t.branch("hits.y").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
-        t.read_branch(&f, "hits.id").unwrap(),
+        t.branch("hits.id").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
     );
 }
@@ -119,19 +120,19 @@ fn writes_split_vector_general_struct() {
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 5);
     assert_eq!(
-        t.read_branch(&f, "parts.px").unwrap(),
+        t.branch("parts.px").values().unwrap(),
         BranchValues::VecF64(px)
     );
     assert_eq!(
-        t.read_branch(&f, "parts.py").unwrap(),
+        t.branch("parts.py").values().unwrap(),
         BranchValues::VecF64(py)
     );
     assert_eq!(
-        t.read_branch(&f, "parts.w").unwrap(),
+        t.branch("parts.w").values().unwrap(),
         BranchValues::VecF32(w)
     );
     assert_eq!(
-        t.read_branch(&f, "parts.id").unwrap(),
+        t.branch("parts.id").values().unwrap(),
         BranchValues::VecI64(id)
     );
 }
@@ -143,7 +144,7 @@ fn writes_split_vector_general_struct() {
 #[test]
 fn empty_split_member_list_errors_instead_of_panicking() {
     let branch = Branch::split_vector("hits", "Hit", Vec::new());
-    let err = oxiroot_tree::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+    let err = crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::None)
         .expect_err("an empty member list must be rejected");
     let msg = err.to_string();
     assert!(
@@ -159,7 +160,7 @@ fn empty_split_member_list_errors_instead_of_panicking() {
 fn inconsistent_split_members_are_rejected() {
     let write = |members: Vec<SplitMember>| {
         let branch = Branch::split_vector("hits", "Hit", members);
-        oxiroot_tree::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+        crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::None)
     };
     let x = || SplitMember::f32("x", vec![vec![1.0], vec![2.0, 3.0]]);
 

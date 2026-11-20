@@ -2,8 +2,9 @@
 //! different lengths, and composite fields whose parts disagree — instead of
 //! writing a file whose columns do not match its entry count.
 
+use crate::support::write_rntuple_file;
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader, write_rntuple_file};
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
 
 fn write(fields: &[Field]) -> oxiroot_io_core::Result<()> {
     let path = std::env::temp_dir().join("oxiroot_rntuple_length_checks.root");
@@ -151,7 +152,7 @@ fn a_zero_size_array_does_not_set_the_entry_count() {
     let nt = NtupleReader::open(&f, "events").unwrap();
     assert_eq!(nt.entries(), 3);
     assert_eq!(
-        nt.read_field(&f, "x").unwrap(),
+        nt.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
 }

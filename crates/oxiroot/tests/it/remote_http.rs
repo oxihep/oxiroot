@@ -154,7 +154,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
     let branch = ltree.branch_names()[0].to_string();
     let local_vals = format!(
         "{:?}",
-        ltree.read_branch(&local, &branch).expect("local branch")
+        ltree.branch(&branch).values().expect("local branch")
     );
 
     // Serve it and read it back over HTTP range requests.
@@ -178,7 +178,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
     assert_eq!(rtree.entries(), ltree.entries());
     let remote_vals = format!(
         "{:?}",
-        rtree.read_branch(&remote, &branch).expect("remote branch")
+        rtree.branch(&branch).values().expect("remote branch")
     );
     assert_eq!(remote_vals, local_vals, "branch values match over HTTP");
 
@@ -206,7 +206,8 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
 /// concurrent range requests, and still only by ranges.
 #[test]
 fn a_branch_of_many_baskets_reads_over_http() {
-    use oxiroot::tree::{Branch, write_tree_file_baskets};
+    use crate::support::write_tree_file_baskets;
+    use oxiroot::tree::Branch;
     let dir = std::env::temp_dir().join(format!("oxiroot-http-batch-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("baskets.root");
@@ -225,13 +226,15 @@ fn a_branch_of_many_baskets_reads_over_http() {
     let local = FileReader::from_bytes(bytes.clone()).unwrap();
     let expected = TreeReader::open(&local, "events")
         .unwrap()
-        .read_branch(&local, "x")
+        .branch("x")
+        .values()
         .unwrap();
     let server = RangeServer::start(bytes);
     let remote = FileReader::open_url(&server.url).unwrap();
     let got = TreeReader::open(&remote, "events")
         .unwrap()
-        .read_branch(&remote, "x")
+        .branch("x")
+        .values()
         .unwrap();
     assert_eq!(format!("{got:?}"), format!("{expected:?}"));
     assert!(server.all_ranged(), "only range requests");

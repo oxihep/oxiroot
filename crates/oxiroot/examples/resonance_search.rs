@@ -154,19 +154,19 @@ mod search {
             masses.push((TRUE_MASS + RESOLUTION * rng.gauss()) as f32);
         }
         let tree_path = dir.join("diphotons.root");
-        Tree::new("diphotons", vec![Branch::f32("m_gg", masses)])
-            .write_root(&tree_path, Compression::Zstd(5))?;
+        let mut out = DatasetWriter::create(&tree_path, "diphotons", Format::Tree)?;
+        out.write(&Batch::new().column("m_gg", masses)?)?;
+        out.finish()?;
         let file = FileReader::open(&tree_path)?;
-        let tree = TreeReader::open(&file, "diphotons")?;
-        let BranchValues::F32(m_gg) = tree.read_branch(&file, "m_gg")? else {
-            unreachable!("m_gg is written as f32")
-        };
+        let tree = Dataset::open(&file, "diphotons")?;
+        let data = tree.read(["m_gg"])?;
+        let m_gg = data.values::<f32>("m_gg")?;
         let mut hist = Hist::reg(BINS, LO, HI)
             .double()
             .to_root()
             .named("m_gg")
             .titled("Diphoton mass;m_{#gamma#gamma} [GeV];Events / 0.5 GeV");
-        for &m in &m_gg {
+        for &m in m_gg {
             hist.fill(f64::from(m));
         }
         println!(

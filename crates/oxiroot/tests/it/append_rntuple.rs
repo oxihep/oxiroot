@@ -4,7 +4,9 @@
 //! and the appended histogram read back (separately verified against ROOT C++
 //! and uproot).
 
+use crate::support::NtupleObject;
 use oxiroot::FileReader;
+use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
 use oxiroot::prelude::*;
 
 #[test]
@@ -15,7 +17,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
         Field::f64("mass", vec![91.2, 125.0, 80.4]),
         Field::i32("n", vec![1, 2, 3]),
     ];
-    Ntuple::new("events", fields)
+    NtupleObject::new("events", fields)
         .write_root(&out, Compression::None)
         .expect("write rntuple");
 
@@ -43,11 +45,11 @@ fn appends_a_histogram_to_an_rntuple_file() {
     let nt = NtupleReader::open(&f, "events").expect("rntuple survived the append");
     assert_eq!(nt.entries(), 3);
     assert_eq!(
-        nt.read_field(&f, "mass").unwrap(),
+        nt.field("mass").values().unwrap(),
         FieldValues::F64(vec![91.2, 125.0, 80.4])
     );
     assert_eq!(
-        nt.read_field(&f, "n").unwrap(),
+        nt.field("n").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
     assert_eq!(Hist1D::read_root(&f, "h").unwrap(), h, "appended histogram");

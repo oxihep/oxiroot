@@ -140,4 +140,4 @@ dependency-free, so `--json` adds no crates.
 `oxroot` reads what the library reads: classes it cannot decode are reported
 rather than guessed. `dump -n N` reads only the data it shows — a `TTree` decodes
 just the first `N` entries' baskets, and an RNTuple decodes only the clusters
-covering the first `N` entries (`NtupleReader::read_field_prefix`).
+covering the first `N` entries (`field(name).range(0..N)`).

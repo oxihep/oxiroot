@@ -22,14 +22,8 @@ fn streams_multiple_clusters() {
         expect_x.extend_from_slice(&x);
         expect_y.extend_from_slice(&y);
         w.write_batch(&[
-            Field {
-                name: "x".into(),
-                data: Column::I32(x),
-            },
-            Field {
-                name: "y".into(),
-                data: Column::F64(y),
-            },
+            Field::new("x", Column::I32(x)),
+            Field::new("y", Column::F64(y)),
         ])
         .expect("write batch");
     }
@@ -39,11 +33,11 @@ fn streams_multiple_clusters() {
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 12, "all entries across clusters");
     assert_eq!(
-        ntpl.read_field(&f, "x").unwrap(),
+        ntpl.field("x").values().unwrap(),
         FieldValues::I32(expect_x)
     );
     assert_eq!(
-        ntpl.read_field(&f, "y").unwrap(),
+        ntpl.field("y").values().unwrap(),
         FieldValues::F64(expect_y)
     );
 }
@@ -60,28 +54,16 @@ fn streams_collections_and_strings_across_clusters() {
     let v0 = vec![vec![], vec![1.0f32], vec![2.0, 2.0]];
     let s0 = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
     w.write_batch(&[
-        Field {
-            name: "v".into(),
-            data: Column::VecF32(v0.clone()),
-        },
-        Field {
-            name: "s".into(),
-            data: Column::Str(s0.clone()),
-        },
+        Field::new("v", Column::VecF32(v0.clone())),
+        Field::new("s", Column::Str(s0.clone())),
     ])
     .expect("batch 0");
 
     let v1 = vec![vec![3.0f32, 3.0, 3.0], vec![]];
     let s1 = vec!["dddd".to_string(), String::new()];
     w.write_batch(&[
-        Field {
-            name: "v".into(),
-            data: Column::VecF32(v1.clone()),
-        },
-        Field {
-            name: "s".into(),
-            data: Column::Str(s1.clone()),
-        },
+        Field::new("v", Column::VecF32(v1.clone())),
+        Field::new("s", Column::Str(s1.clone())),
     ])
     .expect("batch 1");
     w.finish().expect("finish");
@@ -95,11 +77,11 @@ fn streams_collections_and_strings_across_clusters() {
     let mut expect_s = s0;
     expect_s.extend(s1);
     assert_eq!(
-        ntpl.read_field(&f, "v").unwrap(),
+        ntpl.field("v").values().unwrap(),
         FieldValues::VecF32(expect_v)
     );
     assert_eq!(
-        ntpl.read_field(&f, "s").unwrap(),
+        ntpl.field("s").values().unwrap(),
         FieldValues::Str(expect_s)
     );
 }
@@ -155,11 +137,11 @@ fn streaming_large_writes_big_format() {
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open");
     assert_eq!(ntpl.entries(), 5);
     assert_eq!(
-        ntpl.read_field(&f, "x").unwrap(),
+        ntpl.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3, 4, 5])
     );
     assert_eq!(
-        ntpl.read_field(&f, "y").unwrap(),
+        ntpl.field("y").values().unwrap(),
         FieldValues::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0])
     );
 }

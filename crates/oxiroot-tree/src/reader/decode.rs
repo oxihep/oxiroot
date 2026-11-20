@@ -11,7 +11,7 @@ use crate::basket::Basket;
 use crate::value::{BranchValues, LeafType};
 
 /// Per-entry byte regions of a numeric branch (the shared shape behind the
-/// jagged/array/scalar read paths), for the flat [`TreeReader::read_branch_flat`](super::TreeReader::read_branch_flat).
+/// jagged/array/scalar read paths), for the flat [`BranchRead::flat`](super::BranchRead::flat).
 pub(super) fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&'a [u8]> {
     if let Some((offset, stride)) = branch.leaflist {
         if stride == 0 {
@@ -108,8 +108,8 @@ pub(super) fn read_baskets(
 }
 
 /// Decode the given (contiguous, in-order) baskets of `branch` into per-entry
-/// [`BranchValues`] — the shared body of [`TreeReader::read_branch`](super::TreeReader::read_branch) and
-/// [`TreeReader::read_branch_range`](super::TreeReader::read_branch_range).
+/// [`BranchValues`] — the shared body of [`BranchRead::values`](super::BranchRead::values),
+/// over every basket or a window of them.
 pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<BranchValues> {
     // A synthesized `TBranchObject` member column: each entry is a whole object,
     // from which this member is extracted.
@@ -191,11 +191,15 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
 /// (clamped), preserving the variant.
 pub(super) fn slice_values(bv: BranchValues, offset: usize, len: usize) -> BranchValues {
     use BranchValues::*;
+    // Cut in place: no copy of the kept values.
     macro_rules! sl {
         ($variant:ident, $v:ident) => {{
+            let mut $v = $v;
             let end = offset.saturating_add(len).min($v.len());
             let start = offset.min(end);
-            $variant($v[start..end].to_vec())
+            $v.truncate(end);
+            $v.drain(..start);
+            $variant($v)
         }};
     }
     match bv {

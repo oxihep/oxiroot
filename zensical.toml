@@ -32,6 +32,7 @@ nav = [
     { "Histograms" = "guide/histograms.md" },
     { "Graphs" = "guide/graphs.md" },
     { "Functions" = "guide/functions.md" },
+    { "Datasets: TTree & RNTuple" = "guide/datasets.md" },
     { "TTree" = "guide/ttree.md" },
     { "RNTuple" = "guide/rntuple.md" },
     { "Fitting" = "guide/fitting.md" },

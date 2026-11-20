@@ -1,21 +1,18 @@
 //! Writing an RNTuple into a ROOT file.
 //!
-//! [`write_rntuple_file`] writes a whole RNTuple in one shot, supporting scalar
-//! (`bool`/`i32`/`i64`/`f32`/`f64`), `std::string`, and `std::vector<T>` fields
-//! in a single cluster, with non-split column encodings and optional page
-//! compression. [`NtupleWriter`] writes those same field types one cluster per
-//! batch, so a large dataset need not be held in memory at once. The header/page/
+//! [`NtupleWriter`] writes an RNTuple to its own file, one cluster per batch,
+//! so a large dataset need not be held in memory at once; [`raw::write_ntuple`]
+//! places a whole RNTuple (schema-extension fields included) into an open
+//! container, next to other objects. The header/page/
 //! page-list/footer envelopes are written as raw blobs at the offsets the anchor
 //! (and the page locators) point to; only the anchor is a `Key`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use std::io::{Cursor, Seek, Write};
-use std::path::Path;
+use std::io::{Seek, Write};
 
-use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, compress_if_smaller};
-use oxiroot_io_core::streamer_gen::ClassDef;
-use oxiroot_io_core::{Compression, Error, Result, WriteInto};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, compress_if_smaller};
+use oxiroot_io_core::{Error, Result};
 
 use crate::anchor::ANCHOR_CLASS;
 
@@ -64,39 +61,6 @@ const COLUMN_FLAG_RANGE: u16 = 0x02;
 /// Column flag: a deferred column (a schema-extension field added late) — the
 /// descriptor carries an `i64` first-element index trailer.
 const COLUMN_FLAG_DEFERRED: u16 = 0x01;
-
-/// Build a complete ROOT file containing one RNTuple named `ntuple_name`,
-/// optionally compressing pages (`compression` is e.g. `Compression::None` or
-/// `Compression::Zstd(5)`). Automatically switches to ROOT's 64-bit ("big")
-/// container form once the file would exceed 2 GiB.
-pub fn rntuple_file_bytes(
-    file_name: &str,
-    ntuple_name: &str,
-    fields: &[Field],
-    compression: Compression,
-) -> Result<Vec<u8>> {
-    rntuple_file_bytes_threshold(file_name, ntuple_name, fields, compression, KSTART_BIG_FILE)
-}
-
-/// Like [`rntuple_file_bytes`] but with the big-file threshold injectable for
-/// tests. Writes the small (32-bit) container first; only if that already
-/// exceeds the threshold does it rewrite in the big (64-bit) form, so the
-/// expensive page bytes are copied twice only for genuinely >2 GiB files.
-fn rntuple_file_bytes_threshold(
-    file_name: &str,
-    ntuple_name: &str,
-    fields: &[Field],
-    compression: Compression,
-    threshold: u64,
-) -> Result<Vec<u8>> {
-    // Lower and compress once; only the placement differs between the forms.
-    let prep = prep_ntuple(ntuple_name, fields, compression.setting())?;
-    let classes = ntuple_classes(fields);
-    ContainerWriter::build(file_name, compression, threshold, |file| {
-        write_one_rntuple(file, DirId::TOP, &prep)?;
-        file.place_streamer_info(&[], &classes)
-    })
-}
 
 /// One RNTuple's fully-lowered, page-encoded payload, ready to place into a file
 /// at any offset: the header envelope (and its checksum), each column's on-disk
@@ -227,24 +191,6 @@ fn prep_ntuple_extended(
     })
 }
 
-/// Build a complete ROOT file with one schema-extended RNTuple: `base_fields` in
-/// the header plus late `(first_entry, field)` fields in the footer's extension
-/// record (see [`prep_ntuple_extended`]).
-fn extended_rntuple_file_bytes(
-    file_name: &str,
-    ntuple_name: &str,
-    base_fields: &[Field],
-    late: &[(u64, Field)],
-    compression: Compression,
-) -> Result<Vec<u8>> {
-    let prep = prep_ntuple_extended(ntuple_name, base_fields, late, compression.setting())?;
-    let classes = ntuple_classes(base_fields.iter().chain(late.iter().map(|(_, f)| f)));
-    ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, |file| {
-        write_one_rntuple(file, DirId::TOP, &prep)?;
-        file.place_streamer_info(&[], &classes)
-    })
-}
-
 /// Write one RNTuple's blobs (header, pages, page list, footer) at the end of
 /// `file`, then its anchor key in directory `dir`.
 fn write_one_rntuple<W: Write + Seek>(
@@ -319,157 +265,55 @@ fn offset(seek: u64) -> Result<usize> {
         .map_err(|_| Error::Unsupported(format!("file offset {seek} does not fit this platform")))
 }
 
-/// Write a one-RNTuple ROOT file to `path`, optionally compressing pages
-/// (`compression` is e.g. `Compression::None` or `Compression::Zstd(5)`).
-pub fn write_rntuple_file(
-    path: impl AsRef<Path>,
-    ntuple_name: &str,
-    fields: &[Field],
-    compression: Compression,
-) -> Result<()> {
-    let path = path.as_ref();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let bytes = rntuple_file_bytes(file_name, ntuple_name, fields, compression)?;
-    std::fs::write(path, bytes)?;
-    Ok(())
-}
+/// Low-level writing of a whole RNTuple into an open ROOT container — what a
+/// [`WriteInto`](oxiroot_io_core::WriteInto) object (such as
+/// `oxiroot::data::Dataset`'s) calls to place an RNTuple next to other
+/// objects. For an RNTuple written to its own file, cluster by cluster, use
+/// [`NtupleWriter`].
+pub mod raw {
+    use std::io::{Seek, Write};
 
-/// An RNTuple to write: a name and its [`Field`]s. The method-based,
-/// write-side counterpart to the free [`write_rntuple_file`] function (and to
-/// the read-only [`NtupleReader`](crate::NtupleReader)) — build one, then call
-/// [`write_root`](Ntuple::write_root), mirroring `hist.write_root`:
-///
-/// ```no_run
-/// use oxiroot_rntuple::{Field, Ntuple};
-/// use oxiroot_io_core::Compression;
-///
-/// let fields = vec![
-///     Field::f64("mass", vec![91.2, 125.0]),
-///     Field::i32("charge", vec![0, -1]),
-/// ];
-/// Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-pub struct Ntuple {
-    name: String,
-    fields: Vec<Field>,
-}
+    use oxiroot_io_core::Result;
+    use oxiroot_io_core::raw::{ContainerWriter, DirId};
+    use oxiroot_io_core::streamer_gen::ClassDef;
 
-impl Ntuple {
-    /// Create a writable RNTuple from a name and its fields.
-    pub fn new(name: impl Into<String>, fields: Vec<Field>) -> Ntuple {
-        Ntuple {
-            name: name.into(),
-            fields,
-        }
-    }
+    use super::Field;
 
-    /// The RNTuple's name (the in-file key).
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The RNTuple's fields.
-    pub fn fields(&self) -> &[Field] {
-        &self.fields
-    }
-
-    /// Write this RNTuple as a new one-RNTuple ROOT file, optionally compressing
-    /// pages. The method form of [`write_rntuple_file`].
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        write_rntuple_file(path, &self.name, &self.fields, compression)
-    }
-
-    /// The complete ROOT-file bytes for this RNTuple (the method form of
-    /// [`rntuple_file_bytes`]); `file_name` is the `TFile` name recorded in the
-    /// file header.
-    pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
-        rntuple_file_bytes(file_name, &self.name, &self.fields, compression)
-    }
-
-    /// Write this RNTuple **with a schema late extension**: this RNTuple's fields
-    /// go in the header, and each `(first_entry, field)` in `late` is added as a
-    /// deferred field via the footer's schema-extension record — its data covers
-    /// entries `first_entry..N`, and the earlier entries default. ROOT reads the
-    /// result as a schema-extended RNTuple (as if the field had been added
-    /// mid-writing with a model updater). Late fields must be scalar leaves and
-    /// supply exactly `N - first_entry` values.
+    /// Write the RNTuple `name` with `fields` into `file` under directory
+    /// `dir`: header, pages, page list, footer, then its anchor key. `late`
+    /// adds schema-extension fields, each `(first entry, field)`: the field
+    /// holds values from that entry on, and ROOT reads defaults before it.
     ///
-    /// ```no_run
-    /// use oxiroot_rntuple::{Field, Ntuple};
-    /// use oxiroot_io_core::Compression;
-    /// // 4 entries of `x`; `y` added late, covering only entries 2 and 3.
-    /// Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3, 4])])
-    ///     .write_root_extended(
-    ///         "ext.root",
-    ///         &[(2, Field::f32("y", vec![3.5, 4.5]))],
-    ///         Compression::None,
-    ///     )?;
-    /// # Ok::<(), oxiroot_io_core::Error>(())
-    /// ```
-    pub fn write_root_extended(
-        &self,
-        path: impl AsRef<Path>,
+    /// # Errors
+    ///
+    /// Fields of different lengths, a type the writer cannot encode, or a write
+    /// error.
+    pub fn write_ntuple<W: Write + Seek>(
+        file: &mut ContainerWriter<W>,
+        dir: DirId,
+        name: &str,
+        fields: &[Field],
         late: &[(u64, Field)],
-        compression: Compression,
     ) -> Result<()> {
-        let file_name = path
-            .as_ref()
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file.root")
-            .to_string();
-        let bytes =
-            extended_rntuple_file_bytes(&file_name, &self.name, &self.fields, late, compression)?;
-        std::fs::write(path, bytes)?;
-        Ok(())
+        let setting = file.compression_setting();
+        let prep = if late.is_empty() {
+            super::prep_ntuple(name, fields, setting)?
+        } else {
+            super::prep_ntuple_extended(name, fields, late, setting)?
+        };
+        super::write_one_rntuple(file, dir, &prep)
     }
-}
 
-/// An `Ntuple` goes into a [`FileWriter`](oxiroot_io_core::FileWriter) with
-/// [`put`](oxiroot_io_core::FileWriter::put): several RNTuples in one file, inside
-/// `TDirectory` subdirectories, or next to histograms and trees. ROOT and uproot
-/// navigate the result natively.
-///
-/// ```no_run
-/// use oxiroot_io_core::{Compression, FileWriter};
-/// use oxiroot_rntuple::{Field, Ntuple};
-///
-/// FileWriter::create("multi.root")
-///     .put(Ntuple::new("events", vec![Field::i32("x", vec![1, 2, 3])]))
-///     .put(Ntuple::new("runs", vec![Field::i32("run", vec![7])]))
-///     .dir("cal", |d| d.put(Ntuple::new("pedestals", vec![Field::f64("p", vec![0.5])])))
-///     .write(Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
-impl WriteInto for Ntuple {
-    fn root_class(&self) -> String {
-        ANCHOR_CLASS.to_string()
-    }
-    fn root_name(&self) -> &str {
-        &self.name
-    }
-    fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
-        let prep = prep_ntuple(&self.name, &self.fields, file.compression_setting())?;
-        write_one_rntuple(file, dir, &prep)
-    }
-    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        ntuple_classes(&self.fields)
+    /// The `TStreamerInfo` classes an RNTuple with these fields needs in its
+    /// file.
+    #[must_use]
+    pub fn ntuple_streamer_classes<'a>(
+        fields: impl IntoIterator<Item = &'a Field>,
+    ) -> Vec<ClassDef<'static>> {
+        super::ntuple_classes(fields)
             .into_iter()
             .map(ClassDef::into_owned)
             .collect()
-    }
-}
-
-impl std::fmt::Debug for Ntuple {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Ntuple")
-            .field("name", &self.name)
-            .field("fields", &self.fields.len())
-            .finish_non_exhaustive()
     }
 }
 
@@ -478,7 +322,31 @@ mod tests {
     use super::envelopes::check_page_limits;
     use super::*;
     use crate::{FieldValues, NtupleReader};
-    use oxiroot_io_core::FileReader;
+    use oxiroot_io_core::raw::KSTART_BIG_FILE;
+    use oxiroot_io_core::{Compression, FileReader};
+
+    fn rntuple_file_bytes_threshold(
+        file_name: &str,
+        name: &str,
+        fields: &[Field],
+        compression: Compression,
+        threshold: u64,
+    ) -> Result<Vec<u8>> {
+        let classes = raw::ntuple_streamer_classes(fields);
+        ContainerWriter::build(file_name, compression, threshold, |file| {
+            raw::write_ntuple(file, DirId::TOP, name, fields, &[])?;
+            file.place_streamer_info(&[], &classes)
+        })
+    }
+
+    fn rntuple_file_bytes(
+        file_name: &str,
+        name: &str,
+        fields: &[Field],
+        compression: Compression,
+    ) -> Result<Vec<u8>> {
+        rntuple_file_bytes_threshold(file_name, name, fields, compression, KSTART_BIG_FILE)
+    }
 
     #[test]
     fn one_shot_writes_and_reads_big_format() {
@@ -499,11 +367,11 @@ mod tests {
         let ntpl = NtupleReader::open(&f, "ntpl").unwrap();
         assert_eq!(ntpl.entries(), 4);
         assert_eq!(
-            ntpl.read_field(&f, "x").unwrap(),
+            ntpl.field("x").values().unwrap(),
             FieldValues::I32(vec![1, 2, 3, 4])
         );
         assert_eq!(
-            ntpl.read_field(&f, "y").unwrap(),
+            ntpl.field("y").values().unwrap(),
             FieldValues::F64(vec![1.5, 2.5, 3.5, 4.5])
         );
 
@@ -513,7 +381,7 @@ mod tests {
         assert!(!fs.header().is_big());
         let ntpl = NtupleReader::open(&fs, "ntpl").unwrap();
         assert_eq!(
-            ntpl.read_field(&fs, "x").unwrap(),
+            ntpl.field("x").values().unwrap(),
             FieldValues::I32(vec![1, 2, 3, 4])
         );
     }

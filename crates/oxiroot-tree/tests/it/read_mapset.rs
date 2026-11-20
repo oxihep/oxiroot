@@ -28,16 +28,16 @@ fn reads_set_and_map_branches() {
     assert!(t.unsupported_branches().is_empty());
 
     assert_eq!(
-        t.read_branch(&f, "s").unwrap(),
+        t.branch("s").values().unwrap(),
         BranchValues::VecI32(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
     );
     // map<int,double> splits into parallel key / value collections.
     assert_eq!(
-        t.read_branch(&f, "m.first").unwrap(),
+        t.branch("m.first").values().unwrap(),
         BranchValues::VecI32(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
     );
     assert_eq!(
-        t.read_branch(&f, "m.second").unwrap(),
+        t.branch("m.second").values().unwrap(),
         BranchValues::VecF64(vec![vec![11.5, 22.5], vec![100.5], vec![7.5, 8.5, 9.5]])
     );
 }

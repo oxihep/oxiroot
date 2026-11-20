@@ -1,8 +1,9 @@
 //! The typed errors a caller can match on when reading an RNTuple: a missing
 //! RNTuple, field or column, a key holding another class, and corrupt data.
 
+use crate::support::rntuple_file_bytes;
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
-use oxiroot_rntuple::{Field, NtupleReader, rntuple_file_bytes};
+use oxiroot_rntuple::{Field, NtupleReader};
 
 fn bytes() -> Vec<u8> {
     let fields = [Field::f64("x", vec![1.0, 2.0, 3.0])];
@@ -21,12 +22,12 @@ fn a_missing_rntuple_field_or_column_is_not_found() {
     );
 
     let ntpl = NtupleReader::open(&f, "events").unwrap();
-    let err = ntpl.read_field(&f, "y").unwrap_err();
+    let err = ntpl.field("y").values().unwrap_err();
     assert!(
         matches!(&err, Error::NotFound { what: "top-level field", name } if name == "y"),
         "{err:?}"
     );
-    let err = ntpl.read_column(&f, 99).unwrap_err();
+    let err = ntpl.read_column(99).unwrap_err();
     assert!(
         matches!(&err, Error::NotFound { what: "column", name } if name == "99"),
         "{err:?}"

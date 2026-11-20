@@ -4,15 +4,14 @@
 //! cargo run -p oxiroot --example tree
 //! ```
 //!
-//! Writes a scalar, a variable-length (jagged) array, and a string branch, then
-//! reads them back — showing branch introspection (`branch_type`/`branch_shape`),
-//! a whole-branch read, and an entry-range read that touches only the baskets it
-//! needs. Then streams a second tree in batches with [`TreeWriter`] (bounded
-//! memory, one basket per branch per batch). Pass an output path as the first
-//! argument to keep the one-shot file.
+//! Writes a scalar, a variable-length list and a string column in batches with
+//! [`DatasetWriter`] (it closes a cluster every ~32 MiB, so memory stays
+//! bounded), then reads them back with [`Dataset`]: all at once, one cluster at
+//! a time, and an entry window that touches only the baskets it needs. The same
+//! code writes an RNTuple with `Format::Ntuple`. Pass an output path as the
+//! first argument to keep the file.
 
 use oxiroot::prelude::*;
-use oxiroot_io_core::cast::SaturatingFrom;
 
 fn main() -> oxiroot::Result<()> {
     let keep = std::env::args().nth(1);
@@ -23,70 +22,75 @@ fn main() -> oxiroot::Result<()> {
             .to_string()
     });
 
-    // A scalar, a jagged array (rows of differing length), and a string branch.
-    let branches = vec![
-        Branch::i32("event", (0..10).collect()),
-        Branch::jagged_f64(
-            "hits",
-            (0..10)
-                .map(|i| vec![f64::from(i); usize::saturating_from(i) % 3])
-                .collect(),
-        ),
-        Branch::strings("label", (0..10).map(|i| format!("e{i}")).collect()),
-    ];
-    write_tree_file(&path, "Events", &branches, Compression::Zstd(5))?;
-    println!("wrote {path}");
+    // Five batches of 1000 events: a scalar, a list (rows of differing
+    // length), and a string.
+    let mut out = DatasetWriter::create(&path, "Events", Format::Tree)?;
+    for chunk in 0..5_i32 {
+        let event: Vec<i32> = (chunk * 1000..(chunk + 1) * 1000).collect();
+        let hits: Vec<Vec<f64>> = event
+            .iter()
+            .map(|&i| vec![f64::from(i); usize::try_from(i % 3).unwrap_or(0)])
+            .collect();
+        let label: Vec<String> = event.iter().map(|i| format!("e{i}")).collect();
+        let batch = Batch::new()
+            .column("event", event)?
+            .column("hits", hits)?
+            .column("label", label)?;
+        out.write(&batch)?;
+    }
+    println!("wrote {} entries to {path}", out.entries());
+    out.finish()?;
 
     let file = FileReader::open(&path)?;
-    let t = TreeReader::open(&file, "Events")?;
-    println!("{} entries, branches: {:?}", t.entries(), t.branch_names());
-
-    // Introspect each branch's type and shape without reading its data.
-    for b in t.branch_names() {
-        println!(
-            "  {b}: type={:?} shape={:?}",
-            t.branch_type(b).unwrap(),
-            t.branch_shape(b).unwrap()
-        );
-    }
-
-    // Read a whole branch (typed accessor), then a window of it — the ranged read
-    // fetches only the baskets covering [3, 7).
-    let event = t.read_branch(&file, "event")?;
-    println!("event       = {:?}", event.as_i32().unwrap());
-    let window = t.read_branch_range(&file, "event", 3, 7)?;
-    println!("event[3..7] = {:?}", window.as_i32().unwrap());
-    println!("hits        = {:?}", t.read_branch(&file, "hits")?);
-
-    // --- Streaming write: append in batches, only one batch held in memory. ---
-    let stream_path = std::env::temp_dir()
-        .join("oxiroot_tree_streamed.root")
-        .display()
-        .to_string();
-    let mut w = TreeWriter::create(&stream_path, "Events", Compression::Zstd(5))?;
-    for batch in 0..5 {
-        let base = batch * 1_000;
-        let x: Vec<f64> = (0..1_000).map(|i| f64::from(base + i)).collect();
-        w.write_batch(&[Branch::f64("x", x)])?; // flushed to disk now
-    }
-    let entries = w.entries();
-    w.finish()?;
-    println!("\nstreamed {entries} entries to {stream_path}");
-
-    let sf = FileReader::open(&stream_path)?;
-    let st = TreeReader::open(&sf, "Events")?;
-    let all = st.read_branch(&sf, "x")?;
-    let xs = all.as_f64().unwrap();
+    let events = Dataset::open(&file, "Events")?;
     println!(
-        "read back {} entries; x[0]={}, x[last]={}",
-        xs.len(),
-        xs[0],
-        xs[xs.len() - 1]
+        "{:?} with {} entries, columns {:?}",
+        events.format(),
+        events.entries(),
+        events.columns()
     );
+
+    // Everything at once: typed slices, no copies.
+    let all = events.read(["event", "hits", "label"])?;
+    let hits = all.jagged::<f64>("hits")?;
+    println!(
+        "event[..5] = {:?}, hits[2] = {:?}, label[4] = {:?}",
+        &all.values::<i32>("event")?[..5],
+        hits.row(2),
+        all.strings("label")?.get(4)
+    );
+
+    // One cluster at a time: the memory a loop needs is one batch.
+    let mut total = 0.0;
+    for batch in events.batches(["hits"]) {
+        let batch = batch?;
+        total += batch.jagged::<f64>("hits")?.values().iter().sum::<f64>();
+    }
+    println!("sum of all hits = {total}");
+
+    // A window: only the baskets covering [2500, 2505) are read.
+    let window = events
+        .batches(["event"])
+        .range(2500..2505)
+        .next()
+        .transpose()?;
+    if let Some(w) = window {
+        println!("event[2500..2505] = {:?}", w.values::<i32>("event")?);
+    }
+
+    // The TTree reader underneath, for what only a tree has.
+    if let Some(tree) = events.as_tree() {
+        for b in tree.branch_names() {
+            println!(
+                "  {b}: {:?}, {:?}",
+                tree.branch_type(b).unwrap(),
+                tree.branch_layout(b).unwrap()
+            );
+        }
+    }
 
     if keep.is_none() {
         let _ = std::fs::remove_file(&path);
     }
-    let _ = std::fs::remove_file(&stream_path);
     Ok(())
 }

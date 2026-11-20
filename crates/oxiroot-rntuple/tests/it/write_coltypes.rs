@@ -7,7 +7,7 @@ use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
 
 fn round_trip(fields: &[Field], tag: &str) -> FileReader {
     let out = std::env::temp_dir().join(format!("oxiroot_write_coltypes_{tag}.root"));
-    oxiroot_rntuple::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
+    crate::support::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
     FileReader::open(&out).expect("reopen")
 }
 
@@ -18,7 +18,7 @@ fn writes_small_integers() {
         Field::u8("u8", vec![250, 251, 252, 253, 254]),
         Field::i16("i16", vec![-2000, -1000, 0, 1000, 2000]),
         Field::u16("u16", vec![5, 10005, 20005, 30005, 40005]),
-        Field::vec_i16(
+        Field::vector_i16(
             "vi16",
             vec![
                 vec![],
@@ -31,7 +31,7 @@ fn writes_small_integers() {
     ];
     let file = round_trip(&fields, "ints");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
-    let field = |n| ntpl.read_field(&file, n).expect("read");
+    let field = |n| ntpl.field(n).values().expect("read");
 
     assert_eq!(field("i8"), FieldValues::I8(vec![-2, -1, 0, 1, 2]));
     assert_eq!(field("u8"), FieldValues::U8(vec![250, 251, 252, 253, 254]));
@@ -66,7 +66,7 @@ fn writes_reduced_precision_reals() {
     ];
     let file = round_trip(&fields, "reals");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
-    let f32s = |n| match ntpl.read_field(&file, n).expect("read") {
+    let f32s = |n| match ntpl.field(n).values().expect("read") {
         FieldValues::F32(v) => v,
         other => panic!("expected F32, got {other:?}"),
     };
@@ -99,7 +99,7 @@ fn writes_a_variant_field() {
 
     // Reads back as the same columnar variant the read path produces.
     assert_eq!(
-        ntpl.read_field(&file, "v").expect("read v"),
+        ntpl.field("v").values().expect("read v"),
         FieldValues::Variant {
             alternatives: vec![
                 ("_0".to_string(), FieldValues::I32(vec![0, 20, 40])),

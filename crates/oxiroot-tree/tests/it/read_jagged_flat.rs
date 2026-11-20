@@ -22,13 +22,13 @@ fn flat_view_matches_nested() {
     let t = TreeReader::open(&f, "T").expect("open tree");
 
     // Jagged branch y = [[1,2], [], [3,4,5]].
-    let j = t.read_branch_flat(&f, "y").expect("flat y");
+    let j = t.branch("y").flat().expect("flat y");
     assert_eq!(j.offsets, [0, 2, 2, 5]);
     assert_eq!(j.values, BranchValues::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
     assert_eq!(j.len(), 3);
 
     // Fixed array x[3]: offsets step by 3.
-    let x = t.read_branch_flat(&f, "x").expect("flat x");
+    let x = t.branch("x").flat().expect("flat x");
     assert_eq!(x.offsets, [0, 3, 6, 9]);
     assert_eq!(
         x.values,
@@ -36,7 +36,7 @@ fn flat_view_matches_nested() {
     );
 
     // Scalar branch ny: one element per entry.
-    let ny = t.read_branch_flat(&f, "ny").expect("flat ny");
+    let ny = t.branch("ny").flat().expect("flat ny");
     assert_eq!(ny.offsets, [0, 1, 2, 3]);
     assert_eq!(ny.values, BranchValues::I32(vec![2, 0, 3]));
 
@@ -52,9 +52,9 @@ fn flat_view_matches_nested() {
         .collect();
     assert_eq!(
         BranchValues::VecF64(reshaped),
-        t.read_branch(&f, "y").expect("nested y")
+        t.branch("y").values().expect("nested y")
     );
 
     // String branches aren't supported by the flat view.
-    assert!(t.read_branch_flat(&f, "s").is_err());
+    assert!(t.branch("s").flat().is_err());
 }

@@ -11,3 +11,4 @@ mod mixed_file;
 mod plot;
 mod remote_http;
 mod remote_xrootd;
+mod support;

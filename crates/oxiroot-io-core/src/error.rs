@@ -59,6 +59,16 @@ pub enum Error {
         /// The class, or classes, that were asked for.
         expected: String,
     },
+    /// A column (branch or field) holds another type than the one asked for:
+    /// reading a `float` branch as `f64`, say. Reads never convert silently.
+    TypeMismatch {
+        /// The column's name.
+        name: String,
+        /// The type the column holds.
+        found: String,
+        /// The type that was asked for.
+        expected: String,
+    },
     /// An object's class version is one this crate cannot decode: older than
     /// the first version ROOT describes through streamer info, or newer than
     /// oxiroot knows.
@@ -217,6 +227,11 @@ impl fmt::Display for Error {
             }
             Error::Format(s) => write!(f, "format error: {s}"),
             Error::NotFound { what, name } => write!(f, "no {what} named {name:?}"),
+            Error::TypeMismatch {
+                name,
+                found,
+                expected,
+            } => write!(f, "column {name:?} holds {found}, not {expected}"),
             Error::WrongClass {
                 name,
                 found,

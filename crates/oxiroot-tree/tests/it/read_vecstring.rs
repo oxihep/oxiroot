@@ -13,7 +13,7 @@ fn reads_vector_of_strings() {
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 3);
     assert_eq!(
-        t.read_branch(&f, "vs").expect("vs"),
+        t.branch("vs").values().expect("vs"),
         BranchValues::VecStr(vec![
             vec!["s00".into()],
             vec!["s10".into(), "s11".into()],

@@ -939,6 +939,7 @@ dependencies = [
  "oxiparticle",
  "oxiplot",
  "oxiroot-compress",
+ "oxiroot-dataset",
  "oxiroot-hist",
  "oxiroot-hist-func",
  "oxiroot-io-core",
@@ -968,6 +969,16 @@ dependencies = [
  "proptest",
  "ruzstd",
  "xxhash-rust",
+]
+
+[[package]]
+name = "oxiroot-dataset"
+version = "0.6.1"
+dependencies = [
+ "oxiroot-io-core",
+ "oxiroot-rntuple",
+ "oxiroot-tree",
+ "rayon",
 ]
 
 [[package]]

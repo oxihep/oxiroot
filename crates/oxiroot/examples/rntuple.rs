@@ -1,9 +1,9 @@
-//! The start-here RNTuple example: write a flat event dataset columnarly, reopen
-//! it, and read a few fields back per entry — then put two RNTuples in one file
-//! with `FileWriter` and read both. RNTuple is ROOT's modern columnar
-//! event-data format; the files here are readable by official ROOT and uproot.
-//! (For nested fields — `std::vector<std::vector<T>>`, records — see
-//! `rntuple_nested.rs`.)
+//! The start-here RNTuple example: write a flat event dataset, reopen it, and
+//! read the columns back per entry — then put two RNTuples in one file with
+//! `FileWriter` and read both. RNTuple is ROOT's modern columnar event-data
+//! format; the files here are readable by official ROOT and uproot. The same
+//! code writes a `TTree` with `Format::Tree`. (For records and other
+//! RNTuple-only shapes, see `rntuple_nested.rs`.)
 //!
 //! Run with:
 //!
@@ -12,126 +12,98 @@
 //! ```
 
 use oxiroot::prelude::*;
-use oxiroot_io_core::cast::SaturatingFrom;
 
 fn main() -> oxiroot::Result<()> {
     let dir = std::env::temp_dir();
 
     // --- Build one flat event dataset, column by column. -----------------------
-    // Each `Field` is one whole column: a name plus a `Vec` of values, one per
-    // event. All fields must have the same number of entries — here, four events.
-    // Types are mixed freely: a scalar `f64`, a scalar `i32`, a `std::string`, and
-    // a jagged `std::vector<f64>` (a variable-length list per event).
-    let mass = vec![91.19, 125.10, 4.18, 173.1]; // GeV
-    let charge = vec![0, 0, -1, 1];
-    let label = vec!["Z".into(), "H".into(), "b".into(), "top".into()];
-    let jet_pt = vec![
-        vec![55.0, 31.2],       // two jets
-        vec![120.0],            // one jet
-        vec![],                 // none
-        vec![88.0, 40.0, 12.0], // three jets
-    ];
+    // Every column of a batch has the same number of entries — here, four events.
+    // Types are mixed freely: an `f64`, an `i32`, a string, and a
+    // `std::vector<f64>` (a variable-length list per event).
+    let events = Batch::new()
+        .column("mass", vec![91.19, 125.10, 4.18, 173.1])? // GeV
+        .column("charge", vec![0_i32, 0, -1, 1])?
+        .column("label", vec!["Z", "H", "b", "top"])?
+        .column(
+            "jet_pt",
+            vec![
+                vec![55.0, 31.2],       // two jets
+                vec![120.0],            // one jet
+                vec![],                 // none
+                vec![88.0, 40.0, 12.0], // three jets
+            ],
+        )?;
 
-    let events = Ntuple::new(
-        "events",
-        vec![
-            Field::f64("mass", mass),
-            Field::i32("charge", charge),
-            Field::strings("label", label),
-            Field::vec_f64("jet_pt", jet_pt),
-        ],
-    );
-
-    // --- Write it. `write_root` is the method form of `write_rntuple_file`. -----
-    // Pages are Zstd-compressed on disk; the reader decompresses transparently.
+    // --- Write it as an RNTuple. Pages are Zstd-compressed on disk. -------------
     let path = dir.join("oxiroot_ex_rntuple.root");
-    events.write_root(&path, Compression::Zstd(5))?;
+    let mut out = DatasetWriter::create(&path, "events", Format::Ntuple)?;
+    out.write(&events)?;
+    out.finish()?;
     println!("wrote RNTuple `events` -> {}", path.display());
 
     // --- Reopen and inspect the schema before touching any data. ---------------
-    // Opening only parses the anchor, header, and footer — column pages are read
-    // lazily, per field, when you ask for them.
+    // Opening only parses the anchor, header, and footer — pages are read lazily,
+    // per column, when you ask for them.
     let f = FileReader::open(&path)?;
-    let ntpl = NtupleReader::open(&f, "events")?;
+    let ntpl = Dataset::open(&f, "events")?;
     println!(
-        "reopened: {} entries, fields = {:?}",
+        "reopened {:?}: {} entries, columns = {:?}",
+        ntpl.format(),
         ntpl.entries(),
-        ntpl.field_names(),
+        ntpl.columns(),
     );
 
-    // --- Read a couple of fields back. Each `read_field` decodes one column ----
-    // (or, for a `std::vector`/`std::string`, its offset + data columns) into a
-    // typed `FieldValues`. Match on the variant to get at the `Vec`.
-    let masses = match ntpl.read_field(&f, "mass")? {
-        FieldValues::F64(v) => v,
-        other => panic!("mass should be F64, got {other:?}"),
-    };
-    let charges = match ntpl.read_field(&f, "charge")? {
-        FieldValues::I32(v) => v,
-        other => panic!("charge should be I32, got {other:?}"),
-    };
-    let labels = match ntpl.read_field(&f, "label")? {
-        FieldValues::Str(v) => v,
-        other => panic!("label should be Str, got {other:?}"),
-    };
-    // A jagged field reads back as one inner `Vec` per entry.
-    let jets = match ntpl.read_field(&f, "jet_pt")? {
-        FieldValues::VecF64(v) => v,
-        other => panic!("jet_pt should be VecF64, got {other:?}"),
-    };
+    // --- Read the columns back: typed views over flat buffers. -----------------
+    let batch = ntpl.read(["mass", "charge", "label", "jet_pt"])?;
+    let masses = batch.values::<f64>("mass")?;
+    let charges = batch.values::<i32>("charge")?;
+    let labels = batch.strings("label")?;
+    let jets = batch.jagged::<f64>("jet_pt")?; // one slice per entry
 
     // --- Print it as an event loop would see it: one row per entry. ------------
     println!("per-entry values:");
-    for i in 0..usize::saturating_from(ntpl.entries()) {
+    for i in 0..batch.len() {
         println!(
             "  {:>3}: label = {:>3}  mass = {:>7.2} GeV  charge = {:+}  jets = {:?}",
-            i, labels[i], masses[i], charges[i], jets[i],
+            i,
+            labels.get(i),
+            masses[i],
+            charges[i],
+            jets.row(i),
         );
     }
-    // A tiny derived quantity, to show the columns are just plain `Vec`s now.
-    let total_jets: usize = jets.iter().map(Vec::len).sum();
+    let total_jets = jets.values().len();
     println!("  ({total_jets} jets across {} events)", jets.len());
 
-    // --- Several RNTuples in one file, via `FileWriter`. ------------------------
-    // `Ntuple::write_root` writes exactly one; `FileWriter::put` puts more than one
-    // in the same file (next to histograms or trees, and in `TDirectory`s — see
-    // the docs). Here: the per-event `events` alongside a small per-run
+    // --- Several datasets in one file, via `FileWriter`. ------------------------
+    // `FileWriter::put` puts more than one in the same file, next to histograms
+    // and in `TDirectory`s: here the per-event `events` alongside a small per-run
     // bookkeeping RNTuple.
     let multi_path = dir.join("oxiroot_ex_rntuple_multi.root");
+    let runs = Batch::new()
+        .column("run", vec![101_i32, 102, 103])?
+        .column("n_events", vec![12_000_i64, 8_400, 15_250])?;
     FileWriter::create(&multi_path)
-        .put(Ntuple::new(
+        .put(DatasetObject::new(
             "events",
-            vec![
-                Field::f64("mass", vec![91.19, 125.10]),
-                Field::i32("charge", vec![0, 0]),
-            ],
-        ))
-        .put(Ntuple::new(
-            "runs",
-            vec![
-                Field::i32("run", vec![101, 102, 103]),
-                Field::i64("n_events", vec![12_000, 8_400, 15_250]),
-            ],
-        ))
+            Format::Ntuple,
+            &events.slice(0..2),
+        )?)
+        .put(DatasetObject::new("runs", Format::Ntuple, &runs)?)
         .write(Compression::Zstd(5))?;
     println!("wrote 2 RNTuples -> {}", multi_path.display());
 
-    // --- Read both RNTuples back out of the one file. --------------------------
+    // --- Read both back out of the one file. -----------------------------------
     let g = FileReader::open(&multi_path)?;
-    let ev = NtupleReader::open(&g, "events")?;
-    let runs = NtupleReader::open(&g, "runs")?;
+    let ev = Dataset::open(&g, "events")?;
+    let runs = Dataset::open(&g, "runs")?;
+    println!("  `events`: {} entries {:?}", ev.entries(), ev.columns());
+    let n = runs.read(["n_events"])?;
+    let total: i64 = n.values::<i64>("n_events")?.iter().sum();
     println!(
-        "  `events`: {} entries {:?}",
-        ev.entries(),
-        ev.field_names(),
+        "  `runs`:   {} entries, {total} events recorded across all runs",
+        runs.entries(),
     );
-    if let FieldValues::I64(n) = runs.read_field(&g, "n_events")? {
-        let total: i64 = n.iter().sum();
-        println!(
-            "  `runs`:   {} entries, {total} events recorded across all runs",
-            runs.entries(),
-        );
-    }
 
     // --- Clean up the temp files (never litter). -------------------------------
     let _ = std::fs::remove_file(&path);

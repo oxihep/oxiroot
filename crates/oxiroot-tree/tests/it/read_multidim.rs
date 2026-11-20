@@ -14,7 +14,7 @@ fn reads_multidim_array() {
     assert_eq!(t.entries(), 3);
     assert_eq!(t.branch_shape("m"), Some([2usize, 3].as_slice()));
     assert_eq!(
-        t.read_branch(&f, "m").expect("read m"),
+        t.branch("m").values().expect("read m"),
         BranchValues::VecF32(vec![
             vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
             vec![10.0, 11.0, 12.0, 13.0, 14.0, 15.0],

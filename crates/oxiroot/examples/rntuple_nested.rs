@@ -6,14 +6,16 @@
 //!
 //! Shows the three nesting shapes — a vector of strings, a vector of vectors,
 //! and a vector of records (a `std::pair`) — written so that official ROOT and
-//! uproot read them too. Pass an output path as the first argument to keep the
+//! uproot read them too. Records are RNTuple-only, so this uses the low-level
+//! RNTuple writer and reader rather than `oxiroot::data`. Pass an output path as the first argument to keep the
 //! file (default: a temporary file that is read back and removed).
 
+use oxiroot::ntuple::{Column, Field, NtupleReader, NtupleWriter};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
     // (a) std::vector<std::string>: per-entry lists of tags.
-    let tags = Field::vec_str(
+    let tags = Field::vector_string(
         "tags",
         vec![
             vec![],
@@ -23,7 +25,7 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // (b) std::vector<std::vector<int32_t>>: per-entry hit patterns.
-    let hits = Field::vec_vec_i32(
+    let hits = Field::vector_vector_i32(
         "hits",
         vec![vec![], vec![vec![1, 2]], vec![vec![3], vec![4, 5]]],
     );
@@ -53,7 +55,9 @@ fn main() -> oxiroot::Result<()> {
             .to_string()
     });
 
-    write_rntuple_file(&path, "events", &fields, Compression::Zstd(5))?;
+    let mut w = NtupleWriter::create(&path, "events", Compression::Zstd(5))?;
+    w.write_batch(&fields)?;
+    w.finish()?;
     println!("wrote {path}");
 
     // Read it back through oxiroot.
@@ -65,7 +69,7 @@ fn main() -> oxiroot::Result<()> {
         ntpl.field_names()
     );
     for name in ["tags", "hits", "clusters"] {
-        println!("  {name} = {:?}", ntpl.read_field(&file, name)?);
+        println!("  {name} = {:?}", ntpl.field(name).values()?);
     }
 
     if keep.is_none() {

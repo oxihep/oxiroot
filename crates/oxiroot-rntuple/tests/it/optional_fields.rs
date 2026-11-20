@@ -4,11 +4,12 @@
 //! `std::atomic<T>` is stored as the bare `T`. Round-tripped here; the written
 //! files are also read by ROOT C++ (`RNTupleReader`) and uproot.
 
+use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
+use oxiroot_rntuple::{Field, FieldValues, NtupleReader};
 
 fn write(path: &str, compression: Compression) {
-    Ntuple::new(
+    NtupleObject::new(
         "ntpl",
         vec![
             Field::optional_f32("maybe", vec![Some(1.5), None, Some(3.5), None]),
@@ -29,7 +30,7 @@ fn optional_and_unique_ptr_round_trip_as_nullable() {
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
 
     // optional<float> reads back as a nullable.
-    let maybe = nt.read_field(&f, "maybe").unwrap();
+    let maybe = nt.field("maybe").values().unwrap();
     assert!(matches!(maybe, FieldValues::Opt { .. }));
     assert_eq!(
         maybe.opt_f32(),
@@ -37,7 +38,7 @@ fn optional_and_unique_ptr_round_trip_as_nullable() {
     );
     // unique_ptr<int> reads back as a nullable too.
     assert_eq!(
-        nt.read_field(&f, "late").unwrap().opt_i32(),
+        nt.field("late").values().unwrap().opt_i32(),
         Some(vec![Some(10), None, Some(30), None])
     );
 }
@@ -50,7 +51,7 @@ fn atomic_reads_as_a_scalar() {
     let f = FileReader::open(path).unwrap();
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
-        nt.read_field(&f, "counter").unwrap(),
+        nt.field("counter").values().unwrap(),
         FieldValues::I32(vec![0, 100, 200, 300])
     );
 }
@@ -63,11 +64,11 @@ fn nullable_fields_compress() {
     let f = FileReader::open(path).unwrap();
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
-        nt.read_field(&f, "maybe").unwrap().opt_f32(),
+        nt.field("maybe").values().unwrap().opt_f32(),
         Some(vec![Some(1.5), None, Some(3.5), None])
     );
     assert_eq!(
-        nt.read_field(&f, "counter").unwrap(),
+        nt.field("counter").values().unwrap(),
         FieldValues::I32(vec![0, 100, 200, 300])
     );
 }
@@ -76,7 +77,7 @@ fn nullable_fields_compress() {
 fn all_present_and_all_absent() {
     let path = std::env::temp_dir().join("oxiroot_opt_edge.root");
     let path = path.to_str().unwrap();
-    Ntuple::new(
+    NtupleObject::new(
         "ntpl",
         vec![
             Field::optional_f64("full", vec![Some(1.0), Some(2.0), Some(3.0)]),
@@ -88,11 +89,11 @@ fn all_present_and_all_absent() {
     let f = FileReader::open(path).unwrap();
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(
-        nt.read_field(&f, "full").unwrap().opt_f64(),
+        nt.field("full").values().unwrap().opt_f64(),
         Some(vec![Some(1.0), Some(2.0), Some(3.0)])
     );
     assert_eq!(
-        nt.read_field(&f, "empty").unwrap().opt_f64(),
+        nt.field("empty").values().unwrap().opt_f64(),
         Some(vec![None, None, None])
     );
 }

@@ -2,10 +2,11 @@
 //! class, plus each user class with plain-number members. The entries must be
 //! the ones ROOT wrote for the same classes in `rntuple_user_uncompressed.root`.
 
+use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader, FileWriter, StreamerRegistry};
-use oxiroot_rntuple::{Column, Field, Ntuple, NtupleWriter};
+use oxiroot_rntuple::{Column, Field, NtupleWriter};
 
 fn root_written() -> StreamerRegistry {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -45,7 +46,7 @@ fn one_shot_file_describes_the_anchor_and_user_classes_like_root() {
         ),
         Field::new("x", Column::F32(vec![1.0, 2.0])),
     ];
-    let bytes = Ntuple::new("ntpl", fields)
+    let bytes = NtupleObject::new("ntpl", fields)
         .to_root_bytes("t.root", Compression::Zstd(5))
         .unwrap();
     let ours = registry(bytes);
@@ -85,9 +86,12 @@ fn classes_with_other_members_are_not_described() {
         ],
     };
     let bytes = FileWriter::create("t.root")
-        .put(Ntuple::new("a", vec![Field::new("t", tagged)]))
+        .put(NtupleObject::new("a", vec![Field::new("t", tagged)]))
         .dir("d", |d| {
-            d.put(Ntuple::new("b", vec![Field::new("hit", hit(vec![3]))]))
+            d.put(NtupleObject::new(
+                "b",
+                vec![Field::new("hit", hit(vec![3]))],
+            ))
         })
         .to_bytes(Compression::None)
         .unwrap();
@@ -97,7 +101,7 @@ fn classes_with_other_members_are_not_described() {
 #[test]
 fn schema_extended_files_are_described_too() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_ext_streamers.root");
-    Ntuple::new("ext", vec![Field::new("hit", hit(vec![1, 2]))])
+    NtupleObject::new("ext", vec![Field::new("hit", hit(vec![1, 2]))])
         .write_root_extended(
             &path,
             &[(1, Field::new("y", Column::F64(vec![0.5])))],

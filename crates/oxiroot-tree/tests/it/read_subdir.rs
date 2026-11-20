@@ -17,11 +17,11 @@ fn opens_a_tree_in_a_nested_subdirectory() {
     let t = TreeReader::open_in(&f, "cal/run2", "Events").expect("open nested tree");
     assert_eq!(t.entries(), 5);
     assert_eq!(
-        t.read_branch(&f, "i").unwrap(),
+        t.branch("i").values().unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])
     );
     assert_eq!(
-        t.read_branch(&f, "x").unwrap(),
+        t.branch("x").values().unwrap(),
         BranchValues::F64(vec![0.0, 1.5, 3.0, 4.5, 6.0])
     );
 

@@ -1,11 +1,26 @@
-//! Concatenating RNTuples with [`concat_ntuples`] — the `hadd` building block.
-use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader, concat_ntuples};
+//! Concatenating RNTuples with [`append_ntuples`] — the `hadd` building block.
+use std::io::Cursor;
+
+use crate::support::NtupleObject;
+use oxiroot_io_core::{Compression, FileReader, Result};
+use oxiroot_rntuple::{Field, FieldValues, NtupleReader, NtupleWriter, append_ntuples};
+
+/// Merge `inputs` into one in-memory file holding RNTuple `name`.
+fn concat_ntuples(name: &str, inputs: &[&NtupleReader<'_>]) -> Result<Vec<u8>> {
+    let mut w = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "merged.root",
+        name,
+        Compression::None,
+    )?;
+    append_ntuples(&mut w, inputs)?;
+    Ok(w.finish()?.into_inner())
+}
 
 /// Write `fields` as RNTuple `ntpl` to a fresh temp file and reopen it.
 fn write_open(tag: &str, fields: Vec<Field>) -> FileReader {
     let path = std::env::temp_dir().join(format!("oxiroot_rnconcat_{tag}.root"));
-    Ntuple::new("ntpl", fields)
+    NtupleObject::new("ntpl", fields)
         .write_root(&path, Compression::None)
         .expect("write");
     FileReader::open(&path).expect("reopen")
@@ -18,8 +33,8 @@ fn concatenates_scalar_vector_and_string_fields() {
         vec![
             Field::i32("i", vec![0, 1, 2]),
             Field::f64("x", vec![0.0, 1.0, 2.0]),
-            Field::strings("s", vec!["a".into(), "b".into(), "c".into()]),
-            Field::vec_i32("v", vec![vec![1], vec![], vec![2, 3]]),
+            Field::string("s", vec!["a".into(), "b".into(), "c".into()]),
+            Field::vector_i32("v", vec![vec![1], vec![], vec![2, 3]]),
         ],
     );
     let fb = write_open(
@@ -27,32 +42,28 @@ fn concatenates_scalar_vector_and_string_fields() {
         vec![
             Field::i32("i", vec![3, 4]),
             Field::f64("x", vec![3.0, 4.0]),
-            Field::strings("s", vec!["d".into(), "e".into()]),
-            Field::vec_i32("v", vec![vec![4, 5], vec![6]]),
+            Field::string("s", vec!["d".into(), "e".into()]),
+            Field::vector_i32("v", vec![vec![4, 5], vec![6]]),
         ],
     );
     let na = NtupleReader::open(&fa, "ntpl").unwrap();
     let nb = NtupleReader::open(&fb, "ntpl").unwrap();
 
-    let merged = concat_ntuples("ntpl", &[(&fa, &na), (&fb, &nb)]).expect("concat");
-    let path = std::env::temp_dir().join("oxiroot_rnconcat_out.root");
-    merged
-        .write_root(&path, Compression::None)
-        .expect("write merged");
-    let fo = FileReader::open(&path).unwrap();
+    let merged = concat_ntuples("ntpl", &[&na, &nb]).expect("concat");
+    let fo = FileReader::from_bytes(merged).unwrap();
     let no = NtupleReader::open(&fo, "ntpl").unwrap();
 
     assert_eq!(no.entries(), 5);
     assert_eq!(
-        no.read_field(&fo, "i").unwrap(),
+        no.field("i").values().unwrap(),
         FieldValues::I32(vec![0, 1, 2, 3, 4])
     );
     assert_eq!(
-        no.read_field(&fo, "x").unwrap(),
+        no.field("x").values().unwrap(),
         FieldValues::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0])
     );
     assert_eq!(
-        no.read_field(&fo, "s").unwrap(),
+        no.field("s").values().unwrap(),
         FieldValues::Str(vec![
             "a".into(),
             "b".into(),
@@ -62,7 +73,7 @@ fn concatenates_scalar_vector_and_string_fields() {
         ])
     );
     assert_eq!(
-        no.read_field(&fo, "v").unwrap(),
+        no.field("v").values().unwrap(),
         FieldValues::VecI32(vec![vec![1], vec![], vec![2, 3], vec![4, 5], vec![6]])
     );
 }
@@ -74,8 +85,11 @@ fn rejects_a_type_mismatch() {
     let na = NtupleReader::open(&fa, "ntpl").unwrap();
     let nb = NtupleReader::open(&fb, "ntpl").unwrap();
 
-    let Err(err) = concat_ntuples("ntpl", &[(&fa, &na), (&fb, &nb)]) else {
+    let Err(err) = concat_ntuples("ntpl", &[&na, &nb]) else {
         panic!("expected an error for a type mismatch");
     };
-    assert!(err.to_string().contains("different types"), "{err}");
+    assert!(
+        matches!(err, oxiroot_io_core::Error::SchemaChanged { .. }),
+        "{err}"
+    );
 }

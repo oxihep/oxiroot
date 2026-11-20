@@ -4,8 +4,11 @@ RNTuple is ROOT's columnar event-data format (the successor to `TTree`).
 oxiroot reads and writes it in pure Rust — anchor, header/footer envelopes,
 page lists, and per-column page decoding — with a typed field API that covers
 scalars, strings, nested collections, records, variants, fixed-size arrays, and
-user classes. This page covers building and writing RNTuples (one-shot and
-streaming) and reading them back.
+user classes. For reading and writing columns the same way for an RNTuple and a `TTree`, use
+[Datasets](datasets.md). This page covers the RNTuple-specific layer underneath
+(`oxiroot::ntuple`): every field type, including records, variants and
+reduced-precision reals, the cluster-by-cluster writer, and the low-level
+reader.
 
 ## Writing fields
 
@@ -14,49 +17,45 @@ common column types directly from `Vec`s; the type name and physical column
 encoding are derived for you.
 
 ```rust
-use oxiroot::prelude::*;
+use oxiroot::ntuple::{Column, Field, FieldValues, NtupleReader, NtupleWriter};
 
 let fields = vec![
     Field::f64("mass", vec![91.2, 125.0]),
     Field::i32("charge", vec![0, -1]),
 ];
 
-Ntuple::new("events", fields).write_root("data.root", Compression::None)?;
+let mut w = NtupleWriter::create("data.root", "events", Compression::None)?;
+w.write_batch(&fields)?; // one cluster
+w.finish()?;
 ```
 
-[`Ntuple::new(name, fields)`](#one-shot-writing) builds a writable RNTuple;
-`write_root` writes a complete one-RNTuple ROOT file.
+[`NtupleWriter`](#streaming-writes) writes one cluster per `write_batch`.
 
 !!! note
     Every field must have the same number of entries (the first field defines
     the entry count). The entry count is a 32-bit field on disk, so a single
-    write is capped at `u32::MAX` entries — use [`NtupleWriter`](#streaming-writes)
-    to split a larger dataset across clusters.
+    cluster is capped at `u32::MAX` entries: split a larger dataset across
+    several `write_batch` calls.
 
 ### Scalar field constructors
 
 | Constructor | Element type | On-disk type |
 | --- | --- | --- |
-| `Field::bools` | `bool` | `bool` |
+| `Field::bool` | `bool` | `bool` |
 | `Field::i8` / `Field::u8` | `i8` / `u8` | `std::int8_t` / `std::uint8_t` |
 | `Field::i16` / `Field::u16` | `i16` / `u16` | `std::int16_t` / `std::uint16_t` |
 | `Field::i32` / `Field::u32` | `i32` / `u32` | `std::int32_t` / `std::uint32_t` |
 | `Field::i64` / `Field::u64` | `i64` / `u64` | `std::int64_t` / `std::uint64_t` |
 | `Field::f32` / `Field::f64` | `f32` / `f64` | `float` / `double` |
-| `Field::strings` | `String` | `std::string` |
+| `Field::string` | `String` | `std::string` |
 
 ```rust
-use oxiroot::prelude::*;
-
 let fields = vec![
-    Field::bools("trigger", vec![true, false, true]),
+    Field::bool("trigger", vec![true, false, true]),
     Field::u16("nhits", vec![3, 0, 12]),
-    Field::strings("label", vec!["mu".into(), "e".into(), "jet".into()]),
+    Field::string("label", vec!["mu".into(), "e".into(), "jet".into()]),
 ];
 ```
-
-!!! warning
-    The boolean constructor is `Field::bools` (plural), not `Field::bool`.
 
 ### Reduced-precision reals
 
@@ -70,8 +69,6 @@ distinct RNTuple real column.
 | `Field::quantized(name, values, min, max, bits)` | `Real32Quant` | linear quantization into `bits`-wide ints over `[min, max]` |
 
 ```rust
-use oxiroot::prelude::*;
-
 let pts = vec![5.5_f32, 12.25, 88.0];
 let fields = vec![
     Field::half("pt_half", pts.clone()),
@@ -90,31 +87,29 @@ let fields = vec![
 
 | Constructor | C++ type |
 | --- | --- |
-| `Field::vec_bool` | `std::vector<bool>` |
-| `Field::vec_i8` / `vec_u8` / `vec_i16` / `vec_u16` | `std::vector<intN_t>` |
-| `Field::vec_i32` / `vec_i64` | `std::vector<int32_t>` / `<int64_t>` |
-| `Field::vec_f32` / `vec_f64` | `std::vector<float>` / `<double>` |
-| `Field::vec_str` | `std::vector<std::string>` |
+| `Field::vector_bool` | `std::vector<bool>` |
+| `Field::vector_i8` / `vector_u8` / `vector_i16` / `vector_u16` | `std::vector<intN_t>` |
+| `Field::vector_i32` / `vector_i64` | `std::vector<int32_t>` / `<int64_t>` |
+| `Field::vector_f32` / `vector_f64` | `std::vector<float>` / `<double>` |
+| `Field::vector_string` | `std::vector<std::string>` |
 
 Doubly-nested vectors take `Vec<Vec<Vec<T>>>` (outer = entries):
 
 | Constructor | C++ type |
 | --- | --- |
-| `Field::vec_vec_bool` | `std::vector<std::vector<bool>>` |
-| `Field::vec_vec_i32` / `vec_vec_i64` | `std::vector<std::vector<int32_t>>` / `<int64_t>` |
-| `Field::vec_vec_f32` / `vec_vec_f64` | `std::vector<std::vector<float>>` / `<double>` |
-| `Field::vec_vec_str` | `std::vector<std::vector<std::string>>` |
+| `Field::vector_vector_bool` | `std::vector<std::vector<bool>>` |
+| `Field::vector_vector_i32` / `vector_vector_i64` | `std::vector<std::vector<int32_t>>` / `<int64_t>` |
+| `Field::vector_vector_f32` / `vector_vector_f64` | `std::vector<std::vector<float>>` / `<double>` |
+| `Field::vector_vector_string` | `std::vector<std::vector<std::string>>` |
 
 ```rust
-use oxiroot::prelude::*;
-
 // Per-entry lists of tags, and per-entry hit patterns.
-let tags = Field::vec_str("tags", vec![
+let tags = Field::vector_string("tags", vec![
     vec![],
     vec!["mu".into(), "iso".into()],
     vec!["jet".into()],
 ]);
-let hits = Field::vec_vec_i32("hits", vec![
+let hits = Field::vector_vector_i32("hits", vec![
     vec![],
     vec![vec![1, 2]],
     vec![vec![3], vec![4, 5]],
@@ -135,8 +130,6 @@ with a `0` and holds one value more than there are entries, the same convention
 as a tree's jagged `offsets`. Together they express `std::vector<MyStruct>`:
 
 ```rust
-use oxiroot::prelude::*;
-
 // std::vector<std::pair<int32_t, double>>: a vector of records.
 let clusters = Field::new(
     "clusters",
@@ -156,8 +149,6 @@ selects the 1-based active alternative per entry (`0` means valueless). Each
 alternative must hold exactly as many values as there are entries selecting it.
 
 ```rust
-use oxiroot::prelude::*;
-
 // std::variant<int32_t, double>: entry 0 -> int, entry 1 -> double, entry 2 -> int.
 let v = Field::variant(
     "payload",
@@ -172,39 +163,6 @@ let v = Field::variant(
     `Nested`, and `Variant` — is enumerated in the
     [API reference](../api/oxiroot/index.html).
 
-## One-shot writing
-
-`Ntuple` is the method-based entry point. Build one from a name and its
-fields, then write it or get its bytes:
-
-```rust
-use oxiroot::prelude::*;
-
-let ntpl = Ntuple::new("events", vec![
-    Field::f64("mass", vec![91.2, 125.0]),
-    Field::i32("charge", vec![0, -1]),
-]);
-
-// Write a one-RNTuple ROOT file...
-ntpl.write_root("data.root", Compression::Zstd(5))?;
-
-// ...or get the complete file bytes (file_name is the TFile name in the header).
-let bytes: Vec<u8> = ntpl.to_root_bytes("data.root", Compression::None)?;
-```
-
-The free function `write_rntuple_file` is the equivalent procedural form, and
-`rntuple_file_bytes` returns the bytes without writing a file:
-
-```rust
-use oxiroot::prelude::*;
-
-let fields = vec![Field::f64("mass", vec![91.2, 125.0])];
-write_rntuple_file("data.root", "events", &fields, Compression::None)?;
-```
-
-Both forms automatically switch to ROOT's 64-bit ("big") container layout once
-the file would exceed 2 GiB.
-
 ## Streaming writes
 
 `NtupleWriter` writes one *cluster* per call, so a large dataset is never held
@@ -213,8 +171,6 @@ fixes the schema (and writes the header); `finish` writes the page list, footer,
 and anchor.
 
 ```rust
-use oxiroot::prelude::*;
-
 let mut w = NtupleWriter::create("big.root", "events", Compression::Zstd(5))?;
 
 for chunk in 0..3 {
@@ -223,7 +179,8 @@ for chunk in 0..3 {
     w.write_batch(&[Field::f64("mass", mass)])?;
 }
 
-w.finish()?;
+let entries: u64 = w.entries();
+w.finish()?; // returns the sink
 ```
 
 | Constructor | Container | Use when |
@@ -239,34 +196,42 @@ w.finish()?;
     silently mis-described. A 32-bit writer whose stream passes 2 GiB errors at
     `finish` — use `create_large` / `new_large` for those.
 
+A whole RNTuple can also be placed into an open container, next to other
+objects, by `oxiroot::ntuple::raw::write_ntuple`. That path also writes
+schema-extension fields: late fields with a first entry.
+
 ## Reading
 
-[`NtupleReader::open`](#reading) reads the anchor, parses the schema, and indexes the
-clusters; column data is decoded on demand. Read a top-level field by name with
-`read_field`, which returns a `FieldValues`.
+[`NtupleReader::open`](#reading) reads the anchor, parses the schema, and
+indexes the clusters; it keeps the file, and column data is decoded on demand.
+Read a top-level field with `field(name)`, optionally narrowed with
+`.range(a..b)` (only the clusters the window overlaps are read), then:
+
+| Call | Returns |
+| --- | --- |
+| `.read::<T>()` | `Vec<T>`: `f64`, `String`, `Vec<f32>` for a `std::vector<float>`, `Option<i32>` for a `std::optional<int32_t>`. Another type than the field holds is an `Error::TypeMismatch`. |
+| `.values()` | The `FieldValues` enum, for every shape (below). |
+| `.flat()` | A `Jagged` (offsets + one flat column) for a `std::vector` of a scalar type, with no allocation per entry. |
+| `.to_field()` | A writable `Field` of the same name and type, for an `NtupleWriter`. |
 
 ```rust
-use oxiroot::prelude::*;
-
 let file = FileReader::open("data.root")?;
 let ntpl = NtupleReader::open(&file, "events")?;
 
 println!("{} entries", ntpl.entries());
 println!("fields: {:?}", ntpl.field_names());
+println!("clusters start at {:?}", ntpl.cluster_boundaries());
 
-match ntpl.read_field(&file, "mass")? {
-    FieldValues::F64(values) => {
-        for m in values {
-            println!("mass = {m}");
-        }
-    }
+let mass: Vec<f64> = ntpl.field("mass").range(0..1000).read()?;
+match ntpl.field("mass").values()? {
+    FieldValues::F64(values) => println!("{} masses", values.len()),
     other => println!("unexpected shape: {other:?}"),
 }
 ```
 
-### What `read_field` reconstructs
+### What `values()` reconstructs
 
-`read_field` walks the field tree and reconstructs per-entry values for every
+`values()` walks the field tree and reconstructs per-entry values for every
 supported shape:
 
 | Shape | `FieldValues` variant |
@@ -294,12 +259,7 @@ For a `std::vector<MyStruct>` (a `Nested` wrapping a `Record`), the `offsets`
 slice the flattened sub-field arrays into per-entry groups:
 
 ```rust
-use oxiroot::prelude::*;
-
-let file = FileReader::open("data.root")?;
-let ntpl = NtupleReader::open(&file, "events")?;
-
-if let FieldValues::Nested { offsets, items } = ntpl.read_field(&file, "clusters")? {
+if let FieldValues::Nested { offsets, items } = ntpl.field("clusters").values()? {
     if let FieldValues::Record(fields) = *items {
         // `fields` is [("_0", I32([...])), ("_1", F64([...]))] — flattened.
         // entry k spans offsets[k]..offsets[k + 1], and offsets[0] is 0.
@@ -318,7 +278,7 @@ For schema introspection and raw decoding, the reader also exposes:
 | `ntpl.header()` | parsed schema (fields and columns) |
 | `ntpl.footer()` | cluster groups |
 | `ntpl.anchor()` | the verified anchor |
-| `ntpl.read_column(&file, index)` | a single physical column as `ColumnValues` |
+| `ntpl.read_column(index)` | a single physical column as `ColumnValues` |
 
 ## Compression
 
@@ -342,6 +302,7 @@ cargo run -p oxiroot --example rntuple_nested
 
 ## See also
 
+- [Datasets](datasets.md) — one API for RNTuple and `TTree`.
 - [Getting started](../getting-started/quickstart.md) — install and first read/write.
 - [TTree](ttree.md) — the classic row-wise event format.
 - [Compression](compression.md) — codecs available on read and write.

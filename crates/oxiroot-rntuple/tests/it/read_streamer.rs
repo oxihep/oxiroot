@@ -31,7 +31,7 @@ fn reads_streamer_field() {
     // Each blob `Blob { int32 id; double value; std::string tag }` is decoded
     // member by member from the class TStreamerInfo.
     assert_eq!(
-        ntpl.read_field(&file, "blob").unwrap(),
+        ntpl.field("blob").values().unwrap(),
         FieldValues::Record(vec![
             ("id".into(), FieldValues::I32(vec![7, 42, -1])),
             ("value".into(), FieldValues::F64(vec![3.25, -1.5, 0.0])),

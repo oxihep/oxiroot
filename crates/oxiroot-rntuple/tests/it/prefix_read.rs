@@ -55,12 +55,14 @@ fn prefix_read_equals_truncated_full_read() {
         ];
 
         for field in ntpl.field_names() {
-            let full = ntpl.read_field(&file, field).expect("full read");
+            let full = ntpl.field(field).values().expect("full read");
             assert_eq!(full.len(), total, "{fx}: field {field:?} full length");
 
             for &m in &ms {
                 let prefix = ntpl
-                    .read_field_prefix(&file, field, m)
+                    .field(field)
+                    .range(0..m as u64)
+                    .values()
                     .expect("prefix read");
                 let mut want = full.clone();
                 want.truncate(m);

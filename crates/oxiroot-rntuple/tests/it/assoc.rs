@@ -4,10 +4,11 @@
 //! (ROOT 6.40 needs the map's dictionary compiled in to write or read a
 //! `std::map` RNTuple: `scripts/rntuple_map_LinkDef.h`.)
 
+use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader, StructRole};
+use oxiroot_rntuple::{Field, FieldValues, NtupleReader, StructRole};
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -26,7 +27,7 @@ fn check_set_fixture(name: &str) {
     assert_eq!(s.struct_role, StructRole::Collection);
     assert_eq!(s.type_name, "std::set<std::int32_t>");
     assert_eq!(
-        ntpl.read_field(&file, "s").unwrap(),
+        ntpl.field("s").values().unwrap(),
         FieldValues::VecI32(vec![
             vec![1, 2, 3],
             vec![4, 5],
@@ -56,7 +57,7 @@ fn check_map_fixture(name: &str) {
     let m = &ntpl.header().fields[0];
     assert_eq!(m.struct_role, StructRole::Collection);
     assert_eq!(m.type_name, "std::map<std::int32_t,double>");
-    match ntpl.read_field(&file, "m").unwrap() {
+    match ntpl.field("m").values().unwrap() {
         FieldValues::Nested { offsets, items } => {
             assert_eq!(offsets, vec![0, 2, 2, 5], "{name}");
             assert_eq!(
@@ -89,7 +90,7 @@ fn reads_root_map_zstd() {
 /// out of band). The on-disk schema is a collection tagged with the set type.
 #[test]
 fn writes_set_round_trip() {
-    let nt = Ntuple::new(
+    let nt = NtupleObject::new(
         "ntpl",
         vec![Field::set_i32("s", vec![vec![1, 2, 3], vec![4, 5]])],
     );
@@ -99,7 +100,7 @@ fn writes_set_round_trip() {
     let ntpl = NtupleReader::open(&file, "ntpl").unwrap();
     assert_eq!(ntpl.header().fields[0].type_name, "std::set<std::int32_t>");
     assert_eq!(
-        ntpl.read_field(&file, "s").unwrap(),
+        ntpl.field("s").values().unwrap(),
         FieldValues::VecI32(vec![vec![1, 2, 3], vec![4, 5]])
     );
     let _ = std::fs::remove_file(&out);
@@ -109,7 +110,7 @@ fn writes_set_round_trip() {
 /// records, tagged with the map type) that round-trips; uproot reads it as pairs.
 #[test]
 fn writes_map_round_trip() {
-    let nt = Ntuple::new(
+    let nt = NtupleObject::new(
         "ntpl",
         vec![Field::map_i32_f64(
             "m",
@@ -131,7 +132,7 @@ fn writes_map_round_trip() {
     );
 
     // Read back as a nested collection of key/value records.
-    match ntpl.read_field(&file, "m").unwrap() {
+    match ntpl.field("m").values().unwrap() {
         FieldValues::Nested { offsets, items } => {
             assert_eq!(offsets, vec![0, 2, 3]);
             assert_eq!(

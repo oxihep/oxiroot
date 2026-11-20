@@ -20,7 +20,7 @@ fn reads_several_branches_at_once() {
     let t = TreeReader::open(&f, "Events").expect("open tree");
     let cols: Vec<BranchValues> = ["i4", "b1"]
         .iter()
-        .map(|&n| t.read_branch(&f, n).expect("read"))
+        .map(|&n| t.branch(n).values().expect("read"))
         .collect();
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0], BranchValues::I32(vec![0, 1, 2, 3, 4]));
@@ -45,11 +45,11 @@ fn chain_concatenates_across_files() {
 
     // The branch spans both trees, in add order.
     assert_eq!(
-        chain.read_branch("i4").expect("i4"),
+        chain.branch("i4").values().expect("i4"),
         BranchValues::I32(vec![0, 1, 2, 3, 4, 0, 1, 2, 3, 4])
     );
     assert_eq!(
-        chain.read_branch("u4").expect("u4"),
+        chain.branch("u4").values().expect("u4"),
         BranchValues::U32(vec![
             100,
             200,

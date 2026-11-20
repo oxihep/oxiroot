@@ -4,7 +4,7 @@
 use oxiroot_io_core::raw::{
     K_BYTE_COUNT_MASK, StreamerElement, TagReader, read_named, read_object_base,
 };
-use oxiroot_io_core::{Error, RBuffer, Result, StreamerRegistry};
+use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry};
 
 use super::members::{Members, member_int, member_str, walk_members};
 use super::types::{
@@ -16,12 +16,13 @@ use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length),
 /// driving the member layout from the file's `TStreamerInfo`.
-pub(super) fn read_tree(
+pub(super) fn read_tree<'f>(
+    file: &'f FileReader,
     object: &[u8],
     keylen: usize,
     reg: &StreamerRegistry,
     class_name: &str,
-) -> Result<TreeReader> {
+) -> Result<TreeReader<'f>> {
     let mut r = RBuffer::new(object);
     let mut tags = TagReader::new(keylen);
 
@@ -101,6 +102,7 @@ pub(super) fn read_tree(
     }
 
     Ok(TreeReader {
+        file,
         name: member_str(&out, "fName"),
         entries: u64::saturating_from(member_int(&out, "fEntries")),
         branches,
@@ -402,6 +404,7 @@ pub(super) fn read_branch(
             elem_header: 0,
             leaflist: None,
             dims: parse_dims(&leaf.title),
+            variable: has_count_dim(&leaf.title),
             nested_elem: None,
             object_member: None,
         }]);
@@ -428,6 +431,7 @@ pub(super) fn read_branch(
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
             dims: parse_dims(&leaf.title),
+            variable: false,
             nested_elem: None,
             object_member: None,
         })
@@ -525,6 +529,7 @@ fn read_branch_element(
         elem_header,
         leaflist: None,
         dims: Vec::new(),
+        variable: member || elem_header > 0,
         nested_elem,
         object_member: None,
     }])
@@ -591,6 +596,7 @@ fn read_branch_object(
             elem_header: 0,
             leaflist: None,
             dims: Vec::new(),
+            variable: false,
             nested_elem: None,
             object_member: Some(ObjectMember {
                 member: el.name.clone(),
@@ -649,6 +655,21 @@ fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
         len,
         offset: usize::saturating_from(offset.max(0)),
     }))
+}
+
+/// Whether a leaf title has a dimension given by a count leaf (`x[n]`), not a
+/// number: the entries then hold a variable number of elements.
+fn has_count_dim(title: &str) -> bool {
+    let mut rest = title;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else { break };
+        if after[..close].parse::<usize>().is_err() {
+            return true;
+        }
+        rest = &after[close + 1..];
+    }
+    false
 }
 
 /// Parse the per-entry array shape from a leaf title: `x[2][3]` → `[2, 3]`,

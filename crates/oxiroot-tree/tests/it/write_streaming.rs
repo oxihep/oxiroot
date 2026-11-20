@@ -31,16 +31,16 @@ fn streaming_scalars_round_trip() {
     let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.entries(), 9);
     assert_eq!(
-        t.read_branch(&f, "x").expect("x"),
+        t.branch("x").values().expect("x"),
         BranchValues::I32((0..9).collect())
     );
     assert_eq!(
-        t.read_branch(&f, "y").expect("y"),
+        t.branch("y").values().expect("y"),
         BranchValues::F64((0..9).map(f64::from).collect())
     );
     // A range straddling basket boundaries (batch 0 ends at 3, batch 1 at 5).
     assert_eq!(
-        t.read_branch_range(&f, "x", 2, 6).expect("range"),
+        t.branch("x").range(2..6).values().expect("range"),
         BranchValues::I32(vec![2, 3, 4, 5])
     );
 }
@@ -63,12 +63,12 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     let total = u64::saturating_from(n_batches * 4);
     assert_eq!(t.entries(), total);
     assert_eq!(
-        t.read_branch(&f, "x").expect("x"),
+        t.branch("x").values().expect("x"),
         BranchValues::I64((0..total.cast_signed()).collect())
     );
     // A range deep in the file (basket 12-ish) reads correctly.
     assert_eq!(
-        t.read_branch_range(&f, "x", 50, 54).expect("range"),
+        t.branch("x").range(50..54).values().expect("range"),
         BranchValues::I64(vec![50, 51, 52, 53])
     );
 }
@@ -90,7 +90,7 @@ fn streaming_jagged_vector_string_round_trip() {
         w.write_batch(&[
             Branch::jagged_f64("j", jag[r.clone()].to_vec()),
             Branch::vector_i32("v", vec_branch[r.clone()].to_vec()),
-            Branch::strings("s", strs[r.clone()].to_vec()),
+            Branch::string("s", strs[r.clone()].to_vec()),
         ])
         .expect("batch");
     }
@@ -100,17 +100,17 @@ fn streaming_jagged_vector_string_round_trip() {
     let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.entries(), 4);
     assert_eq!(
-        t.read_branch(&f, "j").expect("j"),
+        t.branch("j").values().expect("j"),
         BranchValues::VecF64(jag)
     );
     assert_eq!(
-        t.read_branch(&f, "v").expect("v"),
+        t.branch("v").values().expect("v"),
         BranchValues::VecI32(vec_branch)
     );
-    assert_eq!(t.read_branch(&f, "s").expect("s"), BranchValues::Str(strs));
+    assert_eq!(t.branch("s").values().expect("s"), BranchValues::Str(strs));
     // The auto-generated count branch is present and correct.
     assert_eq!(
-        t.read_branch(&f, "nj").expect("nj"),
+        t.branch("nj").values().expect("nj"),
         BranchValues::I32(vec![1, 0, 3, 2])
     );
 }
@@ -143,11 +143,11 @@ fn streaming_create_large_writes_big_container_round_trip() {
     let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.entries(), 9);
     assert_eq!(
-        t.read_branch(&f, "x").expect("x"),
+        t.branch("x").values().expect("x"),
         BranchValues::I32((0..9).collect())
     );
     assert_eq!(
-        t.read_branch(&f, "y").expect("y"),
+        t.branch("y").values().expect("y"),
         BranchValues::F64((0..9).map(f64::from).collect())
     );
 }
@@ -169,7 +169,7 @@ fn streaming_jagged_big_container_round_trips() {
     assert!(f.header().is_big());
     let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(
-        t.read_branch(&f, "j").expect("j"),
+        t.branch("j").values().expect("j"),
         BranchValues::VecF64(jag)
     );
 }
@@ -248,7 +248,7 @@ fn streaming_real_over_two_gib() {
     // this proves the 64-bit fBasketSeek round-trips.
     let last = total - 4;
     assert_eq!(
-        t.read_branch_range(&f, "x", last, total).expect("tail"),
+        t.branch("x").range(last..total).values().expect("tail"),
         BranchValues::F64((last..total).map(|i| i as f64).collect())
     );
     let _ = std::fs::remove_file(&out);

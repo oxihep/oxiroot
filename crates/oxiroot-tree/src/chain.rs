@@ -4,7 +4,7 @@
 use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::reader::TreeReader;
-use crate::value::BranchValues;
+use crate::value::{BranchValues, FromBranch};
 
 /// Reads a chain of same-schema `TTree`s across several open files, like ROOT's
 /// `TChain`. Reading a branch concatenates that branch's values from every tree
@@ -19,13 +19,13 @@ use crate::value::BranchValues;
 /// let mut chain = ChainReader::new();
 /// chain.add(&f1, "Events")?;
 /// chain.add(&f2, "Events")?;
-/// let all = chain.read_branch("pt")?; // values from both files
+/// let all: Vec<f32> = chain.branch("pt").read()?; // values from both files
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 #[doc(alias = "TChain")]
 #[derive(Default)]
 pub struct ChainReader<'a> {
-    trees: Vec<(&'a FileReader, TreeReader)>,
+    trees: Vec<TreeReader<'a>>,
 }
 
 impl<'a> ChainReader<'a> {
@@ -38,14 +38,14 @@ impl<'a> ChainReader<'a> {
     /// Open the tree named `tree_name` in `file` and append it to the chain.
     pub fn add(&mut self, file: &'a FileReader, tree_name: &str) -> Result<()> {
         let tree = TreeReader::open(file, tree_name)?;
-        self.trees.push((file, tree));
+        self.trees.push(tree);
         Ok(())
     }
 
     /// Total number of entries across all trees in the chain.
     #[must_use]
     pub fn entries(&self) -> u64 {
-        self.trees.iter().map(|(_, t)| t.entries()).sum()
+        self.trees.iter().map(TreeReader::entries).sum()
     }
 
     /// The number of trees (files) in the chain.
@@ -59,20 +59,42 @@ impl<'a> ChainReader<'a> {
     pub fn branch_names(&self) -> Vec<&str> {
         self.trees
             .first()
-            .map(|(_, t)| t.branch_names())
+            .map(TreeReader::branch_names)
             .unwrap_or_default()
     }
 
     /// Read branch `name` across the whole chain, concatenating each tree's
     /// values in add order. Fails if a tree lacks the branch or yields a
     /// different element type than the others.
-    pub fn read_branch(&self, name: &str) -> Result<BranchValues> {
+    pub fn branch<'b>(&'b self, name: &'b str) -> ChainBranchRead<'b, 'a> {
+        ChainBranchRead { chain: self, name }
+    }
+}
+
+/// One branch read across a chain, set up by [`ChainReader::branch`].
+#[must_use = "a ChainBranchRead does nothing until read or values is called"]
+pub struct ChainBranchRead<'b, 'a> {
+    chain: &'b ChainReader<'a>,
+    name: &'b str,
+}
+
+impl ChainBranchRead<'_, '_> {
+    /// The branch across every tree, as `Vec<T>` (see
+    /// [`BranchRead::read`](crate::BranchRead::read)).
+    pub fn read<T: FromBranch>(self) -> Result<Vec<T>> {
+        let name = self.name;
+        T::from_values(name, self.values()?)
+    }
+
+    /// The branch across every tree, as the [`BranchValues`] enum.
+    pub fn values(self) -> Result<BranchValues> {
         let parts = self
+            .chain
             .trees
             .iter()
-            .map(|(file, tree)| tree.read_branch(file, name))
+            .map(|tree| tree.branch(self.name).values())
             .collect::<Result<Vec<_>>>()?;
-        concat_values(parts, name)
+        concat_values(parts, self.name)
     }
 }
 

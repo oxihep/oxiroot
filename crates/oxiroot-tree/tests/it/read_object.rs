@@ -22,19 +22,19 @@ fn reads_split_single_object_scalars() {
 
     // Each member is a scalar (one value per entry), not a jagged array.
     assert_eq!(
-        t.read_branch(&f, "id").unwrap(),
+        t.branch("id").values().unwrap(),
         BranchValues::I32(vec![0, 1, 2])
     );
     assert_eq!(
-        t.read_branch(&f, "inner.a").unwrap(),
+        t.branch("inner.a").values().unwrap(),
         BranchValues::F32(vec![0.5, 1.5, 2.5])
     );
     assert_eq!(
-        t.read_branch(&f, "inner.b").unwrap(),
+        t.branch("inner.b").values().unwrap(),
         BranchValues::I32(vec![0, 2, 4])
     );
     assert_eq!(
-        t.read_branch(&f, "w").unwrap(),
+        t.branch("w").values().unwrap(),
         BranchValues::F32(vec![0.0, 1.5, 3.0])
     );
 }

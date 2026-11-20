@@ -73,7 +73,7 @@ struct StreamCol {
 /// Every batch must share the first batch's schema: branch names, element
 /// types, the jagged / `std::vector` flags, and fixed-array widths. Split
 /// `std::vector<Struct>` branches are not supported here — use
-/// [`write_tree_file`](super::write_tree_file) for those.
+/// [`raw::write_tree`](super::raw::write_tree) for those.
 ///
 /// ```no_run
 /// use oxiroot_io_core::Compression;
@@ -184,8 +184,8 @@ impl<W: Write + Seek> TreeWriter<W> {
 
     /// Total entries appended so far.
     #[must_use]
-    pub fn entries(&self) -> i64 {
-        self.total_entries
+    pub fn entries(&self) -> u64 {
+        u64::try_from(self.total_entries).unwrap_or(0)
     }
 
     /// Append one batch of entries (one basket per branch). The first batch fixes
@@ -195,7 +195,7 @@ impl<W: Write + Seek> TreeWriter<W> {
             if b.split().is_some() {
                 return Err(Error::Unsupported(format!(
                     "branch {:?}: TreeWriter does not support split std::vector<Struct> branches; \
-                     use write_tree_file for those",
+                     use oxiroot_tree::raw::write_tree for those",
                     b.name
                 )));
             }

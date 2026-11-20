@@ -111,6 +111,10 @@ Larger pieces, each worth a design note before code.
   login, and the client authenticates with a WLCG bearer token (`ztn`). Tested
   against a mock server in CI and a real `xrootd` locally
   (`scripts/xrootd_tls_local.sh`).
+- **One API for `TTree` and RNTuple** (`oxiroot::data`): `Dataset`,
+  `DatasetWriter` and flat `Batch` columns, read cluster by cluster; the old
+  high-level `Tree`/`Ntuple` writers and `read_branch*`/`read_field*` methods
+  are gone, replaced by a read builder on the low-level readers.
 - **API review** (oxiroot 0.6.0, with oxistats 0.2.0, oxifit 0.9.0, oxiplot
   0.11.0 and oxihist 0.13.0). Names that collided across crates are renamed,
   public fields are private behind accessors, and options builders take one

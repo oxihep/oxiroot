@@ -23,7 +23,7 @@ fn check_fields(name: &str) {
         "{name} field names"
     );
 
-    let field = |n| ntpl.read_field(&file, n).expect("read field");
+    let field = |n| ntpl.field(n).values().expect("read field");
 
     assert_eq!(
         field("i32"),
@@ -89,11 +89,11 @@ fn reads_real_root_multicluster_collection() {
     assert_eq!(ntpl.entries(), 9);
 
     assert_eq!(
-        ntpl.read_field(&file, "n").expect("n"),
+        ntpl.field("n").values().expect("n"),
         FieldValues::I32((0..9).collect())
     );
     assert_eq!(
-        ntpl.read_field(&file, "v").expect("v"),
+        ntpl.field("v").values().expect("v"),
         FieldValues::VecF32(vec![
             vec![],
             vec![10.0],

@@ -206,9 +206,9 @@ impl Column {
 #[derive(Debug)]
 pub struct Field {
     /// Field name.
-    pub name: String,
+    pub(crate) name: String,
     /// Field data.
-    pub data: Column,
+    pub(crate) data: Column,
 }
 
 impl Field {
@@ -218,6 +218,18 @@ impl Field {
             name: name.into(),
             data,
         }
+    }
+
+    /// The field's name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The field's data.
+    #[must_use]
+    pub fn data(&self) -> &Column {
+        &self.data
     }
 }
 
@@ -236,7 +248,7 @@ macro_rules! field_ctors {
 }
 
 field_ctors! {
-    bools => Bool(bool),
+    bool => Bool(bool),
     i8 => I8(i8),
     u8 => U8(u8),
     i16 => I16(i16),
@@ -247,17 +259,17 @@ field_ctors! {
     u64 => U64(u64),
     f32 => F32(f32),
     f64 => F64(f64),
-    strings => Str(String),
-    vec_bool => VecBool(Vec<bool>),
-    vec_i8 => VecI8(Vec<i8>),
-    vec_u8 => VecU8(Vec<u8>),
-    vec_i16 => VecI16(Vec<i16>),
-    vec_u16 => VecU16(Vec<u16>),
-    vec_i32 => VecI32(Vec<i32>),
-    vec_i64 => VecI64(Vec<i64>),
-    vec_f32 => VecF32(Vec<f32>),
-    vec_f64 => VecF64(Vec<f64>),
-    vec_str => VecStr(Vec<String>),
+    string => Str(String),
+    vector_bool => VecBool(Vec<bool>),
+    vector_i8 => VecI8(Vec<i8>),
+    vector_u8 => VecU8(Vec<u8>),
+    vector_i16 => VecI16(Vec<i16>),
+    vector_u16 => VecU16(Vec<u16>),
+    vector_i32 => VecI32(Vec<i32>),
+    vector_i64 => VecI64(Vec<i64>),
+    vector_f32 => VecF32(Vec<f32>),
+    vector_f64 => VecF64(Vec<f64>),
+    vector_string => VecStr(Vec<String>),
 }
 
 /// Wrap a flattened child column in a `std::vector<...>` by grouping it with
@@ -286,12 +298,12 @@ macro_rules! vec_vec_ctors {
 }
 
 vec_vec_ctors! {
-    vec_vec_bool => VecBool(bool),
-    vec_vec_i32 => VecI32(i32),
-    vec_vec_i64 => VecI64(i64),
-    vec_vec_f32 => VecF32(f32),
-    vec_vec_f64 => VecF64(f64),
-    vec_vec_str => VecStr(String),
+    vector_vector_bool => VecBool(bool),
+    vector_vector_i32 => VecI32(i32),
+    vector_vector_i64 => VecI64(i64),
+    vector_vector_f32 => VecF32(f32),
+    vector_vector_f64 => VecF64(f64),
+    vector_vector_string => VecStr(String),
 }
 
 /// Split a `Vec<Option<T>>` into a presence mask and the densely-packed present
@@ -564,5 +576,5 @@ set_ctors! {
     set_u64 => U64(u64, "std::uint64_t"),
     set_f32 => F32(f32, "float"),
     set_f64 => F64(f64, "double"),
-    set_str => Str(String, "std::string"),
+    set_string => Str(String, "std::string"),
 }

@@ -22,7 +22,6 @@ fn main() -> oxiroot::Result<()> {
     use oxiroot::fit::{FitMethod, FitOptions, Minimizer, Model};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;
-    use oxiroot::tree::BranchValues;
 
     const URL: &str = "root://eospublic.cern.ch//eos/opendata/atlas/OutreachDatasets/\
                        2016-07-29/MC/mc_147770.Zee.root";
@@ -30,30 +29,11 @@ fn main() -> oxiroot::Result<()> {
 
     let start = std::time::Instant::now();
     let file = FileReader::open_url(URL)?;
-    let tree = TreeReader::open(&file, "mini")?;
+    let tree = Dataset::open(&file, "mini")?;
     println!(
         "opened {:.0} MB file, tree `mini` with {} entries, in {:.1?}",
         file.size() as f64 / 1e6,
         tree.entries(),
-        start.elapsed()
-    );
-
-    // Lepton four-momenta (MeV), charge and type, for the first entries.
-    let read = |name: &str| tree.read_branch_range(&file, name, 0, entries);
-    let floats = |v: BranchValues| match v {
-        BranchValues::VecF32(v) => v,
-        other => panic!("expected a float array, got {:?}", other.leaf_type()),
-    };
-    let pt = floats(read("lep_pt")?);
-    let eta = floats(read("lep_eta")?);
-    let phi = floats(read("lep_phi")?);
-    let energy = floats(read("lep_E")?);
-    let charge = floats(read("lep_charge")?);
-    let BranchValues::VecU32(kind) = read("lep_type")? else {
-        panic!("lep_type is an unsigned int array");
-    };
-    println!(
-        "read 6 lepton branches for {entries} entries in {:.1?}",
         start.elapsed()
     );
 
@@ -64,24 +44,50 @@ fn main() -> oxiroot::Result<()> {
         .named("m_ee")
         .titled("dielectron mass");
     mass.track_sumw2();
-    for i in 0..pt.len() {
-        if kind[i].len() != 2 || kind[i].iter().any(|&t| t != 11) || charge[i][0] == charge[i][1] {
-            continue;
+
+    // Lepton four-momenta (MeV), charge and type, for the first entries, one
+    // cluster at a time: only those baskets are fetched over the network.
+    let columns = [
+        "lep_pt",
+        "lep_eta",
+        "lep_phi",
+        "lep_E",
+        "lep_charge",
+        "lep_type",
+    ];
+    for batch in tree.batches(columns).range(0..entries) {
+        let batch = batch?;
+        let pt = batch.jagged::<f32>("lep_pt")?;
+        let eta = batch.jagged::<f32>("lep_eta")?;
+        let phi = batch.jagged::<f32>("lep_phi")?;
+        let energy = batch.jagged::<f32>("lep_E")?;
+        let charge = batch.jagged::<f32>("lep_charge")?;
+        let kind = batch.jagged::<u32>("lep_type")?;
+        for i in 0..batch.len() {
+            let (kind, q, pt) = (kind.row(i), charge.row(i), pt.row(i));
+            if kind.len() != 2 || kind.iter().any(|&t| t != 11) || q[0] == q[1] {
+                continue;
+            }
+            if pt.iter().any(|&p| p < 25e3) {
+                continue;
+            }
+            // Sum the four-momenta: (E, px, py, pz) from (E, pT, η, φ).
+            let (mut e, mut px, mut py, mut pz) = (0.0, 0.0, 0.0, 0.0);
+            let lepton = pt.iter().zip(energy.row(i)).zip(eta.row(i)).zip(phi.row(i));
+            for (((&pt, &en), &eta), &phi) in lepton {
+                let p = f64::from(pt);
+                e += f64::from(en);
+                px += p * f64::from(phi).cos();
+                py += p * f64::from(phi).sin();
+                pz += p * f64::from(eta).sinh();
+            }
+            mass.fill((e * e - px * px - py * py - pz * pz).max(0.0).sqrt() / 1e3);
         }
-        if pt[i].iter().any(|&p| p < 25e3) {
-            continue;
-        }
-        // Sum the four-momenta: (E, px, py, pz) from (E, pT, η, φ).
-        let (mut e, mut px, mut py, mut pz) = (0.0, 0.0, 0.0, 0.0);
-        for k in 0..2 {
-            let p = f64::from(pt[i][k]);
-            e += f64::from(energy[i][k]);
-            px += p * f64::from(phi[i][k]).cos();
-            py += p * f64::from(phi[i][k]).sin();
-            pz += p * f64::from(eta[i][k]).sinh();
-        }
-        mass.fill((e * e - px * px - py * py - pz * pz).max(0.0).sqrt() / 1e3);
     }
+    println!(
+        "read 6 lepton branches for {entries} entries in {:.1?}",
+        start.elapsed()
+    );
     println!("{:.0} selected Z → ee candidates", mass.integral());
 
     // Electrons radiate (bremsstrahlung, final-state photons), so the peak

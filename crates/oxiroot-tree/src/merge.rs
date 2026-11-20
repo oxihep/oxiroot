@@ -1,105 +1,62 @@
-//! Concatenating trees — the `TTree` half of a `hadd`-style file merge.
+//! Appending trees — the `TTree` half of a `hadd`-style file merge, and the
+//! read → write round trip of one branch.
 //!
-//! [`concat_trees`] reads the same branches from several [`TreeReader`]s and appends
-//! their entries into one writable [`Tree`], reconstructing each branch's kind
-//! (scalar, fixed array, jagged, `std::vector`, or string) so the result writes
-//! back the way it was read. [`append_trees`] streams the same merge into a
-//! [`TreeWriter`], holding one input's entries at a time; the `oxiroot`
-//! facade's file merger uses it for tree keys.
+//! [`append_trees`] streams several [`TreeReader`]s' entries into a
+//! [`TreeWriter`], holding one input's entries at a time, rebuilding each
+//! branch's kind (scalar, fixed array, jagged, `std::vector`, or string) so the
+//! result writes back the way it was read. The `oxiroot` facade's file merger
+//! uses it for tree keys. [`BranchRead::to_branch`] does the same for one
+//! branch.
 
 use std::io::{Seek, Write};
 
-use oxiroot_io_core::{Error, FileReader, Result};
+use oxiroot_io_core::{Error, Result};
 
-use crate::reader::{BranchMetaLite, TreeReader};
+use crate::reader::{BranchMetaLite, BranchRead, TreeReader};
 use crate::value::BranchValues;
-use crate::writer::{Branch, Tree, TreeWriter};
+use crate::writer::{Branch, TreeWriter};
 
-/// Concatenate several `TTree`s entry-wise into one writable [`Tree`].
-///
-/// Every input must hold the same branches — same names, element types, and
-/// kinds — as the first tree; their entries are appended in the given order
-/// (as ROOT's `hadd` does). Each `(file, tree)` pair is a tree together with the
-/// [`FileReader`] it was opened from, since baskets are read on demand. The output
-/// tree's name is taken from the first input.
-///
-/// # Errors
-///
-/// Returns an error if the inputs disagree on which branches exist or on their
-/// types; if a branch uses a layout this crate cannot write back (a
-/// multidimensional fixed array, a `std::vector<std::string>`, a
-/// `std::vector<std::vector<T>>`, a `std::vector<bool>`, a multi-leaf
-/// "leaflist" branch, or a split-object member column); or if a tree has
-/// branches that could not be read at all (see
-/// [`TreeReader::unsupported_branches`]) — in which case the merge would silently
-/// drop data, so it is refused.
-pub fn concat_trees(inputs: &[(&FileReader, &TreeReader)]) -> Result<Tree> {
-    let &(first_file, first) = inputs
-        .first()
-        .ok_or_else(|| Error::InvalidInput("concat_trees: no input trees".into()))?;
-
-    // Refuse a tree with branches we cannot even read — the output would
-    // silently drop them.
-    if let Some((name, reason)) = first.unsupported_branches().first() {
-        return Err(Error::Unsupported(format!(
-            "concat_trees: tree {:?} has an unreadable branch {name:?} ({reason}); \
-             cannot merge it without losing data",
-            first.name(),
-        )));
-    }
-
-    let names = first.branch_names();
-    let mut branches = Vec::with_capacity(names.len());
-
-    for &name in &names {
-        let meta = first
+impl BranchRead<'_, '_> {
+    /// Read the branch (the [`range`](Self::range) set, if any) as a writable
+    /// [`Branch`] of the same name and layout — scalar, fixed array, jagged
+    /// array, `std::vector` or string — ready for a
+    /// [`TreeWriter`](crate::TreeWriter): the round trip of a skim. Layouts
+    /// this crate reads but cannot write (split objects, leaflists) are an
+    /// [`Error::Unsupported`].
+    pub fn to_branch(self) -> Result<Branch> {
+        let name = self.name();
+        let meta = self
+            .tree()
             .branch_meta(name)
-            .expect("a branch listed by branch_names has metadata");
-
-        // Read and concatenate this branch's values across every input tree.
-        let mut values = first.read_branch(first_file, name)?;
-        for (i, &(file, tree)) in inputs.iter().enumerate().skip(1) {
-            if tree.branch_meta(name).is_none() {
-                return Err(Error::SchemaChanged {
-                    detail: format!(
-                        "concat_trees: input #{i} ({:?}) is missing branch {name:?} \
-                     present in the first tree",
-                        tree.name(),
-                    ),
-                });
-            }
-            let more = tree.read_branch(file, name)?;
-            values
-                .append(more)
-                .map_err(|e| e.context(format_args!("concat_trees: branch {name:?}")))?;
-        }
-
-        branches.push(build_branch(name, &meta, values)?);
+            .ok_or_else(|| Error::NotFound {
+                what: "branch",
+                name: name.to_string(),
+            })?;
+        build_branch(name, &meta, self.values()?)
     }
-
-    Ok(Tree::new(first.name(), branches))
 }
 
 /// Append every entry of `inputs` to `writer`, one input at a time: each input's
 /// branches are read, written as one batch (one basket per branch), and dropped
 /// before the next input is read. Returns the number of entries appended.
 ///
-/// The inputs must agree on their branches as for [`concat_trees`]; the first
-/// batch the writer receives fixes the schema.
+/// Every input must have the first input's branches, of the same kinds; the
+/// first batch the writer receives fixes the schema.
 ///
 /// # Errors
 ///
-/// As [`concat_trees`], plus any error from [`TreeWriter::write_batch`].
+/// No inputs; an input missing a branch or holding one this crate cannot read
+/// or write back; any error from [`TreeWriter::write_batch`].
 pub fn append_trees<W: Write + Seek>(
     writer: &mut TreeWriter<W>,
-    inputs: &[(&FileReader, &TreeReader)],
+    inputs: &[&TreeReader<'_>],
 ) -> Result<u64> {
-    let &(_, first) = inputs
+    let &first = inputs
         .first()
         .ok_or_else(|| Error::InvalidInput("append_trees: no input trees".into()))?;
     let names = first.branch_names();
     let mut appended = 0;
-    for (i, &(file, tree)) in inputs.iter().enumerate() {
+    for (i, &tree) in inputs.iter().enumerate() {
         if let Some((name, reason)) = tree.unsupported_branches().first() {
             return Err(Error::Unsupported(format!(
                 "append_trees: input #{i} ({:?}) has an unreadable branch {name:?} ({reason}); \
@@ -116,7 +73,7 @@ pub fn append_trees<W: Write + Seek>(
                     tree.name(),
                 ),
             })?;
-            batch.push(build_branch(name, &meta, tree.read_branch(file, name)?)?);
+            batch.push(build_branch(name, &meta, tree.branch(name).values()?)?);
         }
         writer.write_batch(&batch)?;
         appended += tree.entries();
@@ -130,7 +87,7 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
     // Layouts this crate can read but not yet write back.
     let reject = |what: &str| -> Result<Branch> {
         Err(Error::Unsupported(format!(
-            "concat_trees: branch {name:?} is a {what}, which oxiroot cannot write yet",
+            "branch {name:?} is a {what}, which oxiroot cannot write yet",
         )))
     };
     if meta.has_object_member {
@@ -175,7 +132,7 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
     }
 
     match values {
-        Bool(v) => Ok(Branch::bools(name, v)),
+        Bool(v) => Ok(Branch::bool(name, v)),
         I8(v) => Ok(Branch::i8(name, v)),
         U8(v) => Ok(Branch::u8(name, v)),
         I16(v) => Ok(Branch::i16(name, v)),
@@ -186,24 +143,24 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
         U64(v) => Ok(Branch::u64(name, v)),
         F32(v) => Ok(Branch::f32(name, v)),
         F64(v) => Ok(Branch::f64(name, v)),
-        Str(v) => Ok(Branch::strings(name, v)),
+        Str(v) => Ok(Branch::string(name, v)),
         // `std::vector<bool>` has no writer constructor (bit-packed); the fixed
         // and jagged flavours do.
         VecBool(v) => match flavor {
-            Flavor::Fixed => Ok(Branch::vec_bool(name, v)),
+            Flavor::Fixed => Ok(Branch::array_bool(name, v)),
             Flavor::Jagged => Ok(Branch::jagged_bool(name, v)),
             Flavor::Stl => reject("std::vector<bool> branch"),
         },
-        VecI8(v) => vec3!(v, vec_i8, jagged_i8, vector_i8),
-        VecU8(v) => vec3!(v, vec_u8, jagged_u8, vector_u8),
-        VecI16(v) => vec3!(v, vec_i16, jagged_i16, vector_i16),
-        VecU16(v) => vec3!(v, vec_u16, jagged_u16, vector_u16),
-        VecI32(v) => vec3!(v, vec_i32, jagged_i32, vector_i32),
-        VecU32(v) => vec3!(v, vec_u32, jagged_u32, vector_u32),
-        VecI64(v) => vec3!(v, vec_i64, jagged_i64, vector_i64),
-        VecU64(v) => vec3!(v, vec_u64, jagged_u64, vector_u64),
-        VecF32(v) => vec3!(v, vec_f32, jagged_f32, vector_f32),
-        VecF64(v) => vec3!(v, vec_f64, jagged_f64, vector_f64),
+        VecI8(v) => vec3!(v, array_i8, jagged_i8, vector_i8),
+        VecU8(v) => vec3!(v, array_u8, jagged_u8, vector_u8),
+        VecI16(v) => vec3!(v, array_i16, jagged_i16, vector_i16),
+        VecU16(v) => vec3!(v, array_u16, jagged_u16, vector_u16),
+        VecI32(v) => vec3!(v, array_i32, jagged_i32, vector_i32),
+        VecU32(v) => vec3!(v, array_u32, jagged_u32, vector_u32),
+        VecI64(v) => vec3!(v, array_i64, jagged_i64, vector_i64),
+        VecU64(v) => vec3!(v, array_u64, jagged_u64, vector_u64),
+        VecF32(v) => vec3!(v, array_f32, jagged_f32, vector_f32),
+        VecF64(v) => vec3!(v, array_f64, jagged_f64, vector_f64),
         VecStr(_) => reject("std::vector<std::string> branch"),
         Nested { .. } => reject("std::vector<std::vector<T>> branch"),
     }

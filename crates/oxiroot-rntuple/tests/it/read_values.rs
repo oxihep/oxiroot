@@ -20,7 +20,7 @@ fn check_fixture(name: &str) {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 5, "{name}");
 
-    let col = |i| ntpl.read_column(&file, i).expect("read column");
+    let col = |i| ntpl.read_column(i).expect("read column");
 
     // Scalars. Same values whether stored plain (uncompressed) or split (Zstd).
     assert_eq!(

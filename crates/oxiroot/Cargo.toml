@@ -18,6 +18,7 @@ oxiroot-io-core = { workspace = true }
 oxifit-formula = { workspace = true }
 oxihist = { workspace = true }
 oxiroot-compress = { workspace = true }
+oxiroot-dataset = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 oxiroot-hist = { workspace = true }
 oxiroot-hist-func = { workspace = true }
@@ -48,8 +49,8 @@ xrootd = ["oxiroot-io-core/xrootd"]
 # authentication with a WLCG bearer token. Pulls in rustls.
 xrootd-tls = ["xrootd", "oxiroot-io-core/xrootd-tls"]
 # Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
-# the parallel TTree reads (`TreeReader::read_branch_par` and friends).
-rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon"]
+# the parallel reads (`Batches::parallel` over a dataset, `BranchRead::parallel`).
+rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon", "oxiroot-dataset/rayon"]
 # Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxifit` engine,
 # the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works, and
 # `TF1::to_model`. When the `plot` feature is also on, this lights up

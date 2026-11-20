@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{NtupleReader, concat_ntuples};
+use oxiroot_rntuple::NtupleReader;
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
@@ -19,14 +19,21 @@ fn poke_rntuple(f: &FileReader) {
     if let Ok(ntpl) = NtupleReader::open(f, "ntpl") {
         let names: Vec<String> = ntpl.field_names().iter().map(|s| s.to_string()).collect();
         for name in names {
-            let _ = ntpl.read_field(f, &name);
+            let _ = ntpl.field(&name).values();
             // The cluster-bounded prefix read shares the decode path; exercise it
             // (including the cluster-slicing / view) on the malformed bytes too.
-            let _ = ntpl.read_field_prefix(f, &name, 2);
+            let _ = ntpl.field(&name).range(0..2).values();
         }
         // Run the (possibly corrupt) ntuple through the `hadd`-style merge —
         // exercises field concatenation + rebuild on malformed input.
-        let _ = concat_ntuples("ntpl", &[(f, &ntpl)]);
+        if let Ok(mut w) = oxiroot_rntuple::NtupleWriter::new(
+            std::io::Cursor::new(Vec::new()),
+            "m.root",
+            "ntpl",
+            oxiroot_io_core::Compression::None,
+        ) {
+            let _ = oxiroot_rntuple::append_ntuples(&mut w, &[&ntpl]);
+        }
     }
 }
 

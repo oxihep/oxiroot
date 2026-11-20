@@ -26,15 +26,15 @@ fn reads_tclonesarray_subbranches() {
     assert_eq!(t.entries(), 3);
 
     assert_eq!(
-        t.read_branch(&f, "parts.px").unwrap(),
+        t.branch("parts.px").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
     );
     assert_eq!(
-        t.read_branch(&f, "parts.py").unwrap(),
+        t.branch("parts.py").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
-        t.read_branch(&f, "parts.pid").unwrap(),
+        t.branch("parts.pid").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
     );
 

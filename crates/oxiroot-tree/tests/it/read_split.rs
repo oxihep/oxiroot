@@ -24,15 +24,15 @@ fn reads_split_vector_of_struct() {
     assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
 
     assert_eq!(
-        t.read_branch(&f, "hits.x").unwrap(),
+        t.branch("hits.x").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
     );
     assert_eq!(
-        t.read_branch(&f, "hits.y").unwrap(),
+        t.branch("hits.y").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
-        t.read_branch(&f, "hits.id").unwrap(),
+        t.branch("hits.id").values().unwrap(),
         BranchValues::VecI32(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
     );
 }

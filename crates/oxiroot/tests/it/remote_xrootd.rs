@@ -348,7 +348,8 @@ fn an_oversized_response_is_an_error_not_an_allocation() {
 /// A tree whose two branches are split into 50 baskets each, written to a
 /// temporary file and returned as bytes.
 fn many_basket_tree() -> Vec<u8> {
-    use oxiroot::tree::{Branch, write_tree_file_baskets};
+    use crate::support::write_tree_file_baskets;
+    use oxiroot::tree::Branch;
     // A directory of its own per call: tests run in parallel and each removes
     // its directory when done.
     static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -381,13 +382,13 @@ fn a_branch_of_many_baskets_is_read_in_a_few_round_trips() {
     let bytes = many_basket_tree();
     let local = FileReader::from_bytes(bytes.clone()).unwrap();
     let ltree = TreeReader::open(&local, "events").unwrap();
-    let expected = ltree.read_branch(&local, "x").unwrap();
+    let expected = ltree.branch("x").values().unwrap();
 
     let (url, counts) = serve_counting(bytes, Mode::Normal);
     let remote = FileReader::open_url(&url).unwrap();
     let tree = TreeReader::open(&remote, "events").unwrap();
     let reads_before = counts.reads.load(Ordering::Relaxed);
-    let got = tree.read_branch(&remote, "x").unwrap();
+    let got = tree.branch("x").values().unwrap();
     assert_eq!(format!("{got:?}"), format!("{expected:?}"));
     let reads = counts.reads.load(Ordering::Relaxed) - reads_before;
     let readvs = counts.readvs.load(Ordering::Relaxed);
@@ -408,7 +409,7 @@ fn a_misbehaving_server_is_an_error() {
         let url = serve_as(bytes.clone(), mode);
         let remote = FileReader::open_url(&url).unwrap();
         let tree = TreeReader::open(&remote, "events").unwrap();
-        let err = tree.read_branch(&remote, "x").unwrap_err();
+        let err = tree.branch("x").values().unwrap_err();
         assert!(err.to_string().contains(why), "{why}: {err}");
     }
 }
@@ -436,7 +437,7 @@ fn a_failing_plain_read_is_an_error() {
                 .expect("a TTree key");
             let tree = TreeReader::open(&f, &name)?;
             let branch = tree.branch_names()[0].to_string();
-            tree.read_branch(&f, &branch).map(|_| ())
+            tree.branch(&branch).values().map(|_| ())
         });
         let err = result.expect_err("a broken server cannot yield data");
         assert!(err.to_string().contains(why), "{err}");
@@ -459,7 +460,7 @@ fn reads_a_ttree_over_xrootd() {
     let branch = ltree.branch_names()[0].to_string();
     let local_vals = format!(
         "{:?}",
-        ltree.read_branch(&local, &branch).expect("local branch")
+        ltree.branch(&branch).values().expect("local branch")
     );
 
     // Same file over the XRootD protocol.
@@ -474,7 +475,7 @@ fn reads_a_ttree_over_xrootd() {
     assert_eq!(rtree.entries(), ltree.entries());
     let remote_vals = format!(
         "{:?}",
-        rtree.read_branch(&remote, &branch).expect("remote branch")
+        rtree.branch(&branch).values().expect("remote branch")
     );
     assert_eq!(remote_vals, local_vals, "branch values match over root://");
 }
@@ -519,7 +520,9 @@ fn xrootd_live_eospublic_reads_a_tree() {
     // One branch, one entry window: the leptons per event of a Z→ee sample,
     // which are one or two.
     let leptons = tree
-        .read_branch_range(&file, "lep_n", 0, 20)
+        .branch("lep_n")
+        .range(0..20)
+        .values()
         .expect("read lep_n");
     let counts = leptons.as_u32().expect("lep_n is a uint32 branch");
     assert_eq!(counts.len(), 20);
@@ -543,8 +546,8 @@ fn reads_a_multi_cluster_rntuple_over_xrootd() {
     let rnt = NtupleReader::open(&remote, "ntpl").unwrap();
     for field in ["n", "v"] {
         assert_eq!(
-            rnt.read_field(&remote, field).unwrap(),
-            lnt.read_field(&local, field).unwrap(),
+            rnt.field(field).values().unwrap(),
+            lnt.field(field).values().unwrap(),
             "{field}"
         );
     }
@@ -570,7 +573,9 @@ fn xrootd_live_eospublic_reads_many_baskets() {
     let tree = TreeReader::open(&file, "mini").expect("the mini tree");
     let start = std::time::Instant::now();
     let leptons = tree
-        .read_branch_range(&file, "lep_n", 0, 300_000)
+        .branch("lep_n")
+        .range(0..300_000)
+        .values()
         .expect("read lep_n");
     let counts = leptons.as_u32().expect("lep_n is a uint32 branch");
     assert_eq!(counts.len(), 300_000);
