@@ -722,7 +722,9 @@ ax2.save("heatmap.svg")?;
   conversion; a column the format cannot hold is refused before anything is
   written.
 - `filter`, `slice`, `select` and `append` work on whole batches, so a skim or
-  a TTree → RNTuple conversion needs no per-type code. Worked examples:
+  a TTree → RNTuple conversion needs no per-type code. With the `arrow` /
+  `polars` features a batch converts to an Arrow `RecordBatch` or a Polars
+  `DataFrame` and back. Worked examples:
   `cargo run -p oxiroot --example tree`, `--example rntuple`.
 
 ### TTree (`oxiroot::tree`)
@@ -986,6 +988,8 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `skrifa`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`FileReader::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`FileReader::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
+| `arrow` | — | Converts a dataset `Batch` to and from an Arrow `RecordBatch` (arrow-rs). |
+| `polars` | — | Converts a dataset `Batch` to and from a Polars `DataFrame`. |
 | `xrootd-tls` | — | Adds TLS to XRootD — `roots://` and servers that require it — and token (`ztn`) authentication with a WLCG bearer token, for access-controlled data. Implies `xrootd`; adds `rustls`. |
 
 The facade is batteries-included: everything marked ✅ is on by default. For a

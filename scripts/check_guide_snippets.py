@@ -61,7 +61,7 @@ def main():
     open(os.path.join(work, "Cargo.toml"), "w").write(
         "[package]\nname = \"guide-snippets\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n"
         "[dependencies]\n"
-        f"oxiroot = {{ path = \"{os.path.join(ROOT, 'crates', 'oxiroot')}\", features = [\"plot\", \"fit\", \"rayon\", \"mmap\", \"http\", \"xrootd\", \"xrootd-tls\"] }}\n\n"
+        f"oxiroot = {{ path = \"{os.path.join(ROOT, 'crates', 'oxiroot')}\", features = [\"plot\", \"fit\", \"rayon\", \"mmap\", \"http\", \"xrootd\", \"xrootd-tls\", \"arrow\", \"polars\"] }}\n\n"
         "[workspace]\n"
     )
     if os.path.exists(os.path.join(ROOT, "Cargo.lock")):
