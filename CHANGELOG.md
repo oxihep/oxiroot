@@ -7,6 +7,11 @@ change the API.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-20
+
+Faster dataset reads and writes, more shapes in a `Batch`, and Arrow and
+Polars conversion.
+
 ### Added
 
 - **Arrow and Polars conversion** (the `arrow` and `polars` features):

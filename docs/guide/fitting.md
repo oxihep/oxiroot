@@ -12,7 +12,7 @@ extras, with `default-features = false`.)
 
 ```toml
 # Cargo.toml
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.7.0" } # the `fit` feature is on by default
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.8.0" } # the `fit` feature is on by default
 ```
 
 ## The fitting abstraction
