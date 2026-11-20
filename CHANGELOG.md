@@ -7,7 +7,7 @@ change the API.
 
 ## [Unreleased]
 
-## [0.5.0]
+## [0.5.0] — 2026-11-20
 
 Fitting grown into an analysis toolkit, complete analysis examples, and a
 cleaner codebase. oxiroot now builds on oxifit 0.8.0, oxiplot 0.10.0 and
