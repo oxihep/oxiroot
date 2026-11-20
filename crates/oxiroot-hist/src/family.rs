@@ -69,6 +69,11 @@ macro_rules! impl_hist_family {
         moments: [$($moment:ident),+ $(,)?] $(,)?
     ) => {
         impl $ty {
+            /// The number of cells, flow included, the binning implies.
+            pub(crate) fn expected_cells(&self) -> usize {
+                [$(nbins(&self.$axis) + 2),+].iter().product()
+            }
+
             /// The flat indices of the in-range cells.
             fn in_range(&self) -> impl Iterator<Item = usize> + use<> {
                 in_range_cells(&[$(nbins(&self.$axis)),+])
@@ -79,8 +84,8 @@ macro_rules! impl_hist_family {
             /// every fill also accumulates `weight²`. Weighted fills and
             /// [`scale`](Self::scale) turn it on by themselves, so this is only
             /// needed to track a unit-weight histogram. Returns `&mut self` so it
-            /// can chain (`h.sumw2().fill(…)`).
-            pub fn sumw2(&mut self) -> &mut Self {
+            /// can chain (`h.track_sumw2().fill(…)`).
+            pub fn track_sumw2(&mut self) -> &mut Self {
                 if self.sumw2.len() != self.contents.len() {
                     self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
                 }
@@ -132,7 +137,7 @@ macro_rules! impl_hist_family {
             /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
             /// scaled, the errors can no longer be derived as `√content`.
             pub fn scale(&mut self, c: f64) {
-                self.sumw2();
+                self.track_sumw2();
                 for v in &mut self.contents {
                     *v *= c;
                 }

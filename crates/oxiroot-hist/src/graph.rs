@@ -145,11 +145,11 @@ pub struct Graph {
     /// Graph title (`fTitle`).
     pub title: String,
     /// Point x coordinates (`fX`).
-    pub x: Vec<f64>,
+    pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
-    pub y: Vec<f64>,
+    pub(crate) y: Vec<f64>,
     /// Error bars, selecting the concrete ROOT class.
-    pub errors: GraphErrors,
+    pub(crate) errors: GraphErrors,
     /// Optional display frame (`fHistogram`, a `TH1F`): the axis frame ROOT
     /// builds when a graph is drawn. `None` (the default) writes a null pointer,
     /// matching a freshly-created ROOT graph; set one with

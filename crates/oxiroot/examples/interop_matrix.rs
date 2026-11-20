@@ -131,9 +131,9 @@ fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
         .named("h")
         .titled("m");
     for (i, &c) in contents.iter().enumerate() {
-        h.contents[i + 1] = c; // [0] is underflow
+        h.contents_mut()[i + 1] = c; // [0] is underflow
     }
-    h.entries = contents.iter().sum();
+    h.set_entries(contents.iter().sum());
     h
 }
 
@@ -149,11 +149,11 @@ fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
     let mut entries = 0.0;
     for (ix, col) in contents.iter().enumerate() {
         for (iy, &c) in col.iter().enumerate() {
-            h.contents[(ix + 1) + stride * (iy + 1)] = c;
+            h.contents_mut()[(ix + 1) + stride * (iy + 1)] = c;
             entries += c;
         }
     }
-    h.entries = entries;
+    h.set_entries(entries);
     h
 }
 
@@ -170,12 +170,12 @@ fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
     for (ix, plane) in contents.iter().enumerate() {
         for (iy, col) in plane.iter().enumerate() {
             for (iz, &c) in col.iter().enumerate() {
-                h.contents[(ix + 1) + s * ((iy + 1) + s * (iz + 1))] = c;
+                h.contents_mut()[(ix + 1) + s * ((iy + 1) + s * (iz + 1))] = c;
                 entries += c;
             }
         }
     }
-    h.entries = entries;
+    h.set_entries(entries);
     h
 }
 
@@ -220,10 +220,10 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &Hist1D, dir:
         ("compression", comp_str(comp)),
         ("values", jflts(h.values())),
         ("edges", J::Arr(vec![jflts(&h.edges())])),
-        ("entries", J::Flt(h.entries)),
+        ("entries", J::Flt(h.entries())),
         ("uproot_skip", J::Bool(false)),
     ];
-    if !h.sumw2.is_empty() {
+    if h.sumw2().is_some() {
         let n = h.values().len();
         let errs: Vec<f64> = (1..=n).map(|b| h.bin_error(b)).collect();
         fields.push(("sumw2_error", jflts(&errs)));
@@ -271,12 +271,12 @@ fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &Hist2D, dir:
         ("values", jflts2(&h.values())),
         (
             "edges",
-            J::Arr(vec![jflts(&h.xaxis.edges()), jflts(&h.yaxis.edges())]),
+            J::Arr(vec![jflts(&h.xaxis().edges()), jflts(&h.yaxis().edges())]),
         ),
-        ("entries", J::Flt(h.entries)),
+        ("entries", J::Flt(h.entries())),
         ("uproot_skip", J::Bool(false)),
     ];
-    if !h.sumw2.is_empty() {
+    if h.sumw2().is_some() {
         fields.push(("sumw2_error", jflts2(&th2_bin_errors(h))));
     }
     J::Obj(fields)
@@ -336,15 +336,15 @@ fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &Hist3D, dir:
         (
             "edges",
             J::Arr(vec![
-                jflts(&h.xaxis.edges()),
-                jflts(&h.yaxis.edges()),
-                jflts(&h.zaxis.edges()),
+                jflts(&h.xaxis().edges()),
+                jflts(&h.yaxis().edges()),
+                jflts(&h.zaxis().edges()),
             ]),
         ),
-        ("entries", J::Flt(h.entries)),
+        ("entries", J::Flt(h.entries())),
         ("uproot_skip", J::Bool(false)),
     ];
-    if !h.sumw2.is_empty() {
+    if h.sumw2().is_some() {
         let v = h.values();
         let n = v.len();
         let s = n + 2;
@@ -560,9 +560,9 @@ fn write(dir: &Path) {
             .named("h")
             .titled("m");
         for (i, &c) in [2.0, 1.0, 3.0].iter().enumerate() {
-            h.contents[i + 1] = c;
+            h.contents_mut()[i + 1] = c;
         }
-        h.entries = 6.0;
+        h.set_entries(6.0);
         cases.push(hist1_case("th1d_variable", "TH1D", none, &h, dir));
     }
     {
@@ -575,10 +575,10 @@ fn write(dir: &Path) {
         let stride = 4; // nx+2 = 2+2
         for (ix, col) in [[1.0, 2.0], [3.0, 4.0]].iter().enumerate() {
             for (iy, &c) in col.iter().enumerate() {
-                h.contents[(ix + 1) + stride * (iy + 1)] = c;
+                h.contents_mut()[(ix + 1) + stride * (iy + 1)] = c;
             }
         }
-        h.entries = 10.0;
+        h.set_entries(10.0);
         cases.push(hist2_case("th2d_variable", "TH2D", none, &h, dir));
     }
 
@@ -589,7 +589,7 @@ fn write(dir: &Path) {
             .to_root()
             .named("h")
             .titled("m");
-        h.sumw2();
+        h.track_sumw2();
         h.fill_weight(0.5, 2.0);
         h.fill_weight(0.5, 3.0); // bin1: content 5, sumw2 13
         h.fill_weight(1.5, 1.0); // bin2: content 1, sumw2 1
@@ -602,7 +602,7 @@ fn write(dir: &Path) {
             .to_root()
             .named("h")
             .titled("m");
-        h.sumw2();
+        h.track_sumw2();
         h.fill_weight(0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 1.0); // (0,0): content 3, sumw2 5
         h.fill_weight(1.5, 1.5, 4.0); // (1,1): content 4, sumw2 16
@@ -616,7 +616,7 @@ fn write(dir: &Path) {
             .to_root()
             .named("h")
             .titled("m");
-        h.sumw2();
+        h.track_sumw2();
         h.fill_weight(0.5, 0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 0.5, 3.0); // (0,0,0): content 5, sumw2 13
         h.fill_weight(1.5, 1.5, 1.5, 1.0); // (1,1,1): content 1, sumw2 1
@@ -646,7 +646,7 @@ fn write(dir: &Path) {
             ("class", J::Str("TProfile".into())),
             ("compression", comp_str(none)),
             ("values", jflts(&p.values())),
-            ("edges", J::Arr(vec![jflts(&p.xaxis.edges())])),
+            ("edges", J::Arr(vec![jflts(&p.xaxis().edges())])),
             ("uproot_skip", J::Bool(false)),
         ]));
     }
@@ -686,7 +686,7 @@ fn write(dir: &Path) {
                         "TH2D",
                         2,
                         jflts2(&hb.values()),
-                        J::Arr(vec![jflts(&hb.xaxis.edges()), jflts(&hb.yaxis.edges())]),
+                        J::Arr(vec![jflts(&hb.xaxis().edges()), jflts(&hb.yaxis().edges())]),
                     ),
                 ]),
             ),

@@ -141,7 +141,7 @@ fn fit_crystal_ball() {
         .to_root()
         .named("cb_mass")
         .titled("mass with a low-side tail [GeV]");
-    peak.sumw2(); // per-bin errors for the chi-square
+    peak.track_sumw2(); // per-bin errors for the chi-square
 
     // ~4000 events: a Gaussian core, but 12 % are dragged just below the peak to
     // fake the radiative tail the Crystal Ball is built to describe.

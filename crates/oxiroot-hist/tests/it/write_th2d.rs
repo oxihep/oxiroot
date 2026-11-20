@@ -45,8 +45,8 @@ fn create_fill_save_round_trips() {
     h.fill(-1.0, 0.5); // x underflow -> excluded from stats
     h.fill(0.5, 9.0); // y overflow -> excluded from stats
 
-    assert_eq!(h.entries, 5.0, "all fills counted");
-    assert_eq!(h.tsumw, 3.0, "only in-range fills in stats");
+    assert_eq!(h.entries(), 5.0, "all fills counted");
+    assert_eq!(h.tsumw(), 3.0, "only in-range fills in stats");
     assert_eq!(h.values(), [[2.0, 0.0], [0.0, 0.0], [0.0, 1.0]], "values");
     // mean_x = (0.5+0.5+2.5)/3, mean_y = (0.5+0.5+1.5)/3
     assert!((h.mean_x() - 3.5 / 3.0).abs() < 1e-12, "mean x");

@@ -22,19 +22,19 @@ fn reads_th2d_uncompressed() {
     assert_eq!(h.ny(), 2);
     assert_eq!(h.ncells(), 20); // (3+2) * (2+2)
 
-    assert_eq!(h.xaxis.xmin, 0.0);
-    assert_eq!(h.xaxis.xmax, 3.0);
-    assert_eq!(h.yaxis.xmin, 0.0);
-    assert_eq!(h.yaxis.xmax, 2.0);
+    assert_eq!(h.xaxis().xmin(), 0.0);
+    assert_eq!(h.xaxis().xmax(), 3.0);
+    assert_eq!(h.yaxis().xmin(), 0.0);
+    assert_eq!(h.yaxis().xmax(), 2.0);
 
     // values[ix][iy] from fixtures/golden/th2d_uncompressed.json.
     let expected = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
     assert_eq!(h.values(), expected, "bin grid (x rows, y cols)");
 
-    assert_eq!(h.entries, 21.0);
-    assert_eq!(h.tsumw, 21.0);
+    assert_eq!(h.entries(), 21.0);
+    assert_eq!(h.tsumw(), 21.0);
 
     // Edges.
-    assert_eq!(h.xaxis.edges(), vec![0.0, 1.0, 2.0, 3.0]);
-    assert_eq!(h.yaxis.edges(), vec![0.0, 1.0, 2.0]);
+    assert_eq!(h.xaxis().edges(), vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(h.yaxis().edges(), vec![0.0, 1.0, 2.0]);
 }

@@ -107,24 +107,26 @@ mod templates {
             .to_root()
             .named(name)
             .titled(format!("{name};discriminant;Events"));
-        h.contents[1..=values.len()].copy_from_slice(values);
+        h.contents_mut()[1..=values.len()].copy_from_slice(values);
         if let Some(e2) = errors2 {
-            h.sumw2();
-            h.sumw2[1..=values.len()].copy_from_slice(e2);
+            h.track_sumw2();
+            h.sumw2_mut().expect("error tracking is on")[1..=values.len()].copy_from_slice(e2);
         }
-        h.entries = values.iter().sum();
+        h.set_entries(values.iter().sum());
         h
     }
 
     /// The in-range contents of `h`.
     fn values(h: &Hist1D) -> Vec<f64> {
-        let n = h.contents.len() - 2;
-        h.contents[1..=n].to_vec()
+        let n = h.contents().len() - 2;
+        h.contents()[1..=n].to_vec()
     }
 
     /// The in-range errors of `h`.
     fn errors(h: &Hist1D) -> Vec<f64> {
-        (1..h.contents.len() - 1).map(|i| h.bin_error(i)).collect()
+        (1..h.contents().len() - 1)
+            .map(|i| h.bin_error(i))
+            .collect()
     }
 
     pub(super) fn run() -> oxiroot::Result<()> {

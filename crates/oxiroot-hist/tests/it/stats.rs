@@ -41,17 +41,20 @@ fn th1_stats() {
 #[test]
 fn th1_reset_clears_everything() {
     let mut h = filled_th1();
-    h.sumw2();
+    h.track_sumw2();
     h.reset();
     assert_eq!(h.values(), &[0.0, 0.0, 0.0, 0.0]);
-    assert_eq!(h.entries, 0.0);
+    assert_eq!(h.entries(), 0.0);
     assert_eq!(h.mean(), 0.0);
     assert_eq!(h.std_dev(), 0.0);
     assert!(
-        h.sumw2.iter().all(|&v| v == 0.0),
+        h.sumw2()
+            .expect("error tracking is on")
+            .iter()
+            .all(|&v| v == 0.0),
         "sumw2 zeroed, length kept"
     );
-    assert_eq!(h.xaxis.nbins, 4, "binning preserved");
+    assert_eq!(h.xaxis().nbins(), 4, "binning preserved");
 }
 
 #[test]

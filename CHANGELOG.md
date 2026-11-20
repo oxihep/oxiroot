@@ -17,6 +17,22 @@ API review toward 1.0 (breaking).
   `param_names()`, toggles are named after their option and take a `bool`
   (`FitOptions::minos(true)`, `HistOpts::yerr(true)`, …), oxiplot's `Points`
   is `XyPoints`, and standard deviations are `std_dev` everywhere.
+- **The histogram, profile and graph state is private.** `Hist1D`/`2D`/`3D`,
+  `Profile1D`/`2D`/`3D`, `PolyHist`, `SparseHist`, `Graph`, `Graph2D`,
+  `MultiErrorGraph` and `Efficiency` no longer expose their cells, errors,
+  moment sums, axes or entry counts as fields, which a caller could put out
+  of step (a `TH1` with more cells than its axis, which ROOT rejects, wrote
+  without complaint). Read them with methods of the same name
+  (`contents()`, `entries()`, `xaxis()`, `tsumw()`, `bin_entries()`, `x()`,
+  `errors()`, `passed()`, …). Write through `contents_mut()` (a slice: the
+  values change, never the length), `set_bin_content`, `set_bin_error`,
+  `set_entries`, `sumw2_mut()`, `x_mut()`/`y_mut()` on graphs, and
+  `xaxis_mut()` for titles, labels and time display. `name` and `title`
+  stay public. `Axis`'s binning (`nbins`, `xmin`, `xmax`, `xbins`) is read
+  with methods; its titles, labels and time format stay public fields.
+- **`sumw2()` now returns the Σw² array** (`Option<&[f64]>`, `None` when
+  errors are not tracked); turning tracking on is `track_sumw2()`, as the
+  profiles' `track_bin_sumw2()`.
 - **`oxiroot::Error` wraps oxifit's `FitError`** (a `Fit` variant, with the
   `fit` feature), so `?` works on scans, tests, samplers and template models
   in a function returning `oxiroot::Result`.

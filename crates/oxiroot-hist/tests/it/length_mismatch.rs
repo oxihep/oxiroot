@@ -55,7 +55,7 @@ fn fill_many_weighted_fills_nothing_on_a_mismatch() {
             .unwrap_err(),
         mismatch("fill weights", 3, 2)
     );
-    assert_eq!(h.entries, 0.0);
+    assert_eq!(h.entries(), 0.0);
     assert!(h.values().iter().all(|&v| v == 0.0));
     h.fill_many_weighted(&[0.5, 1.5], &[1.0, 2.0]).unwrap();
     assert_eq!(h.values(), &[1.0, 2.0, 0.0, 0.0]);
@@ -68,7 +68,7 @@ fn th2poly_add_bin_adds_nothing_on_a_mismatch() {
         h.add_bin(&[0.0, 1.0, 1.0], &[0.0, 0.0]).unwrap_err(),
         mismatch("TH2Poly bin y", 3, 2)
     );
-    assert!(h.bins.is_empty());
+    assert!(h.bins().is_empty());
     assert_eq!(h.add_bin(&[0.0, 1.0, 1.0], &[0.0, 0.0, 1.0]).unwrap(), 1);
     assert_eq!(h.add_bin_rect(0.0, 0.0, 0.5, 0.5), 2);
 }
@@ -84,8 +84,8 @@ fn thnsparse_fill_needs_one_coordinate_per_dimension() {
         h.fill(&[0.5, 0.5, 0.5]).unwrap_err(),
         mismatch("THnSparse fill coordinates", 2, 3)
     );
-    assert_eq!(h.entries, 0.0);
-    assert!(h.bins.is_empty());
+    assert_eq!(h.entries(), 0.0);
+    assert!(h.bins().is_empty());
     h.fill(&[0.5, 1.5]).unwrap();
-    assert_eq!(h.bins.len(), 1);
+    assert_eq!(h.bins().len(), 1);
 }

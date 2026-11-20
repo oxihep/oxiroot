@@ -19,9 +19,9 @@ pub struct Efficiency {
     /// Title (`fTitle`).
     pub title: String,
     /// Numerator histogram — passed trials per bin (`fPassedHistogram`, a `TH1D`).
-    pub passed: Hist1D,
+    pub(crate) passed: Hist1D,
     /// Denominator histogram — total trials per bin (`fTotalHistogram`, a `TH1D`).
-    pub total: Hist1D,
+    pub(crate) total: Hist1D,
     /// Confidence level for the interval (`fConfLevel`).
     pub conf_level: f64,
     /// Statistic option (`fStatisticOption`; 0 = Clopper–Pearson, ROOT's default).

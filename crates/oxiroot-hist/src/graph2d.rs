@@ -22,11 +22,11 @@ pub struct Graph2D {
     /// Graph title (`fTitle`).
     pub title: String,
     /// Point x coordinates (`fX`).
-    pub x: Vec<f64>,
+    pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
-    pub y: Vec<f64>,
+    pub(crate) y: Vec<f64>,
     /// Point z coordinates (`fZ`).
-    pub z: Vec<f64>,
+    pub(crate) z: Vec<f64>,
 }
 
 impl Graph2D {

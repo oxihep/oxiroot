@@ -65,8 +65,8 @@ fn main() -> oxiroot::Result<()> {
         let center = pt_lo + (bin as f64 - 0.5) * stride;
         // `passed`/`total` are the two embedded TH1D histograms; their `contents`
         // are 1-based too, so we can index by `bin` directly.
-        let passed = eff.passed.contents[bin];
-        let total = eff.total.contents[bin];
+        let passed = eff.passed().contents()[bin];
+        let total = eff.total().contents()[bin];
         // Print a coarse subset so the output stays readable.
         if bin % 2 == 1 {
             println!(
@@ -82,8 +82,8 @@ fn main() -> oxiroot::Result<()> {
     // reproduce that interval directly from the bin's passed/total counts with
     // the stats library, and report the efficiency with asymmetric errors.
     let mid_bin = ((x50 - pt_lo) / stride).floor() as usize + 1;
-    let k = eff.passed.contents[mid_bin];
-    let n = eff.total.contents[mid_bin];
+    let k = eff.passed().contents()[mid_bin];
+    let n = eff.total().contents()[mid_bin];
     let center = pt_lo + (mid_bin as f64 - 0.5) * stride;
     let (lo, hi) = oxiroot::stat::clopper_pearson(k, n, eff.conf_level);
     let e = eff.efficiency(mid_bin);
@@ -109,7 +109,7 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "read back `{}`: {} total trials, mid-bin eff = {:.4} (matches: {})",
         back.name,
-        back.total.contents.iter().sum::<f64>(),
+        back.total().contents().iter().sum::<f64>(),
         back.efficiency(mid_bin),
         (back.efficiency(mid_bin) - e).abs() < 1e-12,
     );

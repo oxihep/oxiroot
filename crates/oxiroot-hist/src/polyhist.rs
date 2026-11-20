@@ -84,29 +84,29 @@ pub struct PolyHist {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis (the bins' overall bounding box).
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis (the bins' overall bounding box).
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of weight² (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of weight·x (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of weight·x² (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Sum of weight·y (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of weight·y² (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Sum of weight·x·y (`fTsumwxy`).
-    pub tsumwxy: f64,
+    pub(crate) tsumwxy: f64,
     /// The 9 over/underflow accumulators (`fOverflow`).
-    pub overflow: [f64; 9],
+    pub(crate) overflow: [f64; 9],
     /// The polygon bins, sorted by `number`.
-    pub bins: Vec<PolyBin>,
+    pub(crate) bins: Vec<PolyBin>,
 }
 
 impl PolyHist {

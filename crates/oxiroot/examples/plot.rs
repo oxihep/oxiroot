@@ -46,7 +46,7 @@ fn main() -> oxiroot::Result<()> {
         .to_root()
         .named("mass")
         .titled("di-muon mass");
-    mc.sumw2();
+    mc.track_sumw2();
     let mut rng = Lcg::new(0x1234_5678_9abc_def0);
     for _ in 0..40_000 {
         mc.fill(91.0 + 7.5 * rng.gauss());

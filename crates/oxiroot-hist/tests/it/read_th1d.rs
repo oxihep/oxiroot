@@ -26,21 +26,21 @@ fn check_h1(file: &str) {
     assert_eq!(h.title, "");
 
     // Axis: 17 uniform bins over [-4, 4].
-    assert_eq!(h.xaxis.nbins, 17);
-    assert_eq!(h.xaxis.xmin, -4.0);
-    assert_eq!(h.xaxis.xmax, 4.0);
-    assert!(h.xaxis.xbins.is_empty(), "axis should be uniform");
+    assert_eq!(h.xaxis().nbins(), 17);
+    assert_eq!(h.xaxis().xmin(), -4.0);
+    assert_eq!(h.xaxis().xmax(), 4.0);
+    assert!(h.xaxis().xbins().is_empty(), "axis should be uniform");
     assert_eq!(h.ncells(), 19); // 17 + under/overflow
 
     // Bin contents (excluding flow) match golden exactly (integers as f64).
     assert_eq!(h.values(), GOLDEN_VALUES, "{file}: bin contents");
 
     // Under/overflow are empty for this histogram.
-    assert_eq!(h.contents.first(), Some(&0.0));
-    assert_eq!(h.contents.last(), Some(&0.0));
+    assert_eq!(h.contents().first(), Some(&0.0));
+    assert_eq!(h.contents().last(), Some(&0.0));
 
-    assert_eq!(h.entries, GOLDEN_ENTRIES, "{file}: entries");
-    assert_eq!(h.tsumw, GOLDEN_ENTRIES);
+    assert_eq!(h.entries(), GOLDEN_ENTRIES, "{file}: entries");
+    assert_eq!(h.tsumw(), GOLDEN_ENTRIES);
 
     // Edges: 18 values, uniform from -4 to 4.
     let edges = h.edges();

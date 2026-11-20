@@ -219,7 +219,7 @@ cargo run -p oxiroot --example analysis
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
 - Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics, including its
   automatic `Sumw2`: the first weight other than 1 turns on weighted per-bin
-  errors (`bin_error`). `sumw2()` (chains: `h.sumw2().fill(x)`) turns them on
+  errors (`bin_error`). `sumw2()` (chains: `h.track_sumw2().fill(x)`) turns them on
   explicitly for a unit-weight histogram.
 - **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, the
   ROOT-free histogram library modelled on boost-histogram and scikit-hep
@@ -356,7 +356,7 @@ let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMe
 use oxiroot::prelude::*; // the `fit` feature is on by default
 
 let mut h = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass").titled("di-muon mass");
-h.sumw2();
+h.track_sumw2();
 // … fill h with events …
 
 // Gaussian peak fit (chi-square). `estimate_from` seeds (constant, mean, sigma)

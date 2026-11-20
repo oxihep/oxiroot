@@ -36,9 +36,9 @@ fn reads_root_written_collections() {
     assert_eq!(mg.title(), "my multigraph");
     assert_eq!(mg.graphs().len(), 2);
     assert_eq!(mg.graphs()[0].name, "g1");
-    assert_eq!(mg.graphs()[0].y, vec![1.0, 2.0, 3.0]);
+    assert_eq!(mg.graphs()[0].y(), vec![1.0, 2.0, 3.0]);
     assert_eq!(mg.graphs()[1].name, "g2");
-    assert_eq!(mg.graphs()[1].y, vec![3.0, 2.0, 1.0]);
+    assert_eq!(mg.graphs()[1].y(), vec![3.0, 2.0, 1.0]);
 }
 
 #[test]
@@ -88,6 +88,6 @@ fn round_trips_collections_through_oxiroot() {
     assert_eq!(hs.hists()[0].values(), &[1.0, 0.0, 0.0, 0.0]); // the one fill
     let mg = GraphStack::read_root(&f, "mg").unwrap();
     assert_eq!(mg.graphs().len(), 2);
-    assert_eq!(mg.graphs()[1].y, vec![3.0, 2.0, 1.0]);
+    assert_eq!(mg.graphs()[1].y(), vec![3.0, 2.0, 1.0]);
     let _ = std::fs::remove_file(&out);
 }

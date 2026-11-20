@@ -152,7 +152,7 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     h.fill(0.5);
     let p2 = profile_2d(&[&SET_A_2D]);
     let mut broken = p2.clone();
-    broken.bin_sumw2 = vec![1.0; 3]; // not one per cell: the reader rejects it
+    *broken.optional_arrays_mut().1 = vec![1.0; 3]; // not one per cell: the reader rejects it
     FileWriter::create(&good)
         .add(&h)
         .add(&p2)
@@ -186,7 +186,7 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
             reason.contains(&format!("input {bad_index} of 2")),
             "{reason}"
         );
-        assert_eq!(merged_h.contents[1], 2.0, "the other key still sums");
+        assert_eq!(merged_h.contents()[1], 2.0, "the other key still sums");
     }
 }
 

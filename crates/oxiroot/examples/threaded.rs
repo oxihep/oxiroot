@@ -56,7 +56,7 @@ fn main() {
     let merged = hist.merge().expect("identical binning");
     println!(
         "merged: {} entries, mean {:.4}, std {:.4}, peak bin {} = {}",
-        merged.entries,
+        merged.entries(),
         merged.mean(),
         merged.std_dev(),
         merged.maximum_bin(),
@@ -74,6 +74,6 @@ fn main() {
         serial.fill(x);
     }
     assert_eq!(merged.values(), serial.values(), "bins match serial fill");
-    assert_eq!(merged.entries, serial.entries, "entry count matches");
+    assert_eq!(merged.entries(), serial.entries(), "entry count matches");
     println!("\u{2713} identical to a single-threaded fill");
 }

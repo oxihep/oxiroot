@@ -50,7 +50,7 @@ fn main() {
         .to_root()
         .named("mass")
         .titled("di-muon mass [GeV]");
-    peak.sumw2(); // track per-bin errors for the chi-square
+    peak.track_sumw2(); // track per-bin errors for the chi-square
     for _ in 0..10_000 {
         peak.fill(rng.gauss(true_mean, true_sigma));
     }
@@ -83,7 +83,7 @@ fn main() {
         .to_root()
         .named("mass_bkg")
         .titled("peak + background");
-    withbkg.sumw2();
+    withbkg.track_sumw2();
     for _ in 0..10_000 {
         withbkg.fill(rng.gauss(true_mean, true_sigma)); // signal
     }

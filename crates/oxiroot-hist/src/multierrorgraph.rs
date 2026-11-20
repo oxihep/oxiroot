@@ -28,17 +28,17 @@ pub struct MultiErrorGraph {
     /// Graph title (`fTitle`).
     pub title: String,
     /// Point x coordinates (`fX`).
-    pub x: Vec<f64>,
+    pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
-    pub y: Vec<f64>,
+    pub(crate) y: Vec<f64>,
     /// Low x errors (`fExL`).
-    pub ex_low: Vec<f64>,
+    pub(crate) ex_low: Vec<f64>,
     /// High x errors (`fExH`).
-    pub ex_high: Vec<f64>,
+    pub(crate) ex_high: Vec<f64>,
     /// Low y errors, one `Vec` per error layer (`fEyL`).
-    pub ey_low: Vec<Vec<f64>>,
+    pub(crate) ey_low: Vec<Vec<f64>>,
     /// High y errors, one `Vec` per error layer (`fEyH`).
-    pub ey_high: Vec<Vec<f64>>,
+    pub(crate) ey_high: Vec<Vec<f64>>,
     /// How the y-error layers combine when summed (`fSumErrorsMode`; 0 =
     /// `kOnlyFirst`, 1 = `kSquareSum`, 2 = `kSum`).
     pub sum_errors_mode: i32,

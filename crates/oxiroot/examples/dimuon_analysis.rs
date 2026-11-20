@@ -109,7 +109,7 @@ fn main() -> oxiroot::Result<()> {
         .to_root()
         .named("m_mumu")
         .titled("dimuon mass");
-    mass.sumw2();
+    mass.track_sumw2();
     let mut selected = 0;
     for i in 0..pt.len() {
         if pt[i].len() < 2 || pt[i][0] < 25.0 || pt[i][1] < 15.0 || charge[i][0] == charge[i][1] {

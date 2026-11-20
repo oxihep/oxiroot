@@ -106,7 +106,7 @@ fn adding_2d_profiles_equals_one_combined_fill() {
     let want = profile_2d(&[&SET_A_2D, &SET_B_2D]);
     assert_eq!(merged, want);
     // The weighted fills are reflected in the error bookkeeping, not dropped.
-    assert!(!merged.bin_sumw2.is_empty());
+    assert!(!merged.bin_sumw2().is_empty());
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn adding_3d_profiles_equals_one_combined_fill() {
     let mut merged = profile_3d(&[&SET_A_3D]);
     merged.add(&profile_3d(&[&SET_B_3D]), 1.0).unwrap();
     assert_eq!(merged, profile_3d(&[&SET_A_3D, &SET_B_3D]));
-    assert!(!merged.bin_sumw2.is_empty());
+    assert!(!merged.bin_sumw2().is_empty());
 }
 
 #[test]
@@ -134,25 +134,25 @@ fn scaled_2d_add_is_linear_except_squared_weights() {
     dst.add(&src, c).unwrap();
 
     for (name, got, a, b) in [
-        ("tsumw", dst.tsumw, before.tsumw, src.tsumw),
-        ("tsumwx2", dst.tsumwx2, before.tsumwx2, src.tsumwx2),
-        ("tsumwxy", dst.tsumwxy, before.tsumwxy, src.tsumwxy),
-        ("tsumwz", dst.tsumwz, before.tsumwz, src.tsumwz),
-        ("tsumwz2", dst.tsumwz2, before.tsumwz2, src.tsumwz2),
+        ("tsumw", dst.tsumw(), before.tsumw(), src.tsumw()),
+        ("tsumwx2", dst.tsumwx2(), before.tsumwx2(), src.tsumwx2()),
+        ("tsumwxy", dst.tsumwxy(), before.tsumwxy(), src.tsumwxy()),
+        ("tsumwz", dst.tsumwz(), before.tsumwz(), src.tsumwz()),
+        ("tsumwz2", dst.tsumwz2(), before.tsumwz2(), src.tsumwz2()),
     ] {
         assert_eq!(got, a + c * b, "{name} must scale by c");
     }
-    assert_eq!(dst.tsumw2, before.tsumw2 + c * c * src.tsumw2);
+    assert_eq!(dst.tsumw2(), before.tsumw2() + c * c * src.tsumw2());
 
     // `before` had only unit weights, so its seeded Σw² equals its Σw.
     let cell = 1 + 5; // (x-bin 1, y-bin 1): stride nx + 2 = 5
     assert_eq!(
-        dst.bin_sumw2[cell],
-        before.bin_entries[cell] + c * c * src.bin_sumw2[cell]
+        dst.bin_sumw2()[cell],
+        before.bin_entries()[cell] + c * c * src.bin_sumw2()[cell]
     );
     assert_eq!(
-        dst.bin_entries[cell],
-        before.bin_entries[cell] + c * src.bin_entries[cell]
+        dst.bin_entries()[cell],
+        before.bin_entries()[cell] + c * src.bin_entries()[cell]
     );
 }
 
@@ -163,14 +163,14 @@ fn scaled_3d_add_scales_its_extra_moments() {
     let c = 0.5;
     dst.add(&src, c).unwrap();
     for (name, got, a, b) in [
-        ("tsumwxz", dst.tsumwxz, before.tsumwxz, src.tsumwxz),
-        ("tsumwyz", dst.tsumwyz, before.tsumwyz, src.tsumwyz),
-        ("tsumwt", dst.tsumwt, before.tsumwt, src.tsumwt),
-        ("tsumwt2", dst.tsumwt2, before.tsumwt2, src.tsumwt2),
+        ("tsumwxz", dst.tsumwxz(), before.tsumwxz(), src.tsumwxz()),
+        ("tsumwyz", dst.tsumwyz(), before.tsumwyz(), src.tsumwyz()),
+        ("tsumwt", dst.tsumwt(), before.tsumwt(), src.tsumwt()),
+        ("tsumwt2", dst.tsumwt2(), before.tsumwt2(), src.tsumwt2()),
     ] {
         assert_eq!(got, a + c * b, "{name} must scale by c");
     }
-    assert_eq!(dst.tsumw2, before.tsumw2 + c * c * src.tsumw2);
+    assert_eq!(dst.tsumw2(), before.tsumw2() + c * c * src.tsumw2());
 }
 
 #[test]
@@ -201,21 +201,21 @@ fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
 fn an_empty_value_squared_array_is_treated_as_zeros() {
     let mut a = Hist::reg(2, 0.0, 2.0).mean().to_root();
     a.fill(0.5, 2.0);
-    a.sumy2.clear(); // as stored by a file that omitted it
+    a.optional_arrays_mut().0.clear(); // as stored by a file that omitted it
     let mut b = Hist::reg(2, 0.0, 2.0).mean().to_root();
     b.fill(0.5, 3.0);
 
     a.add(&b, 1.0).unwrap();
-    assert_eq!(a.sumy2.len(), a.sums.len());
-    assert_eq!(a.sumy2[1], 9.0, "b's Σw·y² must survive the merge");
+    assert_eq!(a.sumy2().len(), a.sums().len());
+    assert_eq!(a.sumy2()[1], 9.0, "b's Σw·y² must survive the merge");
 
     // And an empty array on the other side adds nothing.
     let mut c = Hist::reg(2, 0.0, 2.0).mean().to_root();
     c.fill(0.5, 2.0);
     let mut d: Profile1D = c.clone();
-    d.sumy2.clear();
+    d.optional_arrays_mut().0.clear();
     c.add(&d, 1.0).unwrap();
-    assert_eq!(c.sumy2[1], 4.0);
+    assert_eq!(c.sumy2()[1], 4.0);
 }
 
 // ------------------------------------------------------------------- Mergeable
@@ -264,10 +264,10 @@ fn threaded_2d_and_3d_fills_match_a_serial_fill() {
 fn threaded_unit_fill_shortcuts_exist_for_2d_and_3d() {
     let acc2 = ThreadedHist::new(empty_2d());
     acc2.fill(0.5, 0.5, 1.0);
-    assert_eq!(acc2.merge().unwrap().entries, 1.0);
+    assert_eq!(acc2.merge().unwrap().entries(), 1.0);
     let acc3 = ThreadedHist::new(empty_3d());
     acc3.fill(0.5, 0.5, 0.5, 1.0);
-    assert_eq!(acc3.merge().unwrap().entries, 1.0);
+    assert_eq!(acc3.merge().unwrap().entries(), 1.0);
 }
 
 // ------------------------------------------------------- negative scale factor
@@ -286,14 +286,14 @@ fn subtracting_a_1d_profile_follows_root() {
     b.fill(0.5, 1.0);
 
     a.add(&b, -1.0).unwrap();
-    assert_eq!(a.sums[1], 1.0 - 2.0);
-    assert_eq!(a.bin_entries[1], 1.0 + 2.0);
-    assert_eq!(a.sumy2[1], 1.0 + 2.0);
-    assert_eq!(a.entries, 3.0);
-    assert_eq!((a.tsumw, a.tsumwy, a.tsumwy2), (3.0, 3.0, 3.0));
-    assert_eq!(a.tsumw2, 3.0);
+    assert_eq!(a.sums()[1], 1.0 - 2.0);
+    assert_eq!(a.bin_entries()[1], 1.0 + 2.0);
+    assert_eq!(a.sumy2()[1], 1.0 + 2.0);
+    assert_eq!(a.entries(), 3.0);
+    assert_eq!((a.tsumw(), a.tsumwy(), a.tsumwy2()), (3.0, 3.0, 3.0));
+    assert_eq!(a.tsumw2(), 3.0);
     // |c| == 1 keeps unit weights, so Σw² still equals Σw and is not allocated.
-    assert!(a.bin_sumw2.is_empty());
+    assert!(a.bin_sumw2().is_empty());
     assert_eq!(a.values()[0], -1.0 / 3.0);
     // mean = -1/3, spread² = 1 - 1/9 = 8/9, neff = 3.
     assert!((a.bin_error(1) - (8.0_f64 / 27.0).sqrt()).abs() < 1e-15);
@@ -307,23 +307,23 @@ fn subtracting_a_profile_from_itself_keeps_its_weights() {
     let cell = 1 + 4;
     let orig = p.clone();
     p.add(&orig, -1.0).unwrap();
-    assert_eq!(p.sums[cell], 0.0);
-    assert_eq!(p.bin_entries[cell], 4.0);
-    assert_eq!(p.sumz2[cell], 20.0);
-    assert_eq!((p.entries, p.tsumw), (4.0, 4.0));
-    assert!(p.bin_sumw2.is_empty());
+    assert_eq!(p.sums()[cell], 0.0);
+    assert_eq!(p.bin_entries()[cell], 4.0);
+    assert_eq!(p.sumz2()[cell], 20.0);
+    assert_eq!((p.entries(), p.tsumw()), (4.0, 4.0));
+    assert!(p.bin_sumw2().is_empty());
     // mean 0, spread² = 20/4 = 5, neff = 4: the error is √(5/4), not 0.
     assert!((p.bin_error(cell) - 1.25_f64.sqrt()).abs() < 1e-15);
 
     let mut q = profile_3d(&[&SET_A_3D]);
     let orig3 = q.clone();
     q.add(&orig3, -1.0).unwrap();
-    assert!(q.sums.iter().all(|&v| v == 0.0));
+    assert!(q.sums().iter().all(|&v| v == 0.0));
     let doubled = |v: &[f64]| v.iter().map(|x| 2.0 * x).collect::<Vec<_>>();
-    assert_eq!(q.bin_entries, doubled(&orig3.bin_entries));
-    assert_eq!(q.sumt2, doubled(&orig3.sumt2));
-    assert_eq!(q.entries, 2.0 * orig3.entries);
-    assert_eq!(q.tsumwt2, 2.0 * orig3.tsumwt2);
+    assert_eq!(q.bin_entries(), doubled(orig3.bin_entries()));
+    assert_eq!(q.sumt2(), doubled(orig3.sumt2()));
+    assert_eq!(q.entries(), 2.0 * orig3.entries());
+    assert_eq!(q.tsumwt2(), 2.0 * orig3.tsumwt2());
 }
 
 #[test]
@@ -332,15 +332,18 @@ fn negative_scale_of_weighted_profiles_squares_the_weights() {
     let before = dst.clone();
     dst.add(&src, -2.0).unwrap();
     let cell = 1 + 5;
-    assert_eq!(dst.sums[cell], before.sums[cell] - 2.0 * src.sums[cell]);
     assert_eq!(
-        dst.bin_entries[cell],
-        before.bin_entries[cell] + 2.0 * src.bin_entries[cell]
+        dst.sums()[cell],
+        before.sums()[cell] - 2.0 * src.sums()[cell]
     );
     assert_eq!(
-        dst.bin_sumw2[cell],
-        before.bin_sumw2[cell] + 4.0 * src.bin_sumw2[cell]
+        dst.bin_entries()[cell],
+        before.bin_entries()[cell] + 2.0 * src.bin_entries()[cell]
     );
-    assert_eq!(dst.tsumwz, before.tsumwz + 2.0 * src.tsumwz);
-    assert_eq!(dst.tsumw2, before.tsumw2 + 4.0 * src.tsumw2);
+    assert_eq!(
+        dst.bin_sumw2()[cell],
+        before.bin_sumw2()[cell] + 4.0 * src.bin_sumw2()[cell]
+    );
+    assert_eq!(dst.tsumwz(), before.tsumwz() + 2.0 * src.tsumwz());
+    assert_eq!(dst.tsumw2(), before.tsumw2() + 4.0 * src.tsumw2());
 }

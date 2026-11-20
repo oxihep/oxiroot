@@ -25,14 +25,14 @@ fn gaussian_fit_matches_root() {
     let hg = read("hg"); // const=1000, mean=0.5, sigma=1.3 gaussian (integer bins)
     // The fixture sets bin contents directly (no fills), so its moment sums are
     // zero; estimate the initial mean/sigma from the contents instead.
-    let n = usize::saturating_from(hg.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .map(|i| hg.bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let var: f64 = (1..=n)
-        .map(|i| hg.contents[i] * (hg.bin_center(i) - mean).powi(2))
+        .map(|i| hg.contents()[i] * (hg.bin_center(i) - mean).powi(2))
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, var.sqrt()]);
@@ -67,10 +67,10 @@ fn polynomial_fit_recovers_a_line() {
     let mut h = Hist::reg(100, 0.0, 10.0).double().to_root().named("line");
     for i in 1..=100 {
         let x = h.bin_center(i);
-        h.contents[i] = 3.0 + 2.0 * x;
+        h.contents_mut()[i] = 3.0 + 2.0 * x;
     }
-    h.sumw2(); // give every bin a unit-ish error so all enter the fit
-    for s in h.sumw2.iter_mut() {
+    h.track_sumw2(); // give every bin a unit-ish error so all enter the fit
+    for s in h.sumw2_mut().expect("error tracking is on").iter_mut() {
         *s = 1.0;
     }
     let r = h.fit(&Model::polynomial("pol1", 1).with_params(vec![0.0, 0.0]));
@@ -100,7 +100,7 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
         .to_root()
         .named("c");
     for (i, &c) in counts.iter().enumerate() {
-        h.contents[i + 1] = c;
+        h.contents_mut()[i + 1] = c;
     }
     let mean = counts.iter().sum::<f64>() / counts.len() as f64; // 25.0
 
@@ -131,10 +131,10 @@ fn likelihood_gaussian_recovers_shape() {
     // hg is a high-statistics gaussian (const=1000, mean=0.5, sigma=1.3); the
     // Poisson likelihood fit recovers it (at high stats it agrees with chi-square).
     let hg = read("hg");
-    let n = usize::saturating_from(hg.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .map(|i| hg.bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -155,10 +155,10 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
     // On a low-statistics, imperfect gaussian the two estimators genuinely
     // differ (where ROOT's "L" on a SetBinContent histogram falls back to chi2).
     let hgl = read("hgl");
-    let n = usize::saturating_from(hgl.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hgl.contents[i]).sum();
+    let n = usize::saturating_from(hgl.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hgl.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hgl.bin_center(i) * hgl.contents[i])
+        .map(|i| hgl.bin_center(i) * hgl.contents()[i])
         .sum::<f64>()
         / total;
     let model = || Model::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
@@ -177,8 +177,8 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
 fn under_determined_fit_is_flagged_invalid() {
     // 2 data points, 3-parameter Gaussian -> cannot be determined.
     let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().named("tiny");
-    h.contents[1] = 5.0;
-    h.contents[2] = 7.0;
+    h.contents_mut()[1] = 5.0;
+    h.contents_mut()[2] = 7.0;
     let r = h.fit(&Model::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
     assert!(!r.valid);
     assert_eq!(r.ndf, 0);
@@ -188,10 +188,10 @@ fn under_determined_fit_is_flagged_invalid() {
 #[test]
 fn bounded_and_fixed_parameters() {
     let hg = read("hg"); // gaussian, const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .map(|i| hg.bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
 
@@ -223,10 +223,10 @@ fn bounded_and_fixed_parameters() {
 fn fit_range_pearson_and_p_value() {
     use oxiroot_hist::{FitMethod, FitOptions};
     let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .map(|i| hg.bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = || Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -257,10 +257,10 @@ fn fit_range_pearson_and_p_value() {
 fn minos_errors_and_covariance() {
     use oxiroot_hist::FitOptions;
     let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis.nbins.max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents[i]).sum();
+    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
+    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents[i])
+        .map(|i| hg.bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -380,8 +380,8 @@ fn variable_bins_are_integrated_over_their_edges() {
     let mut h = Hist::var(&edges).weight().to_root();
     for (i, w) in edges.windows(2).enumerate() {
         let average = 200.0 * ((-w[0] / 2.0).exp() - (-w[1] / 2.0).exp()) / (w[1] - w[0]);
-        h.contents[i + 1] = average;
-        h.sumw2[i + 1] = (0.01 * average).powi(2);
+        h.contents_mut()[i + 1] = average;
+        h.sumw2_mut().expect("error tracking is on")[i + 1] = (0.01 * average).powi(2);
     }
     assert_eq!(
         h.bin_edges().expect("edges"),

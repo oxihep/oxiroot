@@ -321,7 +321,7 @@ mod search {
         let residual: Vec<f64> = centres
             .iter()
             .enumerate()
-            .map(|(i, &m)| hist.contents[i + 1] - bkg_curve.eval(m))
+            .map(|(i, &m)| hist.contents()[i + 1] - bkg_curve.eval(m))
             .collect();
         let errors: Vec<f64> = (1..=BINS).map(|i| hist.bin_error(i)).collect();
         let residuals = Graph::with_errors(centres.clone(), residual, vec![0.0; BINS], errors)?;
@@ -428,7 +428,7 @@ mod search {
         println!(
             "\n6. Results file {} — m_gg and {} limit points read back",
             results.display(),
-            back.x.len()
+            back.x().len()
         );
         for png in [&fit_png, &p0_png, &limits_png] {
             println!("   plot: {}", png.display());

@@ -17,6 +17,7 @@
 //! `RHist` has no persistable on-disk format — its `Streamer` throws — so it is
 //! out of scope.)
 
+mod access;
 mod base;
 mod collections;
 mod compare;

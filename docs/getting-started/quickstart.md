@@ -18,7 +18,7 @@ every writable object a `write_root` and every readable object a `read_root`.
 
 ```rust
 let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
-h.sumw2();                                  // per-bin (weighted) errors
+h.track_sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
 h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
 

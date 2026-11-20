@@ -23,33 +23,33 @@ pub struct Profile2D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis.
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`).
-    pub ncells: i32,
+    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of squared weights (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of `w·x` (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of `w·x²` (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Sum of `w·y` (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of `w·y²` (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Sum of `w·x·y` (`fTsumwxy`).
-    pub tsumwxy: f64,
+    pub(crate) tsumwxy: f64,
     /// Per-cell `Σ(w·z)` (the Hist2D contents, `fArray`); length `ncells`.
-    pub sums: Vec<f64>,
+    pub(crate) sums: Vec<f64>,
     /// Per-cell `Σ(w·z²)` (the Hist2D `fSumw2`); length `ncells`.
-    pub sumz2: Vec<f64>,
+    pub(crate) sumz2: Vec<f64>,
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
-    pub bin_entries: Vec<f64>,
+    pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`: 0=mean, 1=spread, 2=spread-i, 3=spread-g).
     pub error_mode: ErrorMode,
     /// Lower `z` accept bound (`fZmin`; `0` = no restriction when `zmin == zmax`).
@@ -57,11 +57,11 @@ pub struct Profile2D {
     /// Upper `z` accept bound (`fZmax`).
     pub zmax: f64,
     /// Sum of `w·z` over in-range fills (`fTsumwz`).
-    pub tsumwz: f64,
+    pub(crate) tsumwz: f64,
     /// Sum of `w·z²` over in-range fills (`fTsumwz2`).
-    pub tsumwz2: f64,
+    pub(crate) tsumwz2: f64,
     /// Per-cell `Σw²` (`fBinSumw2`); empty unless weighted-error tracking is on.
-    pub bin_sumw2: Vec<f64>,
+    pub(crate) bin_sumw2: Vec<f64>,
 }
 
 impl Profile2D {

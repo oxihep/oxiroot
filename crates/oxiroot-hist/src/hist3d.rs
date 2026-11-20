@@ -27,44 +27,44 @@ pub struct Hist3D {
     /// Histogram title (`fTitle`).
     pub title: String,
     /// X axis.
-    pub xaxis: Axis,
+    pub(crate) xaxis: Axis,
     /// Y axis.
-    pub yaxis: Axis,
+    pub(crate) yaxis: Axis,
     /// Z axis.
-    pub zaxis: Axis,
+    pub(crate) zaxis: Axis,
     /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
     /// [`ncells`](Hist3D::ncells); `pub(crate)` so it cannot drift from `contents`.
     pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
-    pub entries: f64,
+    pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
+    pub(crate) tsumw: f64,
     /// Sum of weight^2 (`fTsumw2`).
-    pub tsumw2: f64,
+    pub(crate) tsumw2: f64,
     /// Sum of weight*x (`fTsumwx`).
-    pub tsumwx: f64,
+    pub(crate) tsumwx: f64,
     /// Sum of weight*x^2 (`fTsumwx2`).
-    pub tsumwx2: f64,
+    pub(crate) tsumwx2: f64,
     /// Sum of weight*y (`fTsumwy`).
-    pub tsumwy: f64,
+    pub(crate) tsumwy: f64,
     /// Sum of weight*y^2 (`fTsumwy2`).
-    pub tsumwy2: f64,
+    pub(crate) tsumwy2: f64,
     /// Sum of weight*x*y (`fTsumwxy`).
-    pub tsumwxy: f64,
+    pub(crate) tsumwxy: f64,
     /// Sum of weight*z (`fTsumwz`).
-    pub tsumwz: f64,
+    pub(crate) tsumwz: f64,
     /// Sum of weight*z^2 (`fTsumwz2`).
-    pub tsumwz2: f64,
+    pub(crate) tsumwz2: f64,
     /// Sum of weight*x*z (`fTsumwxz`).
-    pub tsumwxz: f64,
+    pub(crate) tsumwxz: f64,
     /// Sum of weight*y*z (`fTsumwyz`).
-    pub tsumwyz: f64,
+    pub(crate) tsumwyz: f64,
     /// Bin contents including flow (length `ncells`, x fastest then y then z).
-    pub contents: Vec<f64>,
+    pub(crate) contents: Vec<f64>,
     /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
     /// turned on by [`Hist3D::sumw2`], [`Hist3D::scale`], or a weighted fill (see
     /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
-    pub sumw2: Vec<f64>,
+    pub(crate) sumw2: Vec<f64>,
 }
 
 impl Hist3D {
@@ -208,7 +208,7 @@ impl Hist3D {
     pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
         // Before the contents change; see `Hist1D::fill_weight`.
         if w != 1.0 && self.sumw2.is_empty() {
-            self.sumw2();
+            self.track_sumw2();
         }
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let binx = self.xaxis.find_bin(x);

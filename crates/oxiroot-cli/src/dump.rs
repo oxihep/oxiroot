@@ -3,7 +3,7 @@
 use clap::Args as ClapArgs;
 use oxiroot::hist::{
     Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, ObjString, ParamValue, Parameter,
-    Profile1D, ReadRoot, RootHistogram,
+    Profile1D, ReadRoot,
 };
 use oxiroot::ntuple::{FieldValues, NtupleReader};
 use oxiroot::tree::{BranchValues, TreeReader};
@@ -522,14 +522,14 @@ fn dump_profile(profile: &Profile1D, name: &str, json: bool) -> CmdResult {
 fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
     // Bound by both coordinate lengths: a graph decoded from a corrupt file can
     // have `fX.len() != fY.len()`, and indexing the shorter one would panic.
-    let count = graph.x.len().min(graph.y.len()).min(n);
+    let count = graph.x().len().min(graph.y().len()).min(n);
     if json {
         let points = Json::Array(
             (0..count)
                 .map(|i| {
                     Json::Object(vec![
-                        ("x", Json::F64(graph.x[i])),
-                        ("y", Json::F64(graph.y[i])),
+                        ("x", Json::F64(graph.x()[i])),
+                        ("y", Json::F64(graph.y()[i])),
                     ])
                 })
                 .collect(),
@@ -543,10 +543,10 @@ fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
         return Ok(());
     }
 
-    println!("TGraph {name:?}  ({} points)", graph.x.len());
+    println!("TGraph {name:?}  ({} points)", graph.x().len());
     let mut table = Table::new(&["#", "x", "y"]).right_align(&[0, 1, 2]);
     for i in 0..count {
-        table.row(vec![i.to_string(), num(graph.x[i]), num(graph.y[i])]);
+        table.row(vec![i.to_string(), num(graph.x()[i]), num(graph.y()[i])]);
     }
     table.print();
     Ok(())
@@ -735,20 +735,4 @@ fn num(x: f64) -> String {
     }
     let s = format!("{x:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dump_graph;
-    use oxiroot::hist::Graph;
-
-    #[test]
-    fn dump_graph_survives_mismatched_x_y_lengths() {
-        // A corrupt graph with more x than y coordinates: dumping (either format)
-        // must clamp to the shorter length instead of panicking.
-        let mut graph = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
-        graph.y.truncate(1);
-        assert!(dump_graph(&graph, "g", 10, false).is_ok());
-        assert!(dump_graph(&graph, "g", 10, true).is_ok());
-    }
 }

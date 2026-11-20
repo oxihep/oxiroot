@@ -158,7 +158,7 @@ fn a_collection_read_back_still_describes_its_members() {
 /// functions, members.
 fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
     let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("h");
-    h.xaxis.set_label(1, "a");
+    h.xaxis_mut().set_label(1, "a");
     let p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
     let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);

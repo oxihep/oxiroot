@@ -19,7 +19,7 @@ fn reads_root_written_tprofile2d() {
     assert_eq!(f.key("p2").unwrap().class_name, "TProfile2D");
     let p = Profile2D::read_root(&f, "p2").expect("read TProfile2D");
     assert_eq!(p.values(), vec![vec![15.0, 0.0], vec![5.0, 30.0]]);
-    assert_eq!(p.entries, 4.0);
+    assert_eq!(p.entries(), 4.0);
 }
 
 #[test]

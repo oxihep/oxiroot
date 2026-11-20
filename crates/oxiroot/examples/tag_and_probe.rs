@@ -216,7 +216,7 @@ mod probes {
             .to_root()
             .named("efficiency_map")
             .titled("Trigger efficiency;probe p_{T} [GeV];probe |#eta|");
-        map.sumw2();
+        map.track_sumw2();
         let mut per_region: Vec<(Vec<f64>, Vec<f64>)> = vec![(Vec::new(), Vec::new()); 2];
         let mut shown = None;
         println!("\n2. Simultaneous pass/fail fits: ε per (pT, |η|) bin");
@@ -237,8 +237,8 @@ mod probes {
                 }
                 let (eps, err, pf, ff, _) = pass_fail_fit(&h_pass, &h_fail);
                 let cell = map.find_bin(0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                map.contents[cell] = eps;
-                map.sumw2[cell] = err * err;
+                map.contents_mut()[cell] = eps;
+                map.sumw2_mut().expect("error tracking is on")[cell] = err * err;
                 per_region[r].0.push(eps);
                 per_region[r].1.push(err);
                 row += &format!("   {eps:.4} ± {err:.4}");
@@ -288,7 +288,12 @@ mod probes {
             }
         }
         let (passed_m, total_m): (Vec<f64>, Vec<f64>) = (1..=40)
-            .map(|b| (matched.passed.contents[b], matched.total.contents[b]))
+            .map(|b| {
+                (
+                    matched.passed().contents()[b],
+                    matched.total().contents()[b],
+                )
+            })
             .unzip();
         let binomial = BinomialData::new(&x, &passed_m, &total_m)
             .expect("lengths")
@@ -395,7 +400,7 @@ mod probes {
         for p in PT_EDGES.windows(2) {
             for e in ETA_EDGES.windows(2) {
                 let (cx, cy) = (0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                let v = map.contents[map.find_bin(cx, cy)];
+                let v = map.contents()[map.find_bin(cx, cy)];
                 ax.text_with(
                     cx,
                     cy,

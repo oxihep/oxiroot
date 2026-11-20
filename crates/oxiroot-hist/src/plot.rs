@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn hist1d_exposes_in_range_bins_and_errors() {
         let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
-        h.sumw2();
+        h.track_sumw2();
         h.fill(-1.0); // underflow: not drawn
         h.fill_weight(1.5, 4.0);
         assert_eq!(Hist1dData::edges(&h), vec![0.0, 1.0, 2.0, 3.0, 4.0]);

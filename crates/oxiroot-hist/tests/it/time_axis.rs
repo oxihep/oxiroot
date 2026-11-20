@@ -15,16 +15,16 @@ fn a_time_axis_survives_a_file() {
         .to_root()
         .named("rate")
         .titled("hits per hour");
-    h.xaxis.set_time_format(FORMAT);
+    h.xaxis_mut().set_time_format(FORMAT);
     h.fill(3_600.0);
-    assert!(h.xaxis.time_display);
+    assert!(h.xaxis().time_display);
 
     // A graph carries its axes on its display frame, as ROOT stores them.
     let mut frame = Hist::reg(2, 0.0, 7_200.0)
         .double()
         .to_root_as(oxiroot_hist::BinContentType::F32)
         .named("Graph");
-    frame.xaxis.set_time_format(FORMAT);
+    frame.xaxis_mut().set_time_format(FORMAT);
     let mut g = Graph::new(vec![0.0, 3_600.0], vec![1.0, 2.0])
         .unwrap()
         .named("trend");
@@ -39,32 +39,32 @@ fn a_time_axis_survives_a_file() {
 
     let f = FileReader::open(&out).expect("reopen");
     let read = Hist1D::read_root(&f, "rate").expect("read hist");
-    assert!(read.xaxis.time_display);
-    assert_eq!(read.xaxis.time_format, FORMAT);
+    assert!(read.xaxis().time_display);
+    assert_eq!(read.xaxis().time_format, FORMAT);
     assert_eq!(read, h);
 
     let read = Graph::read_root(&f, "trend").expect("read graph");
     let frame = read.histogram.as_ref().expect("display frame");
-    assert!(frame.xaxis.time_display);
-    assert_eq!(frame.xaxis.time_format, FORMAT);
+    assert!(frame.xaxis().time_display);
+    assert_eq!(frame.xaxis().time_format, FORMAT);
 }
 
 #[test]
 fn an_ordinary_axis_stays_numeric() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("plain");
     h.fill(1.5);
-    assert!(!h.xaxis.time_display);
-    assert_eq!(h.xaxis.time_format, "");
+    assert!(!h.xaxis().time_display);
+    assert_eq!(h.xaxis().time_format, "");
 
     let out = std::env::temp_dir().join("oxiroot_plain_axis.root");
     h.write_root(&out, Compression::None).expect("write");
     let read = Hist1D::read_root(&FileReader::open(&out).unwrap(), "plain").unwrap();
-    assert!(!read.xaxis.time_display);
-    assert_eq!(read.xaxis.time_format, "");
+    assert!(!read.xaxis().time_display);
+    assert_eq!(read.xaxis().time_format, "");
 
     // Setting and clearing leaves an axis as it started.
-    let mut axis = read.xaxis.clone();
+    let mut axis = read.xaxis().clone();
     axis.set_time_format("%H:%M");
     axis.clear_time_format();
-    assert_eq!(axis, read.xaxis);
+    assert_eq!(&axis, read.xaxis());
 }

@@ -72,7 +72,7 @@ fn every_streamed_axis_version_reads() {
 
         let first = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
-            (first.nbins, first.xmin, first.xmax),
+            (first.nbins(), first.xmin(), first.xmax()),
             (4, -1.0, 1.0),
             "v{version}"
         );
@@ -80,7 +80,7 @@ fn every_streamed_axis_version_reads() {
 
         let second = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
-            (second.nbins, second.xbins.as_slice()),
+            (second.nbins(), second.xbins()),
             (3, &edges[..]),
             "v{version}"
         );
@@ -236,17 +236,17 @@ fn every_streamed_tprofile_version_reads() {
     p.fill(0.5, 3.0);
     p.fill_weight(1.5, 2.0, 2.0); // a weight: fBinSumw2 is tracked
     p.fill(2.5, 4.5);
-    assert!(!p.bin_sumw2.is_empty());
+    assert!(!p.bin_sumw2().is_empty());
 
     for version in 2..=7 {
-        let old = downgrade(&TPROFILE, p.to_root_bytes(), p.bin_sumw2.len(), version);
+        let old = downgrade(&TPROFILE, p.to_root_bytes(), p.bin_sumw2().len(), version);
         let back: Profile1D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile v{version}: {e}"));
         // Versions without fBinSumw2 did not track weights; the sums missing
         // before version 4 are taken from the bins.
         let mut expected = p.clone();
         if version < 6 {
-            expected.bin_sumw2.clear();
+            expected.optional_arrays_mut().1.clear();
         }
         assert_eq!(back, expected, "TProfile v{version}");
     }
@@ -265,12 +265,12 @@ fn every_streamed_tprofile2d_version_reads() {
     p.fill(1.5, 1.5, 30.0);
 
     for version in 2..=8 {
-        let old = downgrade(&TPROFILE2D, p.to_root_bytes(), p.bin_sumw2.len(), version);
+        let old = downgrade(&TPROFILE2D, p.to_root_bytes(), p.bin_sumw2().len(), version);
         let back: Profile2D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile2D v{version}: {e}"));
         let mut expected = p.clone();
         if version < 7 {
-            expected.bin_sumw2.clear();
+            expected.optional_arrays_mut().1.clear();
         }
         assert_eq!(back, expected, "TProfile2D v{version}");
     }
@@ -288,12 +288,12 @@ fn every_streamed_tprofile3d_version_reads() {
     p.fill_weight(1.5, 1.5, 1.5, 7.0, 3.0);
 
     for version in 6..=8 {
-        let old = downgrade(&TPROFILE3D, p.to_root_bytes(), p.bin_sumw2.len(), version);
+        let old = downgrade(&TPROFILE3D, p.to_root_bytes(), p.bin_sumw2().len(), version);
         let back: Profile3D =
             read_back(&old, version).unwrap_or_else(|e| panic!("TProfile3D v{version}: {e}"));
         let mut expected = p.clone();
         if version < 7 {
-            expected.bin_sumw2.clear();
+            expected.optional_arrays_mut().1.clear();
         }
         assert_eq!(back, expected, "TProfile3D v{version}");
     }

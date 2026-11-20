@@ -195,7 +195,7 @@ mod analysis {
             .to_root()
             .named("m_mumu")
             .titled("dimuon mass");
-        m_hist.sumw2();
+        m_hist.track_sumw2();
         for &m in &mass {
             m_hist.fill(m);
         }
@@ -429,7 +429,7 @@ mod analysis {
             .to_root()
             .named("ctau")
             .titled("decay length, J/#psi window");
-        t_hist.sumw2();
+        t_hist.track_sumw2();
         for &t in &sel_t {
             t_hist.fill(t);
         }

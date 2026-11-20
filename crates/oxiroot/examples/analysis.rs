@@ -20,7 +20,7 @@ fn main() -> oxiroot::Result<()> {
         .to_root()
         .named("pt")
         .titled("p_{T} spectrum");
-    pt.sumw2(); // track per-bin errors for the weighted fills
+    pt.track_sumw2(); // track per-bin errors for the weighted fills
 
     // A 2-D correlation.
     let mut eta_phi = Hist::reg(5, -2.5, 2.5)
@@ -44,7 +44,7 @@ fn main() -> oxiroot::Result<()> {
     }
     println!(
         "pt: {} entries, integral {:.2}, all-cell sum {:.2}, bin-2 = {:.2} ± {:.2}",
-        pt.entries,
+        pt.entries(),
         pt.integral(), // in-range bins only
         pt.sum(),      // RootHistogram trait: every cell, flow included
         pt[2],         // Index: bin content by cell index
@@ -78,7 +78,7 @@ fn main() -> oxiroot::Result<()> {
     let mass = acc.merge()?;
     println!(
         "mass (parallel fill): {} entries, mean {:.3}, std {:.3}, max bin {} = {}",
-        mass.entries,
+        mass.entries(),
         mass.mean(),
         mass.std_dev(),
         mass.maximum_bin(),

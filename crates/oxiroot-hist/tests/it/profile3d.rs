@@ -20,7 +20,7 @@ fn reads_root_written_tprofile3d() {
     // cell(1,1,1) mean t = 15; cell(2,2,2) mean t = 7.
     assert_eq!(p.values()[0][0][0], 15.0);
     assert_eq!(p.values()[1][1][1], 7.0);
-    assert_eq!(p.entries, 3.0);
+    assert_eq!(p.entries(), 3.0);
 }
 
 #[test]
