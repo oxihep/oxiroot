@@ -232,6 +232,128 @@ impl FieldValues {
         }
     }
 
+    /// Drop the first `n` entries in place (everything, if `n >= len`) — the
+    /// counterpart of [`truncate`](Self::truncate), so
+    /// `skip(a); truncate(b - a)` keeps entries `[a, b)`. Collection offsets
+    /// are rebased to start at `0`, and each variant alternative or optional
+    /// keeps only the values the remaining entries reference.
+    pub fn skip(&mut self, n: usize) {
+        use FieldValues::*;
+        let n = n.min(self.len());
+        if n == 0 {
+            return;
+        }
+        fn drop_front<T>(v: &mut Vec<T>, n: usize) {
+            v.drain(..n.min(v.len()));
+        }
+        match self {
+            Bool(v) => drop_front(v, n),
+            I8(v) => drop_front(v, n),
+            U8(v) => drop_front(v, n),
+            I16(v) => drop_front(v, n),
+            U16(v) => drop_front(v, n),
+            I32(v) => drop_front(v, n),
+            I64(v) => drop_front(v, n),
+            U32(v) => drop_front(v, n),
+            U64(v) => drop_front(v, n),
+            F32(v) => drop_front(v, n),
+            F64(v) => drop_front(v, n),
+            Str(v) => drop_front(v, n),
+            VecBool(v) => drop_front(v, n),
+            VecI8(v) => drop_front(v, n),
+            VecU8(v) => drop_front(v, n),
+            VecI16(v) => drop_front(v, n),
+            VecU16(v) => drop_front(v, n),
+            VecI32(v) => drop_front(v, n),
+            VecI64(v) => drop_front(v, n),
+            VecU32(v) => drop_front(v, n),
+            VecU64(v) => drop_front(v, n),
+            VecF32(v) => drop_front(v, n),
+            VecF64(v) => drop_front(v, n),
+            VecStr(v) => drop_front(v, n),
+            Record(fields) => {
+                for (_, f) in fields.iter_mut() {
+                    f.skip(n);
+                }
+            }
+            Nested { offsets, items } => {
+                let first = offsets.get(n).copied().unwrap_or(0);
+                drop_front(offsets, n);
+                for o in offsets.iter_mut() {
+                    *o = o.saturating_sub(first);
+                }
+                items.skip(usize::saturating_from(first));
+            }
+            Variant {
+                alternatives,
+                tags,
+                indices,
+            } => {
+                let mut dropped = vec![0u64; alternatives.len()];
+                for &tag in tags.iter().take(n) {
+                    if let Some(slot) = (tag as usize)
+                        .checked_sub(1)
+                        .and_then(|a| dropped.get_mut(a))
+                    {
+                        *slot += 1;
+                    }
+                }
+                drop_front(tags, n);
+                drop_front(indices, n);
+                for (&tag, index) in tags.iter().zip(indices.iter_mut()) {
+                    if let Some(&d) = (tag as usize).checked_sub(1).and_then(|a| dropped.get(a)) {
+                        *index = index.saturating_sub(d);
+                    }
+                }
+                for (&d, (_, values)) in dropped.iter().zip(alternatives.iter_mut()) {
+                    values.skip(usize::saturating_from(d));
+                }
+            }
+            Opt { present, values } => {
+                let dropped = present.iter().take(n).filter(|&&p| p).count();
+                drop_front(present, n);
+                values.skip(dropped);
+            }
+        }
+    }
+
+    /// How this field's type reads in an error: `f64`, `Vec<f32>`, `String`,
+    /// `Option<i32>`, `record`, ….
+    #[must_use]
+    pub fn type_name(&self) -> String {
+        use FieldValues::*;
+        match self {
+            Bool(_) => "bool".into(),
+            I8(_) => "i8".into(),
+            U8(_) => "u8".into(),
+            I16(_) => "i16".into(),
+            U16(_) => "u16".into(),
+            I32(_) => "i32".into(),
+            I64(_) => "i64".into(),
+            U32(_) => "u32".into(),
+            U64(_) => "u64".into(),
+            F32(_) => "f32".into(),
+            F64(_) => "f64".into(),
+            Str(_) => "String".into(),
+            VecBool(_) => "Vec<bool>".into(),
+            VecI8(_) => "Vec<i8>".into(),
+            VecU8(_) => "Vec<u8>".into(),
+            VecI16(_) => "Vec<i16>".into(),
+            VecU16(_) => "Vec<u16>".into(),
+            VecI32(_) => "Vec<i32>".into(),
+            VecI64(_) => "Vec<i64>".into(),
+            VecU32(_) => "Vec<u32>".into(),
+            VecU64(_) => "Vec<u64>".into(),
+            VecF32(_) => "Vec<f32>".into(),
+            VecF64(_) => "Vec<f64>".into(),
+            VecStr(_) => "Vec<String>".into(),
+            Record(_) => "record".into(),
+            Nested { items, .. } => format!("Vec<{}>", items.type_name()),
+            Variant { .. } => "variant".into(),
+            Opt { values, .. } => format!("Option<{}>", values.type_name()),
+        }
+    }
+
     /// Append `other`'s entries onto this field in place, concatenating them.
     ///
     /// Both fields must be the same scalar or vector variant; otherwise an error
@@ -463,4 +585,100 @@ fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
         start = end;
     }
     Ok(out)
+}
+
+/// A Rust type a field can be read as with
+/// [`FieldRead::read`](crate::FieldRead::read): the scalar types, `String`,
+/// `Vec<T>` for `std::vector<T>`, `Vec<Vec<T>>` for
+/// `std::vector<std::vector<T>>`, and `Option<T>` for `std::optional<T>`.
+pub trait FromField: Sized {
+    /// How the type is named in a type-mismatch error.
+    const TYPE_NAME: &'static str;
+
+    /// Take the values out of `values`, or fail with
+    /// [`Error::TypeMismatch`] naming `name` if they are another type.
+    fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>>;
+}
+
+fn mismatch(name: &str, found: &FieldValues, expected: &str) -> Error {
+    Error::TypeMismatch {
+        name: name.to_string(),
+        found: found.type_name(),
+        expected: expected.to_string(),
+    }
+}
+
+/// Split `items` into one `Vec` per entry at the cumulative `offsets`.
+fn split_by_offsets<T>(offsets: &[u64], items: Vec<T>) -> Vec<Vec<T>> {
+    let mut out = Vec::with_capacity(offsets.len().saturating_sub(1));
+    let mut items = items.into_iter();
+    for w in offsets.windows(2) {
+        out.push(items.by_ref().take(usize::saturating_from(w[1].saturating_sub(w[0]))).collect());
+    }
+    out
+}
+
+macro_rules! from_field {
+    ($($t:ty => $scalar:ident, $vec:ident;)*) => {$(
+        impl FromField for $t {
+            const TYPE_NAME: &'static str = stringify!($t);
+            fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>> {
+                match values {
+                    FieldValues::$scalar(v) => Ok(v),
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+        impl FromField for Vec<$t> {
+            const TYPE_NAME: &'static str = concat!("Vec<", stringify!($t), ">");
+            fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>> {
+                match values {
+                    FieldValues::$vec(v) => Ok(v),
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+        impl FromField for Vec<Vec<$t>> {
+            const TYPE_NAME: &'static str = concat!("Vec<Vec<", stringify!($t), ">>");
+            fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>> {
+                match values {
+                    FieldValues::Nested { offsets, items } => match *items {
+                        FieldValues::$vec(inner) => Ok(split_by_offsets(&offsets, inner)),
+                        other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                    },
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+        impl FromField for Option<$t> {
+            const TYPE_NAME: &'static str = concat!("Option<", stringify!($t), ">");
+            fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>> {
+                match values {
+                    FieldValues::Opt { present, values } => match *values {
+                        FieldValues::$scalar(dense) => {
+                            let mut dense = dense.into_iter();
+                            Ok(present.iter().map(|&p| if p { dense.next() } else { None }).collect())
+                        }
+                        other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                    },
+                    other => Err(mismatch(name, &other, Self::TYPE_NAME)),
+                }
+            }
+        }
+    )*};
+}
+
+from_field! {
+    bool => Bool, VecBool;
+    i8 => I8, VecI8;
+    u8 => U8, VecU8;
+    i16 => I16, VecI16;
+    u16 => U16, VecU16;
+    i32 => I32, VecI32;
+    u32 => U32, VecU32;
+    i64 => I64, VecI64;
+    u64 => U64, VecU64;
+    f32 => F32, VecF32;
+    f64 => F64, VecF64;
+    String => Str, VecStr;
 }

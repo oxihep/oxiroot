@@ -3,20 +3,21 @@
 //! read by ROOT C++ (`RNTupleReader`) and uproot.
 
 use oxiroot_io_core::{Compression, FileReader, FileWriter};
-use oxiroot_rntuple::{Field, FieldValues, Ntuple, NtupleReader};
+use oxiroot_rntuple::{Field, FieldValues, NtupleReader};
+use crate::support::{NtupleObject};
 
 fn write(path: &str, compression: Compression) {
     FileWriter::create(path)
-        .put(Ntuple::new(
+        .put(NtupleObject::new(
             "events",
             vec![
                 Field::i32("x", vec![1, 2, 3]),
                 Field::f64("y", vec![0.5, 1.5, 2.5]),
             ],
         ))
-        .put(Ntuple::new("runs", vec![Field::i32("run", vec![7, 8])]))
+        .put(NtupleObject::new("runs", vec![Field::i32("run", vec![7, 8])]))
         .dir("cal", |d| {
-            d.put(Ntuple::new(
+            d.put(NtupleObject::new(
                 "pedestals",
                 vec![Field::f64("p", vec![9.5, 8.5])],
             ))
@@ -37,13 +38,13 @@ fn several_rntuples_in_top_directory() {
     assert_eq!(events.entries(), 3);
     assert_eq!(events.field_names(), vec!["x", "y"]);
     assert_eq!(
-        events.read_field(&f, "x").unwrap(),
+        events.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
     let runs = NtupleReader::open(&f, "runs").unwrap();
     assert_eq!(runs.entries(), 2);
     assert_eq!(
-        runs.read_field(&f, "run").unwrap(),
+        runs.field("run").values().unwrap(),
         FieldValues::I32(vec![7, 8])
     );
 }
@@ -61,7 +62,7 @@ fn rntuple_inside_a_subdirectory() {
     let ped = NtupleReader::open_in(&f, "cal", "pedestals").unwrap();
     assert_eq!(ped.entries(), 2);
     assert_eq!(
-        ped.read_field(&f, "p").unwrap(),
+        ped.field("p").values().unwrap(),
         FieldValues::F64(vec![9.5, 8.5])
     );
 }
@@ -76,7 +77,7 @@ fn compressed_multi_file_round_trips() {
     assert_eq!(
         NtupleReader::open_in(&f, "cal", "pedestals")
             .unwrap()
-            .read_field(&f, "p")
+            .field("p").values()
             .unwrap(),
         FieldValues::F64(vec![9.5, 8.5])
     );
@@ -85,15 +86,15 @@ fn compressed_multi_file_round_trips() {
 #[test]
 fn duplicate_names_are_rejected() {
     let dup = FileWriter::create("f.root")
-        .put(Ntuple::new("a", vec![Field::i32("x", vec![1])]))
-        .put(Ntuple::new("a", vec![Field::i32("x", vec![2])]));
+        .put(NtupleObject::new("a", vec![Field::i32("x", vec![1])]))
+        .put(NtupleObject::new("a", vec![Field::i32("x", vec![2])]));
     assert!(dup.to_bytes(Compression::None).is_err());
 
     // A subdirectory name colliding with a top-level RNTuple is also rejected.
     let clash = FileWriter::create("f.root")
-        .put(Ntuple::new("cal", vec![Field::i32("x", vec![1])]))
+        .put(NtupleObject::new("cal", vec![Field::i32("x", vec![1])]))
         .dir("cal", |d| {
-            d.put(Ntuple::new("p", vec![Field::i32("y", vec![1])]))
+            d.put(NtupleObject::new("p", vec![Field::i32("y", vec![1])]))
         });
     assert!(clash.to_bytes(Compression::None).is_err());
 }

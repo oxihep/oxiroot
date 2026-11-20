@@ -5,26 +5,26 @@
 //! strict reader accepts the computed `Hit` class checksum.
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Column, Field, FieldValues, Ntuple, NtupleReader};
+use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
+use crate::support::NtupleObject;
 
-fn write_and_reopen(tag: &str, fields: Vec<Field>) -> (FileReader, NtupleReader) {
-    let nt = Ntuple::new("ntpl", fields);
+fn write_and_reopen(tag: &str, fields: Vec<Field>) -> FileReader {
+    let nt = NtupleObject::new("ntpl", fields);
     let out = std::env::temp_dir().join(format!("oxiroot_write_stl_{tag}.root"));
     nt.write_root(&out, Compression::Zstd(3)).expect("write");
-    let file = FileReader::open(&out).expect("reopen");
-    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
-    (file, ntpl)
+    FileReader::open(&out).expect("reopen")
 }
 
 #[test]
 fn array_field_round_trips() {
-    let (file, ntpl) = write_and_reopen(
+    let file = write_and_reopen(
         "array",
         vec![Field::array_i32("arr", vec![vec![10, 20, 30], vec![40, 50, 60]]).unwrap()],
     );
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.entries(), 2);
     assert_eq!(
-        ntpl.read_field(&file, "arr").unwrap(),
+        ntpl.field("arr").values().unwrap(),
         FieldValues::VecI32(vec![vec![10, 20, 30], vec![40, 50, 60]])
     );
     // The field is a fixed array of 3 (flags + array_size in the header).
@@ -37,12 +37,13 @@ fn array_field_round_trips() {
 fn bitset_field_round_trips() {
     let row0 = vec![true, false, true, false, false, false, false, false];
     let row1 = vec![false, true, false, true, false, false, false, false];
-    let (file, ntpl) = write_and_reopen(
+    let file = write_and_reopen(
         "bitset",
         vec![Field::bitset("bits", vec![row0.clone(), row1.clone()]).unwrap()],
     );
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(
-        ntpl.read_field(&file, "bits").unwrap(),
+        ntpl.field("bits").values().unwrap(),
         FieldValues::VecBool(vec![row0, row1])
     );
     assert_eq!(ntpl.header().fields[0].array_size, Some(8));
@@ -51,7 +52,7 @@ fn bitset_field_round_trips() {
 
 #[test]
 fn user_class_field_round_trips() {
-    let (file, ntpl) = write_and_reopen(
+    let file = write_and_reopen(
         "user",
         vec![Field::object(
             "hit",
@@ -62,8 +63,9 @@ fn user_class_field_round_trips() {
             ],
         )],
     );
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(
-        ntpl.read_field(&file, "hit").unwrap(),
+        ntpl.field("hit").values().unwrap(),
         FieldValues::Record(vec![
             ("id".into(), FieldValues::I32(vec![7, 42])),
             ("energy".into(), FieldValues::F64(vec![3.25, -1.5])),
@@ -75,7 +77,7 @@ fn user_class_field_round_trips() {
 
 #[test]
 fn all_three_in_one_ntuple() {
-    let (file, ntpl) = write_and_reopen(
+    let file = write_and_reopen(
         "all",
         vec![
             Field::array_f64("xyz", vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap(),
@@ -90,9 +92,10 @@ fn all_three_in_one_ntuple() {
             ),
         ],
     );
+    let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.entries(), 2);
     assert_eq!(
-        ntpl.read_field(&file, "xyz").unwrap(),
+        ntpl.field("xyz").values().unwrap(),
         FieldValues::VecF64(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]])
     );
     assert_eq!(ntpl.field_names(), vec!["xyz", "flags", "hit"]);

@@ -67,7 +67,7 @@ struct HeaderState {
 /// chunk at a time without ever holding it all in memory. Call
 /// [`finish`](NtupleWriter::finish) to write the page list, footer, and anchor.
 ///
-/// Handles the same field types as [`write_rntuple_file`](super::write_rntuple_file) — scalars,
+/// Handles the same field types as [`raw::write_ntuple`](super::raw::write_ntuple) — scalars,
 /// `std::string`, and `std::vector<T>` — writing each batch's collection/string
 /// index offsets relative to its own cluster, as the format requires.
 #[doc(alias = "RNTupleWriter")]
@@ -222,9 +222,15 @@ impl<W: Write + Seek> NtupleWriter<W> {
         Ok(())
     }
 
+    /// Total entries appended so far.
+    #[must_use]
+    pub fn entries(&self) -> u64 {
+        self.total_entries
+    }
+
     /// Finish the file: write the page list (all clusters), footer, anchor key,
-    /// and key list, then patch the header pointers.
-    pub fn finish(mut self) -> Result<()> {
+    /// and key list, then patch the header pointers. Returns the sink.
+    pub fn finish(mut self) -> Result<W> {
         let header = self.header.take().ok_or_else(|| {
             Error::InvalidInput("NtupleWriter finished with no batches written".into())
         })?;
@@ -270,8 +276,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
             &anchor,
         )?;
         self.file.place_streamer_info(&header.streamer_info, &[])?;
-        self.file.finish()?;
-        Ok(())
+        self.file.finish()
     }
 }
 

@@ -18,7 +18,7 @@ fn check(name: &str) {
     let file = open(name);
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 5, "{name}");
-    let field = |n| ntpl.read_field(&file, n).expect("read field");
+    let field = |n| ntpl.field(n).values().expect("read field");
 
     assert_eq!(
         field("i8"),

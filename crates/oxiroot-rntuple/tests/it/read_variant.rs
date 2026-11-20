@@ -20,7 +20,7 @@ fn reads_variant_field() {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 5);
 
-    let v = ntpl.read_field(&file, "v").expect("read v");
+    let v = ntpl.field("v").values().expect("read v");
 
     // Raw columnar form: two densely-packed alternatives, per-entry tags+indices.
     assert_eq!(

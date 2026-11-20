@@ -5,6 +5,7 @@
 //! is ROOT-C++-written (scripts/gen_rntuple_ext.cpp); cross-checked with uproot.
 
 use std::path::PathBuf;
+use crate::support::{NtupleObject};
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::{FieldValues, NtupleReader};
@@ -26,12 +27,12 @@ fn reads_late_added_field() {
 
     // "x" is in the header and present for every entry.
     assert_eq!(
-        nt.read_field(&f, "x").unwrap(),
+        nt.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3, 4])
     );
     // "y" was added after entries 0-1, which ROOT defaults to 0.0.
     assert_eq!(
-        nt.read_field(&f, "y").unwrap(),
+        nt.field("y").values().unwrap(),
         FieldValues::F32(vec![0.0, 0.0, 3.5, 4.5])
     );
 }
@@ -39,13 +40,13 @@ fn reads_late_added_field() {
 #[test]
 fn writes_a_schema_extended_rntuple() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::{Field, Ntuple};
+    use oxiroot_rntuple::{Field};
 
     let path = std::env::temp_dir().join("oxiroot_ext_write.root");
     let path = path.to_str().unwrap();
     // 4 entries of `x`; `y` added late via the schema-extension record, covering
     // only entries 2 and 3 (entries 0-1 default to 0).
-    Ntuple::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])])
+    NtupleObject::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])])
         .write_root_extended(
             path,
             &[(2, Field::f32("y", vec![3.5, 4.5]))],
@@ -57,11 +58,11 @@ fn writes_a_schema_extended_rntuple() {
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(nt.field_names(), vec!["x", "y"]);
     assert_eq!(
-        nt.read_field(&f, "x").unwrap(),
+        nt.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3, 4])
     );
     assert_eq!(
-        nt.read_field(&f, "y").unwrap(),
+        nt.field("y").values().unwrap(),
         FieldValues::F32(vec![0.0, 0.0, 3.5, 4.5])
     );
 }
@@ -69,9 +70,9 @@ fn writes_a_schema_extended_rntuple() {
 #[test]
 fn late_field_value_count_is_validated() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::{Field, Ntuple};
+    use oxiroot_rntuple::{Field};
     // `y` claims to start at entry 2 of a 4-entry RNTuple but supplies 3 values.
-    let err = Ntuple::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])]).write_root_extended(
+    let err = NtupleObject::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])]).write_root_extended(
         std::env::temp_dir()
             .join("oxiroot_ext_bad.root")
             .to_str()

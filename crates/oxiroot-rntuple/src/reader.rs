@@ -7,7 +7,9 @@ use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
 use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
-use crate::field::{self, FieldValues};
+use std::ops::Range;
+
+use crate::field::{self, FieldValues, FromField};
 use crate::footer::Footer;
 use crate::header::{Header, StructRole};
 use crate::page::{ColumnValues, read_column};
@@ -17,7 +19,9 @@ use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 /// parses the schema, cluster summaries, and per-cluster page locations; column
 /// data is decoded on demand.
 #[doc(alias = "RNTuple", alias = "RNTupleReader")]
-pub struct NtupleReader {
+pub struct NtupleReader<'f> {
+    /// The file the pages are read from.
+    file: &'f FileReader,
     anchor: RNTupleAnchor,
     header: Header,
     footer: Footer,
@@ -27,9 +31,9 @@ pub struct NtupleReader {
     footer_bytes: Vec<u8>,
 }
 
-impl NtupleReader {
+impl<'f> NtupleReader<'f> {
     /// Open the RNTuple named `name` from the file's top directory.
-    pub fn open(file: &FileReader, name: &str) -> Result<NtupleReader> {
+    pub fn open(file: &'f FileReader, name: &str) -> Result<NtupleReader<'f>> {
         let key = file.key(name).ok_or_else(|| Error::NotFound {
             what: "key",
             name: name.to_string(),
@@ -40,7 +44,7 @@ impl NtupleReader {
     /// Open the RNTuple named `name` from the subdirectory `subdir`. The anchor's
     /// blob offsets are absolute file positions, so reading is identical to a
     /// top-directory RNTuple once the anchor key is located.
-    pub fn open_in(file: &FileReader, subdir: &str, name: &str) -> Result<NtupleReader> {
+    pub fn open_in(file: &'f FileReader, subdir: &str, name: &str) -> Result<NtupleReader<'f>> {
         let dir = file.subdir(subdir)?;
         // The cycle `name` asks for, or the highest — `FileReader::key`'s rule.
         let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
@@ -54,7 +58,10 @@ impl NtupleReader {
     }
 
     /// Read an RNTuple given its already-located anchor `key`.
-    fn open_from_key(file: &FileReader, key: &oxiroot_io_core::raw::Key) -> Result<NtupleReader> {
+    fn open_from_key(
+        file: &'f FileReader,
+        key: &oxiroot_io_core::raw::Key,
+    ) -> Result<NtupleReader<'f>> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::WrongClass {
                 name: key.name.clone(),
@@ -130,6 +137,7 @@ impl NtupleReader {
         }
 
         Ok(NtupleReader {
+            file,
             anchor,
             header,
             footer,
@@ -171,7 +179,11 @@ impl NtupleReader {
     }
 
     /// Decode physical column `column_index` across all clusters.
-    pub fn read_column(&self, file: &FileReader, column_index: usize) -> Result<ColumnValues> {
+    pub fn read_column(&self, column_index: usize) -> Result<ColumnValues> {
+        self.column_values(self.file, column_index)
+    }
+
+    fn column_values(&self, file: &FileReader, column_index: usize) -> Result<ColumnValues> {
         let descriptor = self
             .header
             .columns
@@ -239,12 +251,39 @@ impl NtupleReader {
             .collect()
     }
 
-    /// Read a top-level field by name, reconstructing its per-entry values.
-    /// Supports scalar leaves, `std::string`, `std::vector<T>`, and arbitrarily
-    /// nested collections / records — `std::vector<std::string>`,
-    /// `std::vector<std::vector<T>>`, and `std::vector<MyStruct>` — by walking
-    /// the field tree (see [`FieldValues`]).
-    pub fn read_field(&self, file: &FileReader, name: &str) -> Result<FieldValues> {
+    /// Read the top-level field `name`: set a [`range`](FieldRead::range) of
+    /// entries on the returned [`FieldRead`], then take the values typed
+    /// ([`read`](FieldRead::read)) or as the [`FieldValues`] enum
+    /// ([`values`](FieldRead::values)).
+    ///
+    /// ```no_run
+    /// # use oxiroot_io_core::FileReader;
+    /// # use oxiroot_rntuple::NtupleReader;
+    /// let file = FileReader::open("events.root")?;
+    /// let ntpl = NtupleReader::open(&file, "events")?;
+    /// let mass: Vec<f64> = ntpl.field("mass").range(0..1000).read()?;
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    pub fn field<'a>(&'a self, name: &'a str) -> FieldRead<'a, 'f> {
+        FieldRead {
+            ntuple: self,
+            name,
+            range: None,
+        }
+    }
+
+    /// The entry numbers at which the clusters start, followed by the entry
+    /// count: cluster `i` holds entries `[b[i], b[i + 1])`. Reading a window
+    /// that starts and ends on these decompresses no page twice.
+    #[must_use]
+    pub fn cluster_boundaries(&self) -> Vec<u64> {
+        let mut bounds: Vec<u64> = self.summaries.iter().map(|s| s.first_entry).collect();
+        bounds.push(self.entries());
+        bounds.dedup();
+        bounds
+    }
+
+    fn read_top(&self, file: &FileReader, name: &str) -> Result<FieldValues> {
         let idx = self
             .header
             .fields
@@ -269,66 +308,50 @@ impl NtupleReader {
         Ok(values)
     }
 
-    /// Read the first `max_entries` entries of top-level field `name`, decoding
-    /// only the clusters that cover them — unlike [`read_field`](Self::read_field),
-    /// which decodes the whole field. Returns exactly `min(max_entries,
-    /// entries)` entries (so `read_field_prefix(.., m)` equals
-    /// `read_field(..)` truncated to `m`).
-    ///
-    /// The bound is at cluster granularity: the fewest whole clusters whose
-    /// entries reach `max_entries` are read through a truncated view of this
-    /// RNTuple, then the result is truncated to `max_entries`. Every column is
-    /// limited to the same clusters (cluster boundaries are shared), so
-    /// collection offsets and their child columns stay aligned.
-    pub fn read_field_prefix(
-        &self,
-        file: &FileReader,
-        name: &str,
-        max_entries: usize,
-    ) -> Result<FieldValues> {
-        if max_entries as u64 >= self.entries() {
-            return self.read_field(file, name);
+    /// Entries `[start, stop)` (clamped) of field `name`, reading only the
+    /// clusters the window overlaps.
+    fn read_range(&self, name: &str, start: u64, stop: u64) -> Result<FieldValues> {
+        let stop = stop.min(self.entries());
+        let start = start.min(stop);
+        if start == 0 && stop == self.entries() {
+            return self.read_top(self.file, name);
         }
-
-        // Fewest whole clusters whose cumulative entries reach `max_entries`.
-        let mut kept = 0usize;
-        let mut view_entries = 0u64;
-        for summary in &self.summaries {
-            if view_entries >= max_entries as u64 {
-                break;
-            }
-            view_entries += summary.num_entries;
-            kept += 1;
-        }
-
-        // A schema-extension (deferred) column that only begins *after* the kept
-        // clusters would size its leading-default backfill to its real
-        // first-element index, overshooting the shortened view. That case is rare;
-        // fall back to the full read (then truncate) to stay exact.
-        let deferred_past_view = self.header.columns.iter().any(|c| {
-            c.first_element_index
-                .is_some_and(|f| f.cast_unsigned() > view_entries)
-        });
-
-        let mut values = if deferred_past_view {
-            self.read_field(file, name)?
-        } else {
-            self.cluster_prefix(kept).read_field(file, name)?
+        // A deferred (schema-extension) column back-fills from its first
+        // element index, which a window not starting at the first cluster
+        // would misplace: read whole, then cut.
+        let deferred = self
+            .header
+            .columns
+            .iter()
+            .any(|c| c.first_element_index.is_some_and(|f| f > 0));
+        let first = self
+            .summaries
+            .iter()
+            .position(|s| s.first_entry + s.num_entries > start);
+        let last = self.summaries.iter().rposition(|s| s.first_entry < stop);
+        let (mut values, from) = match (deferred, first, last) {
+            (false, Some(k0), Some(k1)) if k0 <= k1 => (
+                self.cluster_window(k0, k1 + 1).read_top(self.file, name)?,
+                self.summaries[k0].first_entry,
+            ),
+            _ => (self.read_top(self.file, name)?, 0),
         };
-        values.truncate(max_entries);
+        values.skip(usize::saturating_from(start - from));
+        values.truncate(usize::saturating_from(stop - start));
         Ok(values)
     }
 
-    /// A lightweight view of this RNTuple limited to its first `kept` clusters:
-    /// the same schema, but `entries` and every column read cover only those
+    /// A lightweight view of this RNTuple limited to clusters `[k0, k1)`: the
+    /// same schema, but `entries` and every column read cover only those
     /// clusters. Cloning the schema is cheap next to decoding pages.
-    fn cluster_prefix(&self, kept: usize) -> NtupleReader {
+    fn cluster_window(&self, k0: usize, k1: usize) -> NtupleReader<'f> {
         NtupleReader {
+            file: self.file,
             anchor: self.anchor.clone(),
             header: self.header.clone(),
             footer: self.footer.clone(),
-            summaries: self.summaries[..kept].to_vec(),
-            page_clusters: self.page_clusters[..kept].to_vec(),
+            summaries: self.summaries[k0..k1].to_vec(),
+            page_clusters: self.page_clusters[k0..k1].to_vec(),
             header_bytes: self.header_bytes.clone(),
             footer_bytes: self.footer_bytes.clone(),
         }
@@ -350,7 +373,7 @@ impl NtupleReader {
         // `_0`); group them into one chunk of `n` per entry.
         if let Some(rep) = fld.array_size {
             let flat = if let Some(&ci) = columns.first() {
-                field::scalar(self.read_column(file, ci)?)?
+                field::scalar(self.column_values(file, ci)?)?
             } else {
                 let child = *self.child_fields(field_idx).first().ok_or_else(|| {
                     Error::Format(format!(
@@ -375,7 +398,7 @@ impl NtupleReader {
                         Error::Format(format!("string field {:?} has no char column", fld.name))
                     })?;
                 let offsets = self.read_offsets(file, index_ci)?;
-                let bytes = match self.read_column(file, char_ci)? {
+                let bytes = match self.column_values(file, char_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
                         return Err(Error::Format(format!("string chars decoded as {other:?}")));
@@ -394,7 +417,7 @@ impl NtupleReader {
                 let ci = *columns
                     .first()
                     .ok_or_else(|| Error::Format(format!("field {:?} has no column", fld.name)))?;
-                field::scalar(self.read_column(file, ci)?)
+                field::scalar(self.column_values(file, ci)?)
             }
             StructRole::Collection => {
                 let index_ci = self.index_column(&columns).ok_or_else(|| {
@@ -446,7 +469,7 @@ impl NtupleReader {
                         Error::Format(format!("streamer field {:?} has no byte column", fld.name))
                     })?;
                 let offsets = self.read_offsets(file, index_ci)?;
-                let bytes = match self.read_column(file, byte_ci)? {
+                let bytes = match self.column_values(file, byte_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
                         return Err(Error::Format(format!(
@@ -470,7 +493,7 @@ impl NtupleReader {
                 let switch_ci = *columns.first().ok_or_else(|| {
                     Error::Format(format!("variant field {:?} has no switch column", fld.name))
                 })?;
-                let (tags, indices) = match self.read_column(file, switch_ci)? {
+                let (tags, indices) = match self.column_values(file, switch_ci)? {
                     ColumnValues::Switch(v) => (
                         v.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
                         v.iter().map(|&(i, _)| i).collect::<Vec<_>>(),
@@ -639,7 +662,48 @@ fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) ->
     decompress_payload(&win, usize::saturating_from(len), what)
 }
 
-impl std::fmt::Debug for NtupleReader {
+/// One field read, set up by [`NtupleReader::field`]: the entries to read,
+/// then the form to read them in.
+#[must_use = "a FieldRead does nothing until read or values is called"]
+pub struct FieldRead<'a, 'f> {
+    ntuple: &'a NtupleReader<'f>,
+    name: &'a str,
+    range: Option<Range<u64>>,
+}
+
+impl<'a, 'f> FieldRead<'a, 'f> {
+    /// Read only entries `range` (clamped to the entry count: a window past
+    /// the end yields fewer entries, not an error). Only the clusters the window
+    /// touches are fetched and decompressed.
+    pub fn range(mut self, range: Range<u64>) -> Self {
+        self.range = Some(range);
+        self
+    }
+
+    /// The values as `Vec<T>`: `f64` for a `double` field, `Vec<f32>` for a
+    /// `std::vector<float>`, `String` for a `std::string`, `Option<T>` for a
+    /// `std::optional<T>`. Asking for another type than the field holds is an
+    /// [`Error::TypeMismatch`]; nothing is converted.
+    pub fn read<T: FromField>(self) -> Result<Vec<T>> {
+        let name = self.name;
+        T::from_values(name, self.values()?)
+    }
+
+    /// The values as the [`FieldValues`] enum, for code that does not know the
+    /// field's type in advance.
+    pub fn values(self) -> Result<FieldValues> {
+        match self.range {
+            None => self.ntuple.read_top(self.ntuple.file, self.name),
+            Some(r) => self.ntuple.read_range(self.name, r.start, r.end),
+        }
+    }
+
+    pub(crate) fn name(&self) -> &'a str {
+        self.name
+    }
+}
+
+impl std::fmt::Debug for NtupleReader<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NtupleReader")
             .field("clusters", &self.summaries.len())
