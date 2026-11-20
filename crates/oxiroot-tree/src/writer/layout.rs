@@ -66,7 +66,7 @@ impl Branch {
             VecF64(r) => r.len(),
             Str(v) => v.len(),
             VecStr(v) => v.len(),
-            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
+            Nested { offsets, .. } => offsets.len().saturating_sub(1),
         };
         u32::saturating_from(n)
     }
@@ -75,22 +75,7 @@ impl Branch {
     /// branch keeps the element width/sign but its leaf class is `TLeafElement`.
     pub(super) fn leaf(&self) -> LeafInfo {
         use BranchValues::*;
-        let (mut class, code, size, unsigned) = match &self.values {
-            Bool(_) | VecBool(_) => ("TLeafO", 'O', 1, false),
-            I8(_) | VecI8(_) => ("TLeafB", 'B', 1, false),
-            U8(_) | VecU8(_) => ("TLeafB", 'b', 1, true),
-            I16(_) | VecI16(_) => ("TLeafS", 'S', 2, false),
-            U16(_) | VecU16(_) => ("TLeafS", 's', 2, true),
-            I32(_) | VecI32(_) => ("TLeafI", 'I', 4, false),
-            U32(_) | VecU32(_) => ("TLeafI", 'i', 4, true),
-            I64(_) | VecI64(_) => ("TLeafL", 'L', 8, false),
-            U64(_) | VecU64(_) => ("TLeafL", 'l', 8, true),
-            F32(_) | VecF32(_) => ("TLeafF", 'F', 4, false),
-            F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
-            // vector<string> is read-only; it never reaches the writer.
-            Str(_) | VecStr(_) => ("TLeafC", 'C', 1, false),
-            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
-        };
+        let (mut class, code, size, unsigned) = leaf_of(&self.values);
         let len_type = if matches!(self.values, Str(_)) || self.stl_vector() {
             0
         } else {
@@ -107,7 +92,30 @@ impl Branch {
             unsigned,
         }
     }
+}
 
+/// The `TLeaf` class, type code, element width and signedness of `values`'
+/// element type (a nested collection's innermost type).
+fn leaf_of(values: &BranchValues) -> (&'static str, char, i32, bool) {
+    use BranchValues::*;
+    match values {
+        Bool(_) | VecBool(_) => ("TLeafO", 'O', 1, false),
+        I8(_) | VecI8(_) => ("TLeafB", 'B', 1, false),
+        U8(_) | VecU8(_) => ("TLeafB", 'b', 1, true),
+        I16(_) | VecI16(_) => ("TLeafS", 'S', 2, false),
+        U16(_) | VecU16(_) => ("TLeafS", 's', 2, true),
+        I32(_) | VecI32(_) => ("TLeafI", 'I', 4, false),
+        U32(_) | VecU32(_) => ("TLeafI", 'i', 4, true),
+        I64(_) | VecI64(_) => ("TLeafL", 'L', 8, false),
+        U64(_) | VecU64(_) => ("TLeafL", 'l', 8, true),
+        F32(_) | VecF32(_) => ("TLeafF", 'F', 4, false),
+        F64(_) | VecF64(_) => ("TLeafD", 'D', 8, false),
+        Str(_) | VecStr(_) => ("TLeafC", 'C', 1, false),
+        Nested { items, .. } => leaf_of(items),
+    }
+}
+
+impl Branch {
     /// The largest value of an integer scalar branch — the `fMaximum` of a count
     /// leaf, which ROOT uses to size the read buffer of the array it counts —
     /// or, for a string branch, the longest length + 1. 0 for anything else.
@@ -271,6 +279,22 @@ impl Branch {
             VecU64(_) => ("vector<ULong64_t>", 3999597035),
             VecF32(_) => ("vector<float>", 1727547419),
             VecF64(_) => ("vector<double>", 3894200540),
+            VecBool(_) => ("vector<bool>", 3155025381),
+            VecStr(_) => ("vector<string>", 2038122176),
+            Nested { items, .. } => match **items {
+                VecBool(_) => ("vector<vector<bool> >", 723642738),
+                VecI8(_) => ("vector<vector<char> >", 723640794),
+                VecU8(_) => ("vector<vector<unsigned char> >", 1634559415),
+                VecI16(_) => ("vector<vector<short> >", 2170962476),
+                VecU16(_) => ("vector<vector<unsigned short> >", 608751043),
+                VecI32(_) => ("vector<vector<int> >", 302296425),
+                VecU32(_) => ("vector<vector<unsigned int> >", 4220325614),
+                VecI64(_) => ("vector<vector<Long64_t> >", 2589173317),
+                VecU64(_) => ("vector<vector<ULong64_t> >", 4042251808),
+                VecF32(_) => ("vector<vector<float> >", 2219069760),
+                VecF64(_) => ("vector<vector<double> >", 3084746367),
+                _ => ("vector<vector<float> >", 0),
+            },
             _ => ("vector<float>", 0),
         }
     }
@@ -298,6 +322,25 @@ impl Branch {
             }};
         }
         match &self.values {
+            VecBool(r) => emit!(r, 1, |x: &bool| [u8::from(*x)]),
+            VecStr(rows) => {
+                for row in rows {
+                    let start = data.len();
+                    data.extend_from_slice(&[0; 4]); // byte count, patched below
+                    data.extend_from_slice(&0x000a_u16.to_be_bytes());
+                    data.extend_from_slice(&u32::saturating_from(row.len()).to_be_bytes());
+                    for s in row {
+                        put_string(&mut data, s);
+                    }
+                    let bc = u32::saturating_from(data.len() - start - 4) | 0x4000_0000;
+                    data[start..start + 4].copy_from_slice(&bc.to_be_bytes());
+                    offsets.push(u32::saturating_from(data.len()));
+                }
+            }
+            Nested {
+                offsets: outer,
+                items,
+            } => nested_content(outer, items, &mut data, &mut offsets),
             VecI8(r) => emit!(r, 1, |x: &i8| [(*x).cast_unsigned()]),
             VecU8(r) => emit!(r, 1, |x: &u8| [*x]),
             VecI16(r) => emit!(r, 2, |x: &i16| x.to_be_bytes()),
@@ -368,21 +411,14 @@ impl Branch {
                 let mut data = Vec::new();
                 let mut offsets = vec![0u32];
                 for s in strings {
-                    let b = s.as_bytes();
-                    if b.len() < 255 {
-                        data.push(u8::saturating_from(b.len()));
-                    } else {
-                        data.push(255);
-                        data.extend_from_slice(&u32::saturating_from(b.len()).to_be_bytes());
-                    }
-                    data.extend_from_slice(b);
+                    put_string(&mut data, s);
                     offsets.push(u32::saturating_from(data.len()));
                 }
                 return (data, Some(offsets));
             }
-            // vector<string> is read-only; the writer never receives one.
-            VecStr(_) => unreachable!("vector<string> branches cannot be written"),
-            Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
+            // A vector<string> or vector<vector<T>> branch is always a
+            // TBranchElement, handled above.
+            VecStr(_) | Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
         };
         // A jagged numeric branch is variable-length too: emit the byte offset
         // after each row (element count × element width).
@@ -398,5 +434,59 @@ impl Branch {
             return (data, Some(offsets));
         }
         (data, None)
+    }
+}
+
+/// Append a ROOT string: a length byte (or `255` then a 4-byte length) and the
+/// bytes.
+fn put_string(data: &mut Vec<u8>, s: &str) {
+    let b = s.as_bytes();
+    if b.len() < 255 {
+        data.push(u8::saturating_from(b.len()));
+    } else {
+        data.push(255);
+        data.extend_from_slice(&u32::saturating_from(b.len()).to_be_bytes());
+    }
+    data.extend_from_slice(b);
+}
+
+/// Entry data for a `std::vector<std::vector<T>>` branch: per entry the
+/// collection header with the outer count, then per inner vector its count
+/// and big-endian elements.
+fn nested_content(outer: &[u64], items: &BranchValues, data: &mut Vec<u8>, offsets: &mut Vec<u32>) {
+    use BranchValues::*;
+    macro_rules! rows {
+        ($r:expr, $conv:expr) => {{
+            for w in outer.windows(2) {
+                let start = data.len();
+                data.extend_from_slice(&[0; 4]); // byte count, patched below
+                data.extend_from_slice(&0x000a_u16.to_be_bytes());
+                let rows = &$r[usize::saturating_from(w[0])..usize::saturating_from(w[1])];
+                data.extend_from_slice(&u32::saturating_from(rows.len()).to_be_bytes());
+                for row in rows {
+                    data.extend_from_slice(&u32::saturating_from(row.len()).to_be_bytes());
+                    for x in row {
+                        data.extend_from_slice(&$conv(x));
+                    }
+                }
+                let bc = u32::saturating_from(data.len() - start - 4) | 0x4000_0000;
+                data[start..start + 4].copy_from_slice(&bc.to_be_bytes());
+                offsets.push(u32::saturating_from(data.len()));
+            }
+        }};
+    }
+    match items {
+        VecBool(r) => rows!(r, |x: &bool| [u8::from(*x)]),
+        VecI8(r) => rows!(r, |x: &i8| [(*x).cast_unsigned()]),
+        VecU8(r) => rows!(r, |x: &u8| [*x]),
+        VecI16(r) => rows!(r, |x: &i16| x.to_be_bytes()),
+        VecU16(r) => rows!(r, |x: &u16| x.to_be_bytes()),
+        VecI32(r) => rows!(r, |x: &i32| x.to_be_bytes()),
+        VecU32(r) => rows!(r, |x: &u32| x.to_be_bytes()),
+        VecI64(r) => rows!(r, |x: &i64| x.to_be_bytes()),
+        VecU64(r) => rows!(r, |x: &u64| x.to_be_bytes()),
+        VecF32(r) => rows!(r, |x: &f32| x.to_be_bytes()),
+        VecF64(r) => rows!(r, |x: &f64| x.to_be_bytes()),
+        _ => {}
     }
 }

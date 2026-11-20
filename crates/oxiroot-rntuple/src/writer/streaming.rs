@@ -195,9 +195,6 @@ impl<W: Write + Seek> NtupleWriter<W> {
                 return Ok(None);
             }
             let (field_plans, cols, n_entries) = lower(fields)?;
-            if n_entries == 0 {
-                return Ok(None);
-            }
             let compress = |c: &ColumnPlan| compress_if_smaller(&c.page, compression).into_owned();
             #[cfg(feature = "rayon")]
             let disks: Vec<Vec<u8>> = {
@@ -223,7 +220,11 @@ impl<W: Write + Seek> NtupleWriter<W> {
             batches.iter().map(prepare).collect::<Result<_>>()?;
         for (p, fields) in prepared.into_iter().zip(batches) {
             if let Some(p) = p {
-                self.place(p, fields)?;
+                // An empty batch writes no cluster, but the first one still
+                // fixes the schema, so an RNTuple with no entries can be written.
+                if p.n_entries > 0 || self.header.is_none() {
+                    self.place(p, fields)?;
+                }
             }
         }
         Ok(())
@@ -264,6 +265,9 @@ impl<W: Write + Seek> NtupleWriter<W> {
             }
         }
 
+        if n_entries == 0 {
+            return Ok(());
+        }
         let first_entry = self.total_entries;
         let mut recs = Vec::with_capacity(cols.len());
         for (i, (c, disk)) in cols.iter().zip(&disks).enumerate() {

@@ -7,6 +7,24 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **More shapes in a `Batch`**:
+  - `Column::Struct` (with `Column::member`) holds RNTuple records and user
+    classes: read from and written to an RNTuple, with a
+    `std::vector<Struct>` as a list of one. Members `_0`, `_1`, … write a
+    `std::pair` / `std::tuple`; named members a user class named after the
+    column, which ROOT 6.40 reads by type emulation and uproot as is. A `TTree` writer refuses it by
+    name; a tree's split members still read as `hits.x` columns.
+  - `std::vector<bool>`, `std::vector<std::string>` and
+    `std::vector<std::vector<T>>` columns now write to a `TTree` too
+    (`Branch::vector_bool`, `vector_string`, `vector_vector_*`), with ROOT's
+    class checksums. ROOT 6.40 and uproot read them back.
+  - `std::vector<u32>` / `<u64>` columns write to an RNTuple.
+  - A `DatasetWriter` given only empty batches writes a dataset with their
+    columns and no entries, and the `TreeWriter` / `NtupleWriter` accept an
+    empty first batch to fix the schema.
+
 ### Changed
 
 - **Faster dataset writes and reads.** Profiling showed zstd was 80–90 % of

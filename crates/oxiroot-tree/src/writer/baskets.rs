@@ -6,7 +6,6 @@ use std::io::{Seek, Write};
 use oxiroot_io_core::raw::{ContainerWriter, DATIME, DirId, Key, compress_if_smaller};
 use oxiroot_io_core::{Result, WBuffer};
 
-use super::NESTED_NOT_WRITABLE;
 use super::branch::{Branch, BranchKind, vec_row_lengths};
 use super::layout::Kind;
 use crate::value::BranchValues;
@@ -170,7 +169,20 @@ pub(super) fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> Branc
         VecF64(v) => sl!(VecF64, v),
         Str(v) => sl!(Str, v),
         VecStr(v) => sl!(VecStr, v),
-        Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
+        Nested { offsets, items } => {
+            let n = offsets.len().saturating_sub(1);
+            let end = (start + len).min(n);
+            let s = start.min(end);
+            let (lo, hi) = (offsets[s], offsets[end]);
+            Nested {
+                offsets: offsets[s..=end].iter().map(|&o| o - lo).collect(),
+                items: Box::new(chunk_values(
+                    items,
+                    usize::saturating_from(lo),
+                    usize::saturating_from(hi - lo),
+                )),
+            }
+        }
     }
 }
 

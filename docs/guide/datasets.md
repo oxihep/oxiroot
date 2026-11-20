@@ -46,10 +46,18 @@ Build a batch with `column(name, data)`, where `data` is a `Vec` of one of:
 | `String`, `&str` | `TLeafC` string | `std::string` |
 | `Vec<T>` | `std::vector<T>` (reads `x[n]` too) | `std::vector<T>` |
 | `[T; N]` | fixed array `x[N]` | `std::array<T, N>` |
-| `Vec<Vec<T>>` | read only | `std::vector<std::vector<T>>` |
+| `Vec<Vec<T>>`, `Vec<String>`, `Vec<bool>` | `std::vector<…>` | `std::vector<…>` |
 | `Option<T>` | — | `std::optional<T>` |
+| struct (`Column::Struct`) | read as member columns (`hits.x`) | record / user class |
 
-Or give a list flat with `list(name, offsets, values)`. A batch checks every
+Or give a list flat with `list(name, offsets, values)`, or any shape as a
+`Column`, structs included: `Column::Struct(vec![("x", Column::F32(…)), …])`,
+and a `std::vector<Struct>` is a `Column::List` of one. A struct column's
+members are reached with `Column::member(name)`. In an RNTuple, a struct whose
+members are `_0`, `_1`, … is a `std::pair` / `std::tuple`; one with named
+members is a user class named after the column (`hits`). ROOT reads it with a
+dictionary of that class, or without one through type emulation
+(`RCreateModelOptions::SetEmulateUnknownTypes`); uproot reads it as is. A batch checks every
 column when it is added: same entry count, offsets that partition their
 values, UTF-8 strings.
 
@@ -102,8 +110,8 @@ out.finish()?;
 Remote files work the same: over `root://` or HTTP a batch's baskets are
 fetched together (see [Reading and writing](reading-writing.md)).
 
-RNTuple records and variants have no batch column; read them with
-`as_ntuple()`. `as_tree()` likewise reaches the `TTree` reader underneath for
+RNTuple records read as `Column::Struct`; variants have no batch column, so
+read them with `as_ntuple()`. `as_tree()` likewise reaches the `TTree` reader underneath for
 friends, indices and split objects.
 
 ## Writing
@@ -127,7 +135,9 @@ parallel. In the `write` benchmark (1M entries, two scalars and a
 `.parallel(true)` are 2–4× faster.
 
 The first batch fixes the schema; every later batch must have the same
-columns and types. A column the format cannot hold, such as `Option<T>` in a
+columns and types. A writer given only empty batches writes a dataset with
+their columns and no entries. (An empty `TTree` cannot keep a fixed array's
+width, which it takes from the first row.) A column the format cannot hold, such as `Option<T>` in a
 `TTree`, is refused on that first write, before anything reaches the file.
 
 To put a dataset next to histograms or other datasets in one file, give a

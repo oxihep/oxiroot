@@ -67,6 +67,10 @@ pub enum Column {
         /// The present values, densely packed.
         values: Box<Column>,
     },
+    /// A record per entry: named member columns, each with one value per
+    /// entry (a struct of arrays). An RNTuple record or user class; a
+    /// `std::vector<Struct>` is a [`List`](Self::List) of these.
+    Struct(Vec<(String, Column)>),
 }
 
 /// Apply `$body` to the vector inside any scalar variant (bound as `$v`), and
@@ -115,6 +119,16 @@ impl Column {
             }
             Column::Array { len, values } => values.len().checked_div(*len).unwrap_or(0),
             Column::Optional { valid, .. } => valid.len(),
+            Column::Struct(members) => members.first().map_or(0, |(_, c)| c.len()),
+        }
+    }
+
+    /// The member `name` of a struct column, if this is one and it has it.
+    #[must_use]
+    pub fn member(&self, name: &str) -> Option<&Column> {
+        match self {
+            Column::Struct(members) => members.iter().find(|(n, _)| n == name).map(|(_, c)| c),
+            _ => None,
         }
     }
 
@@ -144,6 +158,13 @@ impl Column {
             Column::List { values, .. } => format!("Vec<{}>", values.type_name()),
             Column::Array { len, values } => format!("[{}; {len}]", values.type_name()),
             Column::Optional { values, .. } => format!("Option<{}>", values.type_name()),
+            Column::Struct(members) => {
+                let inner: Vec<String> = members
+                    .iter()
+                    .map(|(n, c)| format!("{n}: {}", c.type_name()))
+                    .collect();
+                format!("{{{}}}", inner.join(", "))
+            }
         }
     }
 
@@ -167,6 +188,7 @@ impl Column {
             Column::List { offsets, values } => 8 * offsets.len() + values.byte_size(),
             Column::Array { values, .. } => values.byte_size(),
             Column::Optional { valid, values } => valid.len() + values.byte_size(),
+            Column::Struct(members) => members.iter().map(|(_, c)| c.byte_size()).sum(),
         }
     }
 
@@ -203,7 +225,9 @@ impl Column {
                 values.validate(name)
             }
             Column::Array { len, values } => {
-                if *len == 0 || values.len() % len != 0 {
+                // A zero width only fits no values (an empty TTree cannot
+                // record the width of a fixed array).
+                if (*len == 0 && !values.is_empty()) || (*len > 0 && values.len() % len != 0) {
                     return bad(format!(
                         "{} values do not make whole arrays of {len}",
                         values.len()
@@ -220,6 +244,16 @@ impl Column {
                     ));
                 }
                 values.validate(name)
+            }
+            Column::Struct(members) => {
+                let n = self.len();
+                for (m, c) in members {
+                    if c.len() != n {
+                        return bad(format!("member {m:?} has {} entries, not {n}", c.len()));
+                    }
+                    c.validate(&format!("{name}.{m}"))?;
+                }
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -257,6 +291,9 @@ impl Column {
                     values: Box::new(values.slice(lo, hi)),
                 }
             }
+            Column::Struct(members) => Column::Struct(
+                members.iter().map(|(n, c)| (n.clone(), c.slice(start, end))).collect(),
+            ),
             _ => unreachable!("scalars are handled above"),
         })
     }
@@ -301,6 +338,9 @@ impl Column {
                 let child: Vec<bool> = valid.iter().zip(mask).filter(|&(&v, _)| v).map(|(_, &m)| m).collect();
                 Column::Optional { valid: keep(valid, mask), values: Box::new(values.filter(&child)) }
             }
+            Column::Struct(members) => Column::Struct(
+                members.iter().map(|(n, c)| (n.clone(), c.filter(mask))).collect(),
+            ),
             _ => unreachable!("scalars are handled above"),
         })
     }
@@ -361,6 +401,14 @@ impl Column {
             ) => {
                 values.append(*v2)?;
                 valid.extend(m2);
+            }
+            (Column::Struct(members), Column::Struct(more))
+                if members.len() == more.len()
+                    && members.iter().zip(&more).all(|((a, _), (b, _))| a == b) =>
+            {
+                for ((_, c), (_, m)) in members.iter_mut().zip(more) {
+                    c.append(m)?;
+                }
             }
             (_, other) => return Err(other),
         }
