@@ -404,6 +404,7 @@ pub(super) fn read_branch(
             elem_header: 0,
             leaflist: None,
             dims: parse_dims(&leaf.title),
+            variable: has_count_dim(&leaf.title),
             nested_elem: None,
             object_member: None,
         }]);
@@ -430,6 +431,7 @@ pub(super) fn read_branch(
             elem_header: 0,
             leaflist: Some((leaf.offset, stride)),
             dims: parse_dims(&leaf.title),
+            variable: false,
             nested_elem: None,
             object_member: None,
         })
@@ -527,6 +529,7 @@ fn read_branch_element(
         elem_header,
         leaflist: None,
         dims: Vec::new(),
+        variable: member || elem_header > 0,
         nested_elem,
         object_member: None,
     }])
@@ -593,6 +596,7 @@ fn read_branch_object(
             elem_header: 0,
             leaflist: None,
             dims: Vec::new(),
+            variable: false,
             nested_elem: None,
             object_member: Some(ObjectMember {
                 member: el.name.clone(),
@@ -651,6 +655,21 @@ fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
         len,
         offset: usize::saturating_from(offset.max(0)),
     }))
+}
+
+/// Whether a leaf title has a dimension given by a count leaf (`x[n]`), not a
+/// number: the entries then hold a variable number of elements.
+fn has_count_dim(title: &str) -> bool {
+    let mut rest = title;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else { break };
+        if after[..close].parse::<usize>().is_err() {
+            return true;
+        }
+        rest = &after[close + 1..];
+    }
+    false
 }
 
 /// Parse the per-entry array shape from a leaf title: `x[2][3]` → `[2, 3]`,

@@ -203,6 +203,9 @@ struct Branch {
     /// `[N, M]` for a multidimensional `x[N][M]`, empty for a scalar. The data is
     /// stored row-major flat (`fLen` = the product); this records the split.
     dims: Vec<usize>,
+    /// Whether an entry holds a variable number of elements: a C-style
+    /// `x[n]` leaf, a `std::vector<T>`, or a split-struct member.
+    variable: bool,
     /// Set for a `std::vector<std::vector<T>>` branch: `T`'s element type. The
     /// entry data is decoded as a doubly-nested collection ([`BranchValues::Nested`])
     /// rather than a flat jagged array.
@@ -440,6 +443,27 @@ impl<'f> TreeReader<'f> {
         self.find_branch(name).map(|b| b.title.as_str())
     }
 
+    /// How branch `name`'s entries are shaped — one value, a fixed array, a
+    /// variable-length list, or a list of lists — or `None` if there is no
+    /// such branch.
+    pub fn branch_layout(&self, name: &str) -> Option<BranchLayout> {
+        self.find_branch(name).map(|b| {
+            if b.nested_elem.is_some() {
+                BranchLayout::ListOfLists
+            } else if b.variable {
+                BranchLayout::List
+            } else if b.leaf_type == LeafType::Str {
+                // A `TLeafC`'s fLen is its longest string, not an array length.
+                BranchLayout::Scalar
+            } else if b.leaf_len > 1 || !b.dims.is_empty() {
+                let n = b.dims.iter().product::<usize>().max(usize::saturating_from(b.leaf_len));
+                BranchLayout::Array(n)
+            } else {
+                BranchLayout::Scalar
+            }
+        })
+    }
+
     /// The per-entry fixed array shape of branch `name`: `[N]` for `x[N]`,
     /// `[N, M]` for a multidimensional `x[N][M]`, and `[]` for a scalar or a
     /// variable-length branch. The values are stored row-major flat (each entry's
@@ -629,6 +653,24 @@ impl<'f> TreeReader<'f> {
             values: decode_scalar(branch.leaf_type, &bytes)?,
         })
     }
+}
+
+/// How a branch's entries are shaped, from its metadata alone: what
+/// [`TreeReader::branch_layout`] reports. The element type is
+/// [`TreeReader::branch_type`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BranchLayout {
+    /// One value per entry (a string branch holds one string per entry).
+    Scalar,
+    /// The same number of values in every entry: a fixed array `x[N]` (a
+    /// multidimensional `x[N][M]` counts `N × M`).
+    Array(usize),
+    /// A variable number of values per entry: a C-style `x[n]`, a
+    /// `std::vector<T>`, or a member of a split `std::vector<Struct>`.
+    List,
+    /// A `std::vector<std::vector<T>>`.
+    ListOfLists,
 }
 
 /// One branch read, set up by [`TreeReader::branch`]: the entries to read and

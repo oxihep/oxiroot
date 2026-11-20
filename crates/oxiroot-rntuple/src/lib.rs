@@ -29,7 +29,7 @@ pub use oxiroot_io_core::Compression;
 pub use anchor::{ANCHOR_CLASS, RNTupleAnchor};
 pub use column::ColumnType;
 pub use envelope::Locator;
-pub use field::{FieldValues, FromField};
+pub use field::{FieldValues, FromField, Jagged};
 pub use footer::{ClusterGroup, Footer};
 pub use header::{ColumnDescriptor, FieldDescriptor, Header, StructRole};
 pub use merge::append_ntuples;

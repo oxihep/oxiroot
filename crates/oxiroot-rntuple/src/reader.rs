@@ -9,7 +9,7 @@ use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
 use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
 use std::ops::Range;
 
-use crate::field::{self, FieldValues, FromField};
+use crate::field::{self, FieldValues, FromField, Jagged};
 use crate::footer::Footer;
 use crate::header::{Header, StructRole};
 use crate::page::{ColumnValues, read_column};
@@ -306,6 +306,107 @@ impl<'f> NtupleReader<'f> {
             )));
         }
         Ok(values)
+    }
+
+    /// The top-level field `name` if it is a `std::vector` of a scalar type:
+    /// its offsets and its element column, decoded straight from the two
+    /// columns with no per-entry allocation. `Ok(None)` for any other shape.
+    fn read_flat_top(&self, file: &FileReader, name: &str) -> Result<Option<Jagged>> {
+        let Some(idx) = self.top_field(name) else {
+            return Err(Error::NotFound {
+                what: "top-level field",
+                name: name.to_string(),
+            });
+        };
+        let fld = &self.header.fields[idx];
+        if fld.struct_role != StructRole::Collection
+            || fld.array_size.is_some()
+            || is_late_field(&fld.type_name)
+        {
+            return Ok(None);
+        }
+        let children = self.child_fields(idx);
+        let [child] = children[..] else {
+            return Ok(None);
+        };
+        let cfld = &self.header.fields[child];
+        let child_cols = self.field_columns(child);
+        if cfld.struct_role != StructRole::Leaf
+            || cfld.type_name == "std::string"
+            || cfld.array_size.is_some()
+            || child_cols.len() != 1
+        {
+            return Ok(None);
+        }
+        let Some(index_ci) = self.index_column(&self.field_columns(idx)) else {
+            return Ok(None);
+        };
+        let mut offsets = self.read_offsets(file, index_ci)?;
+        offsets.insert(0, 0);
+        let values = field::scalar(self.column_values(file, child_cols[0])?)?;
+        let monotonic = offsets.windows(2).all(|w| w[0] <= w[1]);
+        if !monotonic || offsets.last().copied() != Some(values.len() as u64) {
+            return Err(Error::Format(format!(
+                "field {name:?}: collection offsets do not partition its {} elements",
+                values.len()
+            )));
+        }
+        if offsets.len() as u64 != self.entries() + 1 {
+            return Err(Error::Format(format!(
+                "field {name:?}: decoded {} entries, expected {}",
+                offsets.len() - 1,
+                self.entries()
+            )));
+        }
+        Ok(Some(Jagged { offsets, values }))
+    }
+
+    fn top_field(&self, name: &str) -> Option<usize> {
+        self.header
+            .fields
+            .iter()
+            .enumerate()
+            .position(|(i, f)| f.name == name && f.parent_field_id as usize == i)
+    }
+
+    /// Entries `[start, stop)` (clamped) of `name` in flat form, reading only
+    /// the clusters the window overlaps.
+    fn read_flat_range(&self, name: &str, start: u64, stop: u64) -> Result<Option<Jagged>> {
+        let stop = stop.min(self.entries());
+        let start = start.min(stop);
+        if start == 0 && stop == self.entries() {
+            return self.read_flat_top(self.file, name);
+        }
+        let deferred = self
+            .header
+            .columns
+            .iter()
+            .any(|c| c.first_element_index.is_some_and(|f| f > 0));
+        let first = self
+            .summaries
+            .iter()
+            .position(|s| s.first_entry + s.num_entries > start);
+        let last = self.summaries.iter().rposition(|s| s.first_entry < stop);
+        let (jagged, from) = match (deferred, first, last) {
+            (false, Some(k0), Some(k1)) if k0 <= k1 => (
+                self.cluster_window(k0, k1 + 1).read_flat_top(self.file, name)?,
+                self.summaries[k0].first_entry,
+            ),
+            _ => (self.read_flat_top(self.file, name)?, 0),
+        };
+        let Some(Jagged { offsets, mut values }) = jagged else {
+            return Ok(None);
+        };
+        let a = usize::saturating_from(start - from);
+        let b = usize::saturating_from(stop - from).min(offsets.len() - 1);
+        let lo = offsets[a];
+        let window: Vec<u64> = offsets[a..=b].iter().map(|&o| o - lo).collect();
+        values.skip(usize::saturating_from(lo));
+        values.truncate(usize::saturating_from(offsets[b] - lo));
+        Ok(Some(Jagged {
+            offsets: window,
+            values,
+        }))
     }
 
     /// Entries `[start, stop)` (clamped) of field `name`, reading only the
@@ -696,6 +797,22 @@ impl<'a, 'f> FieldRead<'a, 'f> {
             None => self.ntuple.read_top(self.ntuple.file, self.name),
             Some(r) => self.ntuple.read_range(self.name, r.start, r.end),
         }
+    }
+
+    /// A `std::vector<T>` field flat: one buffer of every element plus
+    /// per-entry offsets, decoded straight from the field's two columns with
+    /// no allocation per entry. Only for `std::vector` of a scalar type; other
+    /// fields are an [`Error::Unsupported`].
+    pub fn flat(self) -> Result<Jagged> {
+        let r = self.range.unwrap_or(0..u64::MAX);
+        self.ntuple
+            .read_flat_range(self.name, r.start, r.end)?
+            .ok_or_else(|| {
+                Error::Unsupported(format!(
+                    "field {:?} is not a std::vector of a scalar type; use values()",
+                    self.name
+                ))
+            })
     }
 
     pub(crate) fn name(&self) -> &'a str {

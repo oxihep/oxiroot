@@ -21,6 +21,6 @@ mod writer;
 pub use chain::{ChainBranchRead, ChainReader};
 pub use entrylist::EntryList;
 pub use merge::append_trees;
-pub use reader::{BranchRead, Friend, TreeIndex, TreeReader};
+pub use reader::{BranchLayout, BranchRead, Friend, TreeIndex, TreeReader};
 pub use value::{BranchValues, FromBranch, Jagged, LeafType};
 pub use writer::{Branch, SplitMember, TreeWriter, raw};

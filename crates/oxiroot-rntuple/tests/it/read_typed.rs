@@ -85,3 +85,26 @@ fn a_read_field_writes_back_the_same_way() {
     assert_eq!(o.field("v").read::<Vec<i32>>().unwrap(), [vec![], vec![2, 3], vec![4]]);
     assert_eq!(o.field("s").read::<String>().unwrap(), ["b", "c", "d"]);
 }
+
+#[test]
+fn flat_matches_values_on_every_window() {
+    let f = file();
+    let n = NtupleReader::open(&f, "ntpl").unwrap();
+    let full = n.field("v").read::<Vec<i32>>().unwrap();
+    for a in 0..=6u64 {
+        for b in a..=7u64 {
+            let j = n.field("v").range(a..b).flat().unwrap();
+            let FieldValues::I32(vals) = &j.values else {
+                panic!("{:?}", j.values)
+            };
+            let rows: Vec<Vec<i32>> = j
+                .offsets
+                .windows(2)
+                .map(|w| vals[w[0] as usize..w[1] as usize].to_vec())
+                .collect();
+            assert_eq!(rows, full[a as usize..b.min(6) as usize], "[{a}, {b})");
+        }
+    }
+    assert!(n.field("x").flat().is_err(), "a scalar field has no flat form");
+    assert!(n.field("s").flat().is_err(), "nor does a string");
+}

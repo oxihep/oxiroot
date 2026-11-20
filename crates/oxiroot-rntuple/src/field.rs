@@ -587,6 +587,20 @@ fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
     Ok(out)
 }
 
+/// A `std::vector` field viewed as cumulative `offsets` over one flat
+/// [`FieldValues`] (a scalar variant), instead of `Vec<Vec<T>>`: what
+/// [`FieldRead::flat`](crate::FieldRead::flat) returns.
+///
+/// `offsets` has `entries + 1` values with `offsets[0] == 0`; entry `i`'s
+/// elements are `values[offsets[i] .. offsets[i + 1]]`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Jagged {
+    /// Cumulative element boundaries, one per entry plus a leading `0`.
+    pub offsets: Vec<u64>,
+    /// The flattened element values (a scalar [`FieldValues`] variant).
+    pub values: FieldValues,
+}
+
 /// A Rust type a field can be read as with
 /// [`FieldRead::read`](crate::FieldRead::read): the scalar types, `String`,
 /// `Vec<T>` for `std::vector<T>`, `Vec<Vec<T>>` for

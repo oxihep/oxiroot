@@ -94,3 +94,16 @@ fn a_read_branch_writes_back_the_same_way() {
     assert_eq!(o.branch_title("w"), t.branch_title("w"), "still a jagged x[n] leaf");
     assert_eq!(o.branch("tag").read::<String>().unwrap(), ["b", "c"]);
 }
+
+#[test]
+fn reports_branch_layouts() {
+    use oxiroot_tree::BranchLayout;
+    let f = file("layout");
+    let t = TreeReader::open(&f, "T").unwrap();
+    assert_eq!(t.branch_layout("pt"), Some(BranchLayout::Scalar));
+    assert_eq!(t.branch_layout("idx"), Some(BranchLayout::List));
+    assert_eq!(t.branch_layout("w"), Some(BranchLayout::List));
+    assert_eq!(t.branch_layout("nw"), Some(BranchLayout::Scalar), "the count branch");
+    assert_eq!(t.branch_layout("tag"), Some(BranchLayout::Scalar));
+    assert_eq!(t.branch_layout("nope"), None);
+}
