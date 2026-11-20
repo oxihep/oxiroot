@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use oxiroot in your work, please cite it as below."
+title: "oxiroot: pure-Rust IO for the CERN ROOT file format"
+type: software
+authors:
+  - family-names: Ouillon
+    given-names: Mathieu
+abstract: >-
+  oxiroot reads and writes CERN ROOT files in pure Rust, with no C++ or Python
+  dependency: TTree and RNTuple datasets, histograms, profiles, graphs and
+  functions, checked both ways against ROOT C++ and uproot. It is the ROOT-file
+  crate of the oxihep family of high-energy-physics crates.
+license: MIT
+repository-code: "https://github.com/oxihep/oxiroot"
+url: "https://oxihep.github.io/oxiroot/"
+keywords:
+  - high-energy physics
+  - CERN ROOT
+  - RNTuple
+  - TTree
+  - Rust
+version: 0.8.0
+date-released: "2026-11-20"

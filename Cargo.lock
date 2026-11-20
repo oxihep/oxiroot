@@ -1993,8 +1993,6 @@ dependencies = [
  "oxiroot-io-core",
  "oxiroot-linalg",
  "oxistats",
- "rayon",
- "thread_local",
 ]
 
 [[package]]

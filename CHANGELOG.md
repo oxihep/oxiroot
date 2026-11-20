@@ -31,6 +31,23 @@ change the API.
   parallel (example `read_timing`). Results and analysis on the
   [Performance](https://oxihep.github.io/oxiroot/reference/performance/#against-uproot)
   page.
+- **Coverage in CI**: a PR's changed lines must be at least 80 % covered
+  (cargo-llvm-cov and diff-cover), with a comment on the PR listing the
+  uncovered ones. main's report and a README badge are published with the docs
+  site (`/coverage/html/`). The workspace is at 84 % of lines.
+- **Benchmark history**: the weekly bench run (now with the `write` bench and
+  `rayon`) is kept on the `bench-data` branch, charted under `/bench/` on the
+  docs site, and a result 1.5× slower than the last comments on the commit.
+- **CodeQL** scans the Rust, the Python scripts and the workflows on every PR
+  and weekly.
+- **Releases**: pushing a version tag publishes a GitHub Release with that
+  version's CHANGELOG section (`release.yml`; runnable by hand for older tags).
+- CI jobs for spelling (`typos`, `_typos.toml`), unused dependencies
+  (`cargo-machete`) and the workflows themselves (`actionlint`).
+- `.pre-commit-config.yaml`: `cargo fmt`, typos, a gitleaks secret scan and
+  file hygiene before a commit, clippy before a push.
+- `CITATION.cff`, so GitHub offers a citation; README badges for CI, coverage
+  and the docs.
 
 ### Changed
 
@@ -40,6 +57,12 @@ change the API.
 - Converting a batch to Polars no longer fails on an `Optional` of an
   `Optional`: as in Arrow, it folds into one level of nulls (`Some(None)` and
   `None` are both null). Arrow and Polars have no second level.
+
+### Removed
+
+- `oxiroot-hist`'s unused `rayon` and `thread_local` dependencies
+  (`ThreadedHist` and `fill_par` live in oxihist; the `rayon` feature still
+  turns on oxihist's).
 
 ### Fixed
 

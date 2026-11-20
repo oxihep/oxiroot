@@ -10,7 +10,9 @@ on:
     - cron: "17 4 * * 1"
   workflow_dispatch:
 
-# Read-only token: no job writes to the repository.
+# Read-only token by default. Two jobs ask for more: `coverage` comments on
+# its PR, and the weekly `bench` run pushes its results to the `bench-data`
+# branch.
 permissions:
   contents: read
 
@@ -122,9 +124,13 @@ jobs:
   bench:
     name: benchmarks
     # Compile-only on PRs, so the benches keep building. The weekly run
-    # measures them and keeps criterion's report as an artifact; shared
-    # runners are too noisy to gate on the numbers.
+    # measures them, keeps criterion's report as an artifact, and adds the
+    # numbers to the history on the `bench-data` branch (charted on the docs
+    # site under /bench/). A result 1.5x slower than the last run gets a
+    # comment on the commit; shared runners are too noisy to fail on it.
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -137,13 +143,17 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build the benches
-        run: cargo bench --locked -p oxiroot --bench fill --bench read --bench decompress --no-run
+        run: cargo bench --locked -p oxiroot --features rayon --bench fill --bench read --bench write --bench decompress --no-run
 
       - name: Run the benches (weekly)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         # The benches by name: a bare `cargo bench -p oxiroot` also runs the
-        # library's libtest harness, which rejects criterion's options.
-        run: cargo bench --locked -p oxiroot --bench fill --bench read --bench decompress -- --warm-up-time 1 --measurement-time 3
+        # library's libtest harness, which rejects criterion's options. The
+        # bencher format is what the tracking action reads.
+        run: |
+          set -o pipefail
+          cargo bench --locked -p oxiroot --features rayon --bench fill --bench read --bench write --bench decompress \
+            -- --warm-up-time 1 --measurement-time 3 --output-format bencher | tee bench.txt
 
       - name: Keep the criterion report
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -151,6 +161,33 @@ jobs:
         with:
           name: criterion
           path: target/criterion
+
+      - name: Create the bench-data branch on the first run
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        run: |
+          if ! git ls-remote --exit-code --heads origin bench-data >/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git switch --orphan bench-data
+            git commit --allow-empty -m "Benchmark history"
+            git push origin bench-data
+            git switch -
+          fi
+
+      - name: Add the results to the history
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: oxiroot
+          tool: cargo
+          output-file-path: bench.txt
+          gh-pages-branch: bench-data
+          benchmark-data-dir-path: bench
+          auto-push: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: false
 
   features:
     name: feature combinations
@@ -225,6 +262,106 @@ jobs:
             echo "$dups" | sort -u
             exit 1
           fi
+
+  coverage:
+    name: coverage
+    # Line coverage of the workspace's tests (cargo-llvm-cov). On a PR, the
+    # changed lines must be at least 80 % covered (diff-cover), and a comment
+    # on the PR shows which are not. The coverage of main is published with
+    # the docs site (docs.yml), which the README badge reads.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # diff-cover compares the PR with its base branch.
+          fetch-depth: 0
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Measure coverage
+        run: |
+          cargo llvm-cov --locked --workspace --all-features --no-report
+          cargo llvm-cov report --cobertura --output-path coverage.xml
+          {
+            echo '## Coverage'
+            echo '```'
+            cargo llvm-cov report --summary-only | tail -1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage of the changed lines
+        id: diff
+        run: |
+          pipx install --quiet diff-cover
+          diff-cover coverage.xml --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=80 --format markdown:diff-cover.md
+        continue-on-error: true
+
+      - name: Comment on the PR
+        # A PR from a fork gets a read-only token: no comment, the summary
+        # below still shows it.
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('diff-cover.md') != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage
+          path: diff-cover.md
+
+      - name: Fail when the changed lines are under 80 % covered
+        run: |
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ steps.diff.outcome }}" = success
+
+  unused-deps:
+    name: unused dependencies (cargo-machete)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+
+      - name: No dependency is declared but unused
+        run: cargo machete
+
+  workflows:
+    name: workflows (actionlint)
+    # Syntax, expressions and the shell in every workflow, including those
+    # that only run on main or on a tag (docs, release).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint the workflows
+        # The official image, with shellcheck for the `run:` scripts.
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
+  spelling:
+    name: spelling (typos)
+    # Configured in _typos.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: crate-ci/typos@v1
 
   supply-chain:
     name: supply chain (cargo-deny)
@@ -431,7 +568,10 @@ jobs:
         run: cargo build --locked -p oxiroot --example interop
 
       - name: Build ROOT C++ oracle
-        run: c++ $(root-config --cflags) scripts/interop_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_root
+        # root-config's flags are meant to be split into words.
+        run: |
+          # shellcheck disable=SC2046
+          c++ $(root-config --cflags) scripts/interop_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_root
 
       - name: ROOT C++ writes → Rust reads
         run: |
@@ -449,6 +589,7 @@ jobs:
         run: |
           # The std::map RNTuple case needs the map's dictionary.
           rootcling -f /tmp/rntuple_map_dict.cxx scripts/rntuple_map_LinkDef.h
+          # shellcheck disable=SC2046
           c++ $(root-config --cflags) -I scripts scripts/interop_matrix_root.cpp /tmp/rntuple_map_dict.cxx $(root-config --libs) -lROOTNTuple -o /tmp/interop_matrix_root
           cargo run --locked -q -p oxiroot --example interop_matrix -- write /tmp/matrix
           /tmp/interop_matrix_root /tmp/matrix
