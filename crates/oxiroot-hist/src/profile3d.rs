@@ -4,6 +4,7 @@
 //! the Hist3D `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
 
 use crate::axis::Axis;
@@ -80,7 +81,7 @@ impl Profile3D {
     /// vectors so it cannot disagree with them.
     #[must_use]
     pub fn ncells(&self) -> i32 {
-        self.bin_entries.len() as i32
+        i32::saturating_from(self.bin_entries.len())
     }
 
     /// Create an empty `Profile3D` with uniform x/y/z bins and no t
@@ -98,14 +99,14 @@ impl Profile3D {
         zlo: f64,
         zhi: f64,
     ) -> Profile3D {
-        let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2)) as usize;
+        let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2));
         Profile3D {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", nz, zlo, zhi),
-            ncells: ncells as i32,
+            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -132,15 +133,15 @@ impl Profile3D {
 
     /// Number of x bins (excluding flow).
     pub fn nx(&self) -> usize {
-        self.xaxis.nbins.max(0) as usize
+        usize::saturating_from(self.xaxis.nbins.max(0))
     }
     /// Number of y bins (excluding flow).
     pub fn ny(&self) -> usize {
-        self.yaxis.nbins.max(0) as usize
+        usize::saturating_from(self.yaxis.nbins.max(0))
     }
     /// Number of z bins (excluding flow).
     pub fn nz(&self) -> usize {
-        self.zaxis.nbins.max(0) as usize
+        usize::saturating_from(self.zaxis.nbins.max(0))
     }
 
     /// Turn on per-cell `Σw²` tracking (ROOT's `Profile3D::Sumw2`), seeding each

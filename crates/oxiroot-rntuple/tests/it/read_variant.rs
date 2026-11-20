@@ -1,6 +1,7 @@
 //! A `std::variant<int32_t, float>` field written by official ROOT: the Switch
 //! column (index + alternative tag) and the Variant field role.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -47,13 +48,16 @@ fn reads_variant_field() {
     let resolved: Vec<String> = tags
         .iter()
         .zip(&indices)
-        .map(
-            |(&tag, &idx)| match (&alternatives[(tag - 1) as usize].1, idx as usize) {
+        .map(|(&tag, &idx)| {
+            match (
+                &alternatives[(tag - 1) as usize].1,
+                usize::saturating_from(idx),
+            ) {
                 (FieldValues::I32(xs), i) => xs[i].to_string(),
                 (FieldValues::F32(xs), i) => xs[i].to_string(),
                 _ => unreachable!(),
-            },
-        )
+            }
+        })
         .collect();
     assert_eq!(resolved, ["0", "1.5", "20", "3.5", "40"]);
 }

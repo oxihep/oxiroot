@@ -1,6 +1,7 @@
 //! `ContainerWriter`: the TFile layout every oxiroot writer goes through. Each
 //! file is read back with `FileReader`, in both the 32-bit and 64-bit forms.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::Cursor;
 
 use oxiroot_io_core::streamer_gen::{Cls, basic, streamer_info_list};
@@ -128,8 +129,11 @@ fn blobs_land_at_the_returned_offset() {
         offsets[1], offsets[2],
         "position() is where the next write goes"
     );
-    assert_eq!(&bytes[offsets[0] as usize..][..10], b"first blob");
-    assert_eq!(&bytes[offsets[2] as usize..][..6], b"second");
+    assert_eq!(
+        &bytes[usize::saturating_from(offsets[0])..][..10],
+        b"first blob"
+    );
+    assert_eq!(&bytes[usize::saturating_from(offsets[2])..][..6], b"second");
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(f.keys().len(), 1, "blobs are not directory entries");
 }
@@ -313,7 +317,8 @@ fn append_keeps_existing_bytes_and_adds_keys() {
         let end = FileReader::from_bytes(existing.clone())
             .unwrap()
             .header()
-            .end as usize;
+            .end;
+        let end = usize::try_from(end).expect("a small test file");
         if !big {
             // Everything but the patched header and top record is untouched.
             let record = 100

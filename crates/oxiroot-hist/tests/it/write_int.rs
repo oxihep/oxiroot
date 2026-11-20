@@ -6,6 +6,11 @@ use oxiroot_hist::ToRoot;
 use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Hist3D, ReadRoot, WriteRoot};
 use oxiroot_io_core::{Compression, FileReader};
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "small whole fill counts"
+)]
 fn filled_th1() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0)
         .double()

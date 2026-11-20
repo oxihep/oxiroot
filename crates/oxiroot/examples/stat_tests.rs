@@ -70,7 +70,7 @@ fn main() -> Result<(), StatError> {
     // ranks (robust to a monotone-but-curved relationship). Both come with a
     // two-sided p-value testing H0: rho = 0.
     let (a_true, b_true) = (1.0, 2.0);
-    let x: Vec<f64> = (0..80).map(|i| i as f64 * 0.1).collect();
+    let x: Vec<f64> = (0..80).map(|i| f64::from(i) * 0.1).collect();
     let y: Vec<f64> = x
         .iter()
         .map(|&xi| a_true + b_true * xi + rng.gauss(0.0, 1.5))

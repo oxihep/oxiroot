@@ -6,6 +6,7 @@
 //! `TMath::KolmogorovProb` — supplied by the dependency-free
 //! [`oxistats`](oxistats) crate (shared with `oxifit`).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 use oxistats::{chi_square_prob, kolmogorov_prob};
 
@@ -72,7 +73,7 @@ impl Hist1D {
                 detail: "chi2_test: histograms have different binning".into(),
             });
         }
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let c1 = |i: usize| self.contents.get(i).copied().unwrap_or(0.0);
         let c2 = |i: usize| other.contents.get(i).copied().unwrap_or(0.0);
         let e1sq = |i: usize| self.bin_error(i).powi(2);
@@ -141,7 +142,7 @@ impl Hist1D {
                 }
             }
         }
-        let ndf = (nonempty - 1).max(0) as usize;
+        let ndf = usize::saturating_from((nonempty - 1).max(0));
         Ok(Chi2TestResult {
             p_value: chi_square_prob(chi2, ndf),
             chi2,
@@ -161,7 +162,7 @@ impl Hist1D {
                 detail: "kolmogorov_test: histograms have different binning".into(),
             });
         }
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = |h: &Hist1D, i: usize| h.contents.get(i).copied().unwrap_or(0.0);
         let sum1: f64 = (1..=n).map(|i| bin(self, i)).sum();
         let sum2: f64 = (1..=n).map(|i| bin(other, i)).sum();

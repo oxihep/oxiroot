@@ -12,6 +12,7 @@
 //! argument to keep the one-shot file.
 
 use oxiroot::prelude::*;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 fn main() -> oxiroot::Result<()> {
     let keep = std::env::args().nth(1);
@@ -27,7 +28,9 @@ fn main() -> oxiroot::Result<()> {
         Branch::i32("event", (0..10).collect()),
         Branch::jagged_f64(
             "hits",
-            (0..10).map(|i| vec![i as f64; (i as usize) % 3]).collect(),
+            (0..10)
+                .map(|i| vec![f64::from(i); usize::saturating_from(i) % 3])
+                .collect(),
         ),
         Branch::strings("label", (0..10).map(|i| format!("e{i}")).collect()),
     ];
@@ -67,7 +70,7 @@ fn main() -> oxiroot::Result<()> {
     let mut w = TreeWriter::create(&stream_path, "Events", Compression::Zstd(5))?;
     for batch in 0..5 {
         let base = batch * 1_000;
-        let x: Vec<f64> = (0..1_000).map(|i| (base + i) as f64).collect();
+        let x: Vec<f64> = (0..1_000).map(|i| f64::from(base + i)).collect();
         w.write_batch(&[Branch::f64("x", x)])?; // flushed to disk now
     }
     let entries = w.num_entries();

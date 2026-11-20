@@ -8,6 +8,7 @@
 //! `GetEntryNumberWithIndex` reports for this file.
 
 use oxiroot_io_core::FileReader;
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_tree::{BranchValues, TreeReader};
 
 fn fixture() -> String {
@@ -66,7 +67,7 @@ fn a_friend_joins_on_its_index_as_root_does() {
     };
     let aligned: Vec<Option<f64>> = rows
         .iter()
-        .map(|entry| entry.and_then(|e| weights.get(e as usize).copied()))
+        .map(|entry| entry.and_then(|e| weights.get(usize::saturating_from(e)).copied()))
         .collect();
     assert_eq!(
         aligned,

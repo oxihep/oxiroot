@@ -4,6 +4,7 @@
 use super::NESTED_NOT_WRITABLE;
 use super::branch::{Branch, BranchKind, vec_row_lengths};
 use crate::value::BranchValues;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Whether a branch is a scalar, a fixed-size array, a variable-length (jagged)
 /// array, a `std::vector<T>` (`TBranchElement`), or a string.
@@ -34,10 +35,11 @@ impl Branch {
     pub(super) fn n_entries(&self) -> u32 {
         use BranchValues::*;
         if let Some(spec) = self.split() {
-            return spec
-                .members
-                .first()
-                .map_or(0, |m| vec_row_lengths(&m.values).len()) as u32;
+            return u32::saturating_from(
+                spec.members
+                    .first()
+                    .map_or(0, |m| vec_row_lengths(&m.values).len()),
+            );
         }
         let n = match &self.values {
             Bool(v) => v.len(),
@@ -66,7 +68,7 @@ impl Branch {
             VecStr(v) => v.len(),
             Nested { .. } => unreachable!("{NESTED_NOT_WRITABLE}"),
         };
-        n as u32
+        u32::saturating_from(n)
     }
 
     /// The element leaf type (the inner type for arrays). A `std::vector<T>`
@@ -113,17 +115,23 @@ impl Branch {
         use BranchValues::*;
         match &self.values {
             Bool(v) => i64::from(v.iter().any(|&b| b)),
-            I8(v) => v.iter().copied().max().unwrap_or(0) as i64,
-            U8(v) => v.iter().copied().max().unwrap_or(0) as i64,
-            I16(v) => v.iter().copied().max().unwrap_or(0) as i64,
-            U16(v) => v.iter().copied().max().unwrap_or(0) as i64,
-            I32(v) => v.iter().copied().max().unwrap_or(0) as i64,
-            U32(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            I8(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
+            U8(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
+            I16(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
+            U16(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
+            I32(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
+            U32(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
             I64(v) => v.iter().copied().max().unwrap_or(0),
-            U64(v) => v.iter().copied().max().unwrap_or(0) as i64,
+            U64(v) => v.iter().copied().max().unwrap_or(0).cast_signed(),
             // A TLeafC's fMaximum is the longest string length + 1 (the buffer
             // size); ROOT uses it to size fValue and reallocates if it is 0.
-            Str(v) => v.iter().map(|s| s.len() as i64).max().unwrap_or(0) + 1,
+            Str(v) => {
+                v.iter()
+                    .map(|s| i64::saturating_from(s.len()))
+                    .max()
+                    .unwrap_or(0)
+                    + 1
+            }
             _ => 0,
         }
     }
@@ -131,7 +139,9 @@ impl Branch {
     /// The TLeafC `fLen` (longest string length + 1) for a string branch.
     pub(super) fn str_len(&self) -> i32 {
         match &self.values {
-            BranchValues::Str(v) => v.iter().map(|s| s.len()).max().unwrap_or(0) as i32 + 1,
+            BranchValues::Str(v) => {
+                i32::saturating_from(v.iter().map(String::len).max().unwrap_or(0)) + 1
+            }
             _ => 1,
         }
     }
@@ -157,7 +167,7 @@ impl Branch {
             VecF64(r) => r.first().map_or(0, Vec::len),
             _ => 1,
         };
-        n as i32
+        i32::saturating_from(n)
     }
 
     /// Whether this is an array branch whose rows differ in length (not yet
@@ -198,7 +208,7 @@ impl Branch {
             Str(_) => Kind::Str,
             VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
             | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) => {
-                Kind::FixedArray(self.flen() as usize)
+                Kind::FixedArray(usize::saturating_from(self.flen()))
             }
             _ => Kind::Scalar,
         }
@@ -216,7 +226,7 @@ impl Branch {
         use BranchValues::*;
         macro_rules! lens {
             ($r:expr_2021) => {
-                $r.iter().map(|x| x.len() as i32).collect()
+                $r.iter().map(|x| i32::saturating_from(x.len())).collect()
             };
         }
         match &self.values {
@@ -275,7 +285,7 @@ impl Branch {
         macro_rules! emit {
             ($rows:expr_2021, $w:expr_2021, $conv:expr_2021) => {{
                 for row in $rows {
-                    let n = row.len() as u32;
+                    let n = u32::saturating_from(row.len());
                     let bc = (6 + n * $w) | 0x4000_0000;
                     data.extend_from_slice(&bc.to_be_bytes());
                     data.extend_from_slice(&0x000a_u16.to_be_bytes());
@@ -283,12 +293,12 @@ impl Branch {
                     for x in row {
                         data.extend_from_slice(&$conv(x));
                     }
-                    offsets.push(data.len() as u32);
+                    offsets.push(u32::saturating_from(data.len()));
                 }
             }};
         }
         match &self.values {
-            VecI8(r) => emit!(r, 1, |x: &i8| [*x as u8]),
+            VecI8(r) => emit!(r, 1, |x: &i8| [(*x).cast_unsigned()]),
             VecU8(r) => emit!(r, 1, |x: &u8| [*x]),
             VecI16(r) => emit!(r, 2, |x: &i16| x.to_be_bytes()),
             VecU16(r) => emit!(r, 2, |x: &u16| x.to_be_bytes()),
@@ -332,8 +342,8 @@ impl Branch {
             }};
         }
         let data = match &self.values {
-            Bool(v) => v.iter().map(|&b| b as u8).collect(),
-            I8(v) => v.iter().map(|&x| x as u8).collect(),
+            Bool(v) => v.iter().map(|&b| u8::from(b)).collect(),
+            I8(v) => v.iter().map(|&x| x.cast_unsigned()).collect(),
             U8(v) => v.clone(),
             I16(v) => be!(v, 2),
             U16(v) => be!(v, 2),
@@ -343,8 +353,8 @@ impl Branch {
             U64(v) => be!(v, 8),
             F32(v) => be!(v, 4),
             F64(v) => be!(v, 8),
-            VecBool(r) => r.iter().flatten().map(|&b| b as u8).collect(),
-            VecI8(r) => r.iter().flatten().map(|&x| x as u8).collect(),
+            VecBool(r) => r.iter().flatten().map(|&b| u8::from(b)).collect(),
+            VecI8(r) => r.iter().flatten().map(|&x| x.cast_unsigned()).collect(),
             VecU8(r) => r.concat(),
             VecI16(r) => be_rows!(r, 2),
             VecU16(r) => be_rows!(r, 2),
@@ -360,13 +370,13 @@ impl Branch {
                 for s in strings {
                     let b = s.as_bytes();
                     if b.len() < 255 {
-                        data.push(b.len() as u8);
+                        data.push(u8::saturating_from(b.len()));
                     } else {
                         data.push(255);
-                        data.extend_from_slice(&(b.len() as u32).to_be_bytes());
+                        data.extend_from_slice(&u32::saturating_from(b.len()).to_be_bytes());
                     }
                     data.extend_from_slice(b);
-                    offsets.push(data.len() as u32);
+                    offsets.push(u32::saturating_from(data.len()));
                 }
                 return (data, Some(offsets));
             }
@@ -377,12 +387,12 @@ impl Branch {
         // A jagged numeric branch is variable-length too: emit the byte offset
         // after each row (element count × element width).
         if self.jagged() {
-            let elem = self.leaf().size as u32;
+            let elem = self.leaf().size.cast_unsigned();
             let mut offsets = Vec::with_capacity(self.n_entries() as usize + 1);
             let mut acc = 0u32;
             offsets.push(0);
             for len in self.row_lengths() {
-                acc += len as u32 * elem;
+                acc += len.cast_unsigned() * elem;
                 offsets.push(acc);
             }
             return (data, Some(offsets));

@@ -161,3 +161,11 @@ fn concat_values(parts: Vec<BranchValues>, name: &str) -> Result<BranchValues> {
         }
     })
 }
+
+impl std::fmt::Debug for ChainReader<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChainReader")
+            .field("trees", &self.trees.len())
+            .finish_non_exhaustive()
+    }
+}

@@ -20,6 +20,7 @@
 //! ```
 
 use oxihist::{BinnedSampler, Random};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 use crate::hist1d::Hist1D;
 
@@ -52,7 +53,7 @@ impl Hist1D {
     /// histogram's range (ROOT's `FillRandom(Func1D*, n)`): `f` is sampled at the
     /// bin centres to form the density.
     pub fn fill_random_fn<F: Fn(f64) -> f64>(&mut self, f: F, n: usize, rng: &mut Random) {
-        let nbins = self.xaxis.nbins.max(0) as usize;
+        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let weights: Vec<f64> = (1..=nbins)
             .map(|b| f(self.xaxis.bin_center(b)).max(0.0))
             .collect();
@@ -66,7 +67,7 @@ impl Hist1D {
     /// Smooth the in-range bin contents `ntimes` with ROOT's `353QH, twice`
     /// algorithm (`Hist1D::Smooth`). A no-op for fewer than 3 bins.
     pub fn smooth(&mut self, ntimes: usize) {
-        let nbins = self.xaxis.nbins.max(0) as usize;
+        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         if nbins < 3 {
             return;
         }
@@ -149,9 +150,9 @@ fn smooth_array(xx: &mut [f64], ntimes: usize) {
                     continue;
                 }
                 let jk: isize = if hh[1].abs() > hh[0].abs() { -1 } else { 1 };
-                let i2 = (ii as isize + 2 * jk) as usize;
-                let im2 = (ii as isize - 2 * jk) as usize;
-                let ijk = (ii as isize + jk) as usize;
+                let i2 = (ii.cast_signed() + 2 * jk).cast_unsigned();
+                let im2 = (ii.cast_signed() - 2 * jk).cast_unsigned();
+                let ijk = (ii.cast_signed() + jk).cast_unsigned();
                 yy[ii] = -0.5 * zz[im2] + zz[ii] / 0.75 + zz[i2] / 6.0;
                 yy[ijk] = 0.5 * (zz[i2] - zz[im2]) + zz[ii];
             }

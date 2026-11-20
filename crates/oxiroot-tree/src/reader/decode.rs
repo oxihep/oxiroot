@@ -1,5 +1,6 @@
 //! Decoding branch data: from basket payloads to [`BranchValues`] columns.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, K_BYTE_COUNT_MASK, RBuffer, Result, StreamerRegistry};
 
 use super::members::{MemberVal, Members, walk_members};
@@ -15,7 +16,7 @@ pub(super) fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&
         if stride == 0 {
             return Vec::new();
         }
-        let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+        let width = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
         let mut regions = Vec::new();
         for b in baskets {
             for chunk in b.entry_data().chunks_exact(stride) {
@@ -35,7 +36,7 @@ pub(super) fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&
         return regions;
     }
     // Fixed array or scalar: one chunk of `leaf_len` elements per entry.
-    let stride = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+    let stride = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
     chunk_regions(baskets, stride)
 }
 
@@ -68,7 +69,7 @@ pub(super) fn read_baskets(
         branch
             .basket_bytes
             .get(i)
-            .and_then(|&b| (b > 0).then_some(b as usize))
+            .and_then(|&b| (b > 0).then_some(usize::saturating_from(b)))
     };
 
     // Announce the baskets of known size, so a remote file fetches them in
@@ -80,7 +81,7 @@ pub(super) fn read_baskets(
         .filter_map(|&i| {
             let seek = seek_of(i).ok()?;
             let avail = file.size().saturating_sub(seek);
-            bytes_of(i).map(|n| (seek, (n as u64).min(avail) as usize))
+            bytes_of(i).map(|n| (seek, usize::saturating_from((n as u64).min(avail))))
         })
         .collect();
     file.plan_reads(&planned);
@@ -121,7 +122,7 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
         if stride == 0 {
             return decode_scalar(branch.leaf_type, &[]);
         }
-        let width = branch.leaf_len.max(1) as usize * branch.leaf_type.size();
+        let width = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
         let mut regions: Vec<&[u8]> = Vec::new();
         for b in baskets {
             for chunk in b.entry_data().chunks_exact(stride) {
@@ -164,7 +165,7 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
         return decode_array(branch.leaf_type, &regions);
     }
     if branch.leaf_len > 1 {
-        let stride = branch.leaf_len as usize * branch.leaf_type.size();
+        let stride = usize::saturating_from(branch.leaf_len) * branch.leaf_type.size();
         return decode_array(branch.leaf_type, &chunk_regions(baskets, stride));
     }
     // Scalar: concatenate every basket's entry data, decode once.
@@ -172,9 +173,9 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
     let mut total = 0u64;
     for b in baskets {
         bytes.extend_from_slice(b.entry_data());
-        total += b.n_entries as u64;
+        total += u64::from(b.n_entries);
     }
-    if bytes.len() != total as usize * branch.leaf_type.size() {
+    if bytes.len() != usize::saturating_from(total) * branch.leaf_type.size() {
         return Err(Error::Format(format!(
             "branch {:?}: {} basket bytes for {total} {:?} entries",
             branch.name,
@@ -227,8 +228,8 @@ pub(super) fn slice_values(bv: BranchValues, offset: usize, len: usize) -> Branc
             let n = offsets.len().saturating_sub(1);
             let end = offset.saturating_add(len).min(n);
             let start = offset.min(end);
-            let item_start = offsets[start] as usize;
-            let item_end = offsets[end] as usize;
+            let item_start = usize::saturating_from(offsets[start]);
+            let item_end = usize::saturating_from(offsets[end]);
             let base = offsets[start];
             let new_offsets = offsets[start..=end].iter().map(|&o| o - base).collect();
             BranchValues::Nested {
@@ -322,6 +323,10 @@ fn locate_object(r: &mut RBuffer) {
 
 /// Build a `BranchValues` column of `leaf_type` from per-entry member values
 /// (integers, floats, or strings extracted from each entry's object).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "f32 leaves read as f32 and widened: narrowing back is exact"
+)]
 fn build_member_column(leaf_type: LeafType, vals: &[MemberVal]) -> BranchValues {
     use BranchValues as BV;
     let floats = |v: &[MemberVal]| -> Vec<f64> {
@@ -336,14 +341,14 @@ fn build_member_column(leaf_type: LeafType, vals: &[MemberVal]) -> BranchValues 
     match leaf_type {
         LeafType::Str => BV::Str(vals.iter().map(|m| m.str().to_string()).collect()),
         LeafType::Bool => BV::Bool(ints.iter().map(|&i| i != 0).collect()),
-        LeafType::I8 => BV::I8(ints.iter().map(|&i| i as i8).collect()),
-        LeafType::U8 => BV::U8(ints.iter().map(|&i| i as u8).collect()),
-        LeafType::I16 => BV::I16(ints.iter().map(|&i| i as i16).collect()),
-        LeafType::U16 => BV::U16(ints.iter().map(|&i| i as u16).collect()),
-        LeafType::I32 => BV::I32(ints.iter().map(|&i| i as i32).collect()),
-        LeafType::U32 => BV::U32(ints.iter().map(|&i| i as u32).collect()),
+        LeafType::I8 => BV::I8(ints.iter().map(|&i| i8::saturating_from(i)).collect()),
+        LeafType::U8 => BV::U8(ints.iter().map(|&i| u8::saturating_from(i)).collect()),
+        LeafType::I16 => BV::I16(ints.iter().map(|&i| i16::saturating_from(i)).collect()),
+        LeafType::U16 => BV::U16(ints.iter().map(|&i| u16::saturating_from(i)).collect()),
+        LeafType::I32 => BV::I32(ints.iter().map(|&i| i32::saturating_from(i)).collect()),
+        LeafType::U32 => BV::U32(ints.iter().map(|&i| u32::saturating_from(i)).collect()),
         LeafType::I64 => BV::I64(ints),
-        LeafType::U64 => BV::U64(ints.iter().map(|&i| i as u64).collect()),
+        LeafType::U64 => BV::U64(ints.iter().map(|&i| i.cast_unsigned()).collect()),
         LeafType::F32 => BV::F32(floats(vals).iter().map(|&f| f as f32).collect()),
         LeafType::F64 => BV::F64(floats(vals)),
     }
@@ -377,7 +382,7 @@ pub(super) fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues
     }
     Ok(match leaf {
         LeafType::Bool => BranchValues::Bool(bytes.iter().map(|&b| b != 0).collect()),
-        LeafType::I8 => BranchValues::I8(bytes.iter().map(|&b| b as i8).collect()),
+        LeafType::I8 => BranchValues::I8(bytes.iter().map(|&b| b.cast_signed()).collect()),
         LeafType::U8 => BranchValues::U8(bytes.to_vec()),
         LeafType::I16 => be!(I16, i16, 2),
         LeafType::U16 => be!(U16, u16, 2),
@@ -417,7 +422,7 @@ fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
         LeafType::I8 => BranchValues::VecI8(
             regions
                 .iter()
-                .map(|r| r.iter().map(|&b| b as i8).collect())
+                .map(|r| r.iter().map(|&b| b.cast_signed()).collect())
                 .collect(),
         ),
         LeafType::U8 => BranchValues::VecU8(regions.iter().map(|r| r.to_vec()).collect()),

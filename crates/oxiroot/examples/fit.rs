@@ -142,7 +142,7 @@ fn main() {
 
     // --- 4. The SAME fitting API on raw points — no ROOT object at all. ---
     // Anything that is `(x, y, σ)`: a `Points` set, or your own `FitData` impl.
-    let xs: Vec<f64> = (0..40).map(|i| -2.0 + i as f64 * 0.1).collect();
+    let xs: Vec<f64> = (0..40).map(|i| -2.0 + f64::from(i) * 0.1).collect();
     let ys: Vec<f64> = xs
         .iter()
         .map(|&x| 8.0 * (-0.5 * ((x - 0.3) / 0.6).powi(2)).exp() + rng.gauss(0.0, 0.05))

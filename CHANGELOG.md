@@ -69,6 +69,20 @@ change the API.
 
 ### Changed
 
+- **`#[non_exhaustive]` and `Debug`.** The file, tree and RNTuple writers
+  and readers, `Tree`, `Branch`, `Ntuple`, `Column`/`Field`, `FileWriter`,
+  `SubdirWriter` and the object records implement `Debug`;
+  `CompressError`, `ListKind` and `MergeKind` are `#[non_exhaustive]` (a
+  `match` on them outside oxiroot needs a `_` arm).
+- **Cast lints.** `cast_possible_truncation`, `cast_sign_loss`,
+  `cast_possible_wrap` and `cast_lossless` are on across the workspace. The
+  conversions between ROOT's on-disk integer types and `usize` go through
+  `oxiroot_io_core::cast::SaturatingFrom`: a value out of range (a negative
+  count in a damaged file, a length past `i32::MAX`) clamps to the bound
+  instead of wrapping. Same-width reinterpretations are explicit
+  (`cast_signed`/`cast_unsigned`), and the bit-level encodings (zigzag,
+  half floats, packed coordinates, `TH1F`-style narrowing) say why they
+  truncate. ROOT C++ and uproot read everything back (the interop matrix).
 - **One implementation of the plain histograms' shared methods.** `Hist1D`,
   `Hist2D` and `Hist3D` had their own copies of `sumw2`, `bin_error`,
   `scale`, `add`, `integral`, the extrema, `effective_entries`, `reset` and

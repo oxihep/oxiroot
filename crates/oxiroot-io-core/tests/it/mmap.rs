@@ -2,6 +2,7 @@
 //! container as the in-memory path.
 #![cfg(feature = "mmap")]
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -21,7 +22,10 @@ fn open_mmap_matches_open() {
     let mapped = unsafe { FileReader::open_mmap(&path) }.expect("open_mmap");
 
     assert_eq!(mapped.size(), owned.size(), "same length");
-    let whole = |f: &FileReader| f.read_at(0, f.size() as usize).expect("read whole");
+    let whole = |f: &FileReader| {
+        f.read_at(0, usize::saturating_from(f.size()))
+            .expect("read whole")
+    };
     assert_eq!(whole(&mapped), whole(&owned), "same bytes");
     let names =
         |f: &FileReader| -> Vec<String> { f.keys().iter().map(|k| k.name.clone()).collect() };

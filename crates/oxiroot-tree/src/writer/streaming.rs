@@ -1,6 +1,7 @@
 //! [`TreeWriter`]: a tree written batch by batch, one basket per branch per
 //! batch, so the whole dataset need not be in memory.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
@@ -256,7 +257,7 @@ impl<W: Write + Seek> TreeWriter<W> {
                 let batch_max = branch.leaf_max();
                 if batch_max > *m {
                     *m = batch_max;
-                    c.rep.values = BranchValues::I32(vec![*m as i32]);
+                    c.rep.values = BranchValues::I32(vec![i32::saturating_from(*m)]);
                 }
             }
             ColAgg::Str(len) => {
@@ -284,7 +285,7 @@ impl<W: Write + Seek> TreeWriter<W> {
                 cols.push(StreamCol {
                     rep: Branch {
                         name: count.name.clone(),
-                        values: BranchValues::I32(vec![m as i32]),
+                        values: BranchValues::I32(vec![i32::saturating_from(m)]),
                         kind: BranchKind::Count,
                     },
                     baskets: Vec::new(),
@@ -343,5 +344,14 @@ impl<W: Write + Seek> TreeWriter<W> {
         self.file
             .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &[])?;
         self.file.finish()
+    }
+}
+
+impl<W: Write + Seek> std::fmt::Debug for TreeWriter<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TreeWriter")
+            .field("name", &self.tree_name)
+            .field("entries", &self.total_entries)
+            .finish_non_exhaustive()
     }
 }

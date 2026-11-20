@@ -29,6 +29,7 @@
 //!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
 //!     = [3,6,9].
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::Path;
 use std::process::exit;
 
@@ -84,6 +85,11 @@ const APPEND_AH: [f64; 1] = [4.0];
 const DIRS_DH: [f64; 2] = [2.0, 4.0];
 const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a small whole fill count"
+)]
 fn canonical_hist() -> Hist1D {
     // Filled as an oxihist histogram and converted afterwards, so ROOT and
     // uproot reading it checks the oxihist → ROOT conversion end to end.
@@ -103,8 +109,8 @@ fn canonical_hist() -> Hist1D {
 /// holds `contents[i]` (one weighted fill per bin). Used for the directory /
 /// multi-object / append fixtures.
 fn hist(name: &str, contents: &[f64]) -> Hist1D {
-    let n = contents.len() as i32;
-    let mut h = Hist::reg(n as usize, 0.0, n as f64)
+    let n = i32::saturating_from(contents.len());
+    let mut h = Hist::reg(usize::saturating_from(n), 0.0, f64::from(n))
         .double()
         .to_root()
         .named(name)
@@ -132,7 +138,11 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
         .named("h2");
     for i in 0..3 {
         for j in 0..2 {
-            h2.fill_weight(i as f64 + 0.5, j as f64 + 0.5, (1 + i + 3 * j) as f64);
+            h2.fill_weight(
+                f64::from(i) + 0.5,
+                f64::from(j) + 0.5,
+                f64::from(1 + i + 3 * j),
+            );
         }
     }
     let mut h3 = Hist::reg(2, 0.0, 2.0)
@@ -144,8 +154,13 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..2 {
-                let w = (1 + i + 2 * j + 4 * k) as f64;
-                h3.fill_weight(i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5, w);
+                let w = f64::from(1 + i + 2 * j + 4 * k);
+                h3.fill_weight(
+                    f64::from(i) + 0.5,
+                    f64::from(j) + 0.5,
+                    f64::from(k) + 0.5,
+                    w,
+                );
             }
         }
     }
@@ -155,7 +170,7 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
     p.fill(1.5, 5.0);
     let mut big = Hist::reg(1000, 0.0, 1000.0).double().to_root().named("big");
     for i in 0..1000 {
-        big.fill_weight(i as f64 + 0.5, (i % 7) as f64);
+        big.fill_weight(f64::from(i) + 0.5, f64::from(i % 7));
     }
     (h2, h3, p, big)
 }

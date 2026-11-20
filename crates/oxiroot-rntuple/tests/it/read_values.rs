@@ -2,6 +2,7 @@
 //! both the uncompressed (non-split) and Zstd (split-encoded) fixtures, which
 //! must decode to identical values.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -104,7 +105,7 @@ fn reconstruct_strings(offsets: &[u64], bytes: &[u8]) -> Vec<String> {
     offsets
         .iter()
         .map(|&end| {
-            let end = end as usize;
+            let end = usize::saturating_from(end);
             let s = String::from_utf8(bytes[start..end].to_vec()).unwrap();
             start = end;
             s
@@ -117,7 +118,7 @@ fn reconstruct_collections<T: Clone>(offsets: &[u64], data: &[T]) -> Vec<Vec<T>>
     offsets
         .iter()
         .map(|&end| {
-            let end = end as usize;
+            let end = usize::saturating_from(end);
             let slice = data[start..end].to_vec();
             start = end;
             slice

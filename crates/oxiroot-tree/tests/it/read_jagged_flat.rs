@@ -1,6 +1,7 @@
 //! The offsets+flat jagged view (B9): read_branch_flat avoids the Vec<Vec>
 //! allocation and stays consistent with read_branch.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -47,7 +48,7 @@ fn flat_view_matches_nested() {
     let reshaped: Vec<Vec<f64>> = j
         .offsets
         .windows(2)
-        .map(|w| flat[w[0] as usize..w[1] as usize].to_vec())
+        .map(|w| flat[usize::saturating_from(w[0])..usize::saturating_from(w[1])].to_vec())
         .collect();
     assert_eq!(
         BranchValues::VecF64(reshaped),

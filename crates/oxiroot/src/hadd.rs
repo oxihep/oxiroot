@@ -61,6 +61,7 @@ const LARGE_INPUT_BYTES: u64 = KSTART_BIG_FILE / 2;
 
 /// What kind of merge [`merge_files`] performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MergeKind {
     /// A histogram-family fileset: histograms summed, other objects copied.
     Histograms,

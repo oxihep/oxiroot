@@ -5,6 +5,7 @@
 //! (skipped via its byte count); the inline `TArray` holds the
 //! `(nx+2)*(ny+2)*(nz+2)` cells with x fastest, then y, then z.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, skip_versioned};
 
 use crate::axis::Axis;
@@ -122,17 +123,17 @@ impl Hist3D {
 
     /// Number of x bins (excluding flow).
     pub fn nx(&self) -> usize {
-        self.xaxis.nbins.max(0) as usize
+        usize::saturating_from(self.xaxis.nbins.max(0))
     }
 
     /// Number of y bins (excluding flow).
     pub fn ny(&self) -> usize {
-        self.yaxis.nbins.max(0) as usize
+        usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
     /// Number of z bins (excluding flow).
     pub fn nz(&self) -> usize {
-        self.zaxis.nbins.max(0) as usize
+        usize::saturating_from(self.zaxis.nbins.max(0))
     }
 
     /// Bin contents excluding flow as `values[ix][iy][iz]`, matching uproot's
@@ -190,7 +191,7 @@ impl Hist3D {
             tsumwz2: 0.0,
             tsumwxz: 0.0,
             tsumwyz: 0.0,
-            contents: vec![0.0; ncells.max(0) as usize],
+            contents: vec![0.0; usize::saturating_from(ncells.max(0))],
             sumw2: Vec::new(),
         }
     }

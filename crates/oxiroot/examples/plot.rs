@@ -53,7 +53,7 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // A handful of "data" points with statistical error bars (a TGraphErrors).
-    let dx: Vec<f64> = (0..8).map(|i| 55.0 + 10.0 * i as f64).collect();
+    let dx: Vec<f64> = (0..8).map(|i| 55.0 + 10.0 * f64::from(i)).collect();
     let dy: Vec<f64> = dx
         .iter()
         .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
@@ -120,8 +120,8 @@ fn main() -> oxiroot::Result<()> {
         .named("h2");
     for ix in 0..40 {
         for iy in 0..40 {
-            let x = -4.0 + (ix as f64 + 0.5) * 0.2;
-            let y = -4.0 + (iy as f64 + 0.5) * 0.2;
+            let x = -4.0 + (f64::from(ix) + 0.5) * 0.2;
+            let y = -4.0 + (f64::from(iy) + 0.5) * 0.2;
             let z = (-(x * x + y * y) / 2.0).exp() * 100.0
                 + 50.0 * (-((x - 1.5).powi(2) + (y + 1.2).powi(2)) / 0.5).exp();
             h2.fill_weight(x, y, z);

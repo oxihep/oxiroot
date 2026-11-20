@@ -10,6 +10,7 @@
 //!   `mean()`/`std_dev()` on the derived histogram are correct.
 
 use crate::{Axis, Hist1D, Hist2D, Hist3D, Profile1D};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Per-axis rebin map: returns `(new_nbins, old_cell -> new_cell)` of length
 /// `n + 2`. Underflow → underflow; in-range bin `i` → group `(i-1)/ng + 1`;
@@ -56,7 +57,7 @@ impl Hist1D {
     #[must_use]
     pub fn rebin(&self, ngroup: usize) -> Hist1D {
         let ng = ngroup.max(1);
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let newn = n / ng;
         let edges = self.xaxis.edges();
         // New in-range edges: every ng-th edge, up to the last full group.
@@ -65,7 +66,7 @@ impl Hist1D {
         let mut out = if new_edges.len() >= 2 {
             Hist1D::new_variable(&new_edges)
         } else {
-            Hist1D::new(newn.max(1) as i32, edges[0], edges[n])
+            Hist1D::new(i32::saturating_from(newn.max(1)), edges[0], edges[n])
         }
         .named(self.name.clone())
         .titled(self.title.clone());
@@ -108,7 +109,7 @@ impl Hist1D {
     /// bins (their centres), so `mean`/`std_dev` describe the slice.
     #[must_use]
     pub fn slice(&self, lo: f64, hi: f64) -> Hist1D {
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         if n == 0 {
             return self.clone();
         }
@@ -171,7 +172,7 @@ impl Hist1D {
     /// and its errors are `√content`, which is right for counts.
     #[must_use]
     pub fn cumulative(&self, forward: bool) -> Hist1D {
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let track = !self.sumw2.is_empty();
         let mut out = self.clone();
         out.contents.iter_mut().for_each(|v| *v = 0.0);
@@ -225,7 +226,7 @@ impl Hist2D {
         let axis = if onto_x { &self.xaxis } else { &self.yaxis };
         let (n_keep, n_sum) = if onto_x { (nx, ny) } else { (ny, nx) };
 
-        let mut out = Hist1D::new(n_keep as i32, axis.xmin, axis.xmax)
+        let mut out = Hist1D::new(i32::saturating_from(n_keep), axis.xmin, axis.xmax)
             .named(name)
             .titled(self.title.clone());
         out.xaxis = axis.clone();
@@ -281,7 +282,7 @@ impl Hist2D {
         let other_axis = if along_x { &self.yaxis } else { &self.xaxis };
         let (n_keep, n_other) = if along_x { (nx, ny) } else { (ny, nx) };
 
-        let mut p = Profile1D::new(n_keep as i32, keep_axis.xmin, keep_axis.xmax)
+        let mut p = Profile1D::new(i32::saturating_from(n_keep), keep_axis.xmin, keep_axis.xmax)
             .named(name)
             .titled(self.title.clone());
         p.xaxis = keep_axis.clone();
@@ -394,13 +395,13 @@ impl Hist3D {
 
         // Hist3D has no variable-bin constructor; build it and set the axes.
         let mut out = Hist3D::new(
-            newnx as i32,
+            i32::saturating_from(newnx),
             0.0,
             1.0,
-            newny as i32,
+            i32::saturating_from(newny),
             0.0,
             1.0,
-            newnz as i32,
+            i32::saturating_from(newnz),
             0.0,
             1.0,
         )
@@ -475,7 +476,7 @@ impl Hist3D {
             1 => (&self.yaxis, ny),
             _ => (&self.zaxis, nz),
         };
-        let mut out = Hist1D::new(nkeep as i32, axis.xmin, axis.xmax)
+        let mut out = Hist1D::new(i32::saturating_from(nkeep), axis.xmin, axis.xmax)
             .named(name)
             .titled(self.title.clone());
         out.xaxis = axis.clone();
@@ -545,9 +546,16 @@ impl Hist3D {
             1 => (&self.xaxis, nx, &self.zaxis, nz, ny),
             _ => (&self.yaxis, ny, &self.zaxis, nz, nx),
         };
-        let mut out = Hist2D::new(na as i32, axa.xmin, axa.xmax, nb as i32, axb.xmin, axb.xmax)
-            .named(name)
-            .titled(self.title.clone());
+        let mut out = Hist2D::new(
+            i32::saturating_from(na),
+            axa.xmin,
+            axa.xmax,
+            i32::saturating_from(nb),
+            axb.xmin,
+            axb.xmax,
+        )
+        .named(name)
+        .titled(self.title.clone());
         out.xaxis = axa.clone();
         out.yaxis = axb.clone();
         let track = !self.sumw2.is_empty();

@@ -14,6 +14,7 @@
 //! each `TStreamerInfo` v10 wrapping a `TObjArray` v3 of `TStreamerElement`
 //! subclasses.
 
+use crate::cast::SaturatingFrom;
 use std::borrow::Cow;
 
 use crate::buffer::{K_BYTE_COUNT_MASK, Patch, RBuffer, WBuffer};
@@ -291,7 +292,7 @@ fn begin_object_any(w: &mut WBuffer, class: &str) -> Patch {
     bc
 }
 fn end_object_any(w: &mut WBuffer, bc: Patch) {
-    let inner = (w.len() - w.patch_offset(bc) - 4) as u32;
+    let inner = u32::saturating_from(w.len() - w.patch_offset(bc) - 4);
     w.patch_be_u32(bc, inner | K_BYTE_COUNT_MASK);
 }
 
@@ -369,7 +370,7 @@ fn write_info(w: &mut WBuffer, cls: &Cls<'_>) {
     let oa = w.begin_object(3); // TObjArray v3
     write_object_base(w, 0);
     w.string(""); // fName
-    w.be_i32(cls.elements.len() as i32);
+    w.be_i32(i32::saturating_from(cls.elements.len()));
     w.be_i32(0); // fLowerBound
     for el in &cls.elements {
         write_element(w, el, &cls.name, cls.version);
@@ -391,7 +392,7 @@ pub fn streamer_info_list(classes: &[Cls<'_>]) -> Vec<u8> {
     let list = w.begin_object(5); // TList v5
     write_object_base(&mut w, 0);
     w.string(""); // fName
-    w.be_i32(classes.len() as i32); // nobjects
+    w.be_i32(i32::saturating_from(classes.len())); // nobjects
 
     for cls in classes {
         write_info(&mut w, cls);
@@ -426,12 +427,12 @@ pub fn append_streamer_infos(base_list: &[u8], extra: &[Cls<'_>]) -> Result<Vec<
     // header (with bumped count) + original entries + extra entries.
     let mut out = Vec::with_capacity(base_list.len() + pairs.len());
     out.extend_from_slice(&base_list[..count_offset]);
-    out.extend_from_slice(&(count + extra.len() as i32).to_be_bytes());
+    out.extend_from_slice(&(count + i32::saturating_from(extra.len())).to_be_bytes());
     out.extend_from_slice(&base_list[count_offset + 4..]);
     out.extend_from_slice(&pairs);
 
     // Re-patch the outer TList byte count.
-    let inner = (out.len() - 4) as u32;
+    let inner = u32::saturating_from(out.len() - 4);
     out[..4].copy_from_slice(&(inner | K_BYTE_COUNT_MASK).to_be_bytes());
     Ok(out)
 }

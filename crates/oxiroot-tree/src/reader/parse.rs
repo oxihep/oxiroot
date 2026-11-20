@@ -12,6 +12,7 @@ use super::types::{
 };
 use super::{Branch, Friend, Leaf, ObjectMember, TreeIndex, TreeReader};
 use crate::value::LeafType;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Parse a decompressed `TTree` object (`keylen` is its key's header length),
 /// driving the member layout from the file's `TStreamerInfo`.
@@ -58,11 +59,11 @@ pub(super) fn read_tree(
                 // `TArrayD`/`TArrayI` (the legacy inline index): `[Int_t n][n
                 // elements]`, with no version header.
                 "fIndexValues" => {
-                    let n = rb.be_i32()?.max(0) as usize;
+                    let n = usize::saturating_from(rb.be_i32()?.max(0));
                     rb.skip(n * 8)?;
                 }
                 "fIndex" => {
-                    let n = rb.be_i32()?.max(0) as usize;
+                    let n = usize::saturating_from(rb.be_i32()?.max(0));
                     rb.skip(n * 4)?;
                 }
                 // `TVirtualIndex*` is an object pointer (ROOT's object protocol);
@@ -101,7 +102,7 @@ pub(super) fn read_tree(
 
     Ok(TreeReader {
         name: member_str(&out, "fName"),
-        entries: member_int(&out, "fEntries").max(0) as u64,
+        entries: u64::saturating_from(member_int(&out, "fEntries")),
         branches,
         unsupported,
         streamer_classes: Vec::new(),
@@ -145,7 +146,10 @@ fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
     let minor = read_column(r)?;
     let entries = read_column(r)?;
     let keys: Vec<(i64, i64)> = major.into_iter().zip(minor).collect();
-    let entries: Vec<u64> = entries.into_iter().map(|e| e.max(0) as u64).collect();
+    let entries: Vec<u64> = entries
+        .into_iter()
+        .map(|e| e.max(0).cast_unsigned())
+        .collect();
     Ok(Some(TreeIndex::new(major_name, minor_name, keys, entries)))
 }
 
@@ -196,7 +200,7 @@ fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i
 /// lives in (`Named::fTitle`, empty for a same-file friend).
 fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
     let (end, n) = open_tlist(r, tags)?;
-    let mut friends = Vec::with_capacity(n.max(0) as usize);
+    let mut friends = Vec::with_capacity(usize::saturating_from(n.max(0)));
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TFriendElement") {
@@ -229,7 +233,7 @@ fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
 /// alias and `fTitle` is the expression it stands for.
 fn read_aliases(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(String, String)>> {
     let (end, n) = open_tlist(r, tags)?;
-    let mut aliases = Vec::with_capacity(n.max(0) as usize);
+    let mut aliases = Vec::with_capacity(usize::saturating_from(n.max(0)));
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TNamed") {
@@ -318,14 +322,14 @@ fn read_tbranch_base(
 /// live baskets), `fBasketSeek`/`fBasketBytes` are clamped to non-negative and
 /// taken up to the live basket count.
 fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>, Vec<u64>) {
-    let write_basket = member_int(out, "fWriteBasket").max(0) as usize;
+    let write_basket = usize::saturating_from(member_int(out, "fWriteBasket").max(0));
     let basket_entry = out
         .get("fBasketEntry")
         .map(|m| m.ints().iter().copied().take(write_basket).collect())
         .unwrap_or_default();
     let basket_seek = out
         .get("fBasketSeek")
-        .map(|m| m.ints().iter().map(|&s| s.max(0) as u64).collect())
+        .map(|m| m.ints().iter().map(|&s| s.max(0).cast_unsigned()).collect())
         .unwrap_or_default();
     let basket_bytes = out
         .get("fBasketBytes")
@@ -333,7 +337,7 @@ fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>, Vec<u64>) {
             m.ints()
                 .iter()
                 .take(write_basket)
-                .map(|&b| b.max(0) as u64)
+                .map(|&b| b.max(0).cast_unsigned())
                 .collect()
         })
         .unwrap_or_default();
@@ -407,7 +411,7 @@ pub(super) fn read_branch(
     // expose each as a `branch.leaf` sub-branch sliced from the per-entry stride.
     let stride = leaves
         .iter()
-        .map(|l| l.offset + l.len.max(1) as usize * l.leaf_type.size())
+        .map(|l| l.offset + usize::saturating_from(l.len.max(1)) * l.leaf_type.size())
         .max()
         .unwrap_or(0);
     let out = leaves
@@ -463,8 +467,8 @@ fn read_branch_element(
 
     let name = member_str(&out, "fName");
     let class_name = member_str(&out, "fClassName");
-    let f_type = member_int(&out, "fType") as i32;
-    let f_streamer_type = member_int(&out, "fStreamerType") as i32;
+    let f_type = i32::saturating_from(member_int(&out, "fType"));
+    let f_streamer_type = i32::saturating_from(member_int(&out, "fStreamerType"));
     let (write_basket, basket_entry, basket_seek, basket_bytes) = basket_locators(&out);
 
     // Any branch with sub-branches is a split parent — an STL/clones collection
@@ -643,7 +647,7 @@ fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
         title: named.title,
         leaf_type,
         len,
-        offset: offset.max(0) as usize,
+        offset: usize::saturating_from(offset.max(0)),
     }))
 }
 

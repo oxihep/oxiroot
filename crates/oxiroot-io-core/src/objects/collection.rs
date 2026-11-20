@@ -8,6 +8,7 @@
 //! class back-references ROOT emits for repeated member types resolve. (uproot
 //! reads `TList`/`TObjArray` but has no `ObjMap` model — see [`ObjMap`].)
 
+use crate::cast::SaturatingFrom;
 use std::ops::Range;
 
 use crate::FileReader;
@@ -24,6 +25,7 @@ use super::scalars::{ObjString, Parameter, decode_tobjstring, decode_tparameter,
 /// Whether an [`ObjList`] serializes as a `TList` (ordered, with per-element
 /// options) or a `TObjArray` (an indexed array).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ListKind {
     /// ROOT's `TList`.
     List,
@@ -148,7 +150,7 @@ impl WriteRoot for ObjList {
                 let obj = w.begin_object(5); // TList version 5
                 write_object_base(&mut w, 0);
                 w.string(&self.name); // fName
-                w.be_i32(self.members.len() as i32); // nobjects
+                w.be_i32(i32::saturating_from(self.members.len())); // nobjects
                 for (class, body) in &self.members {
                     write_object_any(&mut w, class, body);
                     w.string(""); // the per-object option string
@@ -159,7 +161,7 @@ impl WriteRoot for ObjList {
                 let obj = w.begin_object(3); // TObjArray version 3
                 write_object_base(&mut w, 0);
                 w.string(&self.name); // fName
-                w.be_i32(self.members.len() as i32); // nobjects
+                w.be_i32(i32::saturating_from(self.members.len())); // nobjects
                 w.be_i32(0); // fLowerBound
                 for (class, body) in &self.members {
                     write_object_any(&mut w, class, body);
@@ -251,7 +253,7 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<(String, Ve
 
     let mut tags = TagReader::new(keylen);
     // `n` comes from the file; every entry takes at least a 4-byte header.
-    let mut out = Vec::with_capacity((n as usize).min(r.remaining() / 4));
+    let mut out = Vec::with_capacity(usize::saturating_from(n).min(r.remaining() / 4));
     for _ in 0..n {
         let header = tags.read_header(&mut r)?;
         match (header.class_name, header.end) {
@@ -477,7 +479,7 @@ impl WriteRoot for ObjMap {
         let obj = w.begin_object(3); // ObjMap version 3
         write_object_base(&mut w, 0);
         w.string(&self.name); // fName
-        w.be_i32(self.pairs.len() as i32); // number of pairs
+        w.be_i32(i32::saturating_from(self.pairs.len())); // number of pairs
         for ((kc, kb), (vc, vb)) in &self.pairs {
             write_object_any(&mut w, kc, kb); // key object
             write_object_any(&mut w, vc, vb); // value object
@@ -528,7 +530,7 @@ fn decode_tmap(class: &str, object: &[u8], keylen: usize) -> Result<ObjMap> {
 
     let mut tags = TagReader::new(keylen);
     // `n` comes from the file; every pair takes at least two 4-byte headers.
-    let mut pairs = Vec::with_capacity((n as usize).min(r.remaining() / 8));
+    let mut pairs = Vec::with_capacity(usize::saturating_from(n).min(r.remaining() / 8));
     for _ in 0..n {
         let key = read_entry(&mut r, &mut tags, object)?;
         let value = read_entry(&mut r, &mut tags, object)?;

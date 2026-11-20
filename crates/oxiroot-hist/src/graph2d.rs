@@ -7,6 +7,7 @@
 //! for the rest (an empty `fFunctions`, like [`Graph`](crate::Graph)); the
 //! `fHistogram` display frame is transient in ROOT and not persisted.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, read_named, skip_versioned};
 
 use crate::base::{check_len, object_bytes_any};
@@ -79,7 +80,7 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<Graph2D> {
     skip_versioned(&mut r)?; // TAttLine
     skip_versioned(&mut r)?; // TAttFill
     skip_versioned(&mut r)?; // TAttMarker
-    let npoints = r.be_i32()?.max(0) as usize;
+    let npoints = usize::saturating_from(r.be_i32()?.max(0));
     let _fnpx = r.be_i32()?;
     let _fnpy = r.be_i32()?;
     let _fmaxiter = r.be_i32()?;

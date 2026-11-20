@@ -1,6 +1,7 @@
 //! Checking fields before anything is written: entry counts, offsets and
 //! nesting.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
 use super::fields::{Column, Field};
@@ -70,7 +71,7 @@ fn check_column(what: &str, col: &Column) -> Result<()> {
             }
             let items_what = format!("{what} items");
             check_column(&items_what, items)?;
-            let end = offsets.last().map_or(0, |&o| o as usize);
+            let end = offsets.last().map_or(0, |&o| usize::saturating_from(o));
             match entry_count(items) {
                 Some(n) if n != end => Err(mismatch(items_what, end, n)),
                 _ => Ok(()),

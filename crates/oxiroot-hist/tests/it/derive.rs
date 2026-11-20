@@ -35,7 +35,7 @@ fn cumulative_forward_and_backward() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
     for (bin, n) in [(0, 1), (1, 2), (2, 3), (3, 4)] {
         for _ in 0..n {
-            h.fill(bin as f64 + 0.5);
+            h.fill(f64::from(bin) + 0.5);
         }
     }
     assert_eq!(h.cumulative(true).values(), &[1.0, 3.0, 6.0, 10.0]);

@@ -2,6 +2,7 @@
 //! graph's `fFunctions` entries and the standalone `Func1D`/`Func2D`/`Func3D` keys (in
 //! `oxiroot-hist-func`) share.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{RBuffer, Result, WBuffer, read_named, skip_versioned, write_named};
 
 use crate::graph::GraphFunction;
@@ -85,7 +86,7 @@ impl GraphFunction {
 
         w.be_f64(self.xmin); // fXmin
         w.be_f64(self.xmax); // fXmax
-        w.be_i32(npar as i32); // fNpar
+        w.be_i32(i32::saturating_from(npar)); // fNpar
         w.be_i32(ndim); // fNdim
         w.be_i32(npx); // fNpx
         w.be_i32(0); // fType (kFormula)
@@ -113,19 +114,19 @@ impl GraphFunction {
 fn read_vector_f64(r: &mut RBuffer) -> Result<Vec<f64>> {
     let _bc = r.be_i32()?;
     let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
+    let count = usize::saturating_from(r.be_i32()?.max(0));
     (0..count).map(|_| r.be_f64()).collect()
 }
 
 /// Read the `fFormula` (`TFormula*`) object pointer, returning
 /// `(fFormula string, fClingParameters)`.
 fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     if bc == 0 {
         return Ok((String::new(), Vec::new()));
     }
     let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()? as u32;
+    let tag = r.be_i32()?.cast_unsigned();
     if tag == 0xFFFF_FFFF {
         // NUL-terminated class name "TFormula\0".
         while r.u8()? != 0 {}
@@ -144,7 +145,7 @@ fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
 fn skip_param_map(r: &mut RBuffer) -> Result<()> {
     let _bc = r.be_i32()?;
     let _ver = r.be_i16()?;
-    let count = r.be_i32()?.max(0) as usize;
+    let count = usize::saturating_from(r.be_i32()?.max(0));
     for _ in 0..count {
         let _key = r.string()?;
         let _val = r.be_i32()?;
@@ -178,7 +179,7 @@ fn write_tformula_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32) {
     let start = w.len();
     w.be_i16(0x000a); // streamer version
     w.be_i32(0); // count
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(lp, 0x4000_0000 | len);
     w.u8(0); // fVectorized
     w.end_object(obj);
@@ -189,11 +190,11 @@ fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
     let bc = w.reserve(4);
     let start = w.len();
     w.be_i16(0x000a); // streamer version
-    w.be_i32(data.len() as i32);
+    w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
         w.be_f64(d);
     }
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
@@ -203,11 +204,11 @@ fn write_param_map(w: &mut WBuffer, n: usize) {
     let bc = w.reserve(4);
     let start = w.len();
     w.be_i16(0x000a); // streamer version
-    w.be_i32(n as i32); // count
+    w.be_i32(i32::saturating_from(n)); // count
     for i in 0..n {
         w.string(&format!("p{i}"));
-        w.be_i32(i as i32);
+        w.be_i32(i32::saturating_from(i));
     }
-    let len = (w.len() - start) as u32;
+    let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, 0x4000_0000 | len);
 }

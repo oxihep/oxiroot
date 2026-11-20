@@ -58,10 +58,11 @@ fn a_corrupt_header_envelope_is_a_checksum_mismatch() {
     let good = bytes();
     let seek = {
         let f = FileReader::from_bytes(good.clone()).unwrap();
-        NtupleReader::open(&f, "events")
+        let seek = NtupleReader::open(&f, "events")
             .unwrap()
             .anchor()
-            .seek_header as usize
+            .seek_header;
+        usize::try_from(seek).expect("a small test file")
     };
     // A byte in the header envelope's payload, ahead of its trailing checksum.
     let mut bad = good;

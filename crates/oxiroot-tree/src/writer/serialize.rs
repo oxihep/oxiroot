@@ -1,6 +1,7 @@
 //! The `TTree` object as ROOT streams it: the tree, its `TBranch` and
 //! `TBranchElement` records, and their `TLeaf*` leaves.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
 
 use oxiroot_io_core::{
@@ -59,7 +60,7 @@ fn begin_object_any(w: &mut WBuffer, class: &str) -> Patch {
 /// everything after the 4-byte count word).
 fn end_object_any(w: &mut WBuffer, bc: Patch) {
     let start = w.patch_offset(bc) + 4;
-    let nbytes = (w.len() - start) as u32 | K_BYTE_COUNT_MASK;
+    let nbytes = u32::saturating_from(w.len() - start) | K_BYTE_COUNT_MASK;
     w.patch_be_u32(bc, nbytes);
 }
 
@@ -76,7 +77,7 @@ pub(super) fn build_tree_object(
     // must use the same keylen so a jagged leaf's `fLeafCount` reference lands on
     // the count leaf. The wrapping key is wider in the big (64-bit) container form,
     // so the keylen — and thus every baked reference — depends on `big`.
-    let keylen = Key::header_len("TTree", tree_name, "", big) as u32;
+    let keylen = u32::saturating_from(Key::header_len("TTree", tree_name, "", big));
     let mut refs: LeafRefs = HashMap::new();
 
     let mut w = WBuffer::new();
@@ -127,7 +128,7 @@ fn obj_array_header(w: &mut WBuffer, size: usize) -> CountToken {
     let tok = w.begin_object(3); // TObjArray v3
     write_object_base(w, 0);
     w.string("");
-    w.be_i32(size as i32);
+    w.be_i32(i32::saturating_from(size));
     w.be_i32(0); // fLowerBound
     tok
 }
@@ -146,7 +147,7 @@ fn write_branch_array(
         if b.split().is_some() {
             // The parent's object-map position: its sub-branches reference it
             // (`fBranchCount`) so ROOT can find the collection they belong to.
-            let parent_ref = w.len() as u32 + keylen + K_MAP_OFFSET;
+            let parent_ref = u32::saturating_from(w.len()) + keylen + K_MAP_OFFSET;
             let bc = begin_object_any(w, "TBranchElement");
             write_split_parent(w, b, group, n_entries, keylen, parent_ref, refs);
             end_object_any(w, bc);
@@ -195,7 +196,7 @@ fn write_branch_element(
 /// byte). `fBasketEntry` is cumulative — the entry start of each basket, plus a
 /// trailing total — with the unused tail zeroed.
 fn write_basket_arrays(w: &mut WBuffer, group: &[BasketRec], max_baskets: i32) {
-    let cap = max_baskets as usize;
+    let cap = usize::saturating_from(max_baskets);
     // cumulative[i] = entries before basket i; cumulative[group.len()] = total.
     let mut cumulative = Vec::with_capacity(group.len() + 1);
     let mut acc = 0i64;
@@ -207,7 +208,7 @@ fn write_basket_arrays(w: &mut WBuffer, group: &[BasketRec], max_baskets: i32) {
 
     w.u8(1);
     for i in 0..cap {
-        w.be_i32(group.get(i).map_or(0, |b| b.nbytes as i32));
+        w.be_i32(group.get(i).map_or(0, |b| b.nbytes.cast_signed()));
     }
     w.u8(1);
     for i in 0..cap {
@@ -215,7 +216,7 @@ fn write_basket_arrays(w: &mut WBuffer, group: &[BasketRec], max_baskets: i32) {
     }
     w.u8(1);
     for i in 0..cap {
-        w.be_i64(group.get(i).map_or(0, |b| b.seek as i64));
+        w.be_i64(group.get(i).map_or(0, |b| b.seek.cast_signed()));
     }
 }
 
@@ -289,8 +290,8 @@ fn write_split_parent(
     w.be_i32(99); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
-    w.be_i64(count_basket.nbytes as i64); // fTotBytes
-    w.be_i64(count_basket.nbytes as i64); // fZipBytes
+    w.be_i64(i64::from(count_basket.nbytes)); // fTotBytes
+    w.be_i64(i64::from(count_basket.nbytes)); // fZipBytes
 
     // fBranches: the member sub-branches. The first writes `counter` inline.
     let sub_tok = obj_array_header(w, spec.members.len());
@@ -303,7 +304,7 @@ fn write_split_parent(
             &spec.class_name,
             checksum,
             m,
-            i as i32,
+            i32::saturating_from(i),
             &group[i + 1],
             n_entries,
             keylen,
@@ -382,15 +383,15 @@ fn write_split_sub(
     w.be_i32(0); // fSplitLevel
     w.be_i64(n_entries); // fEntries
     w.be_i64(0); // fFirstEntry
-    w.be_i64(basket.nbytes as i64); // fTotBytes
-    w.be_i64(basket.nbytes as i64); // fZipBytes
+    w.be_i64(i64::from(basket.nbytes)); // fTotBytes
+    w.be_i64(i64::from(basket.nbytes)); // fZipBytes
 
     let sub = obj_array_header(w, 0); // fBranches (empty)
     w.end_object(sub);
 
     // fLeaves: this member's TLeafElement. Its fLeafCount references `counter`.
     let leaf_tok = obj_array_header(w, 1);
-    let leaf_pos = w.len() as u32;
+    let leaf_pos = u32::saturating_from(w.len());
     let lbc = begin_object_any(w, "TLeafElement");
     let outer = w.begin_object(1); // TLeafElement v1
     let base = w.begin_object(2); // TLeaf v2
@@ -402,7 +403,7 @@ fn write_split_sub(
     w.u8(0); // fIsUnsigned
     if write_counter_inline {
         // First occurrence of the counter leaf: write it in full, record it.
-        let cpos = w.len() as u32;
+        let cpos = u32::saturating_from(w.len());
         let cbc = begin_object_any(w, "TLeafElement");
         write_leaf_element(w, counter, counter, 0, -1, -1, 0);
         end_object_any(w, cbc);
@@ -480,7 +481,7 @@ fn write_branch(
     // least `fWriteBasket` (= group.len()). ROOT's default is 10, which we keep
     // for the common case so small files stay byte-identical, but a streamed
     // tree can hold more than 10 baskets per branch, so grow it to fit.
-    let max_baskets = (group.len() as i32).max(10);
+    let max_baskets = i32::saturating_from(group.len()).max(10);
 
     let tok = w.begin_object(13); // TBranch v13
     write_named(w, OBJ_BITS, &branch.name, &title);
@@ -488,7 +489,7 @@ fn write_branch(
     w.be_i32(0); // fCompress
     w.be_i32(32000); // fBasketSize
     w.be_i32(entry_offset_len); // fEntryOffsetLen
-    w.be_i32(group.len() as i32); // fWriteBasket
+    w.be_i32(i32::saturating_from(group.len())); // fWriteBasket
     w.be_i64(n_entries); // fEntryNumber
     write_iofeatures(w);
     w.be_i32(0); // fOffset
@@ -517,7 +518,7 @@ fn write_branch(
 fn write_leaf_array(w: &mut WBuffer, branches: &[&Branch], keylen: u32, refs: &mut LeafRefs) {
     let tok = obj_array_header(w, branches.len());
     for &b in branches {
-        let bc_pos = w.len() as u32; // the byte-count word position (object-relative)
+        let bc_pos = u32::saturating_from(w.len()); // the byte-count word position (object-relative)
         let bc = begin_object_any(w, b.leaf().class);
         write_leaf(w, b, refs);
         end_object_any(w, bc);
@@ -619,7 +620,7 @@ fn write_leaf(w: &mut WBuffer, branch: &Branch, refs: &LeafRefs) {
     w.be_i32(f_len_type); // fLenType
     w.be_i32(0); // fOffset
     w.u8(u8::from(is_count)); // fIsRange
-    w.u8(leaf.unsigned as u8); // fIsUnsigned
+    w.u8(u8::from(leaf.unsigned)); // fIsUnsigned
     w.be_u32(f_leaf_count); // fLeafCount (object ref to the count leaf, or null)
     w.end_object(base);
     // fMinimum (0) and fMaximum. TLeafC stores them as 4-byte ints (string
@@ -634,11 +635,11 @@ fn write_leaf_minmax(w: &mut WBuffer, size: i32, max: i64) {
     match size {
         1 => {
             w.u8(0);
-            w.u8(max as u8);
+            w.u8(u8::saturating_from(max));
         }
         2 => {
             w.be_i16(0);
-            w.be_i16(max as i16);
+            w.be_i16(i16::saturating_from(max));
         }
         8 => {
             w.be_i64(0);
@@ -646,7 +647,7 @@ fn write_leaf_minmax(w: &mut WBuffer, size: i32, max: i64) {
         }
         _ => {
             w.be_i32(0);
-            w.be_i32(max as i32);
+            w.be_i32(i32::saturating_from(max));
         }
     }
 }

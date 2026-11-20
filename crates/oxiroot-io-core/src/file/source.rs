@@ -11,6 +11,7 @@
 //! this is a zero-copy view sharing the underlying allocation, so the resident
 //! read path stays copy-free.
 
+use crate::cast::SaturatingFrom;
 use bytes::Bytes;
 
 use crate::error::{Error, Result};
@@ -62,7 +63,7 @@ fn checked_range(offset: u64, len: usize, total: u64) -> Result<(usize, usize)> 
         .filter(|&e| e <= total)
         .ok_or_else(|| Error::UnexpectedEof {
             needed: len,
-            available: total.saturating_sub(offset) as usize,
+            available: usize::saturating_from(total.saturating_sub(offset)),
         })?;
     // `end <= total` and `total` came from a real file/response length, so both
     // fit `usize` on any target that could hold the file in the first place.

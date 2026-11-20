@@ -3,6 +3,7 @@
 //! Streamed layout: `TH1x{ Hist1D{ … }, TArray }`. The `Hist1D` base is shared via
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
@@ -57,7 +58,7 @@ impl Hist1D {
     /// Internal primitive behind the public builder: construct histograms with
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xmin, xmax).double()`.
     pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> Hist1D {
-        let cells = (nbins.max(0) as usize) + 2;
+        let cells = usize::saturating_from(nbins.max(0)) + 2;
         Hist1D {
             bin_content_type: BinContentType::F64,
             name: String::new(),
@@ -65,7 +66,7 @@ impl Hist1D {
             xaxis: Axis::new("xaxis", nbins, xmin, xmax),
             yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells: cells as i32,
+            ncells: i32::saturating_from(cells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -88,7 +89,7 @@ impl Hist1D {
             xaxis: Axis::variable("xaxis", edges),
             yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells: cells as i32,
+            ncells: i32::saturating_from(cells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -128,7 +129,7 @@ impl Hist1D {
         if w != 1.0 && self.sumw2.is_empty() {
             self.sumw2();
         }
-        let nbins = self.xaxis.nbins.max(0) as usize;
+        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
             *c += w;
@@ -285,7 +286,7 @@ impl Hist1D {
     /// through `find_bin(hi)`, inclusive.
     #[must_use]
     pub fn integral_range(&self, lo: f64, hi: f64) -> f64 {
-        let nbins = self.xaxis.nbins.max(0) as usize;
+        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         if nbins == 0 {
             return 0.0;
         }

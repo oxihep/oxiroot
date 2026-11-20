@@ -7,6 +7,7 @@ use crate::field::leading_zero;
 
 /// A column of data for one RNTuple field.
 #[non_exhaustive]
+#[derive(Debug)]
 pub enum Column {
     /// `bool` (Bit column).
     Bool(Vec<bool>),
@@ -202,6 +203,7 @@ impl Column {
 }
 
 /// A named RNTuple field.
+#[derive(Debug)]
 pub struct Field {
     /// Field name.
     pub name: String,

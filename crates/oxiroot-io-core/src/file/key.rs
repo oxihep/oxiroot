@@ -5,6 +5,7 @@
 //! version exceeds 1000 (ROOT's large-file convention). Layout mirrors uproot's
 //! `_key_format_{small,big}`.
 
+use crate::cast::SaturatingFrom;
 use std::ops::Range;
 
 use crate::buffer::RBuffer;
@@ -87,7 +88,7 @@ impl Key {
         let (seek_key, seek_pdir) = if version > KEY_BIG_VERSION {
             (r.be_u64()?, r.be_u64()?)
         } else {
-            (r.be_u32()? as u64, r.be_u32()? as u64)
+            (u64::from(r.be_u32()?), u64::from(r.be_u32()?))
         };
         let class_name = r.string()?;
         let name = r.string()?;
@@ -142,7 +143,7 @@ impl Key {
     /// 0 for a malformed key whose `key_len` exceeds its total byte count
     /// (rather than underflowing); [`payload`](Key::payload) rejects such keys.
     pub fn payload_len(&self) -> usize {
-        self.total_bytes().saturating_sub(self.key_len as u32) as usize
+        self.total_bytes().saturating_sub(u32::from(self.key_len)) as usize
     }
 
     /// Whether the object payload is stored uncompressed (on-disk size equals
@@ -155,7 +156,7 @@ impl Key {
     /// Unvalidated — prefer [`payload`](Key::payload), which bounds-checks
     /// against the actual buffer. Kept for callers operating on trusted data.
     pub fn payload_range(&self) -> Range<usize> {
-        let start = self.seek_key as usize + self.key_len as usize;
+        let start = usize::saturating_from(self.seek_key) + self.key_len as usize;
         start..start + self.payload_len()
     }
 
@@ -165,7 +166,7 @@ impl Key {
     /// buffer. Use this (not [`payload_range`](Key::payload_range)`.start`) to
     /// locate a key's body on any untrusted file.
     pub fn payload_start(&self, data_len: usize) -> Result<usize> {
-        (self.seek_key as usize)
+        usize::saturating_from(self.seek_key)
             .checked_add(self.key_len as usize)
             .filter(|&s| s <= data_len)
             .ok_or_else(|| {
@@ -184,7 +185,7 @@ impl Key {
         let start = self.payload_start(data.len())?;
         let len = self
             .total_bytes()
-            .checked_sub(self.key_len as u32)
+            .checked_sub(u32::from(self.key_len))
             .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", self.name)))?
             as usize;
         let end = start

@@ -148,7 +148,7 @@ impl Value {
             Value::U8(v) => i64::from(v),
             Value::U16(v) => i64::from(v),
             Value::U32(v) => i64::from(v),
-            Value::U64(v) => v as i64,
+            Value::U64(v) => v.cast_signed(),
             _ => return None,
         })
     }

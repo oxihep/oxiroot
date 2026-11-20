@@ -8,6 +8,7 @@
 //! pass, as an explicit list of offsets. This reader decodes the common
 //! single-tree case (the `fBlocks` array); a multi-tree list (`fLists`) is not
 //! yet expanded.
+use oxiroot_io_core::cast::SaturatingFrom;
 
 use oxiroot_io_core::{
     Error, FileReader, RBuffer, Result, TagReader, decompress_payload, read_named, read_object_base,
@@ -112,7 +113,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<EntryList> {
         for bi in 0..size {
             let block = tags.read_header(&mut r)?;
             if block.class_name.as_deref() == Some("TEntryListBlock") {
-                read_block(&mut r, bi as u64, &mut entries)?;
+                read_block(&mut r, u64::saturating_from(bi), &mut entries)?;
             }
             if let Some(end) = block.end {
                 r.seek(end)?;
@@ -149,8 +150,8 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<EntryList> {
 fn read_block(r: &mut RBuffer, block_index: u64, out: &mut Vec<u64>) -> Result<()> {
     let vh = r.read_version()?; // TEntryListBlock version header
     read_object_base(r)?;
-    let n_passed = r.be_i32()?.max(0) as usize;
-    let n = r.be_i32()?.max(0) as usize; // number of UShort_t words in fIndices
+    let n_passed = usize::saturating_from(r.be_i32()?.max(0));
+    let n = usize::saturating_from(r.be_i32()?.max(0)); // number of UShort_t words in fIndices
     r.u8()?; // the counted-array "is present" flag
     let mut indices = Vec::with_capacity(n.min(r.remaining() / 2));
     for _ in 0..n {
@@ -172,7 +173,7 @@ fn read_block(r: &mut RBuffer, block_index: u64, out: &mut Vec<u64>) -> Result<(
     } else if f_type != 0 {
         // Explicit list: fIndices holds the passing entries' offsets directly.
         for &offset in indices.iter().take(n_passed) {
-            out.push(base + offset as u64);
+            out.push(base + u64::from(offset));
         }
     }
     // (f_type == 0 && !f_passing — the complement encoding ROOT uses when most

@@ -31,6 +31,11 @@ impl XorShift64 {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "terminal columns for values in [0, 1]"
+)]
 fn main() {
     // --- Part A: the shapes themselves (always available). ---------------------
     // Compare a Gaussian to a Crystal Ball with the same core (mean 0, sigma 1).

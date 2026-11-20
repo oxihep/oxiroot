@@ -7,7 +7,7 @@ use oxiroot_hist::{Hist, Hist1D, Mergeable, ThreadedFill1, ThreadedFill2, Thread
 
 fn data() -> Vec<f64> {
     // Deterministic, varied, all in-range over [0, 100).
-    (0..1000).map(|i| ((i * 37) % 100) as f64 + 0.5).collect()
+    (0..1000).map(|i| f64::from((i * 37) % 100) + 0.5).collect()
 }
 
 fn serial(data: &[f64]) -> Hist1D {

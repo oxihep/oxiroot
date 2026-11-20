@@ -1,6 +1,7 @@
 //! `oxroot stat` — a one-screen summary of a ROOT file.
 
 use clap::Args as ClapArgs;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 use crate::json::Json;
 use crate::util::{CmdResult, compression_label, parse_spec, root_version};
@@ -46,10 +47,10 @@ pub fn run(args: Args, json: bool) -> CmdResult {
         );
         let out = Json::Object(vec![
             ("file", Json::s(path)),
-            ("size_bytes", Json::Int(size as i64)),
+            ("size_bytes", Json::Int(size.cast_signed())),
             ("root_version", Json::s(root_version(header.version))),
             ("compression", Json::s(compression_label(header.compress))),
-            ("objects", Json::Int(keys as i64)),
+            ("objects", Json::Int(i64::saturating_from(keys))),
             ("streamers", streamers),
         ]);
         println!("{}", out.render());

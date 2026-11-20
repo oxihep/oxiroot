@@ -7,6 +7,7 @@
 //! Content`). Small (metadata) reads are cached so re-parsing the streamer info
 //! or key list does not re-fetch.
 
+use crate::cast::SaturatingFrom;
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Mutex;
@@ -86,7 +87,7 @@ impl HttpSource {
             .filter(|&e| e <= self.len)
             .ok_or_else(|| Error::UnexpectedEof {
                 needed: len,
-                available: self.len.saturating_sub(offset) as usize,
+                available: usize::saturating_from(self.len.saturating_sub(offset)),
             })?;
         self.fetch(offset, len)
     }
@@ -196,7 +197,7 @@ impl ByteSource for HttpSource {
             .filter(|&e| e <= self.len)
             .ok_or_else(|| Error::UnexpectedEof {
                 needed: len,
-                available: self.len.saturating_sub(offset) as usize,
+                available: usize::saturating_from(self.len.saturating_sub(offset)),
             })?;
 
         let cacheable = len <= CACHE_MAX_ENTRY;

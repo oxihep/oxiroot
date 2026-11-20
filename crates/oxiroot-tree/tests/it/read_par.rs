@@ -4,6 +4,7 @@
 //! silently).
 #![cfg(feature = "rayon")]
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
@@ -49,7 +50,7 @@ fn parallel_reads_match_serial_across_many_baskets() {
     let x: Vec<f64> = (0..n).map(|i| f64::from(i) * 0.5).collect();
     let k: Vec<i32> = (0..n).map(|i| i % 17).collect();
     let jag: Vec<Vec<f64>> = (0..n)
-        .map(|i| vec![f64::from(i); (i % 4) as usize])
+        .map(|i| vec![f64::from(i); usize::saturating_from(i % 4)])
         .collect();
     let out = std::env::temp_dir().join(format!("oxiroot_read_par_{}.root", std::process::id()));
     write_tree_file_baskets(

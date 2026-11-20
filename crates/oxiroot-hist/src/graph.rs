@@ -17,6 +17,7 @@ use oxiroot_io_core::{
 
 use crate::base::{BinContentType, bin_content_type_of, check_len, object_bytes_any};
 use crate::hist1d::Hist1D;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Error bars attached to a graph's points.
 #[derive(Debug, Clone, PartialEq)]
@@ -281,7 +282,7 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<Graph> {
     skip_versioned(r)?; // TAttLine
     skip_versioned(r)?; // TAttFill
     skip_versioned(r)?; // TAttMarker
-    let npoints = r.be_i32()?.max(0) as usize;
+    let npoints = usize::saturating_from(r.be_i32()?.max(0));
     let x = read_basic_array(r, npoints)?;
     let y = read_basic_array(r, npoints)?;
     let functions = read_functions(r)?; // fFunctions (TList<Func1D>)
@@ -304,19 +305,19 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<Graph> {
 /// understand (formula functions) and silently dropping any other object kinds.
 /// A null pointer or empty list yields an empty `Vec`.
 fn read_functions(r: &mut RBuffer) -> Result<Vec<GraphFunction>> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     if bc == 0 {
         return Ok(Vec::new()); // null pointer
     }
     let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()? as u32;
+    let tag = r.be_i32()?.cast_unsigned();
     if tag == 0xFFFF_FFFF {
         skip_cstring(r)?; // "TList\0"
     }
     let _ver = r.read_version()?; // TList v5
     let _obj = read_object_base(r)?; // TObject base
     let _name = r.string()?; // fName (empty)
-    let nfns = r.be_i32()?.max(0) as usize;
+    let nfns = usize::saturating_from(r.be_i32()?.max(0));
     let mut functions = Vec::new();
     for _ in 0..nfns {
         if let Some(f) = read_function_element(r)? {
@@ -332,12 +333,12 @@ fn read_functions(r: &mut RBuffer) -> Result<Vec<GraphFunction>> {
 /// Read one `fFunctions` element: an object pointer that is a `Func1D` (decoded) or
 /// some other class (skipped, returning `None`).
 fn read_function_element(r: &mut RBuffer) -> Result<Option<GraphFunction>> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     if bc == 0 {
         return Ok(None); // null element
     }
     let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()? as u32;
+    let tag = r.be_i32()?.cast_unsigned();
     let class = if tag == 0xFFFF_FFFF {
         read_cstring(r)?
     } else {
@@ -374,11 +375,11 @@ fn skip_cstring(r: &mut RBuffer) -> Result<()> {
 /// Read an optional embedded `Hist1D*` (the `fHistogram` display frame). A null
 /// pointer is a 4-byte zero; otherwise `{byte count}{class tag}{Hist1D object}`.
 fn read_opt_th1(r: &mut RBuffer) -> Result<Option<Hist1D>> {
-    let bc = r.be_i32()? as u32;
+    let bc = r.be_i32()?.cast_unsigned();
     if bc == 0 {
         return Ok(None); // null pointer
     }
-    let tag = r.be_i32()? as u32;
+    let tag = r.be_i32()?.cast_unsigned();
     let bin_content_type = if tag == 0xFFFF_FFFF {
         // kNewClassTag: a NUL-terminated class name follows (e.g. "TH1F").
         let mut class = String::new();

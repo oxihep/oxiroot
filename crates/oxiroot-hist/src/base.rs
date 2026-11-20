@@ -12,6 +12,7 @@ use oxiroot_io_core::{
 pub(crate) use oxiroot_io_core::{object_bytes_any, object_bytes_any_keyed};
 
 use crate::axis::Axis;
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// The on-disk type of a histogram's bin contents, named by the class suffix
 /// (`Hist1D**D**`, `Hist2D**F**`, …). Contents are always held in memory as `f64`;
@@ -154,7 +155,10 @@ pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
-    let sizes: Vec<usize> = axis_nbins.iter().map(|&n| n.max(0) as usize).collect();
+    let sizes: Vec<usize> = axis_nbins
+        .iter()
+        .map(|&n| usize::saturating_from(n.max(0)))
+        .collect();
     if sizes.contains(&0) {
         return 0.0;
     }
@@ -242,7 +246,7 @@ pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<HistBase> {
 pub(crate) fn cell_count(axis_nbins: &[i32]) -> Result<usize> {
     let mut total: usize = 1;
     for &n in axis_nbins {
-        let cells = (n.max(0) as usize)
+        let cells = usize::saturating_from(n.max(0))
             .checked_add(2)
             .and_then(|c| total.checked_mul(c))
             .ok_or_else(|| Error::Format("histogram cell count overflows usize".into()))?;
@@ -267,17 +271,17 @@ pub(crate) fn check_cells(name: &str, len: usize, cells: usize, optional: bool) 
 /// Read an inline `TArray` of `n` values of the given element type (a count
 /// followed by that many values, widened to `f64`).
 pub(crate) fn read_tarray(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Vec<f64>> {
-    let n = r.be_i32()?.max(0) as usize;
+    let n = usize::saturating_from(r.be_i32()?.max(0));
     // Cap the up-front reservation at what the buffer could possibly hold, so a
     // forged count can't drive a huge allocation before the read fails.
     let mut v = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
         let value = match bin_content_type {
             BinContentType::F64 => r.be_f64()?,
-            BinContentType::F32 => r.be_f32()? as f64,
-            BinContentType::I32 => r.be_i32()? as f64,
-            BinContentType::I16 => r.be_i16()? as f64,
-            BinContentType::I8 => r.i8()? as f64,
+            BinContentType::F32 => f64::from(r.be_f32()?),
+            BinContentType::I32 => f64::from(r.be_i32()?),
+            BinContentType::I16 => f64::from(r.be_i16()?),
+            BinContentType::I8 => f64::from(r.i8()?),
             BinContentType::I64 => r.be_i64()? as f64,
         };
         v.push(value);

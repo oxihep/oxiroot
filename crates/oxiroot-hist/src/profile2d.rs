@@ -4,6 +4,7 @@
 //! (`sumz2`, the Hist2D `fSumw2`). On disk it is a `TH2D` plus the profile members,
 //! exactly as `Profile1D` is a `TH1D` plus profile members.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
@@ -69,13 +70,13 @@ impl Profile2D {
     /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Profile2D {
-        let ncells = ((nx.max(0) + 2) * (ny.max(0) + 2)) as usize;
+        let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2));
         Profile2D {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
-            ncells: ncells as i32,
+            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -98,12 +99,12 @@ impl Profile2D {
 
     /// Number of x bins (excluding flow).
     pub fn nx(&self) -> usize {
-        self.xaxis.nbins.max(0) as usize
+        usize::saturating_from(self.xaxis.nbins.max(0))
     }
 
     /// Number of y bins (excluding flow).
     pub fn ny(&self) -> usize {
-        self.yaxis.nbins.max(0) as usize
+        usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
     /// Turn on per-bin `Σw²` tracking (ROOT's `Profile1D::Sumw2`), seeding each

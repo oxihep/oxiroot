@@ -68,7 +68,7 @@ fn main() -> oxiroot::Result<()> {
     let n = 2_000;
     let (mut x_max, mut y_max) = (0.0, f64::NEG_INFINITY);
     for i in 0..=n {
-        let x = 10.0 * i as f64 / n as f64;
+        let x = 10.0 * f64::from(i) / f64::from(n);
         let y = damped.eval(x);
         if y > y_max {
             (x_max, y_max) = (x, y);
@@ -80,7 +80,7 @@ fn main() -> oxiroot::Result<()> {
     let half = gauss.param(0) / 2.0; // half of the Gaussian's peak height
     let mut crossing = f64::NAN;
     for i in 0..=n {
-        let x = gauss.param(1) + 5.0 * i as f64 / n as f64; // walk right from the mean
+        let x = gauss.param(1) + 5.0 * f64::from(i) / f64::from(n); // walk right from the mean
         if gauss.eval(x) <= half {
             crossing = x;
             break;

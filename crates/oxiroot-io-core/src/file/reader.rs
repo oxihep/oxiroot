@@ -4,6 +4,7 @@
 //! surface over the TFile container. M1 provides reading and key enumeration;
 //! object materialization (`get`) and writing arrive in later milestones.
 
+use crate::cast::SaturatingFrom;
 use std::path::Path;
 
 use bytes::Bytes;
@@ -132,7 +133,7 @@ impl FileReader {
     /// directory, and key list are read at open; everything else is on demand.
     pub fn from_source(source: Box<dyn ByteSource>) -> Result<FileReader> {
         let size = source.len();
-        let head = source.read_at(0, HEADER_PROBE.min(size) as usize)?;
+        let head = source.read_at(0, usize::saturating_from(HEADER_PROBE.min(size)))?;
         let header = {
             let mut r = RBuffer::new(&head);
             FileHeader::read(&mut r)?
@@ -227,7 +228,10 @@ impl FileReader {
                 what: "subdirectory",
                 name: name.to_string(),
             })?;
-        Directory::read(&*self.source, key.payload_start(self.size as usize)? as u64)
+        Directory::read(
+            &*self.source,
+            key.payload_start(usize::saturating_from(self.size))? as u64,
+        )
     }
 
     /// Return the class name and decompressed object bytes for key `name` inside
@@ -368,7 +372,7 @@ impl FileReader {
     /// fKeyLen` bytes after its header. Bounds-checked against the file size;
     /// errors (never panics) on a malformed key.
     pub fn key_payload(&self, key: &Key) -> Result<Bytes> {
-        let start = key.payload_start(self.size as usize)? as u64;
+        let start = key.payload_start(usize::saturating_from(self.size))? as u64;
         let len = key
             .total_bytes()
             .checked_sub(u32::from(key.key_len))

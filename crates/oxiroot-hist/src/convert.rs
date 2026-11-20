@@ -61,6 +61,7 @@
 //! variance, so ROOT's error bars are slightly smaller for bins with few
 //! entries.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::Path;
 
 use oxihist::{
@@ -217,7 +218,7 @@ fn root_axes(axes: &[oxihist::Axis]) -> Result<Vec<Axis>> {
 
 /// The oxihist axis for a ROOT axis.
 fn hist_axis(a: &Axis) -> Result<oxihist::Axis> {
-    let n = a.nbins.max(0) as usize;
+    let n = usize::saturating_from(a.nbins.max(0));
     let ax = if a.is_labelled() {
         let labels: Vec<String> = (1..=n)
             .map(|i| a.bin_label(i).unwrap_or_default().to_owned())
@@ -242,10 +243,10 @@ fn root_cell(idx: &[isize], sizes: &[usize], nbins: &[usize]) -> usize {
     for ((&i, &size), &n) in idx.iter().zip(sizes).zip(nbins) {
         let r = if i < 0 {
             0
-        } else if i as usize >= size {
+        } else if i.cast_unsigned() >= size {
             n + 1
         } else {
-            i as usize + 1
+            i.cast_unsigned() + 1
         };
         cell += r * stride;
         stride *= n + 2;
@@ -259,7 +260,7 @@ fn hist_index<const D: usize>(cell: usize, nbins: &[usize; D]) -> [isize; D] {
     let mut c = cell;
     std::array::from_fn(|k| {
         let e = nbins[k] + 2;
-        let i = (c % e) as isize - 1;
+        let i = (c % e).cast_signed() - 1;
         c /= e;
         i
     })
@@ -338,11 +339,11 @@ fn cells<S: Storage, const D: usize>(
         let in_range = idx
             .iter()
             .zip(&sizes)
-            .all(|(&i, &n)| i >= 0 && (i as usize) < n);
+            .all(|(&i, &n)| i >= 0 && (i).cast_unsigned() < n);
         if !in_range {
             continue;
         }
-        let x: Vec<f64> = (0..D).map(|k| centers[k][idx[k] as usize]).collect();
+        let x: Vec<f64> = (0..D).map(|k| centers[k][idx[k].cast_unsigned()]).collect();
         c.sw += w;
         c.sw2 += v;
         for k in 0..D {
@@ -392,7 +393,7 @@ macro_rules! count_to_root {
 macro_rules! counts_1d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 1, Hist1D, |h, c, axes| {
-            let mut r = Hist1D::new(c.nbins[0] as i32, 0.0, 1.0);
+            let mut r = Hist1D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r
         });
@@ -401,7 +402,7 @@ macro_rules! counts_1d {
 macro_rules! counts_2d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 2, Hist2D, |h, c, axes| {
-            let mut r = Hist2D::new(c.nbins[0] as i32, 0.0, 1.0, c.nbins[1] as i32, 0.0, 1.0);
+            let mut r = Hist2D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0, i32::saturating_from(c.nbins[1]), 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
             r.tsumwy = c.swx[1];
@@ -415,9 +416,9 @@ macro_rules! counts_3d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 3, Hist3D, |h, c, axes| {
             let mut r = Hist3D::new(
-                c.nbins[0] as i32, 0.0, 1.0,
-                c.nbins[1] as i32, 0.0, 1.0,
-                c.nbins[2] as i32, 0.0, 1.0,
+                i32::saturating_from(c.nbins[0]), 0.0, 1.0,
+                i32::saturating_from(c.nbins[1]), 0.0, 1.0,
+                i32::saturating_from(c.nbins[2]), 0.0, 1.0,
             );
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
@@ -504,7 +505,7 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
         let in_range = idx
             .iter()
             .zip(&p.cells.sizes)
-            .all(|(&i, &n)| i >= 0 && (i as usize) < n);
+            .all(|(&i, &n)| i >= 0 && (i).cast_unsigned() < n);
         if in_range {
             p.swy += sum;
             p.swy2 += sum2;
@@ -577,21 +578,21 @@ macro_rules! mean_to_root {
 macro_rules! means {
     ($($s:ty),*) => {$(
         mean_to_root!($s, 1, Profile1D, |c, axes| {
-            let mut r = Profile1D::new(c.nbins[0] as i32, 0.0, 1.0);
+            let mut r = Profile1D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r
         });
         mean_to_root!($s, 2, Profile2D, |c, axes| {
-            let mut r = Profile2D::new(c.nbins[0] as i32, 0.0, 1.0, c.nbins[1] as i32, 0.0, 1.0);
+            let mut r = Profile2D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0, i32::saturating_from(c.nbins[1]), 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
             r
         });
         mean_to_root!($s, 3, Profile3D, |c, axes| {
             let mut r = Profile3D::new(
-                c.nbins[0] as i32, 0.0, 1.0,
-                c.nbins[1] as i32, 0.0, 1.0,
-                c.nbins[2] as i32, 0.0, 1.0,
+                i32::saturating_from(c.nbins[0]), 0.0, 1.0,
+                i32::saturating_from(c.nbins[1]), 0.0, 1.0,
+                i32::saturating_from(c.nbins[2]), 0.0, 1.0,
             );
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();

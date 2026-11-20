@@ -9,6 +9,7 @@
 //! in version 4 (ROOT 4) and `fBinSumw2` in version 6 (ROOT 5.24). Versions 2
 //! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{FileReader, RBuffer, Result};
 
 use crate::axis::Axis;
@@ -256,12 +257,12 @@ impl Profile1D {
     /// and no y restriction. Internal primitive behind the public builder:
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).mean().to_root()`.
     pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> Profile1D {
-        let ncells = (nbins.max(0) + 2) as usize;
+        let ncells = usize::saturating_from(nbins.max(0) + 2);
         Profile1D {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nbins, xlo, xhi),
-            ncells: ncells as i32,
+            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -309,7 +310,7 @@ impl Profile1D {
         if w != 1.0 {
             self.track_bin_sumw2();
         }
-        let nbins = self.xaxis.nbins.max(0) as usize;
+        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
         if let Some(s) = self.sums.get_mut(bin) {
             *s += w * y;

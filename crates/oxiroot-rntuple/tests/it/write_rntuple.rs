@@ -1,6 +1,7 @@
 //! M5/#2: write an RNTuple with scalar, string, and vector fields, then read it
 //! back through our own reader.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
@@ -139,7 +140,7 @@ fn writes_unsigned_and_more_vector_types() {
 fn writes_a_zstd_compressed_rntuple_that_round_trips() {
     // Highly compressible columns so the pages are actually stored compressed.
     let n = 1000usize;
-    let x: Vec<i32> = (0..n as i32).map(|i| i % 4).collect();
+    let x: Vec<i32> = (0..i32::saturating_from(n)).map(|i| i % 4).collect();
     let y: Vec<f64> = vec![2.5; n];
     let fields = vec![
         Field {

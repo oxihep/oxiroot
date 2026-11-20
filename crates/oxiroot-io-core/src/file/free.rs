@@ -10,6 +10,7 @@ use super::header::FileHeader;
 use super::key::Key;
 use super::source::ByteSource;
 use crate::buffer::RBuffer;
+use crate::cast::SaturatingFrom;
 use crate::error::Result;
 
 /// `TFree` version above which offsets are 64-bit.
@@ -37,7 +38,7 @@ pub fn read_free(source: &dyn ByteSource, header: &FileHeader) -> Result<Vec<Fre
     } else {
         avail
     };
-    let win = source.read_at(header.seek_free, want as usize)?;
+    let win = source.read_at(header.seek_free, usize::saturating_from(want))?;
     let mut r = RBuffer::new(&win);
 
     // The free list is wrapped in a Key; its payload is `nfree` TFree records.
@@ -49,7 +50,7 @@ pub fn read_free(source: &dyn ByteSource, header: &FileHeader) -> Result<Vec<Fre
         let (first, last) = if version > FREE_BIG_VERSION {
             (r.be_u64()?, r.be_u64()?)
         } else {
-            (r.be_u32()? as u64, r.be_u32()? as u64)
+            (u64::from(r.be_u32()?), u64::from(r.be_u32()?))
         };
         segments.push(FreeSegment { first, last });
     }

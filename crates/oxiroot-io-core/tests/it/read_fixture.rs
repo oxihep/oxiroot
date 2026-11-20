@@ -1,6 +1,7 @@
 //! M1 integration tests: read the committed ROOT fixture's container metadata
 //! and enumerate its keys, plus a hand-crafted 64-bit-header round-trip.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{FileHeader, FileReader, RBuffer, WBuffer};
@@ -21,7 +22,7 @@ fn reads_th1d_uncompressed_container() {
     assert_eq!(h.begin, 100);
     assert_eq!(h.units, 4);
     // Self-consistency: streamer-info record sits right before the free list.
-    assert_eq!(h.seek_info + h.nbytes_info as u64, h.seek_free);
+    assert_eq!(h.seek_info + u64::from(h.nbytes_info), h.seek_free);
 
     // Exactly one key, the TH1D named "h1" (matches fixtures/golden/*.json).
     let keys: Vec<(&str, &str)> = f
@@ -45,7 +46,7 @@ fn reads_th1d_uncompressed_container() {
 fn free_list_is_consistent() {
     let f = FileReader::open(fixture("th1d_uncompressed.root")).expect("open fixture");
     let free = f.free_segments().expect("read free list");
-    assert_eq!(free.len() as u32, f.header().nfree);
+    assert_eq!(u32::saturating_from(free.len()), f.header().nfree);
     for seg in &free {
         assert!(seg.first <= seg.last);
     }

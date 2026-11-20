@@ -3,6 +3,7 @@
 //! `TStreamerInfo`s a file storing them embeds.
 
 use oxiroot_hist::{GraphFunction, hist_streamer_classes};
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::streamer_gen::{Cls, any, base, basic, objanyptr, objptr, stl, strf};
 use oxiroot_io_core::{
     Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot, object_bytes_any,
@@ -208,7 +209,7 @@ fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
     let ymin = r.be_f64()?;
     let ymax = r.be_f64()?;
     let _npy = r.be_i32()?;
-    let ncontour = r.be_i32()?.max(0) as usize; // fContour: TArrayD (fN then fN f64s)
+    let ncontour = usize::saturating_from(r.be_i32()?.max(0)); // fContour: TArrayD (fN then fN f64s)
     for _ in 0..ncontour {
         r.be_f64()?;
     }

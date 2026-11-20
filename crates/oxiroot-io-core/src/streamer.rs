@@ -7,6 +7,7 @@
 //! with a 2-byte version and no byte count.
 
 use crate::buffer::{RBuffer, WBuffer};
+use crate::cast::SaturatingFrom;
 use crate::error::Result;
 
 /// `TObject::kIsReferenced` — when set in `fBits`, a 2-byte process-id follows.
@@ -97,7 +98,7 @@ pub fn write_object_any(w: &mut WBuffer, class: &str, body: &[u8]) {
     w.bytes(class.as_bytes());
     w.u8(0);
     w.bytes(body);
-    let inner = (w.len() - w.patch_offset(bc) - 4) as u32;
+    let inner = u32::saturating_from(w.len() - w.patch_offset(bc) - 4);
     w.patch_be_u32(bc, inner | crate::buffer::K_BYTE_COUNT_MASK);
 }
 

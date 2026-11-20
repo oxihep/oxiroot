@@ -137,7 +137,7 @@ fn batch_fill_and_uhi_slicing() {
     // (h[a:b]) where the cropped content folds into the flow.
     let mut g = Hist::reg(10, 0.0, 10.0).double().to_root();
     for i in 0..10 {
-        g.fill(i as f64 + 0.5); // one entry per bin
+        g.fill(f64::from(i) + 0.5); // one entry per bin
     }
     assert_eq!(g.integral_range(2.5, 4.5), 3.0); // bins 3, 4, 5
     let s = g.slice(2.5, 4.5);

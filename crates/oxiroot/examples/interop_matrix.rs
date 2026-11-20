@@ -15,6 +15,7 @@
 //! `cargo run … -- read-big <file>` reads back a >2 GiB oracle file (the `--big`
 //! path of `scripts/interop_local.sh`).
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::fmt::Write as _;
 use std::path::Path;
 use std::process::exit;
@@ -124,7 +125,7 @@ fn jvi64_2(v: &[Vec<i64>]) -> J {
 // ---------------------------------------------------------------------------
 
 fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
-    let mut h = Hist::reg(nbins as usize, xmin, xmax)
+    let mut h = Hist::reg(usize::saturating_from(nbins), xmin, xmax)
         .double()
         .to_root()
         .named("h")
@@ -137,14 +138,14 @@ fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
 }
 
 fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
-    let mut h = Hist::reg(nx as usize, 0.0, nx as f64)
-        .reg(ny as usize, 0.0, ny as f64)
+    let mut h = Hist::reg(usize::saturating_from(nx), 0.0, f64::from(nx))
+        .reg(usize::saturating_from(ny), 0.0, f64::from(ny))
         .double()
         .to_root()
         .named("h")
         .titled("m");
     // ROOT cell index = ix + (nx+2)*iy, in-range ix,iy in 1..=n.
-    let stride = (nx + 2) as usize;
+    let stride = usize::saturating_from(nx + 2);
     let mut entries = 0.0;
     for (ix, col) in contents.iter().enumerate() {
         for (iy, &c) in col.iter().enumerate() {
@@ -157,14 +158,14 @@ fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
 }
 
 fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
-    let mut h = Hist::reg(n as usize, 0.0, n as f64)
-        .reg(n as usize, 0.0, n as f64)
-        .reg(n as usize, 0.0, n as f64)
+    let mut h = Hist::reg(usize::saturating_from(n), 0.0, f64::from(n))
+        .reg(usize::saturating_from(n), 0.0, f64::from(n))
+        .reg(usize::saturating_from(n), 0.0, f64::from(n))
         .double()
         .to_root()
         .named("h")
         .titled("m");
-    let s = (n + 2) as usize;
+    let s = usize::saturating_from(n + 2);
     let mut entries = 0.0;
     for (ix, plane) in contents.iter().enumerate() {
         for (iy, col) in plane.iter().enumerate() {
@@ -868,23 +869,23 @@ fn rntuple_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
         rn_field(
             "fi32",
             "int32",
-            jints(&i32s.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&i32s.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         rn_field("fi64", "int64", jints(&i64s)),
         rn_field(
             "fu32",
             "uint32",
-            jints(&u32s.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&u32s.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         rn_field(
             "fu64",
             "uint64",
-            jints(&u64s.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&u64s.iter().map(|&x| x.cast_signed()).collect::<Vec<_>>()),
         ),
         rn_field(
             "ff32",
             "float32",
-            jflts(&f32s.iter().map(|&x| x as f64).collect::<Vec<_>>()),
+            jflts(&f32s.iter().map(|&x| f64::from(x)).collect::<Vec<_>>()),
         ),
         rn_field("ff64", "float64", jflts(&f64s)),
         rn_field(
@@ -933,7 +934,7 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
             jvi64_2(
                 &vi32
                     .iter()
-                    .map(|r| r.iter().map(|&x| x as i64).collect())
+                    .map(|r| r.iter().map(|&x| i64::from(x)).collect())
                     .collect::<Vec<_>>(),
             ),
         ),
@@ -944,7 +945,7 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
             jflts2(
                 &vf32
                     .iter()
-                    .map(|r| r.iter().map(|&x| x as f64).collect())
+                    .map(|r| r.iter().map(|&x| f64::from(x)).collect())
                     .collect::<Vec<_>>(),
             ),
         ),
@@ -1053,43 +1054,43 @@ fn tree_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
         scal(
             "bi8",
             "int8",
-            jints(&bi8.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bi8.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal(
             "bu8",
             "uint8",
-            jints(&bu8.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bu8.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal(
             "bi16",
             "int16",
-            jints(&bi16.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bi16.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal(
             "bu16",
             "uint16",
-            jints(&bu16.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bu16.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal(
             "bi32",
             "int32",
-            jints(&bi32.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bi32.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal(
             "bu32",
             "uint32",
-            jints(&bu32.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bu32.iter().map(|&x| i64::from(x)).collect::<Vec<_>>()),
         ),
         scal("bi64", "int64", jints(&bi64)),
         scal(
             "bu64",
             "uint64",
-            jints(&bu64.iter().map(|&x| x as i64).collect::<Vec<_>>()),
+            jints(&bu64.iter().map(|&x| x.cast_signed()).collect::<Vec<_>>()),
         ),
         scal(
             "bf32",
             "float32",
-            jflts(&bf32.iter().map(|&x| x as f64).collect::<Vec<_>>()),
+            jflts(&bf32.iter().map(|&x| f64::from(x)).collect::<Vec<_>>()),
         ),
         scal("bf64", "float64", jflts(&bf64)),
     ]);
@@ -1225,7 +1226,7 @@ fn tree_split(id: &'static str, dir: &Path) -> J {
                             "float32",
                             jflts2(
                                 &x.iter()
-                                    .map(|r| r.iter().map(|&v| v as f64).collect())
+                                    .map(|r| r.iter().map(|&v| f64::from(v)).collect())
                                     .collect::<Vec<_>>(),
                             ),
                         ),
@@ -1234,7 +1235,7 @@ fn tree_split(id: &'static str, dir: &Path) -> J {
                             "float32",
                             jflts2(
                                 &y.iter()
-                                    .map(|r| r.iter().map(|&v| v as f64).collect())
+                                    .map(|r| r.iter().map(|&v| f64::from(v)).collect())
                                     .collect::<Vec<_>>(),
                             ),
                         ),
@@ -1243,7 +1244,7 @@ fn tree_split(id: &'static str, dir: &Path) -> J {
                             "int32",
                             jvi64_2(
                                 &idm.iter()
-                                    .map(|r| r.iter().map(|&v| v as i64).collect())
+                                    .map(|r| r.iter().map(|&v| i64::from(v)).collect())
                                     .collect::<Vec<_>>(),
                             ),
                         ),
@@ -1280,7 +1281,7 @@ fn read_big(path: &Path) {
                 die(&format!("big: read {} values for {n} entries", v.len()));
             }
             for (i, &x) in v.iter().enumerate() {
-                if x != i as i32 {
+                if x != i32::saturating_from(i) {
                     die(&format!("big: entry {i} = {x}"));
                 }
             }

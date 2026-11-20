@@ -7,6 +7,7 @@
 //! never downloaded whole, the way ROOT and uproot read remote files.
 #![cfg(feature = "http")]
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -109,7 +110,7 @@ fn handle(stream: TcpStream, data: &[u8], stats: &Mutex<Stats>) {
             Some((a, b)) => (a, b.min(total.saturating_sub(1)), 206),
             None => (0, total.saturating_sub(1), 200),
         };
-        let body = &data[start as usize..=end as usize];
+        let body = &data[usize::saturating_from(start)..=usize::saturating_from(end)];
         {
             let mut s = stats.lock().unwrap();
             s.requests += 1;

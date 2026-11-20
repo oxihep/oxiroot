@@ -1,6 +1,7 @@
 //! Streaming, bounded-memory writes via `TreeWriter` (B13): append entries in
 //! batches (one basket per branch each), then read the file back.
 
+use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter};
 
@@ -35,7 +36,7 @@ fn streaming_scalars_round_trip() {
     );
     assert_eq!(
         t.read_branch(&f, "y").expect("y"),
-        BranchValues::F64((0..9).map(|i| i as f64).collect())
+        BranchValues::F64((0..9).map(f64::from).collect())
     );
     // A range straddling basket boundaries (batch 0 ends at 3, batch 1 at 5).
     assert_eq!(
@@ -52,18 +53,18 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
     let n_batches = 25;
     for b in 0..n_batches {
-        let x: Vec<i64> = (0..4).map(|i| (b * 4 + i) as i64).collect();
+        let x: Vec<i64> = (0..4).map(|i| i64::from(b * 4 + i)).collect();
         w.write_batch(&[Branch::i64("x", x)]).expect("batch");
     }
     w.finish().expect("finish");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open");
-    let total = (n_batches * 4) as u64;
+    let total = u64::saturating_from(n_batches * 4);
     assert_eq!(t.num_entries(), total);
     assert_eq!(
         t.read_branch(&f, "x").expect("x"),
-        BranchValues::I64((0..total as i64).collect())
+        BranchValues::I64((0..total.cast_signed()).collect())
     );
     // A range deep in the file (basket 12-ish) reads correctly.
     assert_eq!(
@@ -147,7 +148,7 @@ fn streaming_create_large_writes_big_container_round_trip() {
     );
     assert_eq!(
         t.read_branch(&f, "y").expect("y"),
-        BranchValues::F64((0..9).map(|i| i as f64).collect())
+        BranchValues::F64((0..9).map(f64::from).collect())
     );
 }
 
@@ -231,7 +232,7 @@ fn streaming_real_over_two_gib() {
     }
     w.finish().expect("finish");
 
-    let total = (per_batch * n_batches) as u64;
+    let total = (per_batch * n_batches).cast_unsigned();
     let meta = std::fs::metadata(&out).expect("stat");
     assert!(
         meta.len() > 2_000_000_000,

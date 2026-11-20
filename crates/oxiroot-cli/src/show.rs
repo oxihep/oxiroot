@@ -61,7 +61,7 @@ fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) ->
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.num_entries() as i64)),
+            ("entries", Json::Int(tree.num_entries().cast_signed())),
             ("branches", named_type_array(&branches)),
             (
                 "unreadable",
@@ -119,7 +119,7 @@ fn show_rntuple(file: &FileReader, subdir: Option<&str>, name: &str, json: bool)
         let out = Json::Object(vec![
             ("name", Json::s(name)),
             ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.num_entries() as i64)),
+            ("entries", Json::Int(ntuple.num_entries().cast_signed())),
             ("fields", named_type_array(&fields)),
         ]);
         println!("{}", out.render());

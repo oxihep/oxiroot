@@ -4,6 +4,7 @@
 //! stored bin contents and statistical moment sums (no new on-disk state).
 
 use crate::{Hist1D, Hist2D, Hist3D, Profile1D};
+use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Population standard deviation along one axis from its moment sums
 /// (`sqrt(<x²> − <x>²)`), matching ROOT's `GetStdDev`. `0.0` for an empty axis.
@@ -42,7 +43,7 @@ impl Hist1D {
     /// at or beyond the first/last bin center.
     #[must_use]
     pub fn interpolate(&self, x: f64) -> f64 {
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         if n == 0 {
             return 0.0;
         }
@@ -71,7 +72,7 @@ impl Hist1D {
     /// returns that bin's center, matching ROOT.
     #[must_use]
     pub fn quantiles(&self, probs: &[f64]) -> Vec<f64> {
-        let n = self.xaxis.nbins.max(0) as usize;
+        let n = usize::saturating_from(self.xaxis.nbins.max(0));
         // Cumulative (normalized) in-range contents: integral[i] = Σ_{1..i} / total.
         let mut integral = vec![0.0; n + 1];
         for i in 1..=n {

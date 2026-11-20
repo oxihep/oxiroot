@@ -240,7 +240,7 @@ impl BranchValues {
             I32(v) => v.iter().map(|&x| i64::from(x)).collect(),
             U32(v) => v.iter().map(|&x| i64::from(x)).collect(),
             I64(v) => v.clone(),
-            U64(v) => v.iter().map(|&x| x as i64).collect(),
+            U64(v) => v.iter().map(|&x| x.cast_signed()).collect(),
             _ => return None,
         })
     }
