@@ -51,6 +51,10 @@ xrootd-tls = ["xrootd", "oxiroot-io-core/xrootd-tls"]
 # Enable the data-parallel helpers: the histogram fill (`hist::fill_par`) and
 # the parallel reads (`Batches::parallel` over a dataset, `BranchRead::parallel`).
 rayon = ["oxiroot-hist/rayon", "oxiroot-tree/rayon", "oxiroot-dataset/rayon"]
+# Convert a dataset `Batch` to and from an Arrow `RecordBatch` (arrow-rs).
+arrow = ["oxiroot-dataset/arrow"]
+# Convert a dataset `Batch` to and from a Polars `DataFrame`.
+polars = ["oxiroot-dataset/polars"]
 # Enable curve fitting (`oxiroot::fit`) via Minuit2: the `oxifit` engine,
 # the `FitData` impls for `TH1`/`TGraph` so `h.fit(&model)` works, and
 # `TF1::to_model`. When the `plot` feature is also on, this lights up

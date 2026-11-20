@@ -45,13 +45,23 @@
 //! never a silent conversion. A column a format cannot hold is refused when
 //! the first batch is written, before anything reaches the file.
 //!
+//! With the `arrow` feature a batch converts to and from an Arrow
+//! `RecordBatch` (`Batch::to_arrow`, `into_arrow`, `from_arrow`); with the
+//! `polars` feature, to and from a Polars `DataFrame` (`Batch::to_polars`,
+//! `into_polars`, `from_polars`). Every column shape converts, structs and
+//! optionals (as nulls) included.
+//!
 //! The format-specific readers and writers (`oxiroot_tree`,
 //! `oxiroot_rntuple`) remain underneath for what only one format has: split
 //! objects, friends and indices, RNTuple half-precision and quantized floats,
 //! variants and schema extension.
 
+#[cfg(feature = "arrow")]
+mod arrow_conv;
 mod batch;
 mod column;
+#[cfg(feature = "polars")]
+mod polars_conv;
 mod read;
 mod write;
 
@@ -59,3 +69,16 @@ pub use batch::Batch;
 pub use column::{Column, IntoColumn, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
 pub use write::{DatasetObject, DatasetWriter};
+
+/// The arrow-rs crates the `arrow` feature converts to and from, re-exported
+/// so their versions always match.
+#[cfg(feature = "arrow")]
+pub mod arrow_rs {
+    pub use arrow_array as array;
+    pub use arrow_schema as schema;
+}
+
+/// The Polars crate the `polars` feature converts to and from, re-exported so
+/// its version always matches.
+#[cfg(feature = "polars")]
+pub use ::polars as polars_rs;

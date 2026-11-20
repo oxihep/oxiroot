@@ -9,6 +9,12 @@ change the API.
 
 ### Added
 
+- **Arrow and Polars conversion** (the `arrow` and `polars` features):
+  `Batch::to_arrow` / `into_arrow` / `from_arrow` with arrow-rs 60, and
+  `Batch::to_polars` / `into_polars` / `from_polars` with Polars 0.55. Every
+  column shape converts, structs and optionals (as nulls) included; a column
+  with nulls comes back as an `Optional`. `oxiroot::data::arrow_rs` and
+  `polars_rs` re-export the crates at the matching versions.
 - **More shapes in a `Batch`**:
   - `Column::Struct` (with `Column::member`) holds RNTuple records and user
     classes: read from and written to an RNTuple, with a

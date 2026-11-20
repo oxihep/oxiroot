@@ -569,3 +569,156 @@ fn an_empty_dataset_is_written_with_its_columns() {
     let w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree);
     assert!(w.finish().is_err(), "no batch, no columns");
 }
+
+#[cfg(feature = "arrow")]
+mod arrow {
+    use super::*;
+    use oxiroot_dataset::arrow_rs::array::{Array, RecordBatch};
+    use oxiroot_dataset::arrow_rs::schema::DataType;
+
+    fn every_shape() -> Batch {
+        sample(5, 0)
+            .column("o", vec![Some(1.5_f64), None, Some(2.5), None, Some(3.5)])
+            .unwrap()
+            .column(
+                "hit",
+                Column::Struct(vec![
+                    ("x".into(), Column::F32(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+                    ("id".into(), Column::U16(vec![1, 2, 3, 4, 5])),
+                ]),
+            )
+            .unwrap()
+            .column(
+                "vv",
+                vec![
+                    vec![vec![1_i64], vec![]],
+                    vec![],
+                    vec![vec![2, 3]],
+                    vec![],
+                    vec![vec![4]],
+                ],
+            )
+            .unwrap()
+            .column("flags", vec![true, false, true, true, false])
+            .unwrap()
+    }
+
+    #[test]
+    fn a_batch_round_trips_through_arrow() {
+        let b = every_shape();
+        let rb: RecordBatch = b.to_arrow().unwrap();
+        assert_eq!(rb.num_rows(), 5);
+        assert_eq!(rb.num_columns(), b.names().len());
+        assert!(matches!(
+            rb.schema().field_with_name("v").unwrap().data_type(),
+            DataType::LargeList(_)
+        ));
+        assert!(matches!(
+            rb.schema().field_with_name("a").unwrap().data_type(),
+            DataType::FixedSizeList(_, 2)
+        ));
+        assert!(matches!(
+            rb.schema().field_with_name("hit").unwrap().data_type(),
+            DataType::Struct(_)
+        ));
+        assert_eq!(rb.column_by_name("o").unwrap().null_count(), 2);
+        assert_eq!(Batch::from_arrow(&rb).unwrap(), b);
+        assert_eq!(b.clone().into_arrow().unwrap(), rb);
+    }
+
+    #[test]
+    fn a_sliced_record_batch_reads_back_as_its_slice() {
+        let b = every_shape();
+        let rb = b.to_arrow().unwrap().slice(1, 3);
+        assert_eq!(Batch::from_arrow(&rb).unwrap(), b.slice(1..4));
+    }
+
+    #[test]
+    fn a_dataset_converts_through_arrow() {
+        let b = every_shape();
+        let bytes = write(Format::Ntuple, std::slice::from_ref(&b), usize::MAX);
+        let file = FileReader::from_bytes(bytes).unwrap();
+        let ds = Dataset::open(&file, "events").unwrap();
+        let names: Vec<&str> = b.names().collect();
+        let rb = ds.read(names).unwrap().into_arrow().unwrap();
+        assert_eq!(Batch::from_arrow(&rb).unwrap(), b);
+    }
+}
+
+#[cfg(feature = "polars")]
+mod polars {
+    use super::*;
+    use oxiroot_dataset::IntoColumn;
+    use oxiroot_dataset::polars_rs::prelude::DataType;
+
+    fn every_shape() -> Batch {
+        sample(5, 0)
+            .column("o", vec![Some(1.5_f64), None, Some(2.5), None, Some(3.5)])
+            .unwrap()
+            .column(
+                "os",
+                Column::Optional {
+                    valid: vec![true, false, false, true, true],
+                    values: Box::new(vec!["a", "b", "c"].into_column()),
+                },
+            )
+            .unwrap()
+            .column(
+                "hit",
+                Column::Struct(vec![
+                    ("x".into(), Column::F32(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+                    ("id".into(), Column::U16(vec![1, 2, 3, 4, 5])),
+                ]),
+            )
+            .unwrap()
+            .column(
+                "vv",
+                vec![
+                    vec![vec![1_i64], vec![]],
+                    vec![],
+                    vec![vec![2, 3]],
+                    vec![],
+                    vec![vec![4]],
+                ],
+            )
+            .unwrap()
+            .column("flags", vec![true, false, true, true, false])
+            .unwrap()
+    }
+
+    #[test]
+    fn a_batch_round_trips_through_polars() {
+        let b = every_shape();
+        let df = b.to_polars().unwrap();
+        assert_eq!(df.height(), 5);
+        assert_eq!(df.width(), b.names().len());
+        assert!(matches!(df.column("v").unwrap().dtype(), DataType::List(_)));
+        assert!(matches!(
+            df.column("a").unwrap().dtype(),
+            DataType::Array(_, 2)
+        ));
+        assert!(matches!(
+            df.column("hit").unwrap().dtype(),
+            DataType::Struct(_)
+        ));
+        assert_eq!(df.column("s").unwrap().dtype(), &DataType::String);
+        assert_eq!(df.column("o").unwrap().null_count(), 2);
+        assert_eq!(df.column("os").unwrap().null_count(), 2);
+        assert_eq!(Batch::from_polars(&df).unwrap(), b);
+    }
+
+    #[test]
+    fn a_dataset_converts_through_polars() {
+        let b = every_shape();
+        let bytes = write(Format::Ntuple, std::slice::from_ref(&b), usize::MAX);
+        let file = FileReader::from_bytes(bytes).unwrap();
+        let names: Vec<&str> = b.names().collect();
+        let df = Dataset::open(&file, "events")
+            .unwrap()
+            .read(names)
+            .unwrap()
+            .into_polars()
+            .unwrap();
+        assert_eq!(Batch::from_polars(&df).unwrap(), b);
+    }
+}

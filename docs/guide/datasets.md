@@ -155,6 +155,28 @@ FileWriter::create("run.root")
 # Ok::<(), oxiroot::Error>(())
 ```
 
+## Arrow and Polars
+
+With the `arrow` feature, a batch converts to an Arrow `RecordBatch` and back
+(arrow-rs); with the `polars` feature, to a Polars `DataFrame` and back:
+
+```rust,no_run
+# use oxiroot::prelude::*;
+# let file = FileReader::open("events.root")?;
+# let events = Dataset::open(&file, "events")?;
+let batch = events.read(["mass", "jet_pt"])?;
+let record_batch = batch.to_arrow()?;   // or into_arrow(), which moves the buffers
+let frame = batch.into_polars()?;       // a DataFrame: mass f64, jet_pt list[f32]
+let back = Batch::from_polars(&frame)?;
+# Ok::<(), oxiroot::Error>(())
+```
+
+Every column shape converts: lists to `LargeList` / `List`, fixed arrays to
+`FixedSizeList` / `Array`, structs to `Struct`, and an `Optional` to its
+value's type with nulls; coming back, a column with nulls becomes an
+`Optional`. `oxiroot::data::arrow_rs` and `polars_rs` re-export the crates at
+the matching versions.
+
 ## Format-specific features
 
 The low-level readers and writers cover what only one format has:

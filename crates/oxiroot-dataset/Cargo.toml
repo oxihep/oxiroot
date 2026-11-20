@@ -15,12 +15,24 @@ oxiroot-io-core = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-rntuple = { workspace = true }
 rayon = { version = "1", optional = true }
+arrow-array = { version = "60", optional = true }
+arrow-buffer = { version = "60", optional = true }
+arrow-schema = { version = "60", optional = true }
+arrow-select = { version = "60", optional = true }
+polars = { version = "0.55", optional = true, default-features = false, features = ["dtype-struct", "dtype-array", "dtype-i8", "dtype-i16", "dtype-u8", "dtype-u16"] }
+polars-arrow = { version = "0.55", optional = true, default-features = false }
 
 [features]
 # Read a batch's columns concurrently (`Batches::parallel`), decompressing
 # baskets and pages in parallel too; and convert and compress the chunks a
 # `DatasetWriter` writes in parallel.
 rayon = ["dep:rayon", "oxiroot-tree/rayon", "oxiroot-rntuple/rayon"]
+
+# Convert a `Batch` to and from an Arrow `RecordBatch` (arrow-rs).
+arrow = ["dep:arrow-array", "dep:arrow-buffer", "dep:arrow-schema", "dep:arrow-select"]
+
+# Convert a `Batch` to and from a Polars `DataFrame`.
+polars = ["dep:polars", "dep:polars-arrow"]
 
 [package.metadata.docs.rs]
 all-features = true
