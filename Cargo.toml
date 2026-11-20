@@ -36,6 +36,7 @@ oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.6.1" }
 oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.6.1" }
 oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.6.1" }
 oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.6.1" }
+oxiroot-dataset = { path = "crates/oxiroot-dataset", version = "0.6.1" }
 # The facade's batteries-included defaults are for applications; the in-repo
 # consumer (the CLI) opts in to what it needs. Default features must be turned
 # off here: a member's own `default-features = false` is ignored for an

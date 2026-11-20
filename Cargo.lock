@@ -971,6 +971,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxiroot-dataset"
+version = "0.6.1"
+dependencies = [
+ "oxiroot-io-core",
+ "oxiroot-rntuple",
+ "oxiroot-tree",
+ "rayon",
+]
+
+[[package]]
 name = "oxiroot-hist"
 version = "0.6.1"
 dependencies = [
