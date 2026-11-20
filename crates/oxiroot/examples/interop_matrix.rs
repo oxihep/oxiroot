@@ -808,6 +808,7 @@ fn write(dir: &Path) {
     cases.push(rntuple_scalars("rntuple_scalars", none, dir));
     cases.push(rntuple_scalars("rntuple_scalars_zstd", zstd, dir));
     cases.push(rntuple_vectors("rntuple_vectors", zstd, dir));
+    cases.push(rntuple_map("rntuple_map", zstd, dir));
     cases.push(rntuple_multicluster("rntuple_multicluster", false, dir));
     cases.push(rntuple_multicluster("rntuple_large", true, dir));
 
@@ -959,6 +960,43 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
         ("compression", comp_str(comp)),
         ("n_entries", J::Int(3)),
         ("fields", mfields),
+        ("uproot_skip", J::Bool(true)),
+    ])
+}
+
+/// A `std::map<std::int32_t, double>` field. The ROOT oracle reads it with the
+/// map's dictionary compiled in (`scripts/rntuple_map_LinkDef.h`); uproot is
+/// checked in the RNTuple tests.
+fn rntuple_map(id: &'static str, comp: Compression, dir: &Path) -> J {
+    let file = format!("m_{id}.root");
+    // Keys in order: ROOT iterates a std::map sorted by key.
+    let m = vec![vec![(1i32, 1.5f64), (2, 2.5)], vec![], vec![(3, 3.5)]];
+    let fields = vec![Field::map_i32_f64("m", m.clone())];
+    write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
+        .unwrap_or_else(|e| die(&format!("{id}: {e}")));
+    let vals = J::Arr(
+        m.iter()
+            .map(|entry| {
+                J::Arr(
+                    entry
+                        .iter()
+                        .map(|&(k, v)| J::Arr(vec![J::Int(i64::from(k)), J::Flt(v)]))
+                        .collect(),
+                )
+            })
+            .collect(),
+    );
+    J::Obj(vec![
+        ("id", J::Str(id.into())),
+        ("kind", J::Str("rntuple".into())),
+        ("file", J::Str(file)),
+        ("name", J::Str("ntpl".into())),
+        ("compression", comp_str(comp)),
+        ("n_entries", J::Int(3)),
+        (
+            "fields",
+            J::Arr(vec![rn_field("m", "map<int32,float64>", vals)]),
+        ),
         ("uproot_skip", J::Bool(true)),
     ])
 }

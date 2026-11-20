@@ -108,7 +108,8 @@ if [ "$HAVE_ROOT" -eq 1 ]; then
   RCFLAGS="$(root_cflags)"
   RLIBS="$(root-config --libs)"
   if c++ $RCFLAGS "$REPO/scripts/interop_root.cpp" $RLIBS -lROOTNTuple -o "$WORK/interop_root" 2>"$WORK/cc1.log" \
-     && c++ $RCFLAGS -I "$REPO/scripts" "$REPO/scripts/interop_matrix_root.cpp" $RLIBS -lROOTNTuple -o "$WORK/interop_matrix_root" 2>"$WORK/cc2.log"; then
+     && rootcling -f "$WORK/rntuple_map_dict.cxx" "$REPO/scripts/rntuple_map_LinkDef.h" 2>"$WORK/cc2.log" \
+     && c++ $RCFLAGS -I "$REPO/scripts" "$REPO/scripts/interop_matrix_root.cpp" "$WORK/rntuple_map_dict.cxx" $RLIBS -lROOTNTuple -o "$WORK/interop_matrix_root" 2>>"$WORK/cc2.log"; then
     ROOT_OK=1
   else
     echo "WARNING: ROOT C++ oracle compile failed; ROOT rows will SKIP. See $WORK/cc*.log"

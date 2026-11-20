@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -160,6 +161,25 @@ static void rn_vector(ROOT::RNTupleReader* r, const std::string& name, const jso
   }
 }
 
+// A std::map<int32_t, double> per entry, as [[key, value], ...] sorted by key.
+static void rn_map(ROOT::RNTupleReader* r, const std::string& name, const jsonm::Value& vals) {
+  auto v = r->GetView<std::map<std::int32_t, double>>(name);
+  for (size_t i = 0; i < vals.size(); ++i) {
+    const std::map<std::int32_t, double>& got = v(i);
+    std::string at = name + "[" + std::to_string(i) + "]";
+    if (got.size() != vals[i].size()) {
+      mark(false, at + " size");
+      continue;
+    }
+    size_t j = 0;
+    for (const auto& [k, x] : got) {
+      mark(k == vals[i][j][0].as_int() && close(x, vals[i][j][1].as_num()),
+           at + "[" + std::to_string(j) + "]");
+      ++j;
+    }
+  }
+}
+
 static void check_rntuple(const std::string& path, const jsonm::Value& c) {
   auto reader = ROOT::RNTupleReader::Open(c["name"].as_str(), path);
   if ((long long)reader->GetNEntries() != c["n_entries"].as_int()) {
@@ -186,6 +206,7 @@ static void check_rntuple(const std::string& path, const jsonm::Value& c) {
     else if (ty == "vector<int64>") rn_vector<std::int64_t>(reader.get(), name, vals, false);
     else if (ty == "vector<float32>") rn_vector<float>(reader.get(), name, vals, false);
     else if (ty == "vector<float64>") rn_vector<double>(reader.get(), name, vals, false);
+    else if (ty == "map<int32,float64>") rn_map(reader.get(), name, vals);
     else mark(false, "unknown rntuple type " + ty);
   }
 }

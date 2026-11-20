@@ -447,6 +447,8 @@ jobs:
       - name: Manifest matrix (Rust writes → ROOT C++ reads)
         # Every histogram type, codec, tree and RNTuple shape in the manifest.
         run: |
-          c++ $(root-config --cflags) -I scripts scripts/interop_matrix_root.cpp $(root-config --libs) -lROOTNTuple -o /tmp/interop_matrix_root
+          # The std::map RNTuple case needs the map's dictionary.
+          rootcling -f /tmp/rntuple_map_dict.cxx scripts/rntuple_map_LinkDef.h
+          c++ $(root-config --cflags) -I scripts scripts/interop_matrix_root.cpp /tmp/rntuple_map_dict.cxx $(root-config --libs) -lROOTNTuple -o /tmp/interop_matrix_root
           cargo run --locked -q -p oxiroot --example interop_matrix -- write /tmp/matrix
           /tmp/interop_matrix_root /tmp/matrix
