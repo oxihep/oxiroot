@@ -697,11 +697,13 @@ size, where the naive and SumW2 errors are too small.
 ```rust
 use oxiroot::prelude::*;
 
-// `mass` and `time` are two branches of the same events.
+// Mass and decay time of the same events (in practice, two TTree branches).
+let mass = [5.27, 5.29, 5.31, 5.12, 5.28, 5.44, 5.26, 5.20, 5.30, 5.37];
+let time = [1.2, 0.4, 2.3, 0.1, 0.9, 0.2, 3.1, 0.3, 1.7, 0.1];
 let signal = Model::gaussian("sig").with_params(vec![1.0, 5.28, 0.02]);
 let background = Model::exponential("bkg").with_params(vec![1.0, -2.0]);
 // The yields from an extended fit of the mass (fit separately).
-let yields = [n_signal, n_background];
+let yields = [5.8, 4.2];
 let opts = FitOptions::new().range(5.1, 5.5);
 let sw = SWeights::compute(&Events::new(&mass), &[&signal, &background], &yields, &opts)?;
 let weighted = Events::weighted(&time, sw.weights(0))?;
@@ -743,8 +745,11 @@ is the fit; the prelude's `Efficiency` is ROOT's `TEfficiency` object.)
 use oxiroot::prelude::*;
 use oxiroot::fit::Efficiency as EffData;
 
-// Per-bin trigger counts: passed of total at each pT.
-let data = EffData::new(&pt, &passed, &total)?;
+// Per-bin trigger counts: `passed` of `trials` at each pT (GeV).
+let pt = [12.0, 15.0, 18.0, 20.0, 22.0, 25.0, 30.0];
+let passed = [1.0, 4.0, 12.0, 20.0, 29.0, 37.0, 40.0];
+let trials = [40.0; 7];
+let data = EffData::new(&pt, &passed, &trials)?;
 // Or one event at a time: EffData::events(&pt, &fired)?
 let turn_on = Model::new("eff", &["threshold", "width"], vec![18.0, 2.0], |x, p| {
     0.5 * (1.0 + oxiroot::stat::erf((x - p[0]) / (2f64.sqrt() * p[1])))
