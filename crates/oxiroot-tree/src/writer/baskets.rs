@@ -20,36 +20,33 @@ pub(super) struct BasketRec {
     pub(super) n_entries: u32,
 }
 
-/// Write one `TBasket` of a tree in directory `dir` at the end of `file`,
-/// returning its location.
+/// Serialize and compress one basket of `branch`, then write it at the end of
+/// `file` under directory `dir`.
 pub(super) fn write_basket<W: Write + Seek>(
     file: &mut ContainerWriter<W>,
     dir: DirId,
     branch: &Branch,
     tree_name: &str,
 ) -> Result<BasketRec> {
-    let (bytes, rec) = basket_bytes(
-        branch,
-        tree_name,
-        file.compression_setting(),
-        file.position(),
-        file.dir_offset(dir)?,
-    );
-    file.place_blob(&bytes)?;
-    Ok(rec)
+    let prepared = prepare_basket(branch, tree_name, file.compression_setting());
+    place_basket(file, dir, &prepared, tree_name)
 }
 
-/// The on-disk bytes of one `TBasket`, written as if it begins at absolute file
-/// offset `seek` (baked into the key's `fSeekKey`), plus its [`BasketRec`].
-/// `seek_pdir` is the offset of the tree's directory. A basket's key is always
-/// in the big form, with the `TBasket` fields appended to the header.
-fn basket_bytes(
-    branch: &Branch,
-    tree_name: &str,
-    compression: u32,
-    seek: u64,
-    seek_pdir: u64,
-) -> (Vec<u8>, BasketRec) {
+/// One basket serialized and compressed, not yet placed: everything but its
+/// file offset, which only the writer knows. Independent of other baskets, so
+/// a batch's baskets can be prepared in parallel.
+pub(super) struct PreparedBasket {
+    name: String,
+    n_entries: u32,
+    nev_buf_size: i32,
+    klen: u32,
+    obj_len: u32,
+    border: u32,
+    payload: Vec<u8>,
+}
+
+/// Serialize `branch`'s entries into a basket buffer and compress it.
+pub(super) fn prepare_basket(branch: &Branch, tree_name: &str, compression: u32) -> PreparedBasket {
     let (data, offsets) = branch.basket_content();
     let n_entries = branch.n_entries();
     let leaf = branch.leaf();
@@ -74,40 +71,58 @@ fn basket_bytes(
         }
     }
     let obj_len = u32::saturating_from(buffer.len());
-    let payload = compress_if_smaller(&buffer, compression);
-    let nbytes = klen + u32::saturating_from(payload.len());
-    let f_last = klen + border; // entry data ends at the border
+    let payload = compress_if_smaller(&buffer, compression).into_owned();
+    PreparedBasket {
+        name: branch.name.clone(),
+        n_entries,
+        nev_buf_size,
+        klen,
+        obj_len,
+        border,
+        payload,
+    }
+}
+
+/// Write a prepared basket at the end of `file`: its key header, with the
+/// offset it lands at, then the compressed payload.
+pub(super) fn place_basket<W: Write + Seek>(
+    file: &mut ContainerWriter<W>,
+    dir: DirId,
+    p: &PreparedBasket,
+    tree_name: &str,
+) -> Result<BasketRec> {
+    let seek = file.position();
+    let seek_pdir = file.dir_offset(dir)?;
+    let nbytes = p.klen + u32::saturating_from(p.payload.len());
+    let f_last = p.klen + p.border; // entry data ends at the border
 
     let mut w = WBuffer::with_capacity(nbytes as usize);
     // Big-format Key header.
     w.be_i32(nbytes.cast_signed());
     w.be_u16(1004); // big-format key version
-    w.be_u32(obj_len);
+    w.be_u32(p.obj_len);
     w.be_u32(DATIME);
-    w.be_u16(u16::saturating_from(klen));
+    w.be_u16(u16::saturating_from(p.klen));
     w.be_u16(0); // cycle
     w.be_u64(seek);
     w.be_u64(seek_pdir); // fSeekPdir
     w.string("TBasket");
-    w.string(&branch.name);
+    w.string(&p.name);
     w.string(tree_name);
     // TBasket extension (the tail of fKeyLen).
     w.be_u16(3); // basket version
     w.be_i32(32000); // fBufferSize
-    w.be_i32(nev_buf_size); // fNevBufSize
-    w.be_i32(n_entries.cast_signed()); // fNevBuf
+    w.be_i32(p.nev_buf_size); // fNevBufSize
+    w.be_i32(p.n_entries.cast_signed()); // fNevBuf
     w.be_i32(f_last.cast_signed()); // fLast
     w.u8(0); // flag
-    w.bytes(&payload);
-
-    (
-        w.into_vec(),
-        BasketRec {
-            seek,
-            nbytes,
-            n_entries,
-        },
-    )
+    w.bytes(&p.payload);
+    file.place_blob(&w.into_vec())?;
+    Ok(BasketRec {
+        seek,
+        nbytes,
+        n_entries: p.n_entries,
+    })
 }
 
 /// A sub-range `[start, start+len)` of a non-split branch's entries, as a fresh

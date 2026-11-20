@@ -7,6 +7,27 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster dataset writes and reads.** Profiling showed zstd was 80–90 % of
+  both, so the work is now cut finer and spread over cores.
+  - `DatasetWriter` cuts each cluster into chunks of about 1 MiB per column:
+    a `TTree` basket per branch, or an RNTuple cluster, per chunk.
+  - With the `rayon` feature, every chunk is converted and compressed in
+    parallel through the new `TreeWriter::write_batches` /
+    `NtupleWriter::write_batches`. For 1M entries (two scalars and a
+    `std::vector<double>`), a `TTree` write takes 43 ms instead of 247 ms and
+    an RNTuple write 27 ms instead of 190 ms.
+  - Reading with `Batches::parallel(true)` decompresses baskets and pages in
+    parallel: 17 ms instead of 62 ms (`TTree`) and 14 ms instead of 64 ms
+    (RNTuple) for the same data.
+  - Without `rayon` nothing runs in parallel and times are unchanged.
+- RNTuple reads can decompress a column's pages in parallel
+  (`FieldRead::parallel`, the new `rayon` feature of `oxiroot-rntuple`), and
+  `NtupleReader` is `Clone`.
+- RNTuple fields are written straight from a batch's flat offsets and values:
+  no `Vec` per entry is rebuilt.
+
 ## [0.7.0] — 2026-11-20
 
 One API to read and write `TTree` and RNTuple (breaking).

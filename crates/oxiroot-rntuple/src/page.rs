@@ -85,6 +85,29 @@ fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<
     decompress_payload(compressed, uncompressed_size(bits, n), "RNTuple page")
 }
 
+/// Read and decompress every page of a column, in order — concurrently on
+/// rayon's global pool when `parallel` is set (and the `rayon` feature on).
+fn read_pages(
+    file: &dyn ByteSource,
+    pages: &[PageInfo],
+    bits: u16,
+    parallel: bool,
+) -> Result<Vec<Vec<u8>>> {
+    #[cfg(feature = "rayon")]
+    if parallel && pages.len() > 1 {
+        use rayon::prelude::*;
+        return pages
+            .par_iter()
+            .map(|p| read_page_bytes(file, p, bits))
+            .collect();
+    }
+    let _ = parallel;
+    pages
+        .iter()
+        .map(|p| read_page_bytes(file, p, bits))
+        .collect()
+}
+
 /// Invert RNTuple "split" (byte-transposed) storage: byte `j` of element `i`
 /// lives at `raw[j * n + i]`.
 fn unsplit(raw: &[u8], n: usize, width: usize) -> Vec<u8> {
@@ -146,6 +169,7 @@ pub fn read_column(
     bits: u16,
     pages: &[PageInfo],
     value_range: Option<(f64, f64)>,
+    parallel: bool,
 ) -> Result<ColumnValues> {
     use ColumnType::*;
     // Reject a header whose declared bit width contradicts the column type
@@ -176,11 +200,12 @@ pub fn read_column(
     // than a round trip each (the ranges `read_page_bytes` asks for).
     let ranges: Vec<(u64, usize)> = pages.iter().map(page_range).collect();
     file.plan_reads(&ranges);
+    let raws = read_pages(file, pages, bits, parallel)?;
+    let raws = raws.as_slice();
     match column_type {
         Bit => {
             let mut out = Vec::new();
-            for p in pages {
-                let raw = read_page_bytes(file, p, bits)?;
+            for (p, raw) in pages.iter().zip(raws) {
                 for i in 0..p.num_elements as usize {
                     out.push((raw[i >> 3] >> (i & 7)) & 1 == 1);
                 }
@@ -189,70 +214,69 @@ pub fn read_column(
         }
         Char | Byte => {
             let mut out = Vec::new();
-            for p in pages {
-                let raw = read_page_bytes(file, p, bits)?;
+            for (p, raw) in pages.iter().zip(raws) {
                 out.extend_from_slice(&raw[..p.num_elements as usize]);
             }
             Ok(ColumnValues::Bytes(out))
         }
 
         // 8-bit integers have no split form (transposing single bytes is a no-op).
-        Int8 => Ok(ColumnValues::I8(fixed(file, bits, pages, false, le_i8)?)),
-        UInt8 => Ok(ColumnValues::U8(fixed(file, bits, pages, false, le_u8)?)),
-        Int16 => Ok(ColumnValues::I16(fixed(file, bits, pages, false, le_i16)?)),
+        Int8 => Ok(ColumnValues::I8(fixed(raws, bits, pages, false, le_i8)?)),
+        UInt8 => Ok(ColumnValues::U8(fixed(raws, bits, pages, false, le_u8)?)),
+        Int16 => Ok(ColumnValues::I16(fixed(raws, bits, pages, false, le_i16)?)),
         SplitInt16 => {
-            let raw = fixed(file, bits, pages, true, le_u16)?;
+            let raw = fixed(raws, bits, pages, true, le_u16)?;
             Ok(ColumnValues::I16(raw.into_iter().map(zigzag16).collect()))
         }
-        UInt16 => Ok(ColumnValues::U16(fixed(file, bits, pages, false, le_u16)?)),
-        SplitUInt16 => Ok(ColumnValues::U16(fixed(file, bits, pages, true, le_u16)?)),
+        UInt16 => Ok(ColumnValues::U16(fixed(raws, bits, pages, false, le_u16)?)),
+        SplitUInt16 => Ok(ColumnValues::U16(fixed(raws, bits, pages, true, le_u16)?)),
 
-        Int32 => Ok(ColumnValues::I32(fixed(file, bits, pages, false, le_i32)?)),
+        Int32 => Ok(ColumnValues::I32(fixed(raws, bits, pages, false, le_i32)?)),
         SplitInt32 => {
-            let raw = fixed(file, bits, pages, true, le_u32)?;
+            let raw = fixed(raws, bits, pages, true, le_u32)?;
             Ok(ColumnValues::I32(raw.into_iter().map(zigzag32).collect()))
         }
-        Int64 => Ok(ColumnValues::I64(fixed(file, bits, pages, false, le_i64)?)),
+        Int64 => Ok(ColumnValues::I64(fixed(raws, bits, pages, false, le_i64)?)),
         SplitInt64 => {
-            let raw = fixed(file, bits, pages, true, le_u64)?;
+            let raw = fixed(raws, bits, pages, true, le_u64)?;
             Ok(ColumnValues::I64(raw.into_iter().map(zigzag64).collect()))
         }
 
-        UInt64 => Ok(ColumnValues::U64(fixed(file, bits, pages, false, le_u64)?)),
+        UInt64 => Ok(ColumnValues::U64(fixed(raws, bits, pages, false, le_u64)?)),
         // Leaf uint32 columns keep their 32-bit identity; only the Index*
         // offset columns below widen to u64 (they index element data as usize).
-        UInt32 => Ok(ColumnValues::U32(fixed(file, bits, pages, false, le_u32)?)),
-        SplitUInt32 => Ok(ColumnValues::U32(fixed(file, bits, pages, true, le_u32)?)),
-        Index64 => Ok(ColumnValues::U64(fixed(file, bits, pages, false, le_u64)?)),
+        UInt32 => Ok(ColumnValues::U32(fixed(raws, bits, pages, false, le_u32)?)),
+        SplitUInt32 => Ok(ColumnValues::U32(fixed(raws, bits, pages, true, le_u32)?)),
+        Index64 => Ok(ColumnValues::U64(fixed(raws, bits, pages, false, le_u64)?)),
         SplitIndex64 => {
-            let raw = fixed(file, bits, pages, true, le_u64)?;
+            let raw = fixed(raws, bits, pages, true, le_u64)?;
             Ok(ColumnValues::U64(delta_decode(raw)))
         }
         Index32 => {
-            let raw = fixed(file, bits, pages, false, le_u32)?;
+            let raw = fixed(raws, bits, pages, false, le_u32)?;
             Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
         }
         SplitIndex32 => {
-            let raw = fixed(file, bits, pages, true, le_u32)?;
+            let raw = fixed(raws, bits, pages, true, le_u32)?;
             Ok(ColumnValues::U64(delta_decode(
                 raw.into_iter().map(u64::from).collect(),
             )))
         }
 
-        Real32 => Ok(ColumnValues::F32(fixed(file, bits, pages, false, le_f32)?)),
-        SplitReal32 => Ok(ColumnValues::F32(fixed(file, bits, pages, true, le_f32)?)),
-        Real64 => Ok(ColumnValues::F64(fixed(file, bits, pages, false, le_f64)?)),
-        SplitReal64 => Ok(ColumnValues::F64(fixed(file, bits, pages, true, le_f64)?)),
+        Real32 => Ok(ColumnValues::F32(fixed(raws, bits, pages, false, le_f32)?)),
+        SplitReal32 => Ok(ColumnValues::F32(fixed(raws, bits, pages, true, le_f32)?)),
+        Real64 => Ok(ColumnValues::F64(fixed(raws, bits, pages, false, le_f64)?)),
+        SplitReal64 => Ok(ColumnValues::F64(fixed(raws, bits, pages, true, le_f64)?)),
 
         // Reduced-precision reals all surface as f32.
         Real16 => {
-            let raw = fixed(file, bits, pages, false, le_u16)?;
+            let raw = fixed(raws, bits, pages, false, le_u16)?;
             Ok(ColumnValues::F32(
                 raw.into_iter().map(half_to_f32).collect(),
             ))
         }
         SplitReal16 => {
-            let raw = fixed(file, bits, pages, true, le_u16)?;
+            let raw = fixed(raws, bits, pages, true, le_u16)?;
             Ok(ColumnValues::F32(
                 raw.into_iter().map(half_to_f32).collect(),
             ))
@@ -261,7 +285,7 @@ pub fn read_column(
         // top `bits` bit-packed. Decode: left-shift back into the float's high bits.
         Real32Trunc => {
             let shift = 32 - u32::from(bits);
-            let raw = packed_uints(file, bits, pages)?;
+            let raw = packed_uints(raws, bits, pages)?;
             Ok(ColumnValues::F32(
                 raw.into_iter()
                     .map(|v| f32::from_bits(u32::saturating_from(v) << shift))
@@ -272,8 +296,7 @@ pub fn read_column(
         // 4-byte alternative tag (both little-endian).
         Switch => {
             let mut out = Vec::new();
-            for p in pages {
-                let raw = read_page_bytes(file, p, bits)?;
+            for (p, raw) in pages.iter().zip(raws) {
                 let (elements, _) = raw.as_chunks::<12>();
                 for &[i0, i1, i2, i3, i4, i5, i6, i7, t0, t1, t2, t3] in
                     elements.iter().take(p.num_elements as usize)
@@ -293,7 +316,7 @@ pub fn read_column(
                 Error::Format("Real32Quant column is missing its value range".into())
             })?;
             let denom = ((1u64 << bits) - 1) as f64;
-            let raw = packed_uints(file, bits, pages)?;
+            let raw = packed_uints(raws, bits, pages)?;
             Ok(ColumnValues::F32(
                 raw.into_iter()
                     .map(|q| (min + (q as f64 / denom) * (max - min)) as f32)
@@ -310,18 +333,23 @@ pub fn read_column(
 /// Decode fixed-width little-endian elements from each page, unsplitting first
 /// when `split` is set.
 fn fixed<T>(
-    file: &dyn ByteSource,
+    raws: &[Vec<u8>],
     bits: u16,
     pages: &[PageInfo],
     split: bool,
     convert: impl Fn(&[u8]) -> T,
 ) -> Result<Vec<T>> {
     let width = bits as usize / 8;
-    let mut out = Vec::new();
-    for p in pages {
-        let raw = read_page_bytes(file, p, bits)?;
+    let mut out = Vec::with_capacity(pages.iter().map(|p| p.num_elements as usize).sum());
+    for (p, raw) in pages.iter().zip(raws) {
         let n = p.num_elements as usize;
-        let bytes = if split { unsplit(&raw, n, width) } else { raw };
+        let unsplit_bytes;
+        let bytes: &[u8] = if split {
+            unsplit_bytes = unsplit(raw, n, width);
+            &unsplit_bytes
+        } else {
+            raw
+        };
         for chunk in bytes.chunks_exact(width).take(n) {
             out.push(convert(chunk));
         }
@@ -333,11 +361,10 @@ fn fixed<T>(
 /// little-endian bytes (the convention of the `Bit` column), one page at a time.
 /// Used by the truncated/quantized real columns, whose element width need not be
 /// a whole number of bytes.
-fn packed_uints(file: &dyn ByteSource, bits: u16, pages: &[PageInfo]) -> Result<Vec<u64>> {
+fn packed_uints(raws: &[Vec<u8>], bits: u16, pages: &[PageInfo]) -> Result<Vec<u64>> {
     let nbits = bits as usize;
     let mut out = Vec::new();
-    for p in pages {
-        let raw = read_page_bytes(file, p, bits)?;
+    for (p, raw) in pages.iter().zip(raws) {
         let mut bit = 0usize;
         for _ in 0..p.num_elements as usize {
             let mut val = 0u64;
@@ -439,13 +466,13 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    read_column(&src, ty, bits, &[], Some((0.0, 1.0))),
+                    read_column(&src, ty, bits, &[], Some((0.0, 1.0)), false),
                     Err(Error::Format(_))
                 ),
                 "{ty:?} with {bits} bits"
             );
         }
-        assert!(read_column(&src, ColumnType::Real32Trunc, 16, &[], None).is_ok());
+        assert!(read_column(&src, ColumnType::Real32Trunc, 16, &[], None, false).is_ok());
     }
 
     #[test]
@@ -464,7 +491,7 @@ mod tests {
 
         // Int32 declared with 64 bits would slice 8-byte chunks into a 4-byte type
         // (try_into().unwrap() panic) — the guard rejects it first.
-        assert!(read_column(&src, ColumnType::Int32, 64, &pages, None).is_err());
+        assert!(read_column(&src, ColumnType::Int32, 64, &pages, None, false).is_err());
 
         // Bit declared with 0 bits would size the page to 0 and index out of range.
         let bit_pages = vec![PageInfo {
@@ -472,9 +499,9 @@ mod tests {
             has_checksum: false,
             locator: Locator { size: 1, offset: 0 },
         }];
-        assert!(read_column(&src, ColumnType::Bit, 0, &bit_pages, None).is_err());
+        assert!(read_column(&src, ColumnType::Bit, 0, &bit_pages, None, false).is_err());
 
         // The matching width still decodes.
-        assert!(read_column(&src, ColumnType::Int32, 32, &pages, None).is_ok());
+        assert!(read_column(&src, ColumnType::Int32, 32, &pages, None, false).is_ok());
     }
 }

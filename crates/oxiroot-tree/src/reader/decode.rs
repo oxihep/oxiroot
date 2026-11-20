@@ -170,7 +170,7 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
         return decode_array(branch.leaf_type, &chunk_regions(baskets, stride));
     }
     // Scalar: concatenate every basket's entry data, decode once.
-    let mut bytes = Vec::new();
+    let mut bytes = Vec::with_capacity(baskets.iter().map(|b| b.entry_data().len()).sum());
     let mut total = 0u64;
     for b in baskets {
         bytes.extend_from_slice(b.entry_data());

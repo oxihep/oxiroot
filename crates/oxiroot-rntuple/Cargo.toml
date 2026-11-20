@@ -11,12 +11,18 @@ categories = ["science", "parser-implementations", "encoding"]
 description = "RNTuple reader/writer (ROOT columnar event-data format)"
 
 [dependencies]
+rayon = { version = "1", optional = true }
 oxiroot-io-core = { workspace = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 [dev-dependencies]
 # One test stores a matrix next to an RNTuple, without the histogram crate.
 oxiroot-linalg = { workspace = true }
+
+[features]
+# Decompress a column's pages, and compress a batch's, in parallel
+# (`FieldRead::parallel`, `NtupleWriter`).
+rayon = ["dep:rayon"]
 
 [lints]
 workspace = true

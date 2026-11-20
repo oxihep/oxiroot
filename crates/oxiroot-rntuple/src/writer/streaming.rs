@@ -25,6 +25,14 @@ struct PageRec {
     element_offset: i64,
 }
 
+/// One batch lowered and its pages compressed, ready to place.
+struct PreparedCluster {
+    field_plans: Vec<FieldPlan>,
+    cols: Vec<ColumnPlan>,
+    n_entries: u32,
+    disks: Vec<Vec<u8>>,
+}
+
 /// A batch's full lowered schema identity. Every batch must produce an equal
 /// one, otherwise its pages would be appended under the first batch's header and
 /// silently mis-described. Compares field identity (name, type, parent, role) as
@@ -169,13 +177,67 @@ impl<W: Write + Seek> NtupleWriter<W> {
     /// Append one cluster holding the entries in `fields`. All batches must share
     /// the same field schema; the first batch fixes it and writes the header.
     pub fn write_batch(&mut self, fields: &[Field]) -> Result<()> {
-        if fields.is_empty() {
-            return Ok(());
+        self.write_chunks(&[fields])
+    }
+
+    /// Append several clusters at once, one per batch, in order. With the
+    /// `rayon` feature every batch is encoded and its pages compressed in
+    /// parallel before they are written.
+    pub fn write_batches(&mut self, batches: &[Vec<Field>]) -> Result<()> {
+        let slices: Vec<&[Field]> = batches.iter().map(Vec::as_slice).collect();
+        self.write_chunks(&slices)
+    }
+
+    fn write_chunks(&mut self, batches: &[&[Field]]) -> Result<()> {
+        let compression = self.file.compression_setting();
+        let prepare = |fields: &&[Field]| -> Result<Option<PreparedCluster>> {
+            if fields.is_empty() {
+                return Ok(None);
+            }
+            let (field_plans, cols, n_entries) = lower(fields)?;
+            if n_entries == 0 {
+                return Ok(None);
+            }
+            let compress = |c: &ColumnPlan| compress_if_smaller(&c.page, compression).into_owned();
+            #[cfg(feature = "rayon")]
+            let disks: Vec<Vec<u8>> = {
+                use rayon::prelude::*;
+                cols.par_iter().map(compress).collect()
+            };
+            #[cfg(not(feature = "rayon"))]
+            let disks: Vec<Vec<u8>> = cols.iter().map(compress).collect();
+            Ok(Some(PreparedCluster {
+                field_plans,
+                cols,
+                n_entries,
+                disks,
+            }))
+        };
+        #[cfg(feature = "rayon")]
+        let prepared: Vec<Option<PreparedCluster>> = {
+            use rayon::prelude::*;
+            batches.par_iter().map(prepare).collect::<Result<_>>()?
+        };
+        #[cfg(not(feature = "rayon"))]
+        let prepared: Vec<Option<PreparedCluster>> =
+            batches.iter().map(prepare).collect::<Result<_>>()?;
+        for (p, fields) in prepared.into_iter().zip(batches) {
+            if let Some(p) = p {
+                self.place(p, fields)?;
+            }
         }
-        let (field_plans, cols, n_entries) = lower(fields)?;
-        if n_entries == 0 {
-            return Ok(());
-        }
+        Ok(())
+    }
+
+    /// Write one prepared cluster: the header first if this is the first one,
+    /// then its pages.
+    fn place(&mut self, p: PreparedCluster, fields: &[Field]) -> Result<()> {
+        let PreparedCluster {
+            field_plans,
+            cols,
+            n_entries,
+            disks,
+        } = p;
         let signature = schema_sig(&field_plans, &cols);
 
         match self.header.as_ref().map(|h| h.signature == signature) {
@@ -204,10 +266,9 @@ impl<W: Write + Seek> NtupleWriter<W> {
 
         let first_entry = self.total_entries;
         let mut recs = Vec::with_capacity(cols.len());
-        for (i, c) in cols.iter().enumerate() {
-            let disk = compress_if_smaller(&c.page, self.file.compression_setting());
+        for (i, (c, disk)) in cols.iter().zip(&disks).enumerate() {
             let element_offset = self.element_base[i].cast_signed();
-            let offset = self.file.place_blob(&disk)?;
+            let offset = self.file.place_blob(disk)?;
             recs.push(PageRec {
                 offset,
                 disk_size: disk.len(),

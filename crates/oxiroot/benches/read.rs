@@ -173,6 +173,24 @@ fn bench(c: &mut Criterion) {
                 black_box(sum)
             });
         });
+        #[cfg(feature = "rayon")]
+        g.bench_function("3 columns, Dataset::batches parallel", |b| {
+            b.iter(|| {
+                let ds = Dataset::open(&file, "events").unwrap();
+                let mut sum = 0.0;
+                for batch in ds.batches(["pt", "n", "jets"]).step(1 << 20).parallel(true) {
+                    let batch = batch.unwrap();
+                    sum += batch.values::<f64>("pt").unwrap().iter().sum::<f64>();
+                    sum += batch
+                        .jagged::<f64>("jets")
+                        .unwrap()
+                        .values()
+                        .iter()
+                        .sum::<f64>();
+                }
+                black_box(sum)
+            });
+        });
         g.finish();
     }
 

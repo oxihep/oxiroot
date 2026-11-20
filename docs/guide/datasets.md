@@ -117,7 +117,14 @@ writes to any `Write + Seek`.
 
 `write(&batch)` buffers entries and writes a cluster whenever enough have
 accumulated, however you size the batches. `finish()` writes the rest and
-closes the file.
+closes the file. Each cluster is cut into chunks of about 1 MiB per column (a
+`TTree` basket per branch, or an RNTuple cluster, per chunk), so later reads of
+a window decompress little and parallel reads have work to share.
+
+With the `rayon` feature, every chunk is converted and compressed in
+parallel. In the `write` benchmark (1M entries, two scalars and a
+`std::vector<double>`), writes are 5–7× faster than serial; reads with
+`.parallel(true)` are 2–4× faster.
 
 The first batch fixes the schema; every later batch must have the same
 columns and types. A column the format cannot hold, such as `Option<T>` in a

@@ -10,7 +10,7 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::streamer_gen::ClassDef;
 use oxiroot_io_core::{Compression, Error, Result, WriteInto};
-use oxiroot_rntuple::{ANCHOR_CLASS, Field, NtupleWriter};
+use oxiroot_rntuple::{ANCHOR_CLASS, Column as RnColumn, Field, NtupleWriter};
 use oxiroot_tree::{Branch, TreeWriter};
 
 use crate::batch::Batch;
@@ -19,6 +19,35 @@ use crate::read::Format;
 
 /// The uncompressed size at which a writer closes a cluster, unless set.
 const DEFAULT_CLUSTER_BYTES: usize = 32 * 1024 * 1024;
+
+/// About how many bytes of one column's values go in one basket or page.
+const CHUNK_BYTES_PER_COLUMN: usize = 1024 * 1024;
+
+/// Entry ranges cutting `batch` into chunks of about
+/// [`CHUNK_BYTES_PER_COLUMN`] per column.
+fn chunk_ranges(batch: &Batch) -> Vec<std::ops::Range<usize>> {
+    let n = batch.len();
+    let columns = batch.names().len().max(1);
+    let per_entry = batch.byte_size().div_ceil(n.max(1)).max(1);
+    let step = (CHUNK_BYTES_PER_COLUMN * columns / per_entry).max(1);
+    (0..n).step_by(step).map(|a| a..(a + step).min(n)).collect()
+}
+
+/// Apply `f` to every chunk, in parallel with the `rayon` feature.
+fn map_chunks<T: Send>(
+    chunks: &[std::ops::Range<usize>],
+    f: impl Fn(&std::ops::Range<usize>) -> Result<T> + Sync + Send,
+) -> Result<Vec<T>> {
+    #[cfg(feature = "rayon")]
+    {
+        use rayon::prelude::*;
+        chunks.par_iter().map(f).collect()
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        chunks.iter().map(f).collect()
+    }
+}
 
 /// Writes [`Batch`]es as a `TTree` or an RNTuple — the format is the one
 /// argument that differs.
@@ -183,23 +212,27 @@ impl<W: Write + Seek> DatasetWriter<W> {
         Ok(())
     }
 
+    /// Write `batch` as one cluster, cut into chunks of about
+    /// [`CHUNK_BYTES_PER_COLUMN`] per column: a `TTree` basket per branch per
+    /// chunk, or an RNTuple cluster per chunk. Small chunks keep window reads
+    /// cheap and let reads and writes run on every core.
     fn flush_batch(&mut self, batch: &Batch) -> Result<()> {
         self.open()?;
+        let chunks = chunk_ranges(batch);
+        let convert_tree = |r: &std::ops::Range<usize>| -> Result<Vec<Branch>> {
+            let chunk = batch.slice(r.clone());
+            chunk.iter().map(|(n, c)| tree_branch(n, c)).collect()
+        };
+        let convert_ntuple = |r: &std::ops::Range<usize>| -> Result<Vec<Field>> {
+            let chunk = batch.slice(r.clone());
+            chunk
+                .into_columns()
+                .map(|(n, c)| Ok(Field::new(n, ntuple_column(c))))
+                .collect()
+        };
         match &mut self.sink {
-            Sink::Tree(w) => {
-                let branches = batch
-                    .iter()
-                    .map(|(n, c)| tree_branch(n, c))
-                    .collect::<Result<Vec<_>>>()?;
-                w.write_batch(&branches)
-            }
-            Sink::Ntuple(w) => {
-                let fields = batch
-                    .iter()
-                    .map(|(n, c)| ntuple_field(n, c))
-                    .collect::<Result<Vec<_>>>()?;
-                w.write_batch(&fields)
-            }
+            Sink::Tree(w) => w.write_batches(&map_chunks(&chunks, convert_tree)?),
+            Sink::Ntuple(w) => w.write_batches(&map_chunks(&chunks, convert_ntuple)?),
             Sink::Pending { .. } | Sink::Gone => unreachable!("opened above"),
         }
     }
@@ -296,9 +329,10 @@ impl DatasetObject {
             ),
             Format::Ntuple => Content::Ntuple(
                 batch
-                    .iter()
-                    .map(|(n, c)| ntuple_field(n, c))
-                    .collect::<Result<_>>()?,
+                    .clone()
+                    .into_columns()
+                    .map(|(n, c)| Field::new(n, ntuple_column(c)))
+                    .collect(),
             ),
         };
         Ok(DatasetObject {
@@ -386,44 +420,9 @@ fn tree_branch_ok(c: &Column) -> bool {
     }
 }
 
-fn ntuple_field_ok(c: &Column) -> bool {
-    match c {
-        Column::String { .. } => true,
-        Column::List { values, .. } => match &**values {
-            Column::U32(_) | Column::U64(_) => false,
-            Column::String { .. } => true,
-            Column::List { values, .. } => matches!(
-                **values,
-                Column::Bool(_)
-                    | Column::I32(_)
-                    | Column::I64(_)
-                    | Column::F32(_)
-                    | Column::F64(_)
-                    | Column::String { .. }
-            ),
-            v => is_scalar(v),
-        },
-        Column::Array { values, .. } => matches!(
-            **values,
-            Column::I32(_)
-                | Column::I64(_)
-                | Column::U32(_)
-                | Column::U64(_)
-                | Column::F32(_)
-                | Column::F64(_)
-        ),
-        Column::Optional { values, .. } => matches!(
-            **values,
-            Column::Bool(_)
-                | Column::I32(_)
-                | Column::I64(_)
-                | Column::U32(_)
-                | Column::U64(_)
-                | Column::F32(_)
-                | Column::F64(_)
-        ),
-        other => is_scalar(other),
-    }
+fn ntuple_field_ok(_: &Column) -> bool {
+    // Every column shape maps onto an RNTuple field.
+    true
 }
 
 /// Split flat `values` into one `Vec` per entry at the cumulative `offsets`.
@@ -488,46 +487,35 @@ fn tree_branch(name: &str, c: &Column) -> Result<Branch> {
     }
 }
 
-/// A column as an RNTuple field.
-fn ntuple_field(name: &str, c: &Column) -> Result<Field> {
-    const WHAT: &str = "an RNTuple";
+/// A column as an RNTuple column, moved rather than copied: lists become
+/// collections over their flat values, so a `std::vector<float>` is written
+/// straight from its offsets and values.
+fn ntuple_column(c: Column) -> RnColumn {
     match c {
-        Column::String { offsets, bytes } => Ok(Field::string(name, strings(offsets, bytes))),
-        Column::List { offsets, values } => match &**values {
-            Column::String { offsets: o2, bytes } => Ok(Field::vector_string(
-                name,
-                rows(offsets, &strings(o2, bytes)),
-            )),
-            Column::List {
-                offsets: o2,
-                values: inner,
-            } => match &**inner {
-                Column::String { offsets: o3, bytes } => Ok(Field::vector_vector_string(
-                    name,
-                    rows(offsets, &rows(o2, &strings(o3, bytes))),
-                )),
-                v => by_type!(Field, name, c, WHAT, v, x => rows(offsets, &rows(o2, x));
-                    Bool => vector_vector_bool, I32 => vector_vector_i32, I64 => vector_vector_i64,
-                    F32 => vector_vector_f32, F64 => vector_vector_f64),
-            },
-            v => by_type!(Field, name, c, WHAT, v, x => rows(offsets, x);
-                Bool => vector_bool, I8 => vector_i8, U8 => vector_u8, I16 => vector_i16,
-                U16 => vector_u16, I32 => vector_i32, I64 => vector_i64, F32 => vector_f32,
-                F64 => vector_f64),
+        Column::Bool(v) => RnColumn::Bool(v),
+        Column::I8(v) => RnColumn::I8(v),
+        Column::U8(v) => RnColumn::U8(v),
+        Column::I16(v) => RnColumn::I16(v),
+        Column::U16(v) => RnColumn::U16(v),
+        Column::I32(v) => RnColumn::I32(v),
+        Column::U32(v) => RnColumn::U32(v),
+        Column::I64(v) => RnColumn::I64(v),
+        Column::U64(v) => RnColumn::U64(v),
+        Column::F32(v) => RnColumn::F32(v),
+        Column::F64(v) => RnColumn::F64(v),
+        Column::String { offsets, bytes } => RnColumn::Str(strings(&offsets, &bytes)),
+        Column::List { offsets, values } => RnColumn::Nested {
+            offsets,
+            items: Box::new(ntuple_column(*values)),
         },
-        Column::Array { len, values } => by_type!(Field, name, c, WHAT, &**values,
-            v => v.chunks(*len).map(<[_]>::to_vec).collect();
-            I32 => array_i32, I64 => array_i64, U32 => array_u32, U64 => array_u64,
-            F32 => array_f32, F64 => array_f64)?,
-        Column::Optional { valid, values } => by_type!(Field, name, c, WHAT, &**values,
-            v => {
-                let mut it = v.iter().copied();
-                valid.iter().map(|&p| if p { it.next() } else { None }).collect()
-            };
-            Bool => optional_bool, I32 => optional_i32, I64 => optional_i64, U32 => optional_u32,
-            U64 => optional_u64, F32 => optional_f32, F64 => optional_f64),
-        scalar => by_type!(Field, name, c, WHAT, scalar, v => v.clone();
-            Bool => bool, I8 => i8, U8 => u8, I16 => i16, U16 => u16, I32 => i32,
-            U32 => u32, I64 => i64, U64 => u64, F32 => f32, F64 => f64),
+        Column::Array { len, values } => RnColumn::Array {
+            len,
+            items: Box::new(ntuple_column(*values)),
+        },
+        Column::Optional { valid, values } => RnColumn::Optional {
+            unique: false,
+            present: valid,
+            values: Box::new(ntuple_column(*values)),
+        },
     }
 }

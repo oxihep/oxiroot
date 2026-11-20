@@ -1032,6 +1032,7 @@ version = "0.7.0"
 dependencies = [
  "oxiroot-io-core",
  "oxiroot-linalg",
+ "rayon",
  "xxhash-rust",
 ]
 

@@ -143,3 +143,60 @@ fn flat_matches_values_on_every_window() {
     );
     assert!(n.field("s").flat().is_err(), "nor does a string");
 }
+
+#[cfg(feature = "rayon")]
+#[test]
+fn parallel_reads_match_serial_ones() {
+    let f = file();
+    let n = NtupleReader::open(&f, "ntpl").unwrap();
+    for name in ["x", "v", "s", "o"] {
+        assert_eq!(
+            n.field(name).parallel(true).values().unwrap(),
+            n.field(name).values().unwrap(),
+            "{name}"
+        );
+        assert_eq!(
+            n.field(name).range(1..5).parallel(true).values().unwrap(),
+            n.field(name).range(1..5).values().unwrap(),
+            "{name} window"
+        );
+    }
+    assert_eq!(
+        n.field("v").parallel(true).flat().unwrap(),
+        n.field("v").flat().unwrap()
+    );
+}
+
+#[test]
+fn write_batches_equals_one_batch_at_a_time() {
+    let batches: Vec<Vec<Field>> = (0..3)
+        .map(|k| {
+            vec![
+                Field::f64("x", vec![f64::from(k); 4]),
+                Field::vector_i32("v", vec![vec![k], vec![], vec![k, k], vec![1]]),
+            ]
+        })
+        .collect();
+    let mut a = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "t.root",
+        "ntpl",
+        Compression::Zstd(1),
+    )
+    .unwrap();
+    a.write_batches(&batches).unwrap();
+    let mut b = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "t.root",
+        "ntpl",
+        Compression::Zstd(1),
+    )
+    .unwrap();
+    for batch in &batches {
+        b.write_batch(batch).unwrap();
+    }
+    assert_eq!(
+        a.finish().unwrap().into_inner(),
+        b.finish().unwrap().into_inner()
+    );
+}

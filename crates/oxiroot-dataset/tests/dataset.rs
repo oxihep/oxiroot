@@ -447,3 +447,38 @@ fn every_fixture_reads_the_same_as_the_low_level_readers() {
     assert!(compared > 50, "only {compared} columns compared");
     eprintln!("{checked} fixture columns read, {compared} compared with the low-level readers");
 }
+
+/// Parallel reads (columns, baskets and pages concurrently) give exactly what
+/// serial ones do, on a file whose clusters are cut into many chunks.
+#[cfg(feature = "rayon")]
+#[test]
+fn parallel_reads_match_serial_ones() {
+    let parts: Vec<Batch> = (0..4).map(|k| sample(5000, 5000 * k)).collect();
+    for format in [Format::Tree, Format::Ntuple] {
+        let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
+            .cluster_bytes(64 * 1024);
+        for p in &parts {
+            w.write(p).unwrap();
+        }
+        let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
+        let ds = Dataset::open(&file, "events").unwrap();
+        let serial: Vec<Batch> = ds
+            .batches(COLUMNS)
+            .step(3000)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let parallel: Vec<Batch> = ds
+            .batches(COLUMNS)
+            .step(3000)
+            .parallel(true)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(serial, parallel, "{format:?}");
+        assert!(serial.len() > 2, "{format:?}: several batches");
+        let mut whole = Batch::new();
+        for b in serial {
+            whole.append(b).unwrap();
+        }
+        assert_eq!(whole, ds.read(COLUMNS).unwrap(), "{format:?}");
+    }
+}
