@@ -7,24 +7,10 @@ change the API.
 
 ## [Unreleased]
 
-### Changed
+## [0.9.0] — 2026-11-20
 
-- **Zstd goes through [zrip](https://crates.io/crates/zrip) instead of
-  `ruzstd`**: pure, safe Rust (`forbid(unsafe_code)`), MIT, within about 1.25×
-  of C zstd's speed both ways and with its compression ratio. Of seven Rust
-  Zstd crates timed on ROOT's blocks, it was the fastest without `unsafe`.
-  - Reads: a one-thread read of a ROOT-written `TTree` is 2.4× faster, of an
-    RNTuple 2.5×. oxiroot now matches or beats uproot on one thread in seven
-    of eight cases of the comparison, and in parallel is up to 3.6× faster.
-  - Writes: 3–6× faster, and the files are about a third smaller (`ruzstd`
-    had a single fast level, which left many blocks nearly raw). Zstd levels
-    1–4 are zrip's; higher levels use its level 4, which compresses physics
-    data about as well as C zstd's level 5.
-  - A column that barely compressed before (such as random doubles) now
-    compresses a little, and reading it costs a decompression where it was a
-    copy, as in ROOT and uproot.
-  - Decoding stays bounded by the block header's declared size; the
-    decompression fuzz target ran 4 million inputs without a crash.
+Zstd at C speed in safe Rust (zrip), lists of structs in a `TTree`, a
+comparison with uproot, and CI that gates coverage and tracks benchmarks.
 
 ### Added
 
@@ -65,11 +51,27 @@ change the API.
   (`cargo-machete`) and the workflows themselves (`actionlint`).
 - `.pre-commit-config.yaml`: `cargo fmt`, typos, a gitleaks secret scan and
   file hygiene before a commit, clippy before a push.
-- `CITATION.cff`, so GitHub offers a citation; README badges for CI, coverage
-  and the docs.
+- `CITATION.cff`, so GitHub offers a citation; README badges for CI, the
+  latest release, coverage and the docs.
 
 ### Changed
 
+- **Zstd goes through [zrip](https://crates.io/crates/zrip) instead of
+  `ruzstd`**: pure, safe Rust (`forbid(unsafe_code)`), MIT, within about 1.25×
+  of C zstd's speed both ways and with its compression ratio. Of seven Rust
+  Zstd crates timed on ROOT's blocks, it was the fastest without `unsafe`.
+  - Reads: a one-thread read of a ROOT-written `TTree` is 2.4× faster, of an
+    RNTuple 2.5×. oxiroot now matches or beats uproot on one thread in seven
+    of eight cases of the comparison, and in parallel is up to 3.6× faster.
+  - Writes: 3–6× faster, and the files are about a third smaller (`ruzstd`
+    had a single fast level, which left many blocks nearly raw). Zstd levels
+    1–4 are zrip's; higher levels use its level 4, which compresses physics
+    data about as well as C zstd's level 5.
+  - A column that barely compressed before (such as random doubles) now
+    compresses a little, and reading it costs a decompression where it was a
+    copy, as in ROOT and uproot.
+  - Decoding stays bounded by the block header's declared size; the
+    decompression fuzz target ran 4 million inputs without a crash.
 - `Dataset::columns` lists a tree's split `std::vector<Struct>` once, by its
   name (`hits`), instead of its members (`hits.x`, …). The members still read
   on their own.
@@ -932,7 +934,8 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/oxihep/oxiroot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/oxihep/oxiroot/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/oxihep/oxiroot/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/oxihep/oxiroot/compare/v0.6.0...v0.6.1
