@@ -18,6 +18,17 @@ change the API.
   the map's dictionary compiled in to write or read one
   (`scripts/rntuple_map_LinkDef.h`); without it its collection proxy crashes,
   which is what had blocked this.
+- **XRootD over TLS, with token authentication** (the `xrootd-tls` feature).
+  `roots://` URLs, and `root://` servers that require TLS, switch the
+  connection to TLS (`kXR_protocol` with `kXR_ableTLS`, then `kXR_gotoTLS`)
+  before the login. Over TLS the client authenticates with a WLCG bearer token
+  (the `ztn` protocol) when the server offers it, found the WLCG way:
+  `BEARER_TOKEN`, `BEARER_TOKEN_FILE`, `$XDG_RUNTIME_DIR/bt_u<uid>`,
+  `/tmp/bt_u<uid>`. Certificates are checked against the Mozilla roots plus
+  `$X509_CERT_DIR`. `XrootdOptions` and `XrootdSource::open_with` pass a
+  token or CA directory explicitly. Tested against a mock server with a test
+  CA in CI, and against a real `xrootd` 6.2 by `scripts/xrootd_tls_local.sh`.
+  GSI (X.509 proxy) authentication is still not supported.
 
 ### Changed
 
@@ -26,6 +37,14 @@ change the API.
   (`impl_profile_family!`) for `Profile1D`, `Profile2D` and `Profile3D`;
   results are unchanged. The readers stay per class, as ROOT's on-disk
   layouts differ.
+
+### Fixed
+
+- **`roots://` without TLS support is an error.** Without the `xrootd-tls`
+  feature a `roots://` URL used to be read over a plain connection.
+- **A server's authentication offer is read in its order of preference**, and
+  the error for one this client cannot meet says why each protocol was
+  skipped.
 
 ## [0.6.0] — 2026-11-20
 

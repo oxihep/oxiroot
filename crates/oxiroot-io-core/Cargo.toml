@@ -15,6 +15,11 @@ oxiroot-compress = { workspace = true }
 bytes = { workspace = true }
 memmap2 = { version = "0.9", optional = true }
 ureq = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, optional = true }
 
 [features]
 # Opt-in memory-mapped read path (`FileReader::open_mmap`). Off by default so the
@@ -26,6 +31,10 @@ http = ["dep:ureq"]
 # Opt-in remote reads over the XRootD `root://` protocol (`FileReader::open_url`).
 # Pure `std::net` (unix auth, no crypto) — adds no dependencies.
 xrootd = []
+# TLS for XRootD: `roots://` URLs, servers that require TLS, and token (`ztn`)
+# authentication with a WLCG bearer token. Adds rustls (ring) and the Mozilla
+# root store; grid CAs are read from `$X509_CERT_DIR`.
+xrootd-tls = ["xrootd", "dep:rustls", "dep:webpki-roots", "dep:rustix"]
 
 # Render every read path (mmap, http) in the docs.rs API reference.
 [package.metadata.docs.rs]

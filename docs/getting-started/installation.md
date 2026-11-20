@@ -47,6 +47,7 @@ just the lean, pure-Rust format core.
 | `plot` | ✅ | Plotting to SVG/PNG/PDF (`oxiroot::plot`, from [oxiplot](https://github.com/oxihep/oxiplot)); adds `tiny-skia`/`skrifa` and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) range requests (`FileReader::open_url` with `http://` or `https://`); adds `ureq`. |
 | `xrootd` | — | Remote reads over the XRootD protocol (`FileReader::open_url` with `root://`), pure Rust, `unix` auth for public files. |
+| `xrootd-tls` | — | Adds TLS to XRootD (`roots://`, servers that require it) and token (`ztn`) authentication with a WLCG bearer token; implies `xrootd`, adds `rustls`. |
 
 ```toml
 [dependencies]

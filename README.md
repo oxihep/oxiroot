@@ -961,6 +961,7 @@ Dependencies are pure Rust: [`ruzstd`](https://crates.io/crates/ruzstd) (Zstd),
 | `plot` | ✅ | Plotting (`oxiroot::plot`): SVG/PNG/PDF rendering of `Hist1D`/`Hist2D`/`Graph`/`Profile1D`; adds `tiny-skia`, `skrifa`, and the ReX TeX engine. |
 | `http` | — | Remote reads over HTTP(S) byte-range requests (`FileReader::open_url`); adds the pure-Rust `ureq` (rustls) client. Off by default so the standard build needs no TLS/networking stack. |
 | `xrootd` | — | Remote reads over the XRootD `root://` protocol (`FileReader::open_url`), with `unix` auth for public data (e.g. `root://eospublic.cern.ch`). Pure `std::net` — adds no dependencies. |
+| `xrootd-tls` | — | Adds TLS to XRootD — `roots://` and servers that require it — and token (`ztn`) authentication with a WLCG bearer token, for access-controlled data. Implies `xrootd`; adds `rustls`. |
 
 The facade is batteries-included: everything marked ✅ is on by default. For a
 lean, pure-Rust format core with a minimal dependency set, opt out with

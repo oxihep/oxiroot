@@ -1,11 +1,15 @@
 //! An XRootD (`root://`) byte-range [`ByteSource`] (the `xrootd` feature).
 //!
 //! XRootD is the binary TCP protocol most CERN data is served over. This is a
-//! read-only client for the public/open-data case: it speaks the `xroot`
-//! protocol directly (no libXrdCl, no extra dependencies — just `std::net`) and
-//! authenticates with the credential-free `unix` security protocol, so it reads
-//! world-readable files from servers that offer `unix` auth (e.g.
-//! `root://eospublic.cern.ch`). GSI/Kerberos/token security is out of scope.
+//! read-only client: it speaks the `xroot` protocol directly (no libXrdCl, and
+//! just `std::net` by default) and authenticates with the credential-free
+//! `unix` security protocol, so it reads world-readable files from servers that
+//! offer `unix` auth (e.g. `root://eospublic.cern.ch`).
+//!
+//! The `xrootd-tls` feature adds TLS — `roots://` URLs and servers that require
+//! it — and token authentication (the `ztn` protocol) with a WLCG bearer token,
+//! for access-controlled data; see `XrootdOptions`. GSI (X.509 proxy)
+//! and Kerberos authentication are not supported.
 //!
 //! `kXR_read(handle, offset, length)` maps directly onto
 //! [`ByteSource::read_at`], so an [`XrootdSource`] plugs into [`FileReader`] exactly
@@ -26,13 +30,26 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use super::source::ByteSource;
+#[cfg(feature = "xrootd-tls")]
+use super::xrootd_tls::{self, Stream, XrootdOptions};
 use crate::error::{Error, Result};
+
+/// Without TLS the connection is the TCP stream itself.
+#[cfg(not(feature = "xrootd-tls"))]
+type Stream = TcpStream;
+
+/// Without TLS there is nothing to configure: no token, no CAs.
+#[cfg(not(feature = "xrootd-tls"))]
+#[derive(Default)]
+struct XrootdOptions {}
 
 // Request opcodes (`kXR_*`).
 const KXR_AUTH: u16 = 3000;
 const KXR_CLOSE: u16 = 3003;
 const KXR_LOGIN: u16 = 3007;
 const KXR_OPEN: u16 = 3010;
+#[cfg(feature = "xrootd-tls")]
+const KXR_PROTOCOL: u16 = 3006;
 const KXR_READ: u16 = 3013;
 const KXR_READV: u16 = 3025;
 const KXR_STAT: u16 = 3017;
@@ -43,6 +60,23 @@ const KXR_OKSOFAR: u16 = 4000;
 const KXR_ERROR: u16 = 4003;
 const KXR_REDIRECT: u16 = 4004;
 const KXR_WAIT: u16 = 4005;
+
+/// The protocol version this client speaks (`kXR_PROTOCOLVERSION`, 5.2.0).
+#[cfg(feature = "xrootd-tls")]
+const KXR_PROTOCOL_VERSION: i32 = 0x0000_0520;
+/// `kXR_protocol` request flags: the client can do TLS, and wants it now.
+#[cfg(feature = "xrootd-tls")]
+const KXR_ABLE_TLS: u8 = 0x02;
+#[cfg(feature = "xrootd-tls")]
+const KXR_WANT_TLS: u8 = 0x04;
+/// `kXR_protocol` expectation: a login follows.
+#[cfg(feature = "xrootd-tls")]
+const KXR_EXP_LOGIN: u8 = 0x03;
+/// `kXR_protocol` response flags: the server can do TLS, and wants to now.
+#[cfg(feature = "xrootd-tls")]
+const KXR_HAVE_TLS: u32 = 0x8000_0000;
+#[cfg(feature = "xrootd-tls")]
+const KXR_GOTO_TLS: u32 = 0x4000_0000;
 
 /// How many `kXR_wait` replies an open honours before giving up.
 const MAX_WAITS: usize = 30;
@@ -68,19 +102,29 @@ const MAX_REDIRECTS: u32 = 8;
 /// Connect / read timeout.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// A parsed `root://[user@]host[:port]//path` URL.
+/// A parsed `root[s]://[user@]host[:port]//path` URL.
 struct XrootdUrl {
     host: String,
     port: u16,
     path: String,
+    /// A `roots://` URL: the whole session must be over TLS.
+    tls: bool,
 }
 
 impl XrootdUrl {
     fn parse(url: &str) -> Result<XrootdUrl> {
-        let rest = url
-            .strip_prefix("root://")
-            .or_else(|| url.strip_prefix("roots://"))
-            .ok_or_else(|| Error::InvalidInput(format!("not a root:// URL: {url:?}")))?;
+        let (rest, tls) = if let Some(rest) = url.strip_prefix("root://") {
+            (rest, false)
+        } else if let Some(rest) = url.strip_prefix("roots://") {
+            (rest, true)
+        } else {
+            return Err(Error::InvalidInput(format!("not a root:// URL: {url:?}")));
+        };
+        if tls && cfg!(not(feature = "xrootd-tls")) {
+            return Err(Error::Unsupported(format!(
+                "roots:// needs TLS, which needs the `xrootd-tls` feature: {url:?}"
+            )));
+        }
         // Authority is up to the first '/', the path is the remainder. XRootD's
         // canonical form uses a double slash — `root://host//abs/path` — so the
         // remainder already carries the leading slash of the absolute path.
@@ -104,22 +148,35 @@ impl XrootdUrl {
         } else {
             format!("/{path}")
         };
-        Ok(XrootdUrl { host, port, path })
+        Ok(XrootdUrl {
+            host,
+            port,
+            path,
+            tls,
+        })
     }
 }
 
 /// A live connection to one XRootD server with a file open, serialized so the
 /// request/response stream stays in step under concurrent reads.
 struct Conn {
-    stream: TcpStream,
+    stream: Stream,
     stream_id: u16,
     fhandle: [u8; 4],
 }
 
 impl Conn {
-    /// Handshake + login + (unix) auth against `host:port`, then open `path` for
-    /// reading, following redirects. Returns the connection and the file size.
-    fn open(host: &str, port: u16, path: &str) -> Result<(Conn, u64)> {
+    /// Handshake, TLS if either side wants it, login and authentication
+    /// against `host:port`, then open `path` for reading, following redirects.
+    /// With `tls` (a `roots://` URL) every server on the way must do TLS.
+    /// Returns the connection and the file size.
+    fn open(
+        host: &str,
+        port: u16,
+        path: &str,
+        tls: bool,
+        opts: &XrootdOptions,
+    ) -> Result<(Conn, u64)> {
         let mut host = host.to_string();
         let mut port = port;
         // A redirector (e.g. EOS) hands back an opaque capability token that must
@@ -133,11 +190,18 @@ impl Conn {
 
             handshake(&mut stream)?;
             let mut conn = Conn {
+                #[cfg(feature = "xrootd-tls")]
+                stream: Stream::Plain(stream),
+                #[cfg(not(feature = "xrootd-tls"))]
                 stream,
                 stream_id: 0,
                 fhandle: [0; 4],
             };
-            conn.login()?;
+            #[cfg(feature = "xrootd-tls")]
+            conn.negotiate_tls(&host, tls, opts)?;
+            #[cfg(not(feature = "xrootd-tls"))]
+            let _ = tls; // `roots://` is refused at parse time
+            conn.login(opts)?;
 
             let open_path = if opaque.is_empty() {
                 path.to_string()
@@ -188,6 +252,7 @@ impl Conn {
         hdr.extend_from_slice(data);
         self.stream
             .write_all(&hdr)
+            .and_then(|()| self.stream.flush())
             .map_err(|e| io_err("sending request", e))?;
         self.read_response(max_len)
     }
@@ -235,7 +300,48 @@ impl Conn {
             .map_err(|e| io_err("reading response", e))
     }
 
-    fn login(&mut self) -> Result<()> {
+    /// Say that this client can do TLS (`kXR_protocol` with `kXR_ableTLS`,
+    /// and `kXR_wantTLS` when `require`d) and switch the connection to TLS if
+    /// the server asks for it, or if `require`d. A server that cannot do TLS
+    /// fails a required switch.
+    #[cfg(feature = "xrootd-tls")]
+    fn negotiate_tls(&mut self, host: &str, require: bool, opts: &XrootdOptions) -> Result<()> {
+        let mut body = [0u8; 16];
+        body[0..4].copy_from_slice(&KXR_PROTOCOL_VERSION.to_be_bytes());
+        body[4] = KXR_ABLE_TLS | if require { KXR_WANT_TLS } else { 0 };
+        body[5] = KXR_EXP_LOGIN;
+        let (status, payload) = self.request(KXR_PROTOCOL, body, &[], SMALL_RESPONSE)?;
+        if status != KXR_OK {
+            return Err(server_error("protocol", status, &payload));
+        }
+        // Body: pval(int32), flags(int32), then optional security requirements.
+        // An older server may send less: no flags, so no TLS.
+        let flags = payload
+            .get(4..8)
+            .map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+        if require && flags & KXR_HAVE_TLS == 0 {
+            return Err(Error::Unsupported(format!(
+                "roots://{host}: the server does not offer TLS"
+            )));
+        }
+        if flags & KXR_GOTO_TLS != 0 || require {
+            self.start_tls(host, opts)?;
+        }
+        Ok(())
+    }
+
+    /// Switch the connection to TLS: from here on every byte is encrypted.
+    #[cfg(feature = "xrootd-tls")]
+    fn start_tls(&mut self, host: &str, opts: &XrootdOptions) -> Result<()> {
+        let Stream::Plain(tcp) = &self.stream else {
+            return Ok(());
+        };
+        let tcp = tcp.try_clone().map_err(|e| io_err("starting TLS", e))?;
+        self.stream = Stream::Tls(Box::new(xrootd_tls::connect(tcp, host, opts)?));
+        Ok(())
+    }
+
+    fn login(&mut self, opts: &XrootdOptions) -> Result<()> {
         // Body: pid(0), username[8], reserved, ability, capver, role. capver is
         // the protocol version (4) *without* the async-capability bit (0x80), so
         // the server always answers reads synchronously — this client does not
@@ -248,19 +354,68 @@ impl Conn {
             return Err(server_error("login", status, &payload));
         }
         // Payload: 16-byte session id, then (if the server requires auth) a
-        // security spec such as "&P=gsi...&P=unix". Do the credential-free `unix`
-        // handshake when it is offered; anything else is unsupported.
+        // security spec such as "&P=gsi,…&P=ztn,0:4096:&P=unix".
         if payload.len() > 16 {
-            let sec = &payload[16..];
-            if find_subslice(sec, b"&P=unix").is_some() || find_subslice(sec, b"P=unix").is_some() {
-                self.auth_unix()?;
-            } else {
-                let spec = String::from_utf8_lossy(sec);
-                return Err(Error::Unsupported(format!(
-                    "root://: server requires authentication this client does not support \
-                     (only `unix` is implemented); offered: {spec}"
-                )));
+            self.authenticate(&payload[16..], opts)?;
+        }
+        Ok(())
+    }
+
+    /// Authenticate with the first protocol in the server's `spec` (its order
+    /// of preference) that this client can do: `ztn` with a bearer token over
+    /// TLS (the `xrootd-tls` feature), or the credential-free `unix`.
+    fn authenticate(&mut self, spec: &[u8], opts: &XrootdOptions) -> Result<()> {
+        let spec = String::from_utf8_lossy(spec);
+        let spec = spec.trim_end_matches('\0');
+        let mut skipped: Vec<&str> = Vec::new();
+        for entry in spec.split('&').filter_map(|e| e.strip_prefix("P=")) {
+            let (proto, parms) = entry.split_once(',').unwrap_or((entry, ""));
+            match proto {
+                "unix" => return self.auth_unix(),
+                "ztn" => {
+                    #[cfg(feature = "xrootd-tls")]
+                    {
+                        if !self.stream.is_tls() {
+                            skipped
+                                .push("`ztn` (token) needs TLS, which the server did not turn on");
+                        } else if let Some(token) = opts.bearer_token()? {
+                            return self.auth_ztn(&token, parms);
+                        } else {
+                            skipped.push(
+                                "`ztn` (token): no bearer token found in BEARER_TOKEN, \
+                                 BEARER_TOKEN_FILE, $XDG_RUNTIME_DIR/bt_u<uid> or /tmp/bt_u<uid>",
+                            );
+                        }
+                    }
+                    #[cfg(not(feature = "xrootd-tls"))]
+                    {
+                        let _ = (parms, opts);
+                        skipped.push("`ztn` (token) needs the `xrootd-tls` feature");
+                    }
+                }
+                "gsi" => skipped.push("`gsi` (X.509 proxy) is not supported"),
+                _ => {}
             }
+        }
+        let mut msg = format!(
+            "root://: the server requires authentication this client cannot do; offered: {spec}"
+        );
+        for why in skipped {
+            msg.push_str("; ");
+            msg.push_str(why);
+        }
+        Err(Error::Unsupported(msg))
+    }
+
+    /// Token authentication: one `kXR_auth` carrying the `ztn` credential.
+    #[cfg(feature = "xrootd-tls")]
+    fn auth_ztn(&mut self, token: &str, parms: &str) -> Result<()> {
+        let cred = xrootd_tls::ztn_credential(token, parms)?;
+        let mut body = [0u8; 16];
+        body[12..16].copy_from_slice(b"ztn\0");
+        let (status, payload) = self.request(KXR_AUTH, body, &cred, SMALL_RESPONSE)?;
+        if status != KXR_OK {
+            return Err(server_error("token (ztn) authentication", status, &payload));
         }
         Ok(())
     }
@@ -452,11 +607,23 @@ impl std::fmt::Debug for XrootdSource {
 }
 
 impl XrootdSource {
-    /// Connect to `url` (`root://host[:port]//path`), log in with `unix` auth,
-    /// and open the file for reading.
+    /// Connect to `url` (`root://host[:port]//path`, or `roots://` for TLS
+    /// with the `xrootd-tls` feature), log in, authenticate, and open the file
+    /// for reading. A bearer token and grid CAs are found from the environment
+    /// (see `XrootdOptions`).
     pub fn open(url: &str) -> Result<XrootdSource> {
+        Self::connect(url, &XrootdOptions::default())
+    }
+
+    /// [`open`](Self::open) with an explicit bearer token or CA directory.
+    #[cfg(feature = "xrootd-tls")]
+    pub fn open_with(url: &str, opts: &XrootdOptions) -> Result<XrootdSource> {
+        Self::connect(url, opts)
+    }
+
+    fn connect(url: &str, opts: &XrootdOptions) -> Result<XrootdSource> {
         let parsed = XrootdUrl::parse(url)?;
-        let (conn, size) = Conn::open(&parsed.host, parsed.port, &parsed.path)?;
+        let (conn, size) = Conn::open(&parsed.host, parsed.port, &parsed.path, parsed.tls, opts)?;
         Ok(XrootdSource {
             conn: Mutex::new(conn),
             size,
@@ -576,11 +743,6 @@ fn io_err(ctx: &str, e: std::io::Error) -> Error {
         kind: e.kind(),
         message: format!("{ctx}: {e}"),
     }
-}
-
-/// First index of `needle` in `hay` (small `sec`-spec scans).
-fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
-    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]

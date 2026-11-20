@@ -946,6 +946,7 @@ dependencies = [
  "oxiroot-rntuple",
  "oxiroot-tree",
  "oxistats",
+ "rustls",
 ]
 
 [[package]]
@@ -1001,7 +1002,10 @@ dependencies = [
  "memmap2",
  "oxiroot-compress",
  "proptest",
+ "rustix",
+ "rustls",
  "ureq",
+ "webpki-roots",
 ]
 
 [[package]]

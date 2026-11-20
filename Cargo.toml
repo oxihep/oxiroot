@@ -61,6 +61,13 @@ bytes = "1"
 # remote-read feature. `default-features = false` drops gzip transfer decoding,
 # which would break byte-range semantics on a compressed response.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+# TLS for the optional `xrootd-tls` feature (`roots://`, token auth): the same
+# rustls + ring stack ureq already uses, and the Mozilla root store. Grid CAs
+# come from `$X509_CERT_DIR` at run time.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+# The effective uid, for the WLCG token locations (`bt_u<uid>`).
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
 proptest = "1"
 clap = { version = "4", features = ["derive"] }
 # Per-thread storage without a shared lock (ThreadedHist).
