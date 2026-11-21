@@ -132,3 +132,17 @@ mod tests {
         assert_eq!(Compression::Zstd(u8::MAX).setting(), 599);
     }
 }
+
+#[cfg(test)]
+mod level_tests {
+    use super::Compression;
+
+    #[test]
+    fn level_is_none_only_for_stored() {
+        assert_eq!(Compression::Stored.level(), None);
+        assert_eq!(Compression::Zstd(5).level(), Some(5));
+        assert_eq!(Compression::Zlib(1).level(), Some(1));
+        assert_eq!(Compression::Lz4(4).level(), Some(4));
+        assert_eq!(Compression::Lzma(9).level(), Some(9));
+    }
+}

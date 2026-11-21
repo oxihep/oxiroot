@@ -97,3 +97,19 @@ fn empty_graphmultierrors_round_trip() {
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
+
+/// The summation modes map to and from ROOT's codes; an unknown code is an
+/// error.
+#[test]
+fn summation_modes_round_trip_their_codes() {
+    use oxiroot_hist::SumErrorsMode;
+
+    for code in 0..=2 {
+        assert_eq!(SumErrorsMode::from_code(code).unwrap().code(), code);
+    }
+    assert_eq!(
+        SumErrorsMode::from_code(1).unwrap(),
+        SumErrorsMode::SquareSum
+    );
+    assert!(SumErrorsMode::from_code(3).is_err());
+}

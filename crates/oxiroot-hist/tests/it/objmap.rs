@@ -114,3 +114,30 @@ fn a_root_map_is_written_back_as_read_and_takes_new_entries() {
     assert_eq!(back.get::<ObjString>("tag").unwrap().unwrap().value(), "v7");
     assert!(back.get::<Hist1D>("hist").unwrap().is_ok());
 }
+
+/// A map read from a file cannot be renamed, and cannot be a value of another
+/// map: both are refused when the file is written.
+#[test]
+fn a_root_map_refuses_a_key_its_references_do_not_fit() {
+    let map = fixture().get::<ObjMap>("meta").unwrap();
+
+    let err = FileWriter::create("unused.root")
+        .add(&map.clone().named("elsewhere"))
+        .to_bytes()
+        .unwrap_err();
+    assert!(err.to_string().contains("cannot be renamed"), "{err}");
+
+    let outer = ObjMap::new().named("outer").insert("inner", &map);
+    let err = FileWriter::create("unused.root")
+        .add(&outer)
+        .to_bytes()
+        .unwrap_err();
+    assert!(err.to_string().contains("under its own key"), "{err}");
+
+    // A key of another header length is refused too.
+    use oxiroot_io_core::KeyCheck;
+    assert!(KeyCheck::Any.check("TMap", "m", 40).is_ok());
+    assert!(KeyCheck::HeaderLen(40).check("TMap", "m", 40).is_ok());
+    let err = KeyCheck::HeaderLen(40).check("TMap", "m", 48).unwrap_err();
+    assert!(err.to_string().contains("40-byte header"), "{err}");
+}

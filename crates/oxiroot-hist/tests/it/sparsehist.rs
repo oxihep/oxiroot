@@ -76,3 +76,11 @@ fn empty_thnsparse_round_trips() {
     assert!(back.bins().is_empty());
     assert_eq!(back.entries(), 0.0);
 }
+
+/// A new sparse histogram does not track its statistics (ROOT stores `-1`),
+/// which reads as `None`, not as a sum of `-1`.
+#[test]
+fn an_untracked_sum_of_squared_weights_is_none() {
+    let h = SparseHist::new(&[(4, 0.0, 4.0)]);
+    assert_eq!(h.tsumw2(), None);
+}

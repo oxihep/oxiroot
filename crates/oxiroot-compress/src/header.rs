@@ -165,6 +165,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn algorithms_are_named_for_messages() {
+        assert_eq!(Algorithm::Zlib.to_string(), "zlib");
+        assert_eq!(Algorithm::Lzma.to_string(), "LZMA");
+        assert_eq!(Algorithm::Lz4.to_string(), "LZ4");
+        assert_eq!(Algorithm::Zstd.to_string(), "Zstandard");
+        assert_eq!(Algorithm::OldRoot.to_string(), "the legacy ROOT algorithm");
+        assert_eq!(
+            Algorithm::Unknown(*b"Q?").to_string(),
+            "unknown algorithm \"Q?\""
+        );
+    }
+
+    #[test]
     fn algorithm_tag_round_trips() {
         for algo in [
             Algorithm::Zlib,

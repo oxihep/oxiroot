@@ -63,3 +63,24 @@ fn a_bin_without_trials_has_no_efficiency() {
     assert_eq!(e.efficiency(2), None);
     assert_eq!(e.efficiency(99), None);
 }
+
+/// ROOT's statistic options map to and from their codes; a code ROOT does not
+/// define is an error, not a silent default.
+#[test]
+fn statistic_options_round_trip_their_codes() {
+    use oxiroot_hist::StatisticOption;
+
+    for code in 0..=8 {
+        assert_eq!(StatisticOption::from_code(code).unwrap().code(), code);
+    }
+    assert_eq!(
+        StatisticOption::from_code(0).unwrap(),
+        StatisticOption::ClopperPearson
+    );
+    assert_eq!(
+        StatisticOption::from_code(8).unwrap(),
+        StatisticOption::MidP
+    );
+    assert!(StatisticOption::from_code(9).is_err());
+    assert!(StatisticOption::from_code(-1).is_err());
+}
