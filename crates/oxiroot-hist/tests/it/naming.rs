@@ -7,15 +7,12 @@ use oxiroot_io_core::{Compression, FileWriter};
 use oxiroot_io_core::{Error, FileReader};
 
 fn filled(name: &str) -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named(name);
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named(name);
     for b in 0..4 {
         h.fill(f64::from(b) + 0.5);
     }
-    h
+
+    h.to_root().unwrap()
 }
 
 #[test]

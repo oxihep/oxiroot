@@ -16,7 +16,7 @@ prelude, so `use oxiroot::prelude::*;` is all you need.
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.fill(42.0);
 
 // Zstandard at level 5 — ROOT's modern FileWriter::create("zstd.root").add(&default.h).write()?;
@@ -29,12 +29,12 @@ The same value drives multi-object files and RNTuple/TTree writers:
 ```rust
 use oxiroot::prelude::*;
 
-let h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt");
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof");
+let h = Hist::reg(50, 0.0, 100.0).double().named("pt");
+let prof = Hist::reg(5, 0.0, 5.0).mean().named("prof");
 
 FileWriter::create("out.root")
-    .add(&h)
-    .add(&prof)
+    .add(&h.to_root()?)
+    .add(&prof.to_root()?)
     .compression(Compression::Zlib(1)).write()?;   // older-ROOT-style zlib default
 ```
 

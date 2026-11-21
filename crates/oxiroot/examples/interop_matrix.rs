@@ -133,36 +133,31 @@ fn jvi64_2(v: &[Vec<i64>]) -> J {
 fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
     let mut h = Hist::reg(usize::saturating_from(nbins), xmin, xmax)
         .double()
-        .to_root()
-        .unwrap()
         .named("h")
         .titled("m");
     for (i, &c) in contents.iter().enumerate() {
-        h.contents_mut()[i + 1] = c; // [0] is underflow
+        *h.bin_mut([bin(i)]).expect("in range") = c;
     }
-    h.set_entries(contents.iter().sum());
-    h
+    h.to_root().unwrap()
+}
+
+/// An in-range bin index, as oxihist counts them (flow bins are -1 and n).
+fn bin(i: usize) -> isize {
+    isize::try_from(i).expect("a small index")
 }
 
 fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
     let mut h = Hist::reg(usize::saturating_from(nx), 0.0, f64::from(nx))
         .reg(usize::saturating_from(ny), 0.0, f64::from(ny))
         .double()
-        .to_root()
-        .unwrap()
         .named("h")
         .titled("m");
-    // ROOT cell index = ix + (nx+2)*iy, in-range ix,iy in 1..=n.
-    let stride = usize::saturating_from(nx + 2);
-    let mut entries = 0.0;
     for (ix, col) in contents.iter().enumerate() {
         for (iy, &c) in col.iter().enumerate() {
-            h.contents_mut()[(ix + 1) + stride * (iy + 1)] = c;
-            entries += c;
+            *h.bin_mut([bin(ix), bin(iy)]).expect("in range") = c;
         }
     }
-    h.set_entries(entries);
-    h
+    h.to_root().unwrap()
 }
 
 fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
@@ -170,22 +165,21 @@ fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
         .reg(usize::saturating_from(n), 0.0, f64::from(n))
         .reg(usize::saturating_from(n), 0.0, f64::from(n))
         .double()
-        .to_root()
-        .unwrap()
         .named("h")
         .titled("m");
-    let s = usize::saturating_from(n + 2);
-    let mut entries = 0.0;
     for (ix, plane) in contents.iter().enumerate() {
         for (iy, col) in plane.iter().enumerate() {
             for (iz, &c) in col.iter().enumerate() {
-                h.contents_mut()[(ix + 1) + s * ((iy + 1) + s * (iz + 1))] = c;
-                entries += c;
+                *h.bin_mut([bin(ix), bin(iy), bin(iz)]).expect("in range") = c;
             }
         }
     }
-    h.set_entries(entries);
-    h
+    h.to_root().unwrap()
+}
+
+/// The error of cell `cell`: the square root of its `Σw²`.
+fn cell_error(sumw2: Option<&[f64]>, cell: usize) -> f64 {
+    sumw2.map_or(0.0, |s| s[cell].sqrt())
 }
 
 /// One histogram case: write `h` with the precision writer for `class`, return
@@ -234,7 +228,7 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &Hist1D, dir:
     ];
     if h.sumw2().is_some() {
         let n = h.values().len();
-        let errs: Vec<f64> = (1..=n).map(|b| h.bin_error(b)).collect();
+        let errs: Vec<f64> = (1..=n).map(|b| cell_error(h.sumw2(), b)).collect();
         fields.push(("sumw2_error", jflts(&errs)));
     }
     J::Obj(fields)
@@ -298,7 +292,7 @@ fn th2_bin_errors(h: &Hist2D) -> Vec<Vec<f64>> {
     (0..nx)
         .map(|ix| {
             (0..ny)
-                .map(|iy| h.bin_error((ix + 1) + stride * (iy + 1)))
+                .map(|iy| cell_error(h.sumw2(), (ix + 1) + stride * (iy + 1)))
                 .collect()
         })
         .collect()
@@ -362,7 +356,9 @@ fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &Hist3D, dir:
                 (0..n)
                     .map(|iy| {
                         (0..n)
-                            .map(|iz| h.bin_error((ix + 1) + s * ((iy + 1) + s * (iz + 1))))
+                            .map(|iz| {
+                                cell_error(h.sumw2(), (ix + 1) + s * ((iy + 1) + s * (iz + 1)))
+                            })
                             .collect()
                     })
                     .collect()
@@ -565,94 +561,90 @@ fn write(dir: &Path) {
     {
         let mut h = Hist::var(&[0.0, 1.0, 4.0, 10.0])
             .double()
-            .to_root()
-            .unwrap()
             .named("h")
             .titled("m");
         for (i, &c) in [2.0, 1.0, 3.0].iter().enumerate() {
-            h.contents_mut()[i + 1] = c;
+            *h.bin_mut([bin(i)]).expect("in range") = c;
         }
-        h.set_entries(6.0);
+        let h = h.to_root().unwrap();
         cases.push(hist1_case("th1d_variable", "TH1D", none, &h, dir));
     }
     {
         let mut h = Hist::var(&[0.0, 1.0, 4.0])
             .var(&[0.0, 2.0, 5.0])
             .double()
-            .to_root()
-            .unwrap()
             .named("h")
             .titled("m");
-        let stride = 4; // nx+2 = 2+2
         for (ix, col) in [[1.0, 2.0], [3.0, 4.0]].iter().enumerate() {
             for (iy, &c) in col.iter().enumerate() {
-                h.contents_mut()[(ix + 1) + stride * (iy + 1)] = c;
+                *h.bin_mut([bin(ix), bin(iy)]).expect("in range") = c;
             }
         }
-        h.set_entries(10.0);
+        let h = h.to_root().unwrap();
         cases.push(hist2_case("th2d_variable", "TH2D", none, &h, dir));
     }
 
     // --- Sumw2 (weighted errors), 1/2/3-D. ---
     {
-        let mut h = Hist::reg(3, 0.0, 3.0)
-            .double()
-            .to_root()
-            .unwrap()
-            .named("h")
-            .titled("m");
-        h.track_sumw2();
+        let mut h = Hist::reg(3, 0.0, 3.0).weight().named("h").titled("m");
         h.fill_weight(0.5, 2.0);
         h.fill_weight(0.5, 3.0); // bin1: content 5, sumw2 13
         h.fill_weight(1.5, 1.0); // bin2: content 1, sumw2 1
-        cases.push(hist1_case("th1d_sumw2", "TH1D", none, &h, dir));
+        cases.push(hist1_case(
+            "th1d_sumw2",
+            "TH1D",
+            none,
+            &h.to_root().unwrap(),
+            dir,
+        ));
     }
     {
         let mut h = Hist::reg(2, 0.0, 2.0)
             .reg(2, 0.0, 2.0)
-            .double()
-            .to_root()
-            .unwrap()
+            .weight()
             .named("h")
             .titled("m");
-        h.track_sumw2();
         h.fill_weight(0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 1.0); // (0,0): content 3, sumw2 5
         h.fill_weight(1.5, 1.5, 4.0); // (1,1): content 4, sumw2 16
-        cases.push(hist2_case("th2d_sumw2", "TH2D", none, &h, dir));
+        cases.push(hist2_case(
+            "th2d_sumw2",
+            "TH2D",
+            none,
+            &h.to_root().unwrap(),
+            dir,
+        ));
     }
     {
         let mut h = Hist::reg(2, 0.0, 2.0)
             .reg(2, 0.0, 2.0)
             .reg(2, 0.0, 2.0)
-            .double()
-            .to_root()
-            .unwrap()
+            .weight()
             .named("h")
             .titled("m");
-        h.track_sumw2();
         h.fill_weight(0.5, 0.5, 0.5, 2.0);
         h.fill_weight(0.5, 0.5, 0.5, 3.0); // (0,0,0): content 5, sumw2 13
         h.fill_weight(1.5, 1.5, 1.5, 1.0); // (1,1,1): content 1, sumw2 1
-        cases.push(hist3_case("th3d_sumw2", "TH3D", none, &h, dir));
+        cases.push(hist3_case(
+            "th3d_sumw2",
+            "TH3D",
+            none,
+            &h.to_root().unwrap(),
+            dir,
+        ));
     }
 
     // --- Profile1D. ---
     {
-        let mut p = Hist::reg(4, 0.0, 4.0)
-            .mean()
-            .to_root()
-            .unwrap()
-            .named("p")
-            .titled("prof");
-        p.fill(0.5, 10.0);
-        p.fill(0.5, 20.0); // bin1 mean 15
-        p.fill(1.5, 5.0);
-        p.fill(1.5, 10.0); // bin2 mean 7.5
-        p.fill(2.5, 30.0); // bin3 mean 30
+        let mut p = Hist::reg(4, 0.0, 4.0).mean().named("p").titled("prof");
+        p.fill_sample(0.5, 10.0);
+        p.fill_sample(0.5, 20.0); // bin1 mean 15
+        p.fill_sample(1.5, 5.0);
+        p.fill_sample(1.5, 10.0); // bin2 mean 7.5
+        p.fill_sample(2.5, 30.0); // bin3 mean 30
         let file = "m_tprofile.root".to_string();
         FileWriter::create(dir.join(&file))
-            .add(&p)
+            .add(&p.to_root().unwrap())
             .compression(none)
             .write()
             .unwrap_or_else(|e| die(&format!("tprofile: {e}")));
@@ -663,8 +655,11 @@ fn write(dir: &Path) {
             ("name", J::Str("p".into())),
             ("class", J::Str("TProfile".into())),
             ("compression", comp_str(none)),
-            ("values", jflts(&p.values())),
-            ("edges", J::Arr(vec![jflts(&p.xaxis().edges())])),
+            ("values", jflts(&p.values(false))),
+            (
+                "edges",
+                J::Arr(vec![jflts(&p.axis(0).edges().expect("a numeric axis"))]),
+            ),
             ("uproot_skip", J::Bool(false)),
         ]));
     }

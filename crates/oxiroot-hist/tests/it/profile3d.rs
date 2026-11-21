@@ -29,12 +29,11 @@ fn tprofile3d_round_trips() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .mean()
-        .to_root()
-        .unwrap()
         .named("p3");
-    p.fill(0.5, 0.5, 0.5, 10.0);
-    p.fill(0.5, 0.5, 0.5, 20.0); // cell(1,1,1) mean 15
-    p.fill(1.5, 1.5, 1.5, 7.0); // cell(2,2,2) mean 7
+    p.fill_sample(0.5, 0.5, 0.5, 10.0);
+    p.fill_sample(0.5, 0.5, 0.5, 20.0); // cell(1,1,1) mean 15
+    p.fill_sample(1.5, 1.5, 1.5, 7.0);
+    let p = p.to_root().unwrap(); // cell(2,2,2) mean 7
     assert_eq!(p.values()[0][0][0], 15.0);
     assert_eq!(p.values()[1][1][1], 7.0);
 

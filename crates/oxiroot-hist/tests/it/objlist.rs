@@ -41,12 +41,9 @@ fn reads_root_written_list_and_array() {
 
 #[test]
 fn round_trips_list_and_array_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(0.5);
+    let h = h.to_root().unwrap();
     let list = ObjList::new(ListKind::List)
         .named("mylist")
         .add(&h)

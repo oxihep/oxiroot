@@ -13,17 +13,13 @@ use oxiroot_io_core::{Compression, FileReader};
     reason = "small whole fill counts"
 )]
 fn th1f_write_read_round_trips() {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h1")
-        .titled("float");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h1").titled("float");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
         }
     }
+    let h = h.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/oxiroot_th1f.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h.clone().with_bin_content_type(BinContentType::F32))
@@ -42,13 +38,12 @@ fn th2f_write_read_round_trips() {
     let mut h = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h2")
         .titled("float2");
     h.fill(0.5, 0.5);
     h.fill(1.5, 1.5);
     h.fill(1.5, 1.5);
+    let h = h.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/oxiroot_th2f.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h.clone().with_bin_content_type(BinContentType::F32))
@@ -68,12 +63,11 @@ fn th3f_write_read_round_trips() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h3")
         .titled("float3");
     h.fill(0.5, 0.5, 0.5);
     h.fill(1.5, 1.5, 1.5);
+    let h = h.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3f.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h.clone().with_bin_content_type(BinContentType::F32))

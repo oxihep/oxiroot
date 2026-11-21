@@ -70,12 +70,9 @@ fn registry(path: &std::path::Path) -> StreamerRegistry {
 #[test]
 fn a_foreign_class_is_described_wherever_it_is_stored() {
     let dir = std::env::temp_dir();
-    let mut h = Hist::reg(2, 0.0, 2.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(2, 0.0, 2.0).double().named("h");
     h.fill(0.5);
+    let h = h.to_root().unwrap();
 
     let top = dir.join("oxiroot_sc_top.root");
     let subdir = dir.join("oxiroot_sc_dir.root");

@@ -13,12 +13,12 @@ const FORMAT: &str = "%H:%M%F2024-01-01 00:00:00";
 fn a_time_axis_survives_a_file() {
     let mut h = Hist::reg(24, 0.0, 86_400.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("rate")
         .titled("hits per hour");
-    h.xaxis_mut().set_time_format(FORMAT);
     h.fill(3_600.0);
+    // The time format is the ROOT axis's, set on the record.
+    let mut h = h.to_root().unwrap();
+    h.xaxis_mut().set_time_format(FORMAT);
     assert!(h.xaxis().time_display);
 
     // A graph carries its axes on its display frame, as ROOT stores them.
@@ -56,12 +56,9 @@ fn a_time_axis_survives_a_file() {
 
 #[test]
 fn an_ordinary_axis_stays_numeric() {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("plain");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("plain");
     h.fill(1.5);
+    let h = h.to_root().unwrap();
     assert!(!h.xaxis().time_display);
     assert_eq!(h.xaxis().time_format, "");
 

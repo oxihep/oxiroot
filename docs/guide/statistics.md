@@ -343,7 +343,7 @@ parameter — `Model::crystal_ball`, `voigtian`, `double_crystal_ball`,
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(80, 90.0, 110.0).double().to_root()?.named("mass");
+let mut h = Hist::reg(80, 90.0, 110.0).double().named("mass");
 // … fill h …
 let model = Model::crystal_ball("cb").estimate_from(&h).lower_limit("sigma", 0.0);
 let result = h.fit(&model);

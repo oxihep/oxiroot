@@ -149,52 +149,6 @@ impl Profile3D {
         usize::saturating_from(self.zaxis.nbins.max(0))
     }
 
-    /// Profile a point `(x, y, z, t)` with unit weight.
-    pub fn fill(&mut self, x: f64, y: f64, z: f64, t: f64) {
-        self.fill_weight(x, y, z, t, 1.0);
-    }
-
-    /// Profile a point `(x, y, z, t)` with weight `w`, matching `Profile3D::Fill`.
-    ///
-    /// The first fill with `w != 1` turns on per-cell tracking of `Σw²`
-    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
-    /// and so every bin error, would assume unit weights.
-    pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, t: f64, w: f64) {
-        if self.tmin != self.tmax && (t < self.tmin || t > self.tmax || t.is_nan()) {
-            return;
-        }
-        if w != 1.0 {
-            self.track_bin_sumw2();
-        }
-        let (sx, sy) = (self.nx() + 2, self.ny() + 2);
-        let (bx, by, bz) = (
-            self.xaxis.find_bin(x),
-            self.yaxis.find_bin(y),
-            self.zaxis.find_bin(z),
-        );
-        let cell = bx + sx * (by + sy * bz);
-        self.accumulate(cell, t, w);
-
-        let in_range = (1..=self.nx()).contains(&bx)
-            && (1..=self.ny()).contains(&by)
-            && (1..=self.nz()).contains(&bz);
-        if in_range {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-            self.tsumwy += w * y;
-            self.tsumwy2 += w * y * y;
-            self.tsumwxy += w * x * y;
-            self.tsumwz += w * z;
-            self.tsumwz2 += w * z * z;
-            self.tsumwxz += w * x * z;
-            self.tsumwyz += w * y * z;
-            self.tsumwt += w * t;
-            self.tsumwt2 += w * t * t;
-        }
-    }
-
     /// Profiled `t` value per in-range cell as `values[ix][iy][iz]`:
     /// `Σ(w·t) / Σw`, or `0` where a cell has no entries.
     #[must_use]

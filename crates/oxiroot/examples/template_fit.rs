@@ -37,6 +37,7 @@ fn main() -> oxiroot::Result<()> {
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod templates {
     use oxiroot::fit::{Channel, Sample};
+    use oxiroot::hist::oxihist::WeightedSum;
     use oxiroot::plot::{
         Axes, Color, CurveOpts, FillOpts, HistOpts, HistType, StackOpts, Style, ratio_subplots_with,
     };
@@ -103,18 +104,17 @@ mod templates {
     /// `errors2` (the simulation's statistics) when given.
     fn histogram(name: &str, values: &[f64], errors2: Option<&[f64]>) -> Hist1D {
         let mut h = Hist::reg(values.len(), 0.0, 1.0)
-            .double()
-            .to_root()
-            .unwrap()
+            .weight()
             .named(name)
             .titled(format!("{name};discriminant;Events"));
-        h.contents_mut()[1..=values.len()].copy_from_slice(values);
-        if let Some(e2) = errors2 {
-            h.track_sumw2();
-            h.sumw2_mut().expect("error tracking is on")[1..=values.len()].copy_from_slice(e2);
+        for (i, &value) in values.iter().enumerate() {
+            let bin = isize::try_from(i).expect("a small index");
+            *h.bin_mut([bin]).expect("in range") = WeightedSum {
+                value,
+                variance: errors2.map_or(0.0, |e2| e2[i]),
+            };
         }
-        h.set_entries(values.iter().sum());
-        h
+        h.to_root().expect("a regular axis maps to ROOT")
     }
 
     /// The in-range contents of `h`.
@@ -125,9 +125,8 @@ mod templates {
 
     /// The in-range errors of `h`.
     fn errors(h: &Hist1D) -> Vec<f64> {
-        (1..h.contents().len() - 1)
-            .map(|i| h.bin_error(i))
-            .collect()
+        let sumw2 = h.sumw2().expect("errors are tracked");
+        sumw2[1..sumw2.len() - 1].iter().map(|v| v.sqrt()).collect()
     }
 
     pub(super) fn run() -> oxiroot::Result<()> {
@@ -317,7 +316,7 @@ mod templates {
         }
         let (fig, mut main, mut lower) = ratio_subplots_with(Style::mplhep());
         main.hist_stack_with(
-            &[&h_wj, &h_tt, &h_sig],
+            &[&h_wj.to_hist()?, &h_tt.to_hist()?, &h_sig.to_hist()?],
             StackOpts::new()
                 .histtype(HistType::Fill)
                 .labels(["W+jets", "$t\\bar{t}$", "Signal"])
@@ -337,7 +336,7 @@ mod templates {
                 .label("Post-fit unc."),
         )?;
         main.hist_with(
-            &data_hist,
+            &data_hist.to_hist()?,
             HistOpts::new()
                 .histtype(HistType::Errorbar)
                 .color(Color::BLACK)
@@ -414,7 +413,7 @@ mod templates {
         println!(
             "\n5. Post-fit histograms in {} (ttbar: {:.1} events read back)",
             postfit.display(),
-            back.integral()
+            back.values().iter().sum::<f64>()
         );
         for png in [&stack_png, &pulls_png, &impacts_png] {
             println!("   plot: {}", png.display());

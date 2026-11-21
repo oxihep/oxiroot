@@ -9,8 +9,7 @@ use oxiroot_io_core::{RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, bin_content_type_of, cell_count, check_cells, check_len, is_hist_class,
-    read_th1_object,
+    BinContentType, bin_content_type_of, cell_count, check_cells, is_hist_class, read_th1_object,
 };
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
@@ -47,10 +46,9 @@ pub struct Hist1D {
     pub(crate) tsumwx2: f64,
     /// Bin contents including under/overflow (length `ncells`).
     pub(crate) contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on, by [`Hist1D::track_sumw2`], [`Hist1D::scale`], or the first
-    /// [`fill_weight`](Hist1D::fill_weight) with a weight other than 1. When
-    /// present, `bin_error = sqrt(sumw2[bin])`.
+    /// Per-bin sum of squared weights (`fSumw2`); empty when the histogram
+    /// does not track errors. When present, a bin's error is
+    /// `sqrt(sumw2[bin])`.
     pub(crate) sumw2: Vec<f64>,
 }
 
@@ -78,29 +76,6 @@ impl Hist1D {
         }
     }
 
-    /// Create an empty `TH1D` with variable bin edges (`edges` = the `nbins + 1`
-    /// boundaries, ascending). Internal primitive behind the public builder:
-    /// construct variable-axis histograms with [`Hist::var`](crate::Hist::var)`(edges).double()`.
-    pub(crate) fn new_variable(edges: &[f64]) -> Self {
-        let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
-        Self {
-            bin_content_type: BinContentType::F64,
-            name: String::new(),
-            title: String::new(),
-            xaxis: Axis::from_edges("xaxis", edges),
-            yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
-            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells: i32::saturating_from(cells),
-            entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            contents: vec![0.0; cells],
-            sumw2: Vec::new(),
-        }
-    }
-
     /// The histogram's name (`fName`, its key when written).
     #[must_use]
     pub fn name(&self) -> &str {
@@ -114,69 +89,21 @@ impl Hist1D {
     }
 
     /// Fill the histogram with `x` (weight 1).
-    pub fn fill(&mut self, x: f64) {
-        self.fill_weight(x, 1.0);
-    }
-
-    /// Fill the histogram with `x` and weight `w`, updating bin contents,
-    /// entry count, and the running statistics (ROOT `Fill` semantics: every
-    /// fill increments `fEntries`; the moment sums accumulate for in-range
-    /// fills only).
-    ///
-    /// The first fill with `w != 1` turns on per-bin error tracking, as ROOT's
-    /// `Fill` does, so weighted errors are right without an explicit
-    /// [`sumw2`](Self::sumw2) call.
-    pub fn fill_weight(&mut self, x: f64, w: f64) {
-        // Before the contents change: `sumw2` seeds from them, and every earlier
-        // fill had unit weight (otherwise tracking would already be on).
-        if w != 1.0 && self.sumw2.is_empty() {
-            self.track_sumw2();
-        }
+    pub(crate) fn fill(&mut self, x: f64) {
         let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
-            *c += w;
+            *c += 1.0;
         }
         if let Some(s) = self.sumw2.get_mut(bin) {
-            *s += w * w;
+            *s += 1.0;
         }
         self.entries += 1.0;
         if (1..=nbins).contains(&bin) {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-        }
-    }
-
-    /// Fill many values at once (scikit-hep `hist`'s `h.fill(array)`):
-    /// equivalent to [`fill`](Hist1D::fill) on each.
-    pub fn fill_many(&mut self, xs: &[f64]) {
-        for &x in xs {
-            self.fill_weight(x, 1.0);
-        }
-    }
-
-    /// Fill many `(x, weight)` pairs at once (`hist`'s `h.fill(array, weight=…)`).
-    ///
-    /// # Errors
-    /// [`Error::LengthMismatch`](oxiroot_io_core::Error::LengthMismatch) if
-    /// `weights` is not as long as `xs`; nothing is filled.
-    pub fn fill_many_weighted(&mut self, xs: &[f64], weights: &[f64]) -> Result<()> {
-        check_len("fill weights", xs.len(), weights.len())?;
-        for (&x, &w) in xs.iter().zip(weights) {
-            self.fill_weight(x, w);
-        }
-        Ok(())
-    }
-
-    /// Mean of the in-range fills (`fTsumwx / fTsumw`), or 0 if empty.
-    #[must_use]
-    pub fn mean(&self) -> f64 {
-        if self.tsumw != 0.0 {
-            self.tsumwx / self.tsumw
-        } else {
-            0.0
+            self.tsumw += 1.0;
+            self.tsumw2 += 1.0;
+            self.tsumwx += x;
+            self.tsumwx2 += x * x;
         }
     }
 
@@ -212,95 +139,6 @@ impl Hist1D {
         } else {
             &self.contents
         }
-    }
-
-    /// Per-in-range-bin variances (scikit-hep `hist`'s `.variances`). With
-    /// [`sumw2`](Hist1D::track_sumw2) on these are the stored sums of squared weights;
-    /// otherwise the bin content (the Poisson variance ROOT assumes for an
-    /// unweighted histogram), i.e. `bin_error(i+1)²`.
-    #[must_use]
-    pub fn variances(&self) -> Vec<f64> {
-        let n = self.contents.len();
-        let lo = if n >= 2 { 1 } else { 0 };
-        let hi = if n >= 2 { n - 1 } else { n };
-        (lo..hi)
-            .map(|i| {
-                self.sumw2
-                    .get(i)
-                    .copied()
-                    .unwrap_or_else(|| self.contents[i].max(0.0))
-            })
-            .collect()
-    }
-
-    /// Per-in-range-bin uncertainties — `√variance`, the error bars. The
-    /// companion to [`values`](Hist1D::values) (`hist` exposes this as
-    /// `np.sqrt(h.variances())`).
-    #[must_use]
-    pub fn errors(&self) -> Vec<f64> {
-        self.variances().iter().map(|v| v.max(0.0).sqrt()).collect()
-    }
-
-    /// Per-bin effective entry counts (`hist`'s `.counts`): `value² / variance`
-    /// for weighted bins (the effective number of entries behind the sum of
-    /// weights), or the bin content when the histogram carries no weights.
-    #[must_use]
-    pub fn counts(&self) -> Vec<f64> {
-        let vals = self.values();
-        let vars = self.variances();
-        let weighted = !self.sumw2.is_empty();
-        vals.iter()
-            .zip(&vars)
-            .map(|(&v, &var)| {
-                if weighted && var > 0.0 {
-                    v * v / var
-                } else {
-                    v
-                }
-            })
-            .collect()
-    }
-
-    /// Probability density per bin (`hist`'s `.density`): the bin contents scaled
-    /// so the histogram integrates to one — `Σ density(i) · binwidth(i) = 1`.
-    #[must_use]
-    pub fn density(&self) -> Vec<f64> {
-        let vals = self.values();
-        let total: f64 = vals.iter().sum();
-        if total == 0.0 {
-            return vec![0.0; vals.len()];
-        }
-        let edges = self.edges();
-        (0..vals.len())
-            .map(|i| {
-                let w = edges[i + 1] - edges[i];
-                if w == 0.0 { 0.0 } else { vals[i] / (w * total) }
-            })
-            .collect()
-    }
-
-    /// The bin content at coordinate `x` (`hist`'s `h[hist.loc(x)]`):
-    /// under/overflow content is returned for `x` outside the axis range.
-    #[must_use]
-    pub fn at(&self, x: f64) -> f64 {
-        self.contents
-            .get(self.xaxis.find_bin(x))
-            .copied()
-            .unwrap_or(0.0)
-    }
-
-    /// The summed bin content over the coordinate range `[lo, hi]` (`hist`'s
-    /// `h[hist.loc(lo):hist.loc(hi):sum]`): the in-range bins from `find_bin(lo)`
-    /// through `find_bin(hi)`, inclusive.
-    #[must_use]
-    pub fn integral_range(&self, lo: f64, hi: f64) -> f64 {
-        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
-        if nbins == 0 {
-            return 0.0;
-        }
-        let a = self.xaxis.find_bin(lo).clamp(1, nbins);
-        let b = self.xaxis.find_bin(hi).clamp(1, nbins);
-        self.contents[a.min(b)..=a.max(b)].iter().sum()
     }
 
     /// The x-axis label (ROOT `fXaxis.fTitle`; scikit-hep `hist`'s axis `label`).

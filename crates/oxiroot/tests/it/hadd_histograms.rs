@@ -63,51 +63,29 @@ const SET_B_3D: [Point3; 4] = [
     (5.0, 0.5, 0.5, 1.0, 2.0), // x overflow
 ];
 
-fn empty_2d() -> Profile2D {
-    Hist::reg(3, 0.0, 3.0)
-        .reg(2, 0.0, 2.0)
-        .mean()
-        .to_root()
-        .unwrap()
-        .named("p2")
-}
-
-fn empty_3d() -> Profile3D {
-    Hist::reg(2, 0.0, 2.0)
-        .reg(2, 0.0, 2.0)
-        .reg(2, 0.0, 2.0)
-        .mean()
-        .to_root()
-        .unwrap()
-        .named("p3")
-}
-
-fn fill_2d(p: &mut Profile2D, points: &[Point2]) {
-    for &(x, y, z, w) in points {
-        p.fill_weight(x, y, z, w);
-    }
-}
-
-fn fill_3d(p: &mut Profile3D, points: &[Point3]) {
-    for &(x, y, z, t, w) in points {
-        p.fill_weight(x, y, z, t, w);
-    }
-}
-
+/// A 2-D profile filled with `sets`, built and filled as an oxihist histogram.
 fn profile_2d(sets: &[&[Point2]]) -> Profile2D {
-    let mut p = empty_2d();
-    for set in sets {
-        fill_2d(&mut p, set);
+    let mut p = Hist::reg(3, 0.0, 3.0)
+        .reg(2, 0.0, 2.0)
+        .weighted_mean()
+        .named("p2");
+    for &(x, y, z, w) in sets.iter().copied().flatten() {
+        p.fill_sample_weight(x, y, z, w);
     }
-    p
+    p.to_root().unwrap()
 }
 
+/// A 3-D profile filled with `sets`.
 fn profile_3d(sets: &[&[Point3]]) -> Profile3D {
-    let mut p = empty_3d();
-    for set in sets {
-        fill_3d(&mut p, set);
+    let mut p = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .weighted_mean()
+        .named("p3");
+    for &(x, y, z, t, w) in sets.iter().copied().flatten() {
+        p.fill_sample_weight(x, y, z, t, w);
     }
-    p
+    p.to_root().unwrap()
 }
 
 // ------------------------------------------------------------- file merging
@@ -164,12 +142,9 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     let out_a = dir.join(format!("oxiroot_pskip_out_a_{tag}.root"));
     let out_b = dir.join(format!("oxiroot_pskip_out_b_{tag}.root"));
 
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(0.5);
+    let h = h.to_root().unwrap();
     let p2 = profile_2d(&[&SET_A_2D]);
     let mut broken = p2.clone();
     *broken.optional_arrays_mut().1 = vec![1.0; 3]; // not one per cell: the reader rejects it

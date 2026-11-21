@@ -119,13 +119,13 @@ The write side composes a histogram, an RNTuple, and a `TTree`:
 use oxiroot::prelude::*;
 
 // A histogram.
-let mut h = Hist::reg(4, 0.0, 4.0).double().to_root()?.named("h").titled("interop");
+let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
 h.fill(0.5);
-FileWriter::create("rust_hist.root").add(&h).compression(Compression::Stored).write()?;
+FileWriter::create("rust_hist.root").add(&h.to_root()?).compression(Compression::Stored).write()?;
 
 // Several objects and a subdirectory via FileWriter.
 FileWriter::create("rust_multi.root")
-    .add(&h)
+    .add(&h.to_root()?)
     .dir("sub", |d| d.add(&other))
     .compression(Compression::Stored).write()?;
 ```

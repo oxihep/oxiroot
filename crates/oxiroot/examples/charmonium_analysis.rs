@@ -193,11 +193,9 @@ mod analysis {
 
         // ---- 2. The mass fit ----------------------------------------------
         let mut m_hist = Hist::reg(BINS, LO, HI)
-            .double()
-            .to_root()?
+            .weight()
             .named("m_mumu")
             .titled("dimuon mass");
-        m_hist.track_sumw2();
         for &m in &mass {
             m_hist.fill(m);
         }
@@ -427,11 +425,9 @@ mod analysis {
         let ct_bins = 66;
         let ct_width = (CT.1 - CT.0) / ct_bins as f64;
         let mut t_hist = Hist::reg(ct_bins, CT.0, CT.1)
-            .double()
-            .to_root()?
+            .weight()
             .named("ctau")
             .titled("decay length, J/#psi window");
-        t_hist.track_sumw2();
         for &t in &sel_t {
             t_hist.fill(t);
         }
@@ -510,7 +506,6 @@ mod analysis {
 
         let mut pulls = Hist::reg(24, -4.0, 4.0)
             .double()
-            .to_root()?
             .named("ratio_pull")
             .titled("ratio pulls");
         for &p in &ratio_pulls {
@@ -542,9 +537,9 @@ mod analysis {
 
         let results = dir.join("charmonium_results.root");
         FileWriter::create(&results)
-            .add(&m_hist)
-            .add(&t_hist)
-            .add(&pulls)
+            .add(&m_hist.to_root()?)
+            .add(&t_hist.to_root()?)
+            .add(&pulls.to_root()?)
             .add(DatasetObject::new(
                 "toys",
                 Format::Tree,
@@ -559,7 +554,7 @@ mod analysis {
         println!(
             "\n6. Results file {} — m_mumu ({:.0} entries) and {} toy pulls read back",
             results.display(),
-            back.integral(),
+            back.values().iter().sum::<f64>(),
             toys.entries()
         );
         for png in [&mass_png, &ct_png, &contour_png, &profile_png, &pulls_png] {

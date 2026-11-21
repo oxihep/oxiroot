@@ -8,7 +8,6 @@ use std::collections::HashMap;
 
 use oxiroot_io_core::{Error, Result};
 
-use crate::family::err2;
 use crate::graph::GraphErrors;
 use crate::sparsehist::SparseBin;
 use crate::{
@@ -24,51 +23,7 @@ fn binning_mismatch(op: &str) -> Error {
     }
 }
 
-impl Hist1D {
-    /// Multiply bin-by-bin by `other`, propagating errors as ROOT does
-    /// (`e² = e1²·c2² + e2²·c1²`). Returns [`Error::BinningMismatch`] if the
-    /// binnings differ.
-    pub fn multiply(&mut self, other: &Self) -> Result<()> {
-        if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
-            return Err(binning_mismatch("multiply"));
-        }
-        if self.sumw2.is_empty() {
-            self.sumw2 = self.contents.iter().map(|v| v.abs()).collect();
-        }
-        for i in 0..self.contents.len() {
-            let (c1, c2) = (self.contents[i], other.contents[i]);
-            let (e1, e2) = (self.sumw2[i], err2(&other.sumw2, &other.contents, i));
-            self.sumw2[i] = e1 * c2 * c2 + e2 * c1 * c1;
-            self.contents[i] = c1 * c2;
-        }
-        Ok(())
-    }
-
-    /// Divide bin-by-bin by `other` (0 where the denominator is 0), propagating
-    /// errors as ROOT's default `e² = (e1²·c2² + e2²·c1²) / c2⁴`. Returns
-    /// [`Error::BinningMismatch`] if the binnings differ.
-    pub fn divide(&mut self, other: &Self) -> Result<()> {
-        if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
-            return Err(binning_mismatch("divide"));
-        }
-        if self.sumw2.is_empty() {
-            self.sumw2 = self.contents.iter().map(|v| v.abs()).collect();
-        }
-        for i in 0..self.contents.len() {
-            let (c1, c2) = (self.contents[i], other.contents[i]);
-            if c2 == 0.0 {
-                self.contents[i] = 0.0;
-                self.sumw2[i] = 0.0;
-                continue;
-            }
-            let (e1, e2) = (self.sumw2[i], err2(&other.sumw2, &other.contents, i));
-            let c2sq = c2 * c2;
-            self.sumw2[i] = (e1 * c2sq + e2 * c1 * c1) / (c2sq * c2sq);
-            self.contents[i] = c1 / c2;
-        }
-        Ok(())
-    }
-}
+impl Hist1D {}
 
 /// Add `c · src` into `dst` for a per-cell array a file may leave empty, where
 /// empty means every cell is zero (a profile's `fSumw2`). An empty `dst` is
@@ -236,41 +191,6 @@ impl std::fmt::Display for Hist3D {
         )
     }
 }
-
-/// Uniform read access to a classic histogram's bins, implemented by
-/// [`Hist1D`]/[`Hist2D`]/[`Hist3D`] so generic code can work over any of them. (The
-/// mutating ops — `scale`/`add`/`integral` — stay inherent per type, since each
-/// also updates its own moment sums and dimension-specific in-range cells.)
-pub trait RootHistogram {
-    /// All bin contents including under/overflow, flat (x fastest).
-    fn contents(&self) -> &[f64];
-    /// Number of fills (`fEntries`).
-    fn entries(&self) -> f64;
-    /// Sum of every cell's content, under/overflow included.
-    fn sum(&self) -> f64 {
-        self.contents().iter().sum()
-    }
-    /// Whether the histogram has no cells.
-    fn is_empty(&self) -> bool {
-        self.contents().is_empty()
-    }
-}
-
-macro_rules! impl_histogram {
-    ($ty:ty) => {
-        impl RootHistogram for $ty {
-            fn contents(&self) -> &[f64] {
-                &self.contents
-            }
-            fn entries(&self) -> f64 {
-                self.entries
-            }
-        }
-    };
-}
-impl_histogram!(Hist1D);
-impl_histogram!(Hist2D);
-impl_histogram!(Hist3D);
 
 impl Efficiency {
     /// Add `other`'s counts: its passed and its total histogram, bin by bin, as

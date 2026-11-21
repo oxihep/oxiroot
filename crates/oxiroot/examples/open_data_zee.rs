@@ -39,11 +39,9 @@ fn main() -> oxiroot::Result<()> {
 
     // Exactly two electrons (|PDG ID| 11), opposite charge, pT > 25 GeV.
     let mut mass = Hist::reg(50, 66.0, 116.0)
-        .double()
-        .to_root()?
+        .weight()
         .named("m_ee")
         .titled("dielectron mass");
-    mass.track_sumw2();
 
     // Lepton four-momenta (MeV), charge and type, for the first entries, one
     // cluster at a time: only those baskets are fetched over the network.
@@ -88,18 +86,18 @@ fn main() -> oxiroot::Result<()> {
         "read 6 lepton branches for {entries} entries in {:.1?}",
         start.elapsed()
     );
-    println!("{:.0} selected Z → ee candidates", mass.integral());
+    println!("{:.0} selected Z → ee candidates", mass.integral(false));
 
     // Electrons radiate (bremsstrahlung, final-state photons), so the peak
     // has a long low-mass tail that a simple lineshape does not follow. The
     // usual quick look fits a Gaussian to the core of the peak only, in a
     // window around its maximum, which measures the peak position and the
     // core resolution.
-    let peak_bin = (0..mass.values().len())
-        .max_by(|&a, &b| mass.values()[a].total_cmp(&mass.values()[b]))
+    let peak_bin = (0..mass.values(false).len())
+        .max_by(|&a, &b| mass.values(false)[a].total_cmp(&mass.values(false)[b]))
         .expect("bins");
     let peak = 66.5 + peak_bin as f64;
-    let model = Model::gaussian("core").with_params(vec![mass.values()[peak_bin], peak, 2.5]);
+    let model = Model::gaussian("core").with_params(vec![mass.values(false)[peak_bin], peak, 2.5]);
     let opts = FitOptions::new()
         .method(FitMethod::Likelihood)
         .range(peak - 3.5, peak + 3.5);
@@ -158,10 +156,10 @@ fn main() -> oxiroot::Result<()> {
             " (not converged)"
         }
     );
-    let tail: f64 = mass.values()[..(peak_bin - 8)].iter().sum();
+    let tail: f64 = mass.values(false)[..(peak_bin - 8)].iter().sum();
     println!(
         "{:.0} % of the candidates sit more than 8 GeV below the peak: the radiative tail.",
-        100.0 * tail / mass.integral()
+        100.0 * tail / mass.integral(false)
     );
     println!("(The PDG Z mass is 91.19 GeV; comparing this peak in data and simulation is how");
     println!(" the electron energy scale is calibrated.)");

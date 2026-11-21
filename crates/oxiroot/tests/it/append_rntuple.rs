@@ -26,12 +26,11 @@ fn appends_a_histogram_to_an_rntuple_file() {
 
     let mut h = Hist::reg(4, 0.0, 4.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h")
         .titled("appended");
     h.fill(0.5);
     h.fill(2.5);
+    let h = h.to_root().unwrap();
     oxiroot::FileUpdater::open(&out)
         .expect("open for append")
         .add(&h)

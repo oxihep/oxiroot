@@ -7,7 +7,7 @@ use oxiroot_io_core::{Error, Result};
 
 use crate::axis::Axis;
 use crate::base::BinContentType;
-use crate::{ErrorMode, Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D};
+use crate::{Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D};
 
 /// The number of in-range bins of `axis` (none for a malformed negative
 /// count).
@@ -15,51 +15,10 @@ pub(crate) fn nbins(axis: &Axis) -> usize {
     usize::try_from(axis.nbins).unwrap_or(0)
 }
 
-/// The flat cell indices (flow included in the layout, x varying fastest in
-/// memory) of the in-range cells of a histogram with `n[k]` bins on axis `k`,
-/// visited with the last axis varying fastest — the order the per-dimension
-/// loops used, so sums and ties come out the same.
-pub(crate) fn in_range_cells(n: &[usize]) -> impl Iterator<Item = usize> + use<> {
-    let n = n.to_vec();
-    let total: usize = n.iter().product();
-    (0..total).map(move |mut t| {
-        let mut idx = vec![0usize; n.len()];
-        for k in (0..n.len()).rev() {
-            idx[k] = t % n[k] + 1;
-            t /= n[k];
-        }
-        let (mut off, mut stride) = (0, 1);
-        for (k, &i) in idx.iter().enumerate() {
-            off += i * stride;
-            stride *= n[k] + 2;
-        }
-        off
-    })
-}
-
 /// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
 /// content (for an unweighted histogram, `Σw² == Σw == content`).
 pub(crate) fn err2(sumw2: &[f64], contents: &[f64], i: usize) -> f64 {
     sumw2.get(i).copied().unwrap_or_else(|| contents[i].abs())
-}
-
-/// `(cell index, value)` of the largest (or smallest) of the given cells.
-fn extremum(contents: &[f64], cells: impl Iterator<Item = usize>, want_max: bool) -> (usize, f64) {
-    let mut best = (
-        0usize,
-        if want_max {
-            f64::NEG_INFINITY
-        } else {
-            f64::INFINITY
-        },
-    );
-    for c in cells {
-        let v = contents.get(c).copied().unwrap_or(0.0);
-        if (want_max && v > best.1) || (!want_max && v < best.1) {
-            best = (c, v);
-        }
-    }
-    best
 }
 
 macro_rules! impl_hist_family {
@@ -72,24 +31,6 @@ macro_rules! impl_hist_family {
             /// The number of cells, flow included, the binning implies.
             pub(crate) fn expected_cells(&self) -> usize {
                 [$(nbins(&self.$axis) + 2),+].iter().product()
-            }
-
-            /// The flat indices of the in-range cells.
-            fn in_range(&self) -> impl Iterator<Item = usize> + use<> {
-                in_range_cells(&[$(nbins(&self.$axis)),+])
-            }
-
-            /// Enable per-bin error tracking (ROOT's `Sumw2`): allocate the
-            /// `fSumw2` array and seed it from the current contents, after which
-            /// every fill also accumulates `weight²`. Weighted fills and
-            /// [`scale`](Self::scale) turn it on by themselves, so this is only
-            /// needed to track a unit-weight histogram. Returns `&mut self` so it
-            /// can chain (`h.track_sumw2().fill(…)`).
-            pub fn track_sumw2(&mut self) -> &mut Self {
-                if self.sumw2.len() != self.contents.len() {
-                    self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
-                }
-                self
             }
 
             /// Total cells, flow included (ROOT's `fNcells`).
@@ -112,41 +53,6 @@ macro_rules! impl_hist_family {
             pub fn with_bin_content_type(mut self, bin_content_type: BinContentType) -> Self {
                 self.bin_content_type = bin_content_type;
                 self
-            }
-
-            /// Per-bin error: `√sumw2[bin]` when error tracking is on, otherwise
-            /// the Poisson default `√content`. `bin` is the flat cell index, flow
-            /// included (x fastest; for a 1-D histogram, the bin number with 0
-            /// the underflow).
-            pub fn bin_error(&self, bin: usize) -> f64 {
-                if let Some(&s) = self.sumw2.get(bin) {
-                    s.max(0.0).sqrt()
-                } else {
-                    self.contents
-                        .get(bin)
-                        .copied()
-                        .unwrap_or(0.0)
-                        .max(0.0)
-                        .sqrt()
-                }
-            }
-
-            /// Multiply all bin contents (and errors) by `c`; the means are
-            /// preserved.
-            ///
-            /// Turns on per-bin error tracking first, as ROOT's `Scale` does: once
-            /// scaled, the errors can no longer be derived as `√content`.
-            pub fn scale(&mut self, c: f64) {
-                self.track_sumw2();
-                for v in &mut self.contents {
-                    *v *= c;
-                }
-                for v in &mut self.sumw2 {
-                    *v *= c * c;
-                }
-                self.tsumw *= c;
-                self.tsumw2 *= c * c;
-                $(self.$moment *= c;)+
             }
 
             /// Add `c * other` into this histogram (a bin-by-bin merge when
@@ -177,54 +83,6 @@ macro_rules! impl_hist_family {
                 Ok(())
             }
 
-            /// Sum of the in-range bin contents (flow excluded on every axis).
-            pub fn integral(&self) -> f64 {
-                self.in_range()
-                    .map(|i| self.contents.get(i).copied().unwrap_or(0.0))
-                    .sum()
-            }
-
-            /// Largest in-range bin content (ROOT `GetMaximum`).
-            pub fn maximum(&self) -> f64 {
-                extremum(&self.contents, self.in_range(), true).1
-            }
-
-            /// Smallest in-range bin content (ROOT `GetMinimum`).
-            pub fn minimum(&self) -> f64 {
-                extremum(&self.contents, self.in_range(), false).1
-            }
-
-            /// The flat cell index of the largest in-range content (ROOT
-            /// `GetMaximumBin`; for a 1-D histogram, the 1-based bin).
-            pub fn maximum_bin(&self) -> usize {
-                extremum(&self.contents, self.in_range(), true).0
-            }
-
-            /// The flat cell index of the smallest in-range content (ROOT
-            /// `GetMinimumBin`).
-            pub fn minimum_bin(&self) -> usize {
-                extremum(&self.contents, self.in_range(), false).0
-            }
-
-            /// Effective entry count `(Σw)²/Σw²` (ROOT `GetEffectiveEntries`).
-            pub fn effective_entries(&self) -> f64 {
-                if self.tsumw2 > 0.0 {
-                    self.tsumw * self.tsumw / self.tsumw2
-                } else {
-                    0.0
-                }
-            }
-
-            /// Clear all bin contents, errors, entries and moment sums (ROOT
-            /// `Reset`), keeping the binning.
-            pub fn reset(&mut self) {
-                self.contents.fill(0.0);
-                self.sumw2.fill(0.0);
-                self.entries = 0.0;
-                self.tsumw = 0.0;
-                self.tsumw2 = 0.0;
-                $(self.$moment = 0.0;)+
-            }
         }
     };
 }
@@ -243,28 +101,6 @@ impl_hist_family!(
     ],
 );
 
-#[cfg(test)]
-mod tests {
-    use super::in_range_cells;
-
-    #[test]
-    fn in_range_cells_match_the_per_dimension_loops() {
-        assert_eq!(in_range_cells(&[3]).collect::<Vec<_>>(), [1, 2, 3]);
-        // 2-D, nx = 2, ny = 3: ix outer, iy inner; cell = ix + 4·iy.
-        let want: Vec<usize> = (1..=2)
-            .flat_map(|ix| (1..=3).map(move |iy| ix + 4 * iy))
-            .collect();
-        assert_eq!(in_range_cells(&[2, 3]).collect::<Vec<_>>(), want);
-        let want: Vec<usize> = (1..=2)
-            .flat_map(|ix| {
-                (1..=2).flat_map(move |iy| (1..=3).map(move |iz| ix + 4 * (iy + 4 * iz)))
-            })
-            .collect();
-        assert_eq!(in_range_cells(&[2, 2, 3]).collect::<Vec<_>>(), want);
-        assert_eq!(in_range_cells(&[0, 3]).count(), 0);
-    }
-}
-
 /// The per-cell core the profiles ([`Profile1D`], [`Profile2D`],
 /// [`Profile3D`]) share: they differ in their axes, the name of their `Σw·v²`
 /// array and their moment sums, not in how a cell accumulates, averages or
@@ -280,91 +116,15 @@ macro_rules! impl_profile_family {
                 }
             }
 
-            /// Add value `v` with weight `w` to cell `cell` (flow included; an
-            /// index past the cells adds nothing) and count the entry.
-            pub(crate) fn accumulate(&mut self, cell: usize, v: f64, w: f64) {
-                if let Some(s) = self.sums.get_mut(cell) {
-                    *s += w * v;
-                }
-                if let Some(s) = self.$sumv2.get_mut(cell) {
-                    *s += w * v * v;
-                }
-                if let Some(e) = self.bin_entries.get_mut(cell) {
-                    *e += w;
-                }
-                if let Some(s) = self.bin_sumw2.get_mut(cell) {
-                    *s += w * w;
-                }
-                self.entries += 1.0;
-            }
-
             /// The profiled value of cell `cell` (flow included): `Σw·v / Σw`,
             /// or 0 where the cell has no entries (ROOT's `GetBinContent`).
             #[must_use]
-            pub fn bin_value(&self, cell: usize) -> f64 {
+            pub(crate) fn bin_value(&self, cell: usize) -> f64 {
                 let e = self.bin_entries.get(cell).copied().unwrap_or(0.0);
                 if e == 0.0 {
                     0.0
                 } else {
                     self.sums.get(cell).copied().unwrap_or(0.0) / e
-                }
-            }
-
-            /// Effective number of entries in cell `cell`, `(Σw)² / Σw²` (the
-            /// entry count for unweighted fills); flow included.
-            #[must_use]
-            pub fn effective_entries(&self, cell: usize) -> f64 {
-                let sumw = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                let sumw2 = self
-                    .bin_sumw2
-                    .get(cell)
-                    .copied()
-                    .filter(|&s| s > 0.0)
-                    .unwrap_or(sumw);
-                if sumw2 > 0.0 {
-                    sumw * sumw / sumw2
-                } else {
-                    0.0
-                }
-            }
-
-            /// Error of the profiled value in cell `cell` (flow included),
-            /// following ROOT's `GetBinError` for this profile's `fErrorMode`.
-            ///
-            /// With `sumw = Σw`, `mean = Σw·v / Σw`, spread
-            /// `s² = |Σw·v²/Σw − mean²|` and effective entries `neff`:
-            /// - mean (the default): `s / √neff`, the error on the mean;
-            /// - spread: `s`, the spread itself;
-            /// - spread-i: as the mean, or `1/√(12·neff)` when `s = 0`;
-            /// - spread-g: `1/√Σw`.
-            #[must_use]
-            pub fn bin_error(&self, cell: usize) -> f64 {
-                let sumw = self.bin_entries.get(cell).copied().unwrap_or(0.0);
-                if sumw == 0.0 {
-                    return 0.0;
-                }
-                let sum = self.sums.get(cell).copied().unwrap_or(0.0);
-                let sum2 = self.$sumv2.get(cell).copied().unwrap_or(0.0);
-                let mean = sum / sumw;
-                let variance = (sum2 / sumw - mean * mean).abs();
-                let neff = self.effective_entries(cell);
-                match self.error_mode {
-                    ErrorMode::Spread => variance.sqrt(),
-                    ErrorMode::SpreadI if variance <= 0.0 => {
-                        if neff > 0.0 {
-                            1.0 / (12.0 * neff).sqrt()
-                        } else {
-                            0.0
-                        }
-                    }
-                    ErrorMode::SpreadG => 1.0 / sumw.sqrt(),
-                    _ => {
-                        if neff > 0.0 {
-                            (variance / neff).sqrt()
-                        } else {
-                            0.0
-                        }
-                    }
                 }
             }
         }

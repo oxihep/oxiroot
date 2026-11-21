@@ -16,17 +16,14 @@ fn main() -> oxiroot::Result<()> {
     // A momentum spectrum with physics-style variable bins and weighted entries.
     let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
     let mut pt = Hist::var(&edges)
-        .double()
-        .to_root()?
+        .weight()
         .named("pt")
         .titled("p_{T} spectrum");
-    pt.track_sumw2(); // track per-bin errors for the weighted fills
 
     // A 2-D correlation.
     let mut eta_phi = Hist::reg(5, -2.5, 2.5)
         .reg(4, -3.2, 3.2)
         .double()
-        .to_root()?
         .named("eta_phi")
         .titled("#eta vs #phi");
 
@@ -45,10 +42,10 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "pt: {} entries, integral {:.2}, all-cell sum {:.2}, bin-2 = {:.2} ± {:.2}",
         pt.entries(),
-        pt.integral(),    // in-range bins only
-        pt.sum(),         // RootHistogram trait: every cell, flow included
-        pt.contents()[2], // bin content by cell index
-        pt.bin_error(2),
+        pt.integral(false),           // in-range bins only
+        pt.sum(true).value,           // every bin, flow included
+        pt.value([1]).unwrap_or(0.0), // a bin's content, by index
+        pt.variance([1]).unwrap_or(0.0).sqrt(),
     );
 
     // --- Multithreaded fill, ROOT's TThreadedObject pattern. -------------------
@@ -61,7 +58,6 @@ fn main() -> oxiroot::Result<()> {
     let acc = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()
-            .to_root()?
             .named("mass")
             .titled("toy mass"),
     );
@@ -76,51 +72,51 @@ fn main() -> oxiroot::Result<()> {
         }
     });
     let mass = acc.merge()?;
+    let (peak_bin, peak) = mass.maximum().expect("a histogram with bins");
     println!(
         "mass (parallel fill): {} entries, mean {:.3}, std {:.3}, max bin {} = {}",
         mass.entries(),
         mass.mean(),
         mass.std_dev(),
-        mass.maximum_bin(),
-        mass.maximum(),
+        peak_bin[0],
+        peak,
     );
 
     // --- Combine and normalize, as when merging samples. -----------------------
     let mut signal = pt.clone();
     let mut background = pt.clone();
     background.scale(0.1); // scale background down
-    signal.add(&background, 1.0)?; // stack background onto signal (a merge)
-    signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
-    println!("normalized signal integral = {:.6}", signal.integral());
-    println!("{signal}"); // Display: one-line summary
+    signal.add(&background)?; // stack background onto signal (a merge)
+    signal.scale(1.0 / signal.integral(false).max(1.0)); // normalize to unit area
+    println!("normalized signal integral = {:.6}", signal.integral(false));
 
     // --- Compose a file with `FileWriter`: top-level objects plus -----------------
     // per-region subdirectories. The one way to write more than a single object.
     let hist_path = dir.join("analysis_hists.root");
+    let (signal_record, background_record) = (signal.to_root()?, background.to_root()?);
     FileWriter::create(&hist_path)
-        .add(&pt) // top level
-        .add(&eta_phi)
-        .dir("signal", |d| d.add(&signal)) // a TDirectory per region
-        .dir("background", |d| d.add(&background))
+        .add(&pt.to_root()?) // top level
+        .add(&eta_phi.to_root()?)
+        .dir("signal", |d| d.add(&signal_record)) // a TDirectory per region
+        .dir("background", |d| d.add(&background_record))
         .write()?;
     println!("wrote histograms -> {}", hist_path.display());
 
     // --- A flat file mixing any writable types — histograms, profiles, graphs. -
     let mut prof = Hist::reg(5, 0.0, 5.0)
         .mean()
-        .to_root()?
         .named("pt_prof")
         .titled("<pt> per region");
     for (region, &(p, ..)) in events.iter().enumerate() {
-        prof.fill(region as f64 + 0.5, p);
+        prof.fill_sample(region as f64 + 0.5, p);
     }
     // Write `pt` as a float-precision TH1F just by setting its on-disk bin content type.
-    let pt_f32 = pt.clone().with_bin_content_type(BinContentType::F32);
+    let pt_f32 = pt.to_root()?.with_bin_content_type(BinContentType::F32);
     let multi_path = dir.join("analysis_multi.root");
     FileWriter::create(&multi_path)
         .add(&pt_f32)
-        .add(&eta_phi)
-        .add(&prof)
+        .add(&eta_phi.to_root()?)
+        .add(&prof.to_root()?)
         .write()?;
     println!(
         "wrote {} as {} + TH2D + TProfile",
@@ -130,9 +126,10 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Append one more object to that existing file (FileUpdater::open). -------
     // The file keeps its existing keys; the normalized signal is added alongside.
-    let mut sig = signal.clone();
-    sig.name = "signal".to_string();
-    oxiroot::FileUpdater::open(&multi_path)?.add(&sig).write()?;
+    let sig = signal.clone().named("signal");
+    oxiroot::FileUpdater::open(&multi_path)?
+        .add(&sig.to_root()?)
+        .write()?;
     println!("appended `{}` to {}", sig.name, multi_path.display());
 
     // --- Write a columnar event dataset: a `Batch`, written as an RNTuple. ----
@@ -161,7 +158,7 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "read back: pt has {} bins, signal/pt integral = {:.6}",
         pt_back.values().len(),
-        sig_back.integral(),
+        sig_back.values().iter().sum::<f64>(),
     );
 
     // Both read back the same way.

@@ -177,20 +177,26 @@ fn write_histograms(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("oxroot-cli-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
+    let mut h1 = Hist::reg(4, 0.0, 4.0).double().named("h1");
+    h1.fill(0.5);
+    h1.fill(2.5);
+    let h1 = h1.to_root().unwrap();
     let h2 = Hist::reg(3, 0.0, 3.0)
         .reg(5, 0.0, 5.0)
         .double()
         .to_root()
         .unwrap()
         .named("h2");
-    let h3 = Hist::reg(3, 0.0, 3.0)
+    let mut h3 = Hist::reg(3, 0.0, 3.0)
         .reg(5, 0.0, 5.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h3");
+    h3.fill(0.5, 1.5, 0.5);
+    h3.fill(2.5, 3.5, 1.5);
+    let h3 = h3.to_root().unwrap();
     FileWriter::create(&path)
+        .add(&h1)
         .add(&h2)
         .add(&h3)
         .compression(Compression::Stored)
@@ -217,6 +223,32 @@ fn dump_reports_each_axis_under_its_own_name() {
     let (out, ok) = oxroot(&["dump", &format!("{file}:h3")]);
     assert!(ok, "{out}");
     assert!(out.contains("3 x 5 x 2 bins"), "{out}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn dump_as_json_reports_the_statistics_of_the_fills() {
+    let path = write_histograms("stats.root");
+    let file = path.to_str().unwrap();
+
+    // Two fills at 0.5 and 2.5: mean 1.5, standard deviation 1.
+    let (out, ok) = oxroot(&["--json", "dump", &format!("{file}:h1")]);
+    assert!(ok, "{out}");
+    for field in [
+        "\"entries\":2",
+        "\"mean\":1.5",
+        "\"std\":1",
+        "\"integral\":2",
+    ] {
+        assert!(out.contains(field), "{field} not in {out}");
+    }
+
+    // Fills at (0.5, 1.5, 0.5) and (2.5, 3.5, 1.5).
+    let (out, ok) = oxroot(&["--json", "dump", &format!("{file}:h3")]);
+    assert!(ok, "{out}");
+    for field in ["\"integral\":2", "\"mean_x\":1.5", "\"mean_y\":2.5"] {
+        assert!(out.contains(field), "{field} not in {out}");
+    }
     std::fs::remove_file(path).unwrap();
 }
 

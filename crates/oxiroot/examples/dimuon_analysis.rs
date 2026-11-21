@@ -96,11 +96,9 @@ fn main() -> oxiroot::Result<()> {
 
     // --- 3. Select: the two leading muons, pT > 25 and 15 GeV, opposite sign.
     let mut mass = Hist::reg(60, 60.0, 120.0)
-        .double()
-        .to_root()?
+        .weight()
         .named("m_mumu")
         .titled("dimuon mass");
-    mass.track_sumw2();
     let mut selected = 0;
     for i in 0..pt.len() {
         let (pt, eta, phi, q) = (pt.row(i), eta.row(i), phi.row(i), charge.row(i));
@@ -128,7 +126,7 @@ fn main() -> oxiroot::Result<()> {
     let bin_width = 1.0;
     // Seed the Z yield from the data: events in 81–101 GeV minus the
     // sideband background extrapolated under the peak.
-    let in_window: f64 = mass.values()[21..41].iter().sum();
+    let in_window: f64 = mass.values(false)[21..41].iter().sum();
     let background: f64 = (21..41)
         .map(|b| (b0 + b1 * (60.5 + f64::from(b))).exp())
         .sum();
@@ -188,7 +186,9 @@ fn main() -> oxiroot::Result<()> {
     let plot_path = dir.join("m_mumu.png");
     ax.save(&plot_path)?;
     let hist_path = dir.join("m_mumu.root");
-    oxiroot::FileWriter::create(&hist_path).add(&mass).write()?;
+    oxiroot::FileWriter::create(&hist_path)
+        .add(&mass.to_root()?)
+        .write()?;
     println!(
         "plot: {}\nhistogram: {}",
         plot_path.display(),

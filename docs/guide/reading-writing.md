@@ -26,10 +26,11 @@ path is `"dir/sub/name;cycle"`: the directories and the cycle are optional.
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt").titled("p_{T}");
 h.fill(42.0);
 
-// Write a single object as a complete ROOT file …
+// `to_root()` is the TH1D a file stores. Write it as a complete ROOT file …
+let h = h.to_root()?;
 FileWriter::create("hist.root").add(&h).write()?;
 // … or get just the streamed object payload (no file/key framing).
 let bytes: Vec<u8> = h.to_root_bytes();
@@ -178,7 +179,7 @@ takes any `&dyn WriteRoot`, `dir` opens a subdirectory, and `write` commits with
 a chosen compression.
 
 ```rust
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).mean().named("prof").titled("<pt> per region").to_root()?;
 let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
 
 FileWriter::create("out.root")
@@ -276,9 +277,9 @@ name is also an error. Different subdirectories are independent namespaces, so
 the same name in two directories is fine.
 
 ```rust
-let a = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
-let b = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
-let err = FileWriter::create("dup.root").add(&a).add(&b).compression(Compression::Stored).write();
+let a = Hist::reg(10, 0.0, 1.0).double().named("h");
+let b = Hist::reg(10, 0.0, 1.0).double().named("h");
+let err = FileWriter::create("dup.root").add(&a.to_root()?).add(&b.to_root()?).compression(Compression::Stored).write();
 assert!(err.is_err()); // Error::DuplicateName { name: "h", .. }
 ```
 

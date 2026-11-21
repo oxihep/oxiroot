@@ -43,7 +43,6 @@ fn main() -> oxiroot::Result<()> {
     // running mean of y and the count needed for its error on the mean.
     let mut prof = Hist::reg(10, 0.0, 10.0)
         .mean()
-        .to_root()?
         .named("resp")
         .titled("detector response vs true energy");
 
@@ -53,28 +52,27 @@ fn main() -> oxiroot::Result<()> {
     for _ in 0..20_000 {
         let x = 10.0 * rng.uniform();
         let y = response(x) + rng.gauss(0.0, 1.5);
-        prof.fill(x, y);
+        prof.fill_sample(x, y);
     }
     println!(
         "TProfile `{}`: {} bins, {} entries",
         prof.name,
-        prof.values().len(),
+        prof.values(false).len(),
         prof.entries(),
     );
 
     // Per-bin trend: bin center, measured mean response ± error on the mean, and
-    // the true value for comparison. `values()[i]` is the mean of bin i+1;
-    // `bin_error` takes the flow-inclusive bin index, so bin i+1.
+    // the true value for comparison. `values(false)` and `variances(false)` are
+    // the in-range bins, in order.
     println!("  x-center   <response>     error     truth");
-    let means = prof.values();
-    for (i, &mean) in means.iter().enumerate() {
-        let bin = i + 1; // ROOT bins are 1-based; 0 is underflow
-        let xc = prof.xaxis().bin_center(bin);
+    let centers = prof.axis(0).centers();
+    let (means, variances) = (prof.values(false), prof.variances(false));
+    for ((&xc, &mean), &variance) in centers.iter().zip(&means).zip(&variances) {
         println!(
             "  {:7.2}   {:9.3}   ±{:7.4}   {:7.3}",
             xc,
             mean,
-            prof.bin_error(bin),
+            variance.sqrt(),
             response(xc),
         );
     }
@@ -82,7 +80,8 @@ fn main() -> oxiroot::Result<()> {
     // --- Write it to a ROOT file and read it straight back. --------------------
     // `FileWriter::create(...).add(...)` is the one way to compose a file; a single
     let path = dir.join("oxiroot_ex_profile.root");
-    FileWriter::create(&path).add(&prof).write()?;
+    let record = prof.to_root()?; // a TProfile
+    FileWriter::create(&path).add(&record).write()?;
     println!("wrote profile -> {}", path.display());
 
     let f = FileReader::open(&path)?;
@@ -91,11 +90,11 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "read back `{}`: identical to what we wrote? {}",
         back.name,
-        back == prof,
+        back == record,
     );
     println!(
         "  first bin mean: written {:.3}, read {:.3}",
-        prof.values()[0],
+        prof.values(false)[0],
         back.values()[0],
     );
 
@@ -106,7 +105,6 @@ fn main() -> oxiroot::Result<()> {
     let mut prof2d = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
         .mean()
-        .to_root()?
         .named("surface")
         .titled("mean z over (x, y)");
 
@@ -114,23 +112,21 @@ fn main() -> oxiroot::Result<()> {
         let x = 4.0 * rng.uniform();
         let y = 3.0 * rng.uniform();
         let z = (x + 2.0 * y) + rng.gauss(0.0, 0.5); // true surface z = x + 2y
-        prof2d.fill(x, y, z);
+        prof2d.fill_sample(x, y, z);
     }
 
     // `values()[ix][iy]` is the mean z in each in-range (x, y) cell. Print one
     // slice: the row at the first y-bin, across all x-bins.
-    let grid = prof2d.values();
+    let grid = prof2d.values_grid();
+    let [nx, ny] = prof2d.shape(false);
     println!(
-        "TProfile2D `{}`: {} x-bins x {} y-bins, {} entries",
+        "TProfile2D `{}`: {nx} x-bins x {ny} y-bins, {} entries",
         prof2d.name,
-        prof2d.nx(),
-        prof2d.ny(),
         prof2d.entries(),
     );
     println!("  slice at y-bin 1 (mean z per x-bin, truth in parens):");
-    let yc = prof2d.yaxis().bin_center(1);
-    for (ix, row) in grid.iter().enumerate() {
-        let xc = prof2d.xaxis().bin_center(ix + 1);
+    let (x_centers, yc) = (prof2d.axis(0).centers(), prof2d.axis(1).centers()[0]);
+    for (&xc, row) in x_centers.iter().zip(&grid) {
         println!(
             "    x = {:4.2}, y = {:4.2}:  z = {:6.3}   ({:.3})",
             xc,

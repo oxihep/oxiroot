@@ -107,11 +107,11 @@ to use subdirectories, use [`FileWriter`](../api/oxiroot/index.html).
 use oxiroot::prelude::*;
 
 let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
-let h = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
+let h = Hist::reg(10, 0.0, 1.0).double().named("h");
 
 FileWriter::create("out.root")
     .add(&g)
-    .add(&h)
+    .add(&h.to_root()?)
     .dir("by_region", |d| d.add(&g)) // a TDirectory holding `g`
     .write()?;
 ```

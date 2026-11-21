@@ -9,14 +9,11 @@ use oxiroot::tree::TreeReader;
 use oxiroot::tree::raw::{Branch, BranchValues};
 
 fn hist() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("pt");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");
     h.fill(0.5);
     h.fill(2.5);
-    h
+
+    h.to_root().unwrap()
 }
 
 #[test]
