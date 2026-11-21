@@ -7,8 +7,8 @@
 
 use std::path::PathBuf;
 
-use oxiroot_io_core::raw::object_bytes_any;
-use oxiroot_io_core::{Compression, FileReader, ReadRoot, WriteRoot};
+use oxiroot_io_core::raw::object_bytes;
+use oxiroot_io_core::{Compression, FileReader, WriteRoot};
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
 fn fixture() -> FileReader {
@@ -20,22 +20,22 @@ fn fixture() -> FileReader {
 fn reads_root_written_linalg() {
     let f = fixture();
 
-    let v = Vector::read_root(&f, "v").unwrap();
-    assert_eq!(v.elements(), &[1.5, 2.5, 3.5]);
+    let v = f.get::<Vector>("v").unwrap();
+    assert_eq!(v.as_slice(), &[1.5, 2.5, 3.5]);
 
-    let m = Matrix::read_root(&f, "m").unwrap();
+    let m = f.get::<Matrix>("m").unwrap();
     assert_eq!((m.rows(), m.cols()), (2, 3));
-    assert_eq!(m.elements(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    assert_eq!(m.get(0, 0), 1.0);
-    assert_eq!(m.get(1, 2), 6.0);
+    assert_eq!(m.as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(m[(0, 0)], 1.0);
+    assert_eq!(m[(1, 2)], 6.0);
 
-    let s = SymMatrix::read_root(&f, "s").unwrap();
+    let s = f.get::<SymMatrix>("s").unwrap();
     assert_eq!(s.dim(), 3);
     // Symmetric: the off-diagonal is reflected.
-    assert_eq!(s.get(0, 1), 0.5);
-    assert_eq!(s.get(1, 0), 0.5);
-    assert_eq!(s.get(2, 2), 3.0);
-    assert_eq!(s.elements(), &[1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]);
+    assert_eq!(s[(0, 1)], 0.5);
+    assert_eq!(s[(1, 0)], 0.5);
+    assert_eq!(s[(2, 2)], 3.0);
+    assert_eq!(s.as_slice(), &[1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn matrix_bytes_are_byte_exact_against_root() {
         ),
     ];
     for (name, obj) in cases {
-        let (_class, root) = object_bytes_any(&f, name).unwrap();
+        let (_class, root, _) = object_bytes(&f, name).unwrap();
         assert_eq!(
             obj.to_root_bytes(),
             root,
@@ -68,17 +68,21 @@ fn single_object_write_root_round_trips() {
     // Exercise the io-core `WriteRoot::write_root` default + the matrix's
     // `streamer_classes` (which describes its own class from scratch).
     let out = std::env::temp_dir().join("oxiroot_linalg_single.root");
-    SymMatrix::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
-        .unwrap()
-        .named("cov")
-        .write_root(&out, Compression::None)
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(
+            &SymMatrix::new(3, vec![1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0])
+                .unwrap()
+                .named("cov"),
+        )
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let s = SymMatrix::read_root(&f, "cov").unwrap();
+    let s = f.get::<SymMatrix>("cov").unwrap();
     assert_eq!(s.dim(), 3);
-    assert_eq!(s.get(0, 1), 0.5);
-    assert_eq!(s.get(1, 0), 0.5);
-    assert_eq!(s.elements(), &[1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]);
+    assert_eq!(s[(0, 1)], 0.5);
+    assert_eq!(s[(1, 0)], 0.5);
+    assert_eq!(s.as_slice(), &[1.0, 0.5, 0.0, 0.5, 2.0, 0.0, 0.0, 0.0, 3.0]);
     let _ = std::fs::remove_file(&out);
 }

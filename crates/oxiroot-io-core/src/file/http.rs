@@ -42,7 +42,7 @@ impl std::fmt::Debug for HttpSource {
 impl HttpSource {
     /// Open `url`, discovering the file length and confirming range support via a
     /// one-byte ranged request.
-    pub fn open(url: &str) -> Result<HttpSource> {
+    pub fn open(url: &str) -> Result<Self> {
         let agent = ureq::Agent::new_with_defaults();
         // A one-byte ranged GET both proves the server honors `Range` and yields
         // the total length from the `Content-Range` header.
@@ -69,7 +69,7 @@ impl HttpSource {
         let total = content_range_total(&res, url)?;
         // Drain the (one-byte) body so the connection returns to the pool.
         let _ = res.into_body().into_reader().read_to_end(&mut Vec::new());
-        Ok(HttpSource {
+        Ok(Self {
             agent,
             url: url.to_string(),
             len: total,
@@ -157,7 +157,9 @@ impl ByteSource for HttpSource {
                         // of the metadata cache.
                         let r = self.checked_fetch(offset, len);
                         let failed = r.is_err();
-                        *results[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+                        *results[i]
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(r);
                         if failed {
                             // Stop taking work; the error is returned below.
                             next.store(ranges.len(), std::sync::atomic::Ordering::Relaxed);
@@ -170,7 +172,7 @@ impl ByteSource for HttpSource {
             .into_iter()
             .map(|r| {
                 r.into_inner()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .unwrap_or_else(|| {
                         Err(Error::Io {
                             kind: std::io::ErrorKind::Interrupted,
@@ -201,14 +203,21 @@ impl ByteSource for HttpSource {
             })?;
 
         let cacheable = len <= CACHE_MAX_ENTRY;
-        if cacheable && let Some(hit) = self.cache.lock().unwrap().get(&(offset, len)).cloned() {
+        if cacheable
+            && let Some(hit) = self
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&(offset, len))
+                .cloned()
+        {
             return Ok(hit);
         }
         let bytes = self.fetch(offset, len)?;
         if cacheable {
             self.cache
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert((offset, len), bytes.clone());
         }
         Ok(bytes)

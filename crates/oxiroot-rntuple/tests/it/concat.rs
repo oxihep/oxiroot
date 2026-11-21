@@ -1,27 +1,30 @@
-//! Concatenating RNTuples with [`append_ntuples`] — the `hadd` building block.
+//! Concatenating `RNTuples` with [`append_ntuples`] — the `hadd` building block.
 use std::io::Cursor;
 
 use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader, Result};
-use oxiroot_rntuple::{Field, FieldValues, NtupleReader, NtupleWriter, append_ntuples};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Field, FieldValues, NtupleWriter, append_ntuples};
 
-/// Merge `inputs` into one in-memory file holding RNTuple `name`.
+/// Merge `inputs` into one in-memory file holding `RNTuple` `name`.
 fn concat_ntuples(name: &str, inputs: &[&NtupleReader<'_>]) -> Result<Vec<u8>> {
     let mut w = NtupleWriter::new(
         Cursor::new(Vec::new()),
         "merged.root",
         name,
-        Compression::None,
+        Compression::Stored,
     )?;
     append_ntuples(&mut w, inputs)?;
     Ok(w.finish()?.into_inner())
 }
 
-/// Write `fields` as RNTuple `ntpl` to a fresh temp file and reopen it.
+/// Write `fields` as `RNTuple` `ntpl` to a fresh temp file and reopen it.
 fn write_open(tag: &str, fields: Vec<Field>) -> FileReader {
     let path = std::env::temp_dir().join(format!("oxiroot_rnconcat_{tag}.root"));
-    NtupleObject::new("ntpl", fields)
-        .write_root(&path, Compression::None)
+    oxiroot_io_core::FileWriter::create(&path)
+        .add(NtupleObject::new("ntpl", fields))
+        .compression(Compression::Stored)
+        .write()
         .expect("write");
     FileReader::open(&path).expect("reopen")
 }

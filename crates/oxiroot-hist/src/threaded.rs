@@ -82,7 +82,7 @@ impl Mergeable for Graph {
 /// use oxiroot_hist::{Hist, ThreadedFill1, ThreadedHist, ToRoot};
 ///
 /// let data: Vec<f64> = (0..1000).map(|i| i as f64 % 100.0).collect();
-/// let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("h"));
+/// let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().unwrap().named("h"));
 ///
 /// std::thread::scope(|s| {
 ///     for chunk in data.chunks(data.len().div_ceil(4)) {

@@ -1,24 +1,24 @@
 //! `oxroot dump` — print an object's data.
 
 use clap::Args as ClapArgs;
-use oxiroot::hist::{
-    Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, ObjString, ParamValue, Parameter,
-    Profile1D, ReadRoot,
-};
-use oxiroot::ntuple::{FieldValues, NtupleReader};
-use oxiroot::tree::{BranchValues, TreeReader};
+use oxiroot::file::{ObjString, ParamValue, Parameter};
+use oxiroot::hist::{Func1D, Func2D, Func3D, Graph, Hist1D, Hist2D, Hist3D, Profile1D};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::FieldValues;
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::BranchValues;
 use oxiroot::{FileReader, Value};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 use crate::json::Json;
-use crate::util::{CmdResult, Kind, Table, classify, locate_class, parse_spec, split_obj};
+use crate::util::{CmdResult, Kind, Table, classify, parse_spec};
 
 /// Arguments for `oxroot dump`.
 #[derive(ClapArgs)]
 pub struct Args {
     /// The object to dump, as `file.root:object`.
     spec: String,
-    /// Number of entries / points to print (trees, RNTuples, graphs).
+    /// Number of entries / points to print (trees, `RNTuples`, graphs).
     #[arg(short = 'n', long, default_value_t = 10)]
     entries: usize,
     /// Comma-separated branch/field subset to print (default: all).
@@ -31,32 +31,26 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("dump needs an object: `file.root:name`")?;
     let file = crate::util::open_root(&path)?;
-    let (subdir, name) = split_obj(&obj);
-    let class = locate_class(&file, subdir, name)?;
+    let path = obj.as_str();
+    let key = file.key(path)?;
+    let (name, class) = (key.name.as_str(), key.class_name.clone());
 
     match classify(&class) {
-        Kind::Tree => dump_tree(&file, subdir, name, &args, json),
-        Kind::RNtuple => dump_rntuple(&file, subdir, name, &args, json),
-        Kind::Hist1 => dump_th1(&read_obj::<Hist1D>(&file, subdir, name)?, name, json),
-        Kind::Hist2 => dump_th2(&read_obj::<Hist2D>(&file, subdir, name)?, name, json),
-        Kind::Hist3 => dump_th3(&read_obj::<Hist3D>(&file, subdir, name)?, name, json),
-        Kind::Profile => dump_profile(&read_obj::<Profile1D>(&file, subdir, name)?, name, json),
-        Kind::Graph => dump_graph(
-            &read_obj::<Graph>(&file, subdir, name)?,
-            name,
-            args.entries,
-            json,
-        ),
-        Kind::Function => dump_function(&file, subdir, name, &class, json),
+        Kind::Tree => dump_tree(&file, path, name, &args, json),
+        Kind::RNtuple => dump_rntuple(&file, path, name, &args, json),
+        Kind::Hist1 => dump_th1(&file.get::<Hist1D>(path)?, name, json),
+        Kind::Hist2 => dump_th2(&file.get::<Hist2D>(path)?, name, json),
+        Kind::Hist3 => dump_th3(&file.get::<Hist3D>(path)?, name, json),
+        Kind::Profile => dump_profile(&file.get::<Profile1D>(path)?, name, json),
+        Kind::Graph => dump_graph(&file.get::<Graph>(path)?, name, args.entries, json),
+        Kind::Function => dump_function(&file, path, name, &class, json),
         Kind::ObjString => {
-            let value = read_obj::<ObjString>(&file, subdir, name)?
-                .value()
-                .to_string();
+            let value = file.get::<ObjString>(path)?.value().to_string();
             emit_value(name, Json::s(value.clone()), &value, json);
             Ok(())
         }
         Kind::Parameter => {
-            let param = read_obj::<Parameter>(&file, subdir, name)?;
+            let param = file.get::<Parameter>(path)?;
             let (value, text) = param_value(param.value());
             emit_value(name, value, &text, json);
             Ok(())
@@ -64,16 +58,13 @@ pub fn run(args: Args, json: bool) -> CmdResult {
         // Any other class: decode it generically from its TStreamerInfo into a
         // dynamic value tree and print it (rootprint-style) — so an unknown class
         // is shown, not refused.
-        Kind::Other => dump_generic(&file, subdir, name, json),
+        Kind::Other => dump_generic(&file, path, name, json),
     }
 }
 
 /// Dump an arbitrary object via the generic, streamer-info-driven reader.
-fn dump_generic(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
-    let value = match subdir {
-        Some(dir) => file.get_value_in(dir, name)?,
-        None => file.get_value(name)?,
-    };
+fn dump_generic(file: &FileReader, path: &str, _name: &str, json: bool) -> CmdResult {
+    let value = file.get::<Value>(path)?;
     if json {
         println!("{}", value_to_json(&value).render());
     } else {
@@ -98,7 +89,7 @@ fn value_to_json(v: &Value) -> Json {
         Value::U32(x) => Json::Int(i64::from(*x)),
         // A u64 above i64::MAX can't be an exact JSON `Int` (which is i64); emit
         // it as a string so the value stays correct rather than wrapping negative.
-        Value::U64(x) => i64::try_from(*x).map_or_else(|_| Json::s(x.to_string()), Json::Int),
+        Value::U64(x) => u64_json(x),
         Value::F32(x) => Json::F64(f64::from(*x)),
         Value::F64(x) => Json::F64(*x),
         Value::Str(s) => Json::s(s.clone()),
@@ -134,29 +125,23 @@ fn value_to_json(v: &Value) -> Json {
 }
 
 /// A `Func1D`/`Func2D`/`Func3D`: its formula, parameters, and (for `Func1D`) its range.
-fn dump_function(
-    file: &FileReader,
-    subdir: Option<&str>,
-    name: &str,
-    class: &str,
-    json: bool,
-) -> CmdResult {
+fn dump_function(file: &FileReader, path: &str, name: &str, class: &str, json: bool) -> CmdResult {
     // All three share `formula`/`params`; only the read type and range differ.
     let (formula, params, range) = match class {
         "TF2" => {
-            let f = read_obj::<Func2D>(file, subdir, name)?;
+            let f = file.get::<Func2D>(path)?;
             (f.formula().to_string(), f.params().to_vec(), None)
         }
         "TF3" => {
-            let f = read_obj::<Func3D>(file, subdir, name)?;
+            let f = file.get::<Func3D>(path)?;
             (f.formula().to_string(), f.params().to_vec(), None)
         }
         _ => {
-            let f = read_obj::<Func1D>(file, subdir, name)?;
+            let f = file.get::<Func1D>(path)?;
             (
                 f.formula().to_string(),
                 f.params().to_vec(),
-                Some(f.range()),
+                Some(f.range().into_inner()),
             )
         }
     };
@@ -191,18 +176,6 @@ fn dump_function(
     Ok(())
 }
 
-/// Read a `ReadRoot` object from the top directory or a subdirectory.
-fn read_obj<T: ReadRoot>(
-    file: &FileReader,
-    subdir: Option<&str>,
-    name: &str,
-) -> oxiroot::Result<T> {
-    Ok(match subdir {
-        None => T::read_root(file, name)?,
-        Some(dir) => T::read_root_in(file, dir, name)?,
-    })
-}
-
 /// Print a single scalar value, as JSON `{name, value}` or `name = value`.
 fn emit_value(name: &str, value: Json, text: &str, json: bool) {
     if json {
@@ -224,23 +197,17 @@ fn param_value(value: ParamValue) -> (Json, String) {
 }
 
 /// The first `n` entries of a `TTree`.
-fn dump_tree(
-    file: &FileReader,
-    subdir: Option<&str>,
-    name: &str,
-    args: &Args,
-    json: bool,
-) -> CmdResult {
-    let tree = match subdir {
-        None => TreeReader::open(file, name)?,
-        Some(dir) => TreeReader::open_in(file, dir, name)?,
-    };
+fn dump_tree(file: &FileReader, path: &str, name: &str, args: &Args, json: bool) -> CmdResult {
+    let tree = TreeReader::open(file, path)?;
     let n = args.entries.min(usize::saturating_from(tree.entries()));
     let selected = select(&args.branches, tree.branch_names());
     let cols: Vec<(String, Option<BranchValues>)> = selected
         .iter()
-        .map(|b| (b.clone(), tree.branch(b).range(0..n as u64).values().ok()))
-        .collect();
+        .map(|b| {
+            let values = tree.branch(b).range(0..n as u64).values();
+            Ok((b.clone(), column_or_blank(values, &args.branches)?))
+        })
+        .collect::<Result<_, oxiroot::Error>>()?;
 
     if json {
         let out = Json::Object(vec![
@@ -263,25 +230,19 @@ fn dump_tree(
     Ok(())
 }
 
-/// The first `n` entries of an RNTuple.
-fn dump_rntuple(
-    file: &FileReader,
-    subdir: Option<&str>,
-    name: &str,
-    args: &Args,
-    json: bool,
-) -> CmdResult {
-    let ntuple = match subdir {
-        None => NtupleReader::open(file, name)?,
-        Some(dir) => NtupleReader::open_in(file, dir, name)?,
-    };
+/// The first `n` entries of an `RNTuple`.
+fn dump_rntuple(file: &FileReader, path: &str, name: &str, args: &Args, json: bool) -> CmdResult {
+    let ntuple = NtupleReader::open(file, path)?;
     let n = args.entries.min(usize::saturating_from(ntuple.entries()));
     let selected = select(&args.branches, ntuple.field_names());
     // Read only the clusters covering the first `n` entries, not the whole field.
     let cols: Vec<(String, Option<FieldValues>)> = selected
         .iter()
-        .map(|f| (f.clone(), ntuple.field(f).range(0..n as u64).values().ok()))
-        .collect();
+        .map(|f| {
+            let values = ntuple.field(f).range(0..n as u64).values();
+            Ok((f.clone(), column_or_blank(values, &args.branches)?))
+        })
+        .collect::<Result<_, oxiroot::Error>>()?;
 
     if json {
         let out = Json::Object(vec![
@@ -305,6 +266,21 @@ fn dump_rntuple(
     );
     print_table(&cols, n, field_cell);
     Ok(())
+}
+
+/// One column's values, or the reason it could not be read. A column the user
+/// asked for by name (`-b`) must read: a mistyped name or a failed read is an
+/// error. When every column is dumped, one this crate cannot read is left
+/// blank so the others still print.
+fn column_or_blank<T>(
+    values: oxiroot::file::Result<T>,
+    requested: &[String],
+) -> Result<Option<T>, oxiroot::Error> {
+    match values {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if !requested.is_empty() => Err(e.into()),
+        Err(_) => Ok(None),
+    }
 }
 
 /// The selected column names (the `-b` subset, or all).
@@ -414,9 +390,7 @@ fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
 
 /// A summary of a `Hist2D` (its full grid is not printed).
 fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
-    let values = hist.values();
-    let ny = values.len();
-    let nx = values.first().map_or(0, Vec::len);
+    let (nx, ny) = (hist.nx(), hist.ny());
     if json {
         let out = Json::Object(vec![
             ("name", Json::s(name)),
@@ -444,10 +418,7 @@ fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
 
 /// A summary of a `Hist3D` (its full grid is not printed).
 fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
-    let values = hist.values();
-    let nz = values.len();
-    let ny = values.first().map_or(0, Vec::len);
-    let nx = values.first().and_then(|p| p.first()).map_or(0, Vec::len);
+    let (nx, ny, nz) = (hist.nx(), hist.ny(), hist.nz());
     if json {
         let out = Json::Object(vec![
             ("name", Json::s(name)),
@@ -556,7 +527,7 @@ fn dump_graph(graph: &Graph, name: &str, n: usize, json: bool) -> CmdResult {
 fn branch_cell(values: &BranchValues, i: usize) -> String {
     use BranchValues::*;
     macro_rules! scalar {
-        ($v:expr_2021) => {
+        ($v:expr) => {
             $v.get(i).map(ToString::to_string).unwrap_or_default()
         };
     }
@@ -594,7 +565,7 @@ fn branch_cell(values: &BranchValues, i: usize) -> String {
 fn field_cell(values: &FieldValues, i: usize) -> String {
     use FieldValues::*;
     macro_rules! scalar {
-        ($v:expr_2021) => {
+        ($v:expr) => {
             $v.get(i).map(ToString::to_string).unwrap_or_default()
         };
     }
@@ -639,7 +610,7 @@ fn branch_json(values: &BranchValues, i: usize) -> Json {
         I32(v) => opt(v.get(i), int),
         U32(v) => opt(v.get(i), int),
         I64(v) => opt(v.get(i), int),
-        U64(v) => opt(v.get(i), |x| Json::Int((*x).cast_signed())),
+        U64(v) => opt(v.get(i), u64_json),
         F32(v) => opt(v.get(i), float),
         F64(v) => opt(v.get(i), float),
         Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
@@ -651,7 +622,7 @@ fn branch_json(values: &BranchValues, i: usize) -> Json {
         VecI32(v) => arr(v.get(i), int),
         VecU32(v) => arr(v.get(i), int),
         VecI64(v) => arr(v.get(i), int),
-        VecU64(v) => arr(v.get(i), |x| Json::Int((*x).cast_signed())),
+        VecU64(v) => arr(v.get(i), u64_json),
         VecF32(v) => arr(v.get(i), float),
         VecF64(v) => arr(v.get(i), float),
         VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
@@ -672,7 +643,7 @@ fn field_json(values: &FieldValues, i: usize) -> Json {
         I32(v) => opt(v.get(i), int),
         U32(v) => opt(v.get(i), int),
         I64(v) => opt(v.get(i), int),
-        U64(v) => opt(v.get(i), |x| Json::Int((*x).cast_signed())),
+        U64(v) => opt(v.get(i), u64_json),
         F32(v) => opt(v.get(i), float),
         F64(v) => opt(v.get(i), float),
         Str(v) => opt(v.get(i), |s| Json::s(s.clone())),
@@ -684,12 +655,18 @@ fn field_json(values: &FieldValues, i: usize) -> Json {
         VecI32(v) => arr(v.get(i), int),
         VecU32(v) => arr(v.get(i), int),
         VecI64(v) => arr(v.get(i), int),
-        VecU64(v) => arr(v.get(i), |x| Json::Int((*x).cast_signed())),
+        VecU64(v) => arr(v.get(i), u64_json),
         VecF32(v) => arr(v.get(i), float),
         VecF64(v) => arr(v.get(i), float),
         VecStr(v) => arr(v.get(i), |s| Json::s(s.clone())),
         _ => Json::Null,
     }
+}
+
+/// A `u64` as JSON: an integer, or a string above `i64::MAX`, which the
+/// integer cell cannot hold (so the value is not printed as a negative one).
+fn u64_json(x: &u64) -> Json {
+    i64::try_from(*x).map_or_else(|_| Json::s(x.to_string()), Json::Int)
 }
 
 /// A JSON integer from any small integer type.

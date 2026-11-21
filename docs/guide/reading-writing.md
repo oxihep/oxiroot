@@ -12,35 +12,36 @@ memory); see [Datasets](datasets.md), and [TTree](ttree.md) and
 [RNTuple](rntuple.md) for the format-specific layer.
 
 Types that read a file end in `Reader` (`FileReader`, `TreeReader`,
-`NtupleReader`, `ChainReader`) and types that write one end in `Writer`
-(`FileWriter`, `DatasetWriter`, `TreeWriter`, `NtupleWriter`).
+`NtupleReader`) and types that write one end in `Writer` (`FileWriter`,
+`FileUpdater` aside, and `DatasetWriter`). A columnar dataset, in either
+format, is a `Dataset`.
 
-## One object: `WriteRoot` / `ReadRoot`
+## One object: `FileWriter::add` / `FileReader::get`
 
-Anything writable implements `WriteRoot`, giving it `write_root` (writes a
-complete ROOT file to a path) and `to_root_bytes` (the streamed object payload,
-without file/key framing). Anything readable implements `ReadRoot`, giving it
-`read_root` and `read_root_in` (from a subdirectory).
+Anything writable implements `WriteRoot`, so `FileWriter::add` stores it; its
+`to_root_bytes` is the streamed object payload, without file/key framing.
+Anything readable implements `ReadRoot`, so `file.get::<T>(path)` reads it. A
+path is `"dir/sub/name;cycle"`: the directories and the cycle are optional.
 
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
 h.fill(42.0);
 
 // Write a single object as a complete ROOT file …
-h.write_root("hist.root", Compression::Zstd(5))?;
+FileWriter::create("hist.root").add(&h).write()?;
 // … or get just the streamed object payload (no file/key framing).
 let bytes: Vec<u8> = h.to_root_bytes();
 
 // Read it back by key name.
-let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
+let same = FileReader::open("hist.root")?.get::<Hist1D>("pt")?;
 ```
 
 !!! note "Reading an older cycle"
     Writing a name a file already holds keeps the old object under a lower
-    *cycle*. Every read takes a name — `FileReader::key`, `get_value`,
-    `read_root`, `Dataset::open`, `TreeReader::open`, `NtupleReader::open` — and a plain name
+    *cycle*. Every read takes a path — `FileReader::get`, `FileReader::key`,
+    `Dataset::open` — and a plain name
     reads the current (highest) cycle. Ask for an older one the way ROOT does,
     with `"name;2"`; a name that carries a `;` of its own is left whole, and a
     cycle the file does not hold is `Error::NotFound` rather than a silent
@@ -49,22 +50,22 @@ let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
 !!! note "Names belong to the file, not the object"
     A histogram is just data. It carries a name only when you persist it —
     `.named("pt")` sets the file key, `.titled(...)` the ROOT title. Construct
-    with `Hist::reg(nbins, lo, hi).double().to_root()` and any number of unnamed or same-named
+    with `Hist::reg(nbins, lo, hi).double().to_root()?` and any number of unnamed or same-named
     objects can coexist in memory; the name matters only at write time. See
     [Histograms](histograms.md) for the construction model.
 
 ## Any class: the generic reader
 
-The typed readers (`Hist1D::read_root`, …) need a Rust model for the class. When you
+The typed readers (`file.get::<Hist1D>(path)`, …) need a Rust model for the class. When you
 just want to *inspect* an object — including a class oxiroot has no model for —
-`FileReader::get_value` decodes it generically, driven entirely by the file's
+`file.get::<Value>(path)` decodes it generically, driven entirely by the file's
 `TStreamerInfo`, into a dynamic [`Value`](../api/oxiroot/enum.Value.html) tree:
 
 ```rust
 use oxiroot::{FileReader, Value};
 
 let f = FileReader::open("hist.root")?;
-let h = f.get_value("pt")?; // a TH1D, decoded from streamer info alone
+let h = f.get::<Value>("pt")?; // a TH1D, decoded from streamer info alone
 
 assert_eq!(h.class(), Some("TH1D"));
 assert_eq!(h.get("fTitle").and_then(Value::as_str), Some("transverse momentum"));
@@ -85,8 +86,7 @@ strings, `TArray`s, nested containers, objects or pointers, written objectwise
 or memberwise — and a slot pointing at an object written elsewhere in the same
 object is `Value::Ref`, naming the class it points at. A member the reader
 cannot decode (a class with no streamer info) becomes `Value::Unsupported`
-rather than failing the whole object, and `get_value_in(dir, name)` reads from a
-subdirectory.
+rather than failing the whole object.
 
 ## Remote and lazy reads
 
@@ -98,7 +98,7 @@ the byte ranges each object touches, the way ROOT and uproot do:
 use oxiroot::FileReader;
 
 // Local, positioned reads — never slurps the whole file:
-let f = FileReader::open_ranged("big.root")?;
+let f = FileReader::open("big.root")?;
 
 // Remote, over HTTP(S) byte-range requests (the `http` feature):
 let f = FileReader::open_url("https://example.org/data/big.root")?;
@@ -106,7 +106,7 @@ let f = FileReader::open_url("https://example.org/data/big.root")?;
 // Remote, over CERN's XRootD protocol (the `xrootd` feature):
 let f = FileReader::open_url("root://eospublic.cern.ch//eos/root-eos/hsimple.root")?;
 
-let h = oxiroot::hist::Hist1D::read_root(&f, "hpx")?; // fetches only that key's bytes
+let h = f.get::<oxiroot::hist::Hist1D>("hpx")?; // fetches only that key's bytes
 # Ok::<(), oxiroot::Error>(())
 ```
 
@@ -178,7 +178,7 @@ takes any `&dyn WriteRoot`, `dir` opens a subdirectory, and `write` commits with
 a chosen compression.
 
 ```rust
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root().named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof").titled("<pt> per region");
 let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("res");
 
 FileWriter::create("out.root")
@@ -187,7 +187,7 @@ FileWriter::create("out.root")
     .dir("by_region", |d| {                // a TDirectory
         d.add(&prof)
     })
-    .write(Compression::Zstd(5))?;
+    .write()?;
 ```
 
 `dir` nests: call it again inside the closure for a directory within a
@@ -200,44 +200,43 @@ FileWriter::create("regions.root")
             .dir("2018", |d| d.add(&prof))   // signal/2018
             .dir("2017", |d| d.add(&prof))   // signal/2017
     })
-    .write(Compression::Zstd(5))?;
+    .write()?;
 ```
 
-Read an object back from a subdirectory with `read_root_in`, naming the path
-with `/`:
+Read an object back from a subdirectory by naming its path with `/`:
 
 ```rust
 let f = FileReader::open("out.root")?;
-let p = Profile1D::read_root_in(&f, "by_region", "prof")?;
-let deep = Profile1D::read_root_in(&FileReader::open("regions.root")?, "signal/2018", "prof")?;
+let p = f.get::<Profile1D>("by_region/prof")?;
+let deep = FileReader::open("regions.root")?.get::<Profile1D>("signal/2018/prof")?;
 ```
 
 ### Appending
 
-`FileWriter::open` reopens an existing file so further objects can be appended in a
+`FileUpdater::open` reopens an existing file so further objects can be appended in a
 second pass (ROOT "update" mode):
 
 <!-- fragment -->
 ```rust
-FileWriter::open("out.root")?
+FileUpdater::open("out.root")?
     .add(&extra)
-    .write(Compression::None)?;
+    .write()?;
 ```
 
 ### Deleting, purging and compacting
 
-`FileWriter::open` also takes objects *out* of a file. `delete` drops a name (or
+A `FileUpdater` also takes objects *out* of a file. `delete` drops a name (or
 one cycle of it, `"h;1"`), `purge` keeps only each name's current cycle — ROOT's
 `TFile::Purge` — and `compact` rewrites the file from what is left, so the space
 the rest held is given up:
 
 ```rust
-FileWriter::open("out.root")?
+FileUpdater::open("out.root")?
     .delete("scratch")   // every cycle of `scratch`
     .delete("h;1")       // and the first cycle of `h`
     .purge()             // then keep only the newest cycle of each name
     .compact()           // and rewrite the file without the dead space
-    .write(Compression::Zstd(5))?;
+    .write()?;
 ```
 
 Without `compact` the file does not shrink: the records stay where they are and
@@ -254,12 +253,12 @@ holds one is refused — merge those with `hadd` instead.
 
 ## Choosing compression
 
-Both `write_root` and `FileWriter::write` take a `Compression` value applied to
-every object's payload:
+`FileWriter::compression` takes a `Compression` value applied to every object's
+payload; without it a file is written with Zstd level 5:
 
 | Value | Effect |
 |-------|--------|
-| `Compression::None` | Store uncompressed. |
+| `Compression::Stored` | Store uncompressed. |
 | `Compression::Zstd(level)` | Zstandard (the modern ROOT default). |
 | `Compression::Zlib(level)` | zlib/deflate (older ROOT default). |
 | `Compression::Lz4(level)` | LZ4 with ROOT's XXH64 block check. |
@@ -277,9 +276,9 @@ name is also an error. Different subdirectories are independent namespaces, so
 the same name in two directories is fine.
 
 ```rust
-let a = Hist::reg(10, 0.0, 1.0).double().to_root().named("h");
-let b = Hist::reg(10, 0.0, 1.0).double().to_root().named("h");
-let err = FileWriter::create("dup.root").add(&a).add(&b).write(Compression::None);
+let a = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
+let b = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
+let err = FileWriter::create("dup.root").add(&a).add(&b).compression(Compression::Stored).write();
 assert!(err.is_err()); // Error::DuplicateName { name: "h", .. }
 ```
 
@@ -309,7 +308,7 @@ use oxiroot::prelude::*;
 use oxiroot::file::Error;
 
 let file = FileReader::open("hist.root")?;
-match Hist1D::read_root(&file, "h") {
+match file.get::<Hist1D>("h") {
     Ok(h) => println!("{} entries", h.entries()),
     Err(Error::NotFound { .. }) => println!("no object named h"),
     Err(Error::WrongClass { found, .. }) => println!("h is a {found}, not a 1-D histogram"),

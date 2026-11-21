@@ -5,7 +5,7 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::FileReader;
 
 #[test]
@@ -14,6 +14,7 @@ fn merge_then_scale_matches_root() {
     let mut a = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("merged");
     a.track_sumw2();
@@ -22,6 +23,7 @@ fn merge_then_scale_matches_root() {
     let mut b = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("merged");
     b.track_sumw2();
@@ -40,37 +42,64 @@ fn merge_then_scale_matches_root() {
     assert!((a.bin_error(1) - 52.0_f64.sqrt()).abs() < 1e-9);
 
     let out = PathBuf::from("/tmp/rootrs_merged_scaled.root");
-    a.write_root(&out, oxiroot_io_core::Compression::None)
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&a)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), a, "round-trips");
+    assert_eq!(f.get::<Hist1D>("h").unwrap(), a, "round-trips");
 }
 
 #[test]
 fn add_rejects_mismatched_binning() {
     // Different bin counts.
-    let mut a = Hist::reg(4, 0.0, 4.0).double().to_root().named("a");
-    let b = Hist::reg(5, 0.0, 5.0).double().to_root().named("b");
+    let mut a = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("a");
+    let b = Hist::reg(5, 0.0, 5.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("b");
     assert!(a.add(&b, 1.0).is_err(), "different bin counts -> error");
 
     // Same bin count but different range — must also be rejected (cell-count
     // equality alone would have missed this).
-    let mut c = Hist::reg(4, 0.0, 4.0).double().to_root().named("c");
-    let d = Hist::reg(4, 0.0, 8.0).double().to_root().named("d");
+    let mut c = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("c");
+    let d = Hist::reg(4, 0.0, 8.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("d");
     assert!(c.add(&d, 1.0).is_err(), "different edges -> error");
     assert_eq!(c.contents()[1], 0.0, "rejected add makes no change");
 }
 
 #[test]
 fn integral_multiply_divide() {
-    let mut num = Hist::reg(2, 0.0, 2.0).double().to_root().named("n");
+    let mut num = Hist::reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("n");
     num.track_sumw2();
     num.fill(0.5);
     num.fill(0.5);
     num.fill(1.5);
     assert_eq!(num.integral(), 3.0, "sum of in-range bins");
 
-    let mut den = Hist::reg(2, 0.0, 2.0).double().to_root().named("d");
+    let mut den = Hist::reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("d");
     den.track_sumw2();
     for _ in 0..4 {
         den.fill(0.5);
@@ -95,7 +124,11 @@ fn integral_multiply_divide() {
 
 #[test]
 fn find_bin_routes_nan_and_top_edge() {
-    let h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     assert_eq!(h.xaxis().find_bin(-0.1), 0, "below range -> underflow");
     assert_eq!(h.xaxis().find_bin(0.0), 1, "low edge -> first bin");
     assert_eq!(h.xaxis().find_bin(3.999), 4, "just under top -> last bin");
@@ -114,10 +147,10 @@ fn find_bin_routes_nan_and_top_edge() {
 #[test]
 fn tprofile_merge_and_bin_error_match_root() {
     // Two profiles of the same (x,y) stream, split across "jobs", then merged.
-    let mut a = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+    let mut a = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
     a.fill(0.5, 1.0);
     a.fill(0.5, 3.0);
-    let mut b = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+    let mut b = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
     b.fill(0.5, 5.0);
     b.fill(1.5, 10.0);
 
@@ -137,7 +170,7 @@ fn tprofile_merge_and_bin_error_match_root() {
     assert!((a.values()[1] - 10.0).abs() < 1e-12);
     assert_eq!(a.bin_error(2), 0.0, "single entry -> no spread");
 
-    let mut wrong = Hist::reg(3, 0.0, 3.0).mean().to_root().named("p");
+    let mut wrong = Hist::reg(3, 0.0, 3.0).mean().to_root().unwrap().named("p");
     assert!(wrong.add(&a, 1.0).is_err(), "different binning rejected");
 }
 
@@ -150,7 +183,7 @@ fn profile_add_scales_weighted_sums_linearly() {
     use oxiroot_hist::Hist;
 
     let build = || {
-        let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+        let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
         p.fill(0.5, 2.0);
         p.fill(1.5, 3.0);
         p
@@ -191,10 +224,10 @@ fn profile_add_tracks_squared_weights_when_scaled() {
     use oxiroot_hist::Hist;
 
     // Bin 1 ([0, 1)): two unweighted entries in `dst`, one in `src`.
-    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     dst.fill(0.5, 1.0);
     dst.fill(0.5, 3.0);
-    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     src.fill(0.5, 2.0);
 
     let c = 3.0;
@@ -221,9 +254,9 @@ fn profile_add_tracks_squared_weights_when_scaled() {
 fn profile_add_scales_tracked_squared_weights_quadratically() {
     use oxiroot_hist::Hist;
 
-    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     dst.fill(0.5, 1.0);
-    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     src.fill(0.5, 2.0);
     // As if both were filled with weights and read from disk.
     *dst.optional_arrays_mut().1 = vec![0.0, 4.0, 0.0, 0.0, 0.0, 0.0];
@@ -246,9 +279,9 @@ fn profile_add_scales_tracked_squared_weights_quadratically() {
 fn profile_add_at_unit_scale_is_unchanged() {
     use oxiroot_hist::Hist;
 
-    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut dst = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     dst.fill(0.5, 1.0);
-    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut src = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     src.fill(0.5, 2.0);
 
     dst.add(&src, 1.0).unwrap();
@@ -341,17 +374,24 @@ mod merges {
 
     #[test]
     fn graphs_append_their_points_and_errors() {
-        let mut a = Graph::with_errors(vec![1.0], vec![2.0], vec![0.1], vec![0.2])
+        let mut a = Graph::new(vec![1.0], vec![2.0])
+            .and_then(|g| {
+                g.with_errors(oxiroot_hist::GraphErrors::Symmetric {
+                    ex: vec![0.1],
+                    ey: vec![0.2],
+                })
+            })
             .unwrap()
             .named("g")
             .with_function(GraphFunction::new("f", "[0]*x", vec![1.0], 0.0, 1.0));
-        let b = Graph::with_errors(
-            vec![3.0, 4.0],
-            vec![5.0, 6.0],
-            vec![0.3, 0.4],
-            vec![0.5, 0.6],
-        )
-        .unwrap();
+        let b = Graph::new(vec![3.0, 4.0], vec![5.0, 6.0])
+            .and_then(|g| {
+                g.with_errors(oxiroot_hist::GraphErrors::Symmetric {
+                    ex: vec![0.3, 0.4],
+                    ey: vec![0.5, 0.6],
+                })
+            })
+            .unwrap();
         a.merge(&b).unwrap();
         assert_eq!(a.x(), vec![1.0, 3.0, 4.0]);
         assert_eq!(a.y(), vec![2.0, 5.0, 6.0]);
@@ -365,11 +405,23 @@ mod merges {
 
     #[test]
     fn a_stack_merges_its_histograms_by_name() {
-        let mut first = Hist::reg(2, 0.0, 2.0).double().to_root().named("one");
+        let mut first = Hist::reg(2, 0.0, 2.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("one");
         first.fill(0.5);
-        let mut again = Hist::reg(2, 0.0, 2.0).double().to_root().named("one");
+        let mut again = Hist::reg(2, 0.0, 2.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("one");
         again.fill(0.5);
-        let other = Hist::reg(2, 0.0, 2.0).double().to_root().named("two");
+        let other = Hist::reg(2, 0.0, 2.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("two");
 
         let mut a = HistStack::new().named("st").add(first);
         let b = HistStack::new().named("st").add(again).add(other);

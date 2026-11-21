@@ -36,7 +36,7 @@ One million values per fill benchmark.
 
 The ROOT histograms (`Hist1D`, …) also keep ROOT's entry count and moment sums
 on every fill; oxihist histograms (what [`Hist`](../guide/histograms.md)
-builds before `.to_root()`) keep only the bins, and fill a number on a regular
+builds before `.to_root()?`) keep only the bins, and fill a number on a regular
 or variable axis, an integer, a known category or a boolean without going
 through their general (growing, converting) code path.
 

@@ -1,4 +1,4 @@
-//! Reading and decoding RNTuple pages into typed column values.
+//! Reading and decoding `RNTuple` pages into typed column values.
 //!
 //! A page's on-disk bytes are (optionally) compressed and (optionally) followed
 //! by an XXH3-64 checksum. Once decompressed, multi-byte split columns are
@@ -70,7 +70,11 @@ fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<
     let compressed = &win[..size];
 
     if page.has_checksum {
-        let stored = u64::from_le_bytes(win[size..size + 8].try_into().unwrap());
+        let stored = win
+            .get(size..)
+            .and_then(|tail| tail.first_chunk::<8>())
+            .map(|c| u64::from_le_bytes(*c))
+            .ok_or_else(|| Error::Format("RNTuple page is missing its checksum".into()))?;
         let computed = xxhash_rust::xxh3::xxh3_64(compressed);
         if computed != stored {
             return Err(Error::ChecksumMismatch {
@@ -108,7 +112,7 @@ fn read_pages(
         .collect()
 }
 
-/// Invert RNTuple "split" (byte-transposed) storage: byte `j` of element `i`
+/// Invert `RNTuple` "split" (byte-transposed) storage: byte `j` of element `i`
 /// lives at `raw[j * n + i]`.
 fn unsplit(raw: &[u8], n: usize, width: usize) -> Vec<u8> {
     let mut out = vec![0u8; n * width];
@@ -122,28 +126,16 @@ fn unsplit(raw: &[u8], n: usize, width: usize) -> Vec<u8> {
 }
 
 /// Zigzag-decode an unsigned value to signed (`(u >> 1) ^ -(u & 1)`).
-#[allow(
-    clippy::cast_possible_wrap,
-    reason = "zigzag decoding reinterprets the bits"
-)]
 fn zigzag32(u: u32) -> i32 {
-    ((u >> 1) as i32) ^ -((u & 1) as i32)
+    (u >> 1).cast_signed() ^ -(u & 1).cast_signed()
 }
 
-#[allow(
-    clippy::cast_possible_wrap,
-    reason = "zigzag decoding reinterprets the bits"
-)]
 fn zigzag64(u: u64) -> i64 {
-    ((u >> 1) as i64) ^ -((u & 1) as i64)
+    (u >> 1).cast_signed() ^ -(u & 1).cast_signed()
 }
 
-#[allow(
-    clippy::cast_possible_wrap,
-    reason = "zigzag decoding reinterprets the bits"
-)]
 fn zigzag16(u: u16) -> i16 {
-    ((u >> 1) as i16) ^ -((u & 1) as i16)
+    (u >> 1).cast_signed() ^ -(u & 1).cast_signed()
 }
 
 /// Delta-decode (cumulative sum) for index/offset columns. ROOT encodes each
@@ -228,63 +220,138 @@ pub fn read_column(
         }
 
         // 8-bit integers have no split form (transposing single bytes is a no-op).
-        Int8 => Ok(ColumnValues::I8(fixed(raws, bits, pages, false, le_i8)?)),
-        UInt8 => Ok(ColumnValues::U8(fixed(raws, bits, pages, false, le_u8)?)),
-        Int16 => Ok(ColumnValues::I16(fixed(raws, bits, pages, false, le_i16)?)),
+        Int8 => Ok(ColumnValues::I8(fixed(
+            raws,
+            pages,
+            false,
+            i8::from_le_bytes,
+        ))),
+        UInt8 => Ok(ColumnValues::U8(fixed(
+            raws,
+            pages,
+            false,
+            u8::from_le_bytes,
+        ))),
+        Int16 => Ok(ColumnValues::I16(fixed(
+            raws,
+            pages,
+            false,
+            i16::from_le_bytes,
+        ))),
         SplitInt16 => {
-            let raw = fixed(raws, bits, pages, true, le_u16)?;
+            let raw = fixed(raws, pages, true, u16::from_le_bytes);
             Ok(ColumnValues::I16(raw.into_iter().map(zigzag16).collect()))
         }
-        UInt16 => Ok(ColumnValues::U16(fixed(raws, bits, pages, false, le_u16)?)),
-        SplitUInt16 => Ok(ColumnValues::U16(fixed(raws, bits, pages, true, le_u16)?)),
+        UInt16 => Ok(ColumnValues::U16(fixed(
+            raws,
+            pages,
+            false,
+            u16::from_le_bytes,
+        ))),
+        SplitUInt16 => Ok(ColumnValues::U16(fixed(
+            raws,
+            pages,
+            true,
+            u16::from_le_bytes,
+        ))),
 
-        Int32 => Ok(ColumnValues::I32(fixed(raws, bits, pages, false, le_i32)?)),
+        Int32 => Ok(ColumnValues::I32(fixed(
+            raws,
+            pages,
+            false,
+            i32::from_le_bytes,
+        ))),
         SplitInt32 => {
-            let raw = fixed(raws, bits, pages, true, le_u32)?;
+            let raw = fixed(raws, pages, true, u32::from_le_bytes);
             Ok(ColumnValues::I32(raw.into_iter().map(zigzag32).collect()))
         }
-        Int64 => Ok(ColumnValues::I64(fixed(raws, bits, pages, false, le_i64)?)),
+        Int64 => Ok(ColumnValues::I64(fixed(
+            raws,
+            pages,
+            false,
+            i64::from_le_bytes,
+        ))),
         SplitInt64 => {
-            let raw = fixed(raws, bits, pages, true, le_u64)?;
+            let raw = fixed(raws, pages, true, u64::from_le_bytes);
             Ok(ColumnValues::I64(raw.into_iter().map(zigzag64).collect()))
         }
 
-        UInt64 => Ok(ColumnValues::U64(fixed(raws, bits, pages, false, le_u64)?)),
+        UInt64 => Ok(ColumnValues::U64(fixed(
+            raws,
+            pages,
+            false,
+            u64::from_le_bytes,
+        ))),
         // Leaf uint32 columns keep their 32-bit identity; only the Index*
         // offset columns below widen to u64 (they index element data as usize).
-        UInt32 => Ok(ColumnValues::U32(fixed(raws, bits, pages, false, le_u32)?)),
-        SplitUInt32 => Ok(ColumnValues::U32(fixed(raws, bits, pages, true, le_u32)?)),
-        Index64 => Ok(ColumnValues::U64(fixed(raws, bits, pages, false, le_u64)?)),
+        UInt32 => Ok(ColumnValues::U32(fixed(
+            raws,
+            pages,
+            false,
+            u32::from_le_bytes,
+        ))),
+        SplitUInt32 => Ok(ColumnValues::U32(fixed(
+            raws,
+            pages,
+            true,
+            u32::from_le_bytes,
+        ))),
+        Index64 => Ok(ColumnValues::U64(fixed(
+            raws,
+            pages,
+            false,
+            u64::from_le_bytes,
+        ))),
         SplitIndex64 => {
-            let raw = fixed(raws, bits, pages, true, le_u64)?;
+            let raw = fixed(raws, pages, true, u64::from_le_bytes);
             Ok(ColumnValues::U64(delta_decode(raw, pages)))
         }
         Index32 => {
-            let raw = fixed(raws, bits, pages, false, le_u32)?;
+            let raw = fixed(raws, pages, false, u32::from_le_bytes);
             Ok(ColumnValues::U64(raw.into_iter().map(u64::from).collect()))
         }
         SplitIndex32 => {
-            let raw = fixed(raws, bits, pages, true, le_u32)?;
+            let raw = fixed(raws, pages, true, u32::from_le_bytes);
             Ok(ColumnValues::U64(delta_decode(
                 raw.into_iter().map(u64::from).collect(),
                 pages,
             )))
         }
 
-        Real32 => Ok(ColumnValues::F32(fixed(raws, bits, pages, false, le_f32)?)),
-        SplitReal32 => Ok(ColumnValues::F32(fixed(raws, bits, pages, true, le_f32)?)),
-        Real64 => Ok(ColumnValues::F64(fixed(raws, bits, pages, false, le_f64)?)),
-        SplitReal64 => Ok(ColumnValues::F64(fixed(raws, bits, pages, true, le_f64)?)),
+        Real32 => Ok(ColumnValues::F32(fixed(
+            raws,
+            pages,
+            false,
+            f32::from_le_bytes,
+        ))),
+        SplitReal32 => Ok(ColumnValues::F32(fixed(
+            raws,
+            pages,
+            true,
+            f32::from_le_bytes,
+        ))),
+        Real64 => Ok(ColumnValues::F64(fixed(
+            raws,
+            pages,
+            false,
+            f64::from_le_bytes,
+        ))),
+        SplitReal64 => Ok(ColumnValues::F64(fixed(
+            raws,
+            pages,
+            true,
+            f64::from_le_bytes,
+        ))),
 
         // Reduced-precision reals all surface as f32.
         Real16 => {
-            let raw = fixed(raws, bits, pages, false, le_u16)?;
+            let raw = fixed(raws, pages, false, u16::from_le_bytes);
             Ok(ColumnValues::F32(
                 raw.into_iter().map(half_to_f32).collect(),
             ))
         }
         SplitReal16 => {
-            let raw = fixed(raws, bits, pages, true, le_u16)?;
+            let raw = fixed(raws, pages, true, u16::from_le_bytes);
             Ok(ColumnValues::F32(
                 raw.into_iter().map(half_to_f32).collect(),
             ))
@@ -340,29 +407,28 @@ pub fn read_column(
 
 /// Decode fixed-width little-endian elements from each page, unsplitting first
 /// when `split` is set.
-fn fixed<T>(
+///
+/// `N` is the element width in bytes, taken from `convert` (`i32::from_le_bytes`
+/// reads four); the caller has checked it against the column's bit width.
+fn fixed<T, const N: usize>(
     raws: &[Vec<u8>],
-    bits: u16,
     pages: &[PageInfo],
     split: bool,
-    convert: impl Fn(&[u8]) -> T,
-) -> Result<Vec<T>> {
-    let width = bits as usize / 8;
+    convert: impl Fn([u8; N]) -> T,
+) -> Vec<T> {
     let mut out = Vec::with_capacity(pages.iter().map(|p| p.num_elements as usize).sum());
     for (p, raw) in pages.iter().zip(raws) {
         let n = p.num_elements as usize;
         let unsplit_bytes;
         let bytes: &[u8] = if split {
-            unsplit_bytes = unsplit(raw, n, width);
+            unsplit_bytes = unsplit(raw, n, N);
             &unsplit_bytes
         } else {
             raw
         };
-        for chunk in bytes.chunks_exact(width).take(n) {
-            out.push(convert(chunk));
-        }
+        out.extend(bytes.as_chunks::<N>().0.iter().take(n).map(|c| convert(*c)));
     }
-    Ok(out)
+    out
 }
 
 /// Read bit-packed `bits`-wide unsigned values from each page, LSB-first within
@@ -418,37 +484,6 @@ fn half_to_f32(h: u16) -> f32 {
         sign | ((i32::from(exp) - 15 + 127).cast_unsigned() << 23) | (mant << 13)
     };
     f32::from_bits(bits)
-}
-
-fn le_i8(c: &[u8]) -> i8 {
-    c[0].cast_signed()
-}
-fn le_u8(c: &[u8]) -> u8 {
-    c[0]
-}
-fn le_i16(c: &[u8]) -> i16 {
-    i16::from_le_bytes(c.try_into().unwrap())
-}
-fn le_u16(c: &[u8]) -> u16 {
-    u16::from_le_bytes(c.try_into().unwrap())
-}
-fn le_i32(c: &[u8]) -> i32 {
-    i32::from_le_bytes(c.try_into().unwrap())
-}
-fn le_u32(c: &[u8]) -> u32 {
-    u32::from_le_bytes(c.try_into().unwrap())
-}
-fn le_i64(c: &[u8]) -> i64 {
-    i64::from_le_bytes(c.try_into().unwrap())
-}
-fn le_u64(c: &[u8]) -> u64 {
-    u64::from_le_bytes(c.try_into().unwrap())
-}
-fn le_f32(c: &[u8]) -> f32 {
-    f32::from_le_bytes(c.try_into().unwrap())
-}
-fn le_f64(c: &[u8]) -> f64 {
-    f64::from_le_bytes(c.try_into().unwrap())
 }
 
 #[cfg(test)]

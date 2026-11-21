@@ -37,6 +37,8 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod probes {
+    use std::fmt::Write as _;
+
     use oxiroot::fit::BinomialData;
     use oxiroot::plot::{
         Axes, Color, Colormap, CurveOpts, HAlign, Hist2dOpts, HistOpts, HistType, Style, TextOpts,
@@ -53,7 +55,7 @@ mod probes {
     /// Probe-pT and |η| bins.
     const PT_EDGES: [f64; 10] = [14.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 32.0, 40.0, 60.0];
     const ETA_EDGES: [f64; 3] = [0.0, 1.2, 2.4];
-    /// The true turn-on per |η| region: threshold, resolution (GeV), plateau.
+    /// The true turn-on per |η| region: threshold, resolution (`GeV`), plateau.
     const TRUE: [[f64; 3]; 2] = [[24.0, 2.0, 0.94], [24.5, 2.6, 0.88]];
     /// Z probes and background pairs per (pT, |η|) bin.
     const N_Z: usize = 3000;
@@ -185,7 +187,7 @@ mod probes {
             .column("m_mumu", mass)?
             .column("passed", passed)?;
         let mut out = DatasetWriter::create(&tree_path, "probes", Format::Tree)?;
-        out.write(&probes)?;
+        out.write(probes)?;
         out.finish()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "probes")?;
@@ -208,7 +210,7 @@ mod probes {
         let mut map = Hist::var(&PT_EDGES)
             .var(&ETA_EDGES)
             .double()
-            .to_root()
+            .to_root()?
             .named("efficiency_map")
             .titled("Trigger efficiency;probe p_{T} [GeV];probe |#eta|");
         map.track_sumw2();
@@ -219,7 +221,13 @@ mod probes {
         for p in PT_EDGES.windows(2) {
             let mut row = String::new();
             for (r, e) in ETA_EDGES.windows(2).enumerate() {
-                let new = |name: &str| Hist::reg(M_BINS, M_LO, M_HI).double().to_root().named(name);
+                let new = |name: &str| {
+                    Hist::reg(M_BINS, M_LO, M_HI)
+                        .double()
+                        .to_root()
+                        .unwrap()
+                        .named(name)
+                };
                 let (mut h_pass, mut h_fail) = (new("pass"), new("fail"));
                 for i in 0..pt.len() {
                     if (p[0]..p[1]).contains(&pt[i]) && (e[0]..e[1]).contains(&eta[i]) {
@@ -236,7 +244,7 @@ mod probes {
                 map.sumw2_mut().expect("error tracking is on")[cell] = err * err;
                 per_region[r].0.push(eps);
                 per_region[r].1.push(err);
-                row += &format!("   {eps:.4} ± {err:.4}");
+                let _ = write!(row, "   {eps:.4} ± {err:.4}"); // a String never fails
                 if p[0] == 24.0 && r == 0 {
                     shown = Some((h_pass, h_fail, pf, ff));
                 }
@@ -421,7 +429,13 @@ mod probes {
         for (r, ((eff, err), fit)) in per_region.iter().zip(&turn_ons).enumerate() {
             let color = [blue, red][r];
             let label = ["$|\\eta| < 1.2$", "$1.2 < |\\eta| < 2.4$"][r];
-            let g = Graph::with_errors(centres.clone(), eff.clone(), half.clone(), err.clone())?
+            let g = Graph::new(centres.clone(), eff.clone())
+                .and_then(|g| {
+                    g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                        ex: half.clone(),
+                        ey: err.clone(),
+                    })
+                })?
                 .named(["turn_on_barrel", "turn_on_endcap"][r]);
             ax.errorbar_with(
                 &g,
@@ -445,7 +459,11 @@ mod probes {
 
         // The toys' threshold pulls.
         let pull_hist = |name: &str, p: &[f64]| {
-            let mut h = Hist::reg(24, -4.0, 4.0).double().to_root().named(name);
+            let mut h = Hist::reg(24, -4.0, 4.0)
+                .double()
+                .to_root()
+                .unwrap()
+                .named(name);
             p.iter().for_each(|&v| h.fill(v));
             h
         };
@@ -475,8 +493,8 @@ mod probes {
             .add(&graphs[0])
             .add(&graphs[1])
             .add(&matched)
-            .write(Compression::Zstd(5))?;
-        let back = Hist2D::read_root(&FileReader::open(&results)?, "efficiency_map")?;
+            .write()?;
+        let back = FileReader::open(&results)?.get::<Hist2D>("efficiency_map")?;
         println!(
             "\n5. Results file {} (efficiency map: {} × {} bins read back)",
             results.display(),

@@ -40,7 +40,7 @@ just the lean, pure-Rust format core.
 
 | Feature | Default | Effect |
 |---------|:---:|--------|
-| `mmap` | — | Memory-mapped read path (`unsafe FileReader::open_mmap`) for large files; adds `memmap2`. Opt-in: the file must not change while mapped. `FileReader::open_ranged` reads lazily with no such contract. |
+| `mmap` | — | Memory-mapped read path (`unsafe MmapSource::open`, passed to `FileReader::from_source`) for large files; adds `memmap2`. Opt-in: the file must not change while mapped. `FileReader::open_ranged` reads lazily with no such contract. |
 | `rayon` | — | Adds the data-parallel histogram fill (`hist::fill_par`) and the parallel dataset and TTree reads (`Batches::parallel`, `BranchRead::parallel`); adds `rayon`. Opt-in, so nothing spawns threads unless you ask. |
 | `fit` | ✅ | Curve fitting (`oxiroot::fit`, `Hist1D::fit`) via the pure-Rust Minuit2 port; adds `minuit2`. |
 | `argmin` | ✅ | Gradient-free Nelder–Mead minimizer backend (`Minimizer::NelderMead`); implies `fit`, adds `argmin`. |

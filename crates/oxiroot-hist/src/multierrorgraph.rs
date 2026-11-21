@@ -14,9 +14,11 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{read_named, skip_versioned};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::{check_len, object_bytes_any};
+use crate::base::check_len;
+use crate::graph::read_basic_array;
 
 /// An (x, y) graph with asymmetric x errors and one or more layers of asymmetric
 /// y errors (ROOT `TGraphMultiErrors`).
@@ -46,7 +48,7 @@ pub struct MultiErrorGraph {
 
 impl MultiErrorGraph {
     /// Create a `MultiErrorGraph` with x errors and a first y-error layer.
-    /// Add further y-error layers with [`add_y_error`](Self::add_y_error).
+    /// Add further y-error layers with [`with_y_error`](Self::with_y_error).
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `y` or an error vector is not as long as `x`.
@@ -58,14 +60,14 @@ impl MultiErrorGraph {
         ex_high: Vec<f64>,
         ey_low: Vec<f64>,
         ey_high: Vec<f64>,
-    ) -> Result<MultiErrorGraph> {
+    ) -> Result<Self> {
         let n = x.len();
         check_len("TGraphMultiErrors y", n, y.len())?;
         check_len("TGraphMultiErrors ex_low", n, ex_low.len())?;
         check_len("TGraphMultiErrors ex_high", n, ex_high.len())?;
         check_len("TGraphMultiErrors ey_low", n, ey_low.len())?;
         check_len("TGraphMultiErrors ey_high", n, ey_high.len())?;
-        Ok(MultiErrorGraph {
+        Ok(Self {
             name: String::new(),
             title: String::new(),
             x,
@@ -82,7 +84,7 @@ impl MultiErrorGraph {
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `ey_low` or `ey_high` is not as long as `x`.
-    pub fn add_y_error(mut self, ey_low: Vec<f64>, ey_high: Vec<f64>) -> Result<Self> {
+    pub fn with_y_error(mut self, ey_low: Vec<f64>, ey_high: Vec<f64>) -> Result<Self> {
         check_len("TGraphMultiErrors ey_low", self.x.len(), ey_low.len())?;
         check_len("TGraphMultiErrors ey_high", self.x.len(), ey_high.len())?;
         self.ey_low.push(ey_low);
@@ -91,35 +93,31 @@ impl MultiErrorGraph {
     }
 
     /// Number of points (`fNpoints`).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.x.len().min(self.y.len())
     }
 
     /// Whether the graph has no points.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Number of independent y-error layers (`fNYErrors`).
+    #[must_use]
     pub fn n_y_errors(&self) -> usize {
         self.ey_low.len()
     }
 }
 
-fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
-    let present = r.u8()?;
-    if present == 0 {
-        return Ok(Vec::new());
-    }
-    (0..n).map(|_| r.be_f64()).collect()
-}
-
 /// Read an *objectwise* `vector<TArrayD>`: `[bc][ver]`, a count, then one
 /// `TArrayD` (`fN` + `fN` doubles) per layer.
-fn read_vector_tarrayd(r: &mut RBuffer) -> Result<Vec<Vec<f64>>> {
+fn read_vector_tarrayd(r: &mut RBuffer<'_>) -> Result<Vec<Vec<f64>>> {
     let v = r.read_version()?;
     let count = usize::saturating_from(r.be_i32()?.max(0));
-    let mut layers = Vec::with_capacity(count);
+    // `count` comes from the file; every layer takes at least its 4-byte length.
+    let mut layers = Vec::with_capacity(r.bounded_capacity(count, 4));
     for _ in 0..count {
         let fnn = usize::saturating_from(r.be_i32()?.max(0));
         let arr: Vec<f64> = (0..fnn).map(|_| r.be_f64()).collect::<Result<_>>()?;
@@ -174,18 +172,11 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<Mu
     })
 }
 
-/// Read a `MultiErrorGraph` named `name`.
-pub(crate) fn read_tgraphmultierrors(file: &FileReader, name: &str) -> Result<MultiErrorGraph> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tgraphmultierrors(name, &class, &object)
-}
+impl ReadRoot for MultiErrorGraph {
+    const CLASS: &'static str = "TGraphMultiErrors";
 
-/// Read a `MultiErrorGraph` from subdirectory `subdir`.
-pub(crate) fn read_tgraphmultierrors_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<MultiErrorGraph> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tgraphmultierrors(name, &class, &object)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS)
+            .then(|| decode_tgraphmultierrors(object.name, object.class, object.bytes))
+    }
 }

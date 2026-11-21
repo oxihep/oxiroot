@@ -21,26 +21,32 @@ pub struct Datime(pub u32);
 
 impl Datime {
     /// Calendar year.
+    #[must_use]
     pub fn year(self) -> u32 {
         (self.0 >> 26) + 1995
     }
     /// Month, 1..=12.
+    #[must_use]
     pub fn month(self) -> u32 {
         (self.0 >> 22) & 0xF
     }
     /// Day of month, 1..=31.
+    #[must_use]
     pub fn day(self) -> u32 {
         (self.0 >> 17) & 0x1F
     }
     /// Hour, 0..=23.
+    #[must_use]
     pub fn hour(self) -> u32 {
         (self.0 >> 12) & 0x1F
     }
     /// Minute, 0..=59.
+    #[must_use]
     pub fn minute(self) -> u32 {
         (self.0 >> 6) & 0x3F
     }
     /// Second, 0..=59.
+    #[must_use]
     pub fn second(self) -> u32 {
         self.0 & 0x3F
     }
@@ -78,7 +84,7 @@ pub struct Key {
 impl Key {
     /// Read a key header from `r`, leaving the cursor just past the header
     /// (exactly `key_len` bytes from where it started).
-    pub fn read(r: &mut RBuffer) -> Result<Key> {
+    pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let start = r.pos();
         let nbytes = r.be_i32()?;
         let version = r.be_u16()?;
@@ -97,7 +103,7 @@ impl Key {
         // The header occupies exactly `key_len` bytes; realign for the caller.
         r.seek(start + key_len as usize)?;
 
-        Ok(Key {
+        Ok(Self {
             nbytes,
             version,
             obj_len,
@@ -131,11 +137,13 @@ impl Key {
     }
 
     /// Whether this key marks deleted space (negative byte count).
+    #[must_use]
     pub fn is_deleted(&self) -> bool {
         self.nbytes < 0
     }
 
     /// Total bytes occupied by this key record (header + payload).
+    #[must_use]
     pub fn total_bytes(&self) -> u32 {
         self.nbytes.unsigned_abs()
     }
@@ -143,12 +151,14 @@ impl Key {
     /// Length of the (possibly compressed) object payload on disk. Saturates to
     /// 0 for a malformed key whose `key_len` exceeds its total byte count
     /// (rather than underflowing); [`payload`](Key::payload) rejects such keys.
+    #[must_use]
     pub fn payload_len(&self) -> usize {
         self.total_bytes().saturating_sub(u32::from(self.key_len)) as usize
     }
 
     /// Whether the object payload is stored uncompressed (on-disk size equals
     /// the uncompressed object length).
+    #[must_use]
     pub fn is_uncompressed(&self) -> bool {
         self.payload_len() == self.obj_len as usize
     }
@@ -156,6 +166,7 @@ impl Key {
     /// Byte range of the (possibly compressed) object payload within the file.
     /// Unvalidated — prefer [`payload`](Key::payload), which bounds-checks
     /// against the actual buffer. Kept for callers operating on trusted data.
+    #[must_use]
     pub fn payload_range(&self) -> Range<usize> {
         let start = usize::saturating_from(self.seek_key) + self.key_len as usize;
         start..start + self.payload_len()

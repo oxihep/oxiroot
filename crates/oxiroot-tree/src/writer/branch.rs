@@ -11,7 +11,7 @@ use crate::value::BranchValues;
 /// scalars, [`Branch::array_f64`] … for fixed-size arrays (`x[N]`),
 /// [`Branch::jagged_f64`] … for C-style variable-length arrays (`x[n]`),
 /// [`Branch::vector_f64`] … for `std::vector<T>`, [`Branch::string`] for
-/// strings — or [`BranchRead::to_branch`](crate::BranchRead::to_branch) to
+/// strings — or [`BranchRead::to_branch`](crate::raw::BranchRead::to_branch) to
 /// write back a branch as it was read.
 pub struct Branch {
     /// Branch (and leaf) name.
@@ -237,10 +237,10 @@ impl Branch {
     /// This fixed-size array branch with width `n`: every row must hold `n`
     /// values. Rows give the width themselves, so this matters for a branch
     /// with no rows, such as the first, empty batch that fixes a
-    /// [`TreeWriter`](crate::TreeWriter)'s schema. Other kinds of branch are
+    /// [`TreeWriter`](crate::raw::TreeWriter)'s schema. Other kinds of branch are
     /// returned unchanged.
     #[must_use]
-    pub fn with_width(mut self, n: usize) -> Branch {
+    pub fn with_width(mut self, n: usize) -> Self {
         if let BranchKind::Array(width) = &mut self.kind {
             *width = n;
         }
@@ -248,8 +248,8 @@ impl Branch {
     }
 
     /// A `std::vector<std::string>` branch (a `TBranchElement`).
-    pub fn vector_string(name: impl Into<String>, values: Vec<Vec<String>>) -> Branch {
-        Branch {
+    pub fn vector_string(name: impl Into<String>, values: Vec<Vec<String>>) -> Self {
+        Self {
             name: name.into(),
             values: BranchValues::VecStr(values),
             kind: BranchKind::StlVector,
@@ -257,8 +257,8 @@ impl Branch {
     }
 
     /// A string branch (`TLeafC`).
-    pub fn string(name: impl Into<String>, values: Vec<String>) -> Branch {
-        Branch {
+    pub fn string(name: impl Into<String>, values: Vec<String>) -> Self {
+        Self {
             name: name.into(),
             values: BranchValues::Str(values),
             kind: BranchKind::Plain,
@@ -273,8 +273,8 @@ impl Branch {
         name: impl Into<String>,
         class_name: impl Into<String>,
         members: Vec<SplitMember>,
-    ) -> Branch {
-        Branch {
+    ) -> Self {
+        Self {
             name: name.into(),
             values: BranchValues::I32(Vec::new()),
             kind: BranchKind::Split(SplitSpec {
@@ -309,7 +309,7 @@ pub(super) fn member_type_info(values: &BranchValues) -> (i32, &'static str, i32
 pub(super) fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
     use BranchValues::*;
     macro_rules! lens {
-        ($r:expr_2021) => {
+        ($r:expr) => {
             $r.iter().map(|x| i32::saturating_from(x.len())).collect()
         };
     }

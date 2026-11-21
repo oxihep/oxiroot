@@ -56,14 +56,14 @@ impl Batch {
     ///
     /// A Polars type with no column counterpart (a date, a categorical, a
     /// decimal, …).
-    pub fn from_polars(frame: &DataFrame) -> Result<Batch> {
+    pub fn from_polars(frame: &DataFrame) -> Result<Self> {
         let names: Vec<String> = frame
             .get_column_names()
             .into_iter()
-            .map(|n| n.to_string())
+            .map(polars::prelude::PlSmallStr::to_string)
             .collect();
         let arrays = frame.rechunk_to_arrow(CompatLevel::oldest());
-        let mut out = Batch::new();
+        let mut out = Self::new();
         for (name, array) in names.into_iter().zip(arrays) {
             let column = from_array(array.as_ref(), &name)?;
             out.insert(name, column)?;

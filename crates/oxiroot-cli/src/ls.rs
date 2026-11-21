@@ -164,7 +164,7 @@ fn collect(
     }
 }
 
-/// The entry count of a `TTree`/RNTuple key named `leaf` inside `dir_path`
+/// The entry count of a `TTree`/`RNTuple` key named `leaf` inside `dir_path`
 /// (`""` for the root directory), or `None` for any other class.
 fn entry_count(file: &FileReader, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
     match classify(class) {
@@ -179,17 +179,17 @@ fn open_tree<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<Tre
     if dir_path.is_empty() {
         TreeReader::open(file, leaf)
     } else {
-        TreeReader::open_in(file, dir_path, leaf)
+        TreeReader::open(file, &format!("{}/{}", dir_path, leaf))
     }
     .ok()
 }
 
-/// Open an RNTuple from the root directory or a subdirectory (`Ok`s only).
+/// Open an `RNTuple` from the root directory or a subdirectory (`Ok`s only).
 fn open_ntuple<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<NtupleReader<'f>> {
     if dir_path.is_empty() {
         NtupleReader::open(file, leaf)
     } else {
-        NtupleReader::open_in(file, dir_path, leaf)
+        NtupleReader::open(file, &format!("{}/{}", dir_path, leaf))
     }
     .ok()
 }

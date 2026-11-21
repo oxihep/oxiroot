@@ -1,4 +1,4 @@
-//! The RNTuple anchor — the small `ROOT::RNTuple` object stored in a TFile key
+//! The `RNTuple` anchor — the small `ROOT::RNTuple` object stored in a `TFile` key
 //! that locates the header and footer envelopes.
 //!
 //! In the key the anchor is wrapped in ROOT's `{byte-count, version}` object
@@ -19,7 +19,7 @@ const ANCHOR_FIELDS_LEN: usize = 64;
 const ANCHOR_CLASS_VERSION: u16 = 2;
 
 /// The `TStreamerInfo` entry ROOT writes for the anchor class in every file that
-/// holds an RNTuple.
+/// holds an `RNTuple`.
 pub(crate) fn anchor_streamer_class() -> ClassDef<'static> {
     let short = |name| basic(name, 12, 2, "unsigned short");
     let long = |name| basic(name, 17, 8, "ULong64_t");
@@ -43,7 +43,7 @@ pub(crate) fn anchor_streamer_class() -> ClassDef<'static> {
     }
 }
 
-/// A parsed RNTuple anchor.
+/// A parsed `RNTuple` anchor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RNTupleAnchor {
     /// Format version epoch.
@@ -66,14 +66,14 @@ pub struct RNTupleAnchor {
     pub nbytes_footer: u64,
     /// Uncompressed size of the footer envelope.
     pub len_footer: u64,
-    /// Maximum RBlob (key) payload size.
+    /// Maximum `RBlob` (key) payload size.
     pub max_key_size: u64,
 }
 
 impl RNTupleAnchor {
     /// Parse and checksum-verify the anchor from the decompressed Key object
     /// bytes (which begin with ROOT's object header).
-    pub fn read(object: &[u8]) -> Result<RNTupleAnchor> {
+    pub fn read(object: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(object);
         let header = r.read_version()?; // ROOT {byte-count, class version}
 
@@ -118,7 +118,7 @@ impl RNTupleAnchor {
             });
         }
 
-        Ok(RNTupleAnchor {
+        Ok(Self {
             version_epoch,
             version_major,
             version_minor,

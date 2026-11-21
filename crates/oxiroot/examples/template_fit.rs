@@ -1,4 +1,4 @@
-//! A template fit with systematic uncertainties — the HistFactory recipe of a
+//! A template fit with systematic uncertainties — the `HistFactory` recipe of a
 //! search — from ROOT histograms to the plots a search shows:
 //!
 //! 1. **Write the inputs** to a ROOT file, as a production step would: per
@@ -105,6 +105,7 @@ mod templates {
         let mut h = Hist::reg(values.len(), 0.0, 1.0)
             .double()
             .to_root()
+            .unwrap()
             .named(name)
             .titled(format!("{name};discriminant;Events"));
         h.contents_mut()[1..=values.len()].copy_from_slice(values);
@@ -191,10 +192,10 @@ mod templates {
             writer
                 .add(&histogram("SR_data", &sr_data, None))
                 .add(&histogram("CR_data", &cr_data, None))
-                .write(Compression::Zstd(5))?;
+                .write()?;
         }
         let file = FileReader::open(&inputs)?;
-        let read = |name: &str| Hist1D::read_root(&file, name);
+        let read = |name: &str| file.get::<Hist1D>(name);
         println!(
             "1. Wrote and read back the templates and data — {}",
             inputs.display()
@@ -372,12 +373,12 @@ mod templates {
                 .collect::<Vec<_>>(),
             FillOpts::new().color(Color::BLACK).alpha(0.25),
         )?;
-        lower.errorbar(&Graph::with_errors(
-            centres,
-            ratio_y,
-            vec![0.0; SR_BINS],
-            ratio_e,
-        )?);
+        lower.errorbar(&Graph::new(centres, ratio_y).and_then(|g| {
+            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                ex: vec![0.0; SR_BINS],
+                ey: ratio_e,
+            })
+        })?);
         lower.axhline_with(1.0, CurveOpts::new().dashed(vec![4.0, 3.0]));
         lower
             .ylim(0.6..1.4)
@@ -408,8 +409,8 @@ mod templates {
             .add(&h_sig)
             .add(&h_tt)
             .add(&h_wj)
-            .write(Compression::Zstd(5))?;
-        let back = Hist1D::read_root(&FileReader::open(&postfit)?, "SR_postfit_ttbar")?;
+            .write()?;
+        let back = FileReader::open(&postfit)?.get::<Hist1D>("SR_postfit_ttbar")?;
         println!(
             "\n5. Post-fit histograms in {} (ttbar: {:.1} events read back)",
             postfit.display(),

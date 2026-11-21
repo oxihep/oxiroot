@@ -1,4 +1,4 @@
-//! Merging histogram files — the histogram half of [`merge_files`](super::merge_files).
+//! Merging histogram files — the histogram half of a [`Merger`](super::Merger).
 //!
 //! [`merge_histogram_files`] combines several ROOT files whose keys are all
 //! histogram-family objects. Everything ROOT's `hadd` merges is merged the same
@@ -14,8 +14,8 @@
 //!
 //! The output is written through the same typed [`FileWriter`] builder as any
 //! other oxiroot write, so its `TStreamerInfo` matches the bytes exactly (no
-//! reliance on the inputs' streamer versions). [`merge_files`](super::merge_files)
-//! uses it when a fileset contains no `TTree` or RNTuple.
+//! reliance on the inputs' streamer versions). [`Merger`](super::Merger)
+//! uses it when a fileset contains no `TTree` or `RNTuple`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -25,16 +25,17 @@ use oxiroot_io_core::{Compression, Error, FileReader, Result};
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
 use oxiroot_hist::{
-    Efficiency, FileWriter, Graph, Graph2D, GraphStack, Hist1D, Hist2D, Hist3D, HistStack,
-    Mergeable, MultiErrorGraph, ObjMap, ObjString, Parameter, PolyHist, Profile1D, Profile2D,
-    Profile3D, ReadRoot, SparseHist, WriteRoot,
+    Efficiency, Graph, Graph2D, GraphStack, Hist1D, Hist2D, Hist3D, HistStack, Mergeable,
+    MultiErrorGraph, PolyHist, Profile1D, Profile2D, Profile3D, SparseHist,
 };
 use oxiroot_hist_func::{Func1D, Func2D, Func3D};
+use oxiroot_io_core::{FileWriter, ObjMap, ObjString, Parameter, WriteRoot};
 
-/// What [`merge_histogram_files`] did with each key: the names that were summed
+/// What a histogram merge did with each key: the names that were summed
 /// bin-by-bin, the names copied from the first file, and the `(name, reason)`
 /// pairs skipped because oxiroot cannot merge or reproduce that class.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct HistMergeOutcome {
     /// Keys summed across all inputs (`Hist1D`/`Hist2D`/`Hist3D` and the 1-, 2- and 3-D
     /// profiles).
@@ -77,7 +78,7 @@ fn summable_hist_dim(class: &str) -> Option<u8> {
 /// read from any input, are recorded in the returned
 /// [`HistMergeOutcome::skipped`] rather than erroring; a key is never written as
 /// a partial sum.
-pub fn merge_histogram_files(
+pub(crate) fn merge_histogram_files(
     output: &Path,
     inputs: &[FileReader],
     compression: Compression,
@@ -104,7 +105,7 @@ pub fn merge_histogram_files(
         // Inputs that hold this key with a matching class, in file order.
         let contributors: Vec<&FileReader> = inputs
             .iter()
-            .filter(|f| f.key(name).is_some_and(|k| k.class_name == *class))
+            .filter(|f| f.key(name).is_ok_and(|k| k.class_name == *class))
             .collect();
         if contributors.is_empty() {
             continue;
@@ -123,11 +124,11 @@ pub fn merge_histogram_files(
         }
     }
 
-    let mut file = FileWriter::create(output);
+    let mut file = FileWriter::create(output).compression(compression);
     for obj in &objects {
         file = file.add(&**obj);
     }
-    file.write(compression)?;
+    file.write()?;
 
     Ok(outcome)
 }
@@ -154,7 +155,7 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
             let mut acc: Option<$T> = None;
             let mut unreadable = None;
             for (i, f) in contributors.iter().enumerate() {
-                let h = match <$T>::read_root(f, name) {
+                let h = match f.get::<$T>(name) {
                     Ok(h) => h,
                     Err(e) => {
                         unreadable = Some(format!(
@@ -184,7 +185,7 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
     // odd object never aborts the whole merge.
     macro_rules! copied {
         ($T:ty) => {
-            match <$T>::read_root(contributors[0], name) {
+            match contributors[0].get::<$T>(name) {
                 Ok(obj) => Built::Copied(Box::new(obj)),
                 Err(e) => Built::Skipped(format!("cannot read {}: {e}", stringify!($T))),
             }

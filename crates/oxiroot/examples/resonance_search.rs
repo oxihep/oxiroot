@@ -44,7 +44,7 @@ mod search {
     use oxiroot::prelude::*;
     use oxiroot::stat::{chi_square_prob, pvalue_from_significance};
 
-    /// The mass window, its binning (GeV) and the detector resolution.
+    /// The mass window, its binning (`GeV`) and the detector resolution.
     const LO: f64 = 100.0;
     const HI: f64 = 160.0;
     const BINS: usize = 120;
@@ -155,7 +155,7 @@ mod search {
         }
         let tree_path = dir.join("diphotons.root");
         let mut out = DatasetWriter::create(&tree_path, "diphotons", Format::Tree)?;
-        out.write(&Batch::new().column("m_gg", masses)?)?;
+        out.write(Batch::new().column("m_gg", masses)?)?;
         out.finish()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "diphotons")?;
@@ -163,7 +163,7 @@ mod search {
         let m_gg = data.values::<f32>("m_gg")?;
         let mut hist = Hist::reg(BINS, LO, HI)
             .double()
-            .to_root()
+            .to_root()?
             .named("m_gg")
             .titled("Diphoton mass;m_{#gamma#gamma} [GeV];Events / 0.5 GeV");
         for &m in m_gg {
@@ -317,14 +317,19 @@ mod search {
         main.ylabel("Events / 0.5 GeV")
             .hep_label("Demo", "Simulation")
             .legend();
-        let centres: Vec<f64> = (1..=BINS).map(|i| hist.bin_center(i)).collect();
+        let centres: Vec<f64> = (1..=BINS).map(|i| hist.xaxis().bin_center(i)).collect();
         let residual: Vec<f64> = centres
             .iter()
             .enumerate()
             .map(|(i, &m)| hist.contents()[i + 1] - bkg_curve.eval(m))
             .collect();
         let errors: Vec<f64> = (1..=BINS).map(|i| hist.bin_error(i)).collect();
-        let residuals = Graph::with_errors(centres.clone(), residual, vec![0.0; BINS], errors)?;
+        let residuals = Graph::new(centres.clone(), residual).and_then(|g| {
+            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                ex: vec![0.0; BINS],
+                ey: errors,
+            })
+        })?;
         lower.errorbar(&residuals);
         lower.function_with(
             |m| fit.params[0] * peak(m, fit.params[1]),
@@ -402,15 +407,16 @@ mod search {
                 .map(|l| l.expected[k.1] - l.expected[2])
                 .collect();
             let zeros = vec![0.0; limit_masses.len()];
-            Ok(Graph::with_asymm_errors(
-                limit_masses.clone(),
-                median,
-                zeros.clone(),
-                zeros,
-                low,
-                high,
-            )?
-            .named(name))
+            Ok(Graph::new(limit_masses.clone(), median)
+                .and_then(|g| {
+                    g.with_errors(oxiroot::hist::GraphErrors::Asymmetric {
+                        ex_low: zeros.clone(),
+                        ex_high: zeros,
+                        ey_low: low,
+                        ey_high: high,
+                    })
+                })?
+                .named(name))
         };
         let results = dir.join("search_results.root");
         FileWriter::create(&results)
@@ -422,9 +428,9 @@ mod search {
             .add(&band((1, 3), "limit_expected_1sigma")?)
             .add(&band((0, 4), "limit_expected_2sigma")?)
             .add(&Graph::new(scan.clone(), p0)?.named("local_p0"))
-            .write(Compression::Zstd(5))?;
+            .write()?;
         let check = FileReader::open(&results)?;
-        let back = Graph::read_root(&check, "limit_observed")?;
+        let back = check.get::<Graph>("limit_observed")?;
         println!(
             "\n6. Results file {} — m_gg and {} limit points read back",
             results.display(),

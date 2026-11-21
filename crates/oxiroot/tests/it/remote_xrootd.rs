@@ -1,6 +1,6 @@
-//! Remote reads over the XRootD `root://` protocol (`xrootd` feature).
+//! Remote reads over the `XRootD` `root://` protocol (`xrootd` feature).
 //!
-//! A tiny in-process XRootD server speaks enough of the binary protocol —
+//! A tiny in-process `XRootD` server speaks enough of the binary protocol —
 //! handshake, protocol (with a switch to TLS), login, `unix` and `ztn` (token)
 //! auth, open, fstat, read, vector read, close — to serve a fixture
 //! `.root` file, so the client is tested hermetically (no network). The wire
@@ -82,7 +82,7 @@ struct Counts {
     auths: Mutex<Vec<([u8; 4], Vec<u8>)>>,
 }
 
-/// Serve `data` as a single XRootD data server on a background thread.
+/// Serve `data` as a single `XRootD` data server on a background thread.
 fn serve(data: Vec<u8>) -> String {
     serve_as(data, Mode::Normal)
 }
@@ -349,7 +349,7 @@ fn an_oversized_response_is_an_error_not_an_allocation() {
 /// temporary file and returned as bytes.
 fn many_basket_tree() -> Vec<u8> {
     use crate::support::write_tree_file_baskets;
-    use oxiroot::tree::Branch;
+    use oxiroot::tree::raw::Branch;
     // A directory of its own per call: tests run in parallel and each removes
     // its directory when done.
     static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -532,7 +532,7 @@ fn xrootd_live_eospublic_reads_a_tree() {
     );
 }
 
-/// An RNTuple over several clusters reads the same over `root://`, its pages
+/// An `RNTuple` over several clusters reads the same over `root://`, its pages
 /// fetched by vector reads.
 #[test]
 fn reads_a_multi_cluster_rntuple_over_xrootd() {

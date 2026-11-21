@@ -3,8 +3,8 @@
 //! Supports scalar, fixed-size array (`x[N]`), variable-length / jagged
 //! (`x[n<name>]`, with an auto-generated count branch and an `fLeafCount`
 //! reference), string (`TLeafC`), and `std::vector<T>` (`TBranchElement`)
-//! branches. Mirrors the layout ROOT/uproot write (TTree v20, TBranch v13,
-//! TLeaf* v1, TBranchElement v10) so the result reads back in ROOT, uproot, and
+//! branches. Mirrors the layout ROOT/uproot write (`TTree` v20, `TBranch` v13,
+//! `TLeaf`* v1, `TBranchElement` v10) so the result reads back in ROOT, uproot, and
 //! this crate. The embedded `TStreamerInfo` ([`crate::streamer_gen`]) makes the
 //! file self-describing.
 
@@ -90,7 +90,7 @@ fn check_branches(branches: &[Branch]) -> Result<()> {
 }
 
 /// The `TStreamerInfo` entries a tree with these branches needs: the canonical
-/// TTree hierarchy (including the TBranchElement/TLeafElement `std::vector`
+/// `TTree` hierarchy (including the TBranchElement/TLeafElement `std::vector`
 /// streamers), then each split branch's struct.
 fn tree_streamer_classes(branches: &[Branch]) -> Vec<ClassDef<'_>> {
     let mut classes = crate::streamer_gen::tree_classes();
@@ -122,7 +122,7 @@ fn write_tree_records<W: Write + Seek>(
         }
         eff.push(b);
     }
-    let n_entries = eff.first().map(|b| b.n_entries()).unwrap_or(0);
+    let n_entries = eff.first().map_or(0, |b| b.n_entries());
 
     let basket_groups: Vec<Vec<BasketRec>> = eff
         .iter()
@@ -259,7 +259,7 @@ mod tests {
         }
         let f = FileReader::from_bytes(bytes).unwrap();
         let mut out = Vec::new();
-        walk(&f.get_value("T").unwrap(), &mut out);
+        walk(&f.get::<Value>("T").unwrap(), &mut out);
         out
     }
 
@@ -301,11 +301,11 @@ mod tests {
         .collect();
 
         let one_shot =
-            tree_bytes("t.root", "T", &all, Compression::None, 0, KSTART_BIG_FILE).unwrap();
+            tree_bytes("t.root", "T", &all, Compression::Stored, 0, KSTART_BIG_FILE).unwrap();
         assert_eq!(leaf_ranges(one_shot), expected, "one-shot writer");
 
         let mut w =
-            TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::None).unwrap();
+            TreeWriter::new(Cursor::new(Vec::new()), "t.root", "T", Compression::Stored).unwrap();
         w.write_batch(&first()).unwrap();
         w.write_batch(&second()).unwrap();
         assert_eq!(
@@ -344,7 +344,7 @@ mod tests {
         assert!(!FileReader::from_bytes(small).unwrap().header().is_big());
 
         // Every branch kind reads back from the big form.
-        let bytes = tree_bytes("t.root", "T", &branches(), Compression::None, 2, 0).unwrap();
+        let bytes = tree_bytes("t.root", "T", &branches(), Compression::Stored, 2, 0).unwrap();
         let f = FileReader::from_bytes(bytes).unwrap();
         assert!(f.header().is_big());
         let t = TreeReader::open(&f, "T").unwrap();
@@ -369,7 +369,7 @@ mod tests {
             "t.root",
             "T",
             &[Branch::f64(name.as_str(), vec![0.5, 1.5])],
-            Compression::None,
+            Compression::Stored,
             1,
             KSTART_BIG_FILE,
         )

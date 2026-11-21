@@ -123,23 +123,23 @@ fn main() -> oxiroot::Result<()> {
     )?;
 
     // Beyond listing, the high-level accessors make targeted look-ups trivial.
-    // `key()` returns the newest cycle of a name; `Dataset::open_in` resolves an
+    // `key()` returns the newest cycle of a name; a path resolves an
     // object several directories deep — the sort of thing `oxroot ls -l` reports.
     let file = FileReader::open(nested_path)?;
-    if let Some(top) = file.key("cal") {
+    if let Ok(top) = file.key("cal") {
         println!(
             "newest cycle of top-level `{}` is cycle {} ({})",
             top.name, top.cycle, top.class_name,
         );
     }
-    let events = Dataset::open_in(&file, "cal/run2", "Events")?;
+    let events = Dataset::open(&file, "cal/run2/Events")?;
     println!(
         "resolved deeply-nested TTree `cal/run2/Events`: {} entries",
         events.entries(),
     );
 
     // --- Generic object reader: decode ANY class from its TStreamerInfo. -------
-    // `get_value` returns a dynamic `Value` tree driven entirely by the file's
+    // `get::<Value>` returns a dynamic `Value` tree driven entirely by the file's
     // `TStreamerInfo` — no typed model (Hist1D/Graph/…) required. This is what lets
     // oxiroot inspect arbitrary classes (rootprint-style); an undecodable member
     // becomes `Value::Unsupported` instead of failing.
@@ -147,12 +147,11 @@ fn main() -> oxiroot::Result<()> {
         env!("CARGO_MANIFEST_DIR"),
         "/../../fixtures/analysis.root"
     ))?;
-    let h = file.get_value("h")?; // a TH1D, read purely from its streamer info
+    let h = file.get::<Value>("h")?; // a TH1D, read purely from its streamer info
     let bins: Vec<f64> = h
         .get("fArray")
         .and_then(Value::as_array)
-        .map(|a| a.iter().take(5).filter_map(Value::as_f64).collect())
-        .unwrap_or_default();
+        .map_or_default(|a| a.iter().take(5).filter_map(Value::as_f64).collect());
     println!(
         "\ngeneric read of `h` ({}): title = {:?}, x-bins = {}, first cells = {bins:?}",
         h.class().unwrap_or("?"),

@@ -1,14 +1,13 @@
-//! `oxroot show` — the structure of a `TTree` or RNTuple.
+//! `oxroot show` — the structure of a `TTree` or `RNTuple`.
 
 use clap::Args as ClapArgs;
 use oxiroot::FileReader;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::tree::{BranchValues, LeafType, TreeReader};
+use oxiroot::tree::raw::BranchValues;
+use oxiroot::tree::{LeafType, TreeReader};
 
 use crate::json::Json;
-use crate::util::{
-    CmdResult, Kind, Table, classify, leaf_type_name, locate_class, parse_spec, split_obj,
-};
+use crate::util::{CmdResult, Kind, Table, classify, leaf_type_name, parse_spec};
 
 /// Arguments for `oxroot show`.
 #[derive(ClapArgs)]
@@ -22,12 +21,13 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("show needs an object: `file.root:name`")?;
     let file = crate::util::open_root(&path)?;
-    let (subdir, name) = split_obj(&obj);
-    let class = locate_class(&file, subdir, name)?;
+    let path = obj.as_str();
+    let key = file.key(path)?;
+    let (name, class) = (key.name.as_str(), key.class_name.clone());
 
     match classify(&class) {
-        Kind::Tree => show_tree(&file, subdir, name, json),
-        Kind::RNtuple => show_rntuple(&file, subdir, name, json),
+        Kind::Tree => show_tree(&file, path, name, json),
+        Kind::RNtuple => show_rntuple(&file, path, name, json),
         _ => {
             if json {
                 let out = Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]);
@@ -42,11 +42,8 @@ pub fn run(args: Args, json: bool) -> CmdResult {
 }
 
 /// Show a `TTree`'s branches, their types, and any unreadable branches.
-fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
-    let tree = match subdir {
-        None => TreeReader::open(file, name)?,
-        Some(dir) => TreeReader::open_in(file, dir, name)?,
-    };
+fn show_tree(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult {
+    let tree = TreeReader::open(file, path)?;
     let mut branches = Vec::new();
     for b in tree.branch_names() {
         branches.push((b.to_string(), branch_type_label(&tree, b)));
@@ -98,20 +95,16 @@ fn show_tree(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) ->
     Ok(())
 }
 
-/// Show an RNTuple's top-level fields and their C++ types.
-fn show_rntuple(file: &FileReader, subdir: Option<&str>, name: &str, json: bool) -> CmdResult {
-    let ntuple = match subdir {
-        None => NtupleReader::open(file, name)?,
-        Some(dir) => NtupleReader::open_in(file, dir, name)?,
-    };
+/// Show an `RNTuple`'s top-level fields and their C++ types.
+fn show_rntuple(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult {
+    let ntuple = NtupleReader::open(file, path)?;
     let descriptors = &ntuple.header().fields;
     let mut fields = Vec::new();
     for f in ntuple.field_names() {
         let ty = descriptors
             .iter()
             .find(|fd| fd.name == f)
-            .map(|fd| fd.type_name.clone())
-            .unwrap_or_default();
+            .map_or_default(|fd| fd.type_name.clone());
         fields.push((f.to_string(), ty));
     }
 

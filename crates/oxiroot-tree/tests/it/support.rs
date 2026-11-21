@@ -9,7 +9,8 @@ use std::path::Path;
 use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use oxiroot_io_core::streamer_gen::ClassDef;
 use oxiroot_io_core::{Compression, Result, WriteInto};
-use oxiroot_tree::{Branch, raw};
+use oxiroot_tree::raw;
+use oxiroot_tree::raw::Branch;
 
 fn bytes(
     file_name: &str,
@@ -83,15 +84,17 @@ pub struct TreeObject {
 }
 
 impl TreeObject {
-    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> TreeObject {
-        TreeObject {
+    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> Self {
+        Self {
             name: name.into(),
             branches,
         }
     }
+}
 
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        write_tree_file(path, &self.name, &self.branches, compression)
+impl oxiroot_io_core::Storable for TreeObject {
+    fn into_stored(self) -> oxiroot_io_core::Stored {
+        oxiroot_io_core::Stored::records(self)
     }
 }
 

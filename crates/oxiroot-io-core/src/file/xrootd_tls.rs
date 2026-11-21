@@ -1,4 +1,4 @@
-//! TLS and token authentication for the XRootD client (the `xrootd-tls`
+//! TLS and token authentication for the `XRootD` client (the `xrootd-tls`
 //! feature).
 //!
 //! A client that can do TLS says so in its `kXR_protocol` request
@@ -29,7 +29,7 @@ use crate::error::{Error, Result};
 /// Where grid CA certificates live when `$X509_CERT_DIR` is not set.
 const GRID_CA_DIR: &str = "/etc/grid-security/certificates";
 
-/// Options for opening a file over XRootD: the bearer token and the CAs to
+/// Options for opening a file over `XRootD`: the bearer token and the CAs to
 /// trust (the `xrootd-tls` feature).
 ///
 /// The defaults find both on their own: the token from the environment the
@@ -55,14 +55,14 @@ pub struct XrootdOptions {
 impl XrootdOptions {
     /// The defaults: token and CAs found from the environment.
     #[must_use]
-    pub fn new() -> XrootdOptions {
-        XrootdOptions::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Authenticate with this bearer token (surrounding whitespace is ignored)
     /// instead of looking for one in the environment.
     #[must_use]
-    pub fn token(mut self, token: impl Into<String>) -> XrootdOptions {
+    pub fn token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
@@ -70,7 +70,7 @@ impl XrootdOptions {
     /// Trust the CA certificates (PEM) in this directory, besides the Mozilla
     /// root store, instead of `$X509_CERT_DIR`.
     #[must_use]
-    pub fn ca_dir(mut self, dir: impl Into<PathBuf>) -> XrootdOptions {
+    pub fn ca_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.ca_dir = Some(dir.into());
         self
     }
@@ -150,7 +150,7 @@ fn euid() -> Option<u32> {
 }
 
 /// Read a token file: `Ok(None)` if it does not exist or is blank. Like the
-/// XRootD client, refuse a file that others can read.
+/// `XRootD` client, refuse a file that others can read.
 fn read_token_file(path: &Path) -> Result<Option<String>> {
     let meta = match std::fs::metadata(path) {
         Ok(m) => m,
@@ -212,7 +212,7 @@ pub(super) fn ztn_credential(token: &str, parms: &str) -> Result<Vec<u8>> {
     Ok(cred)
 }
 
-/// A TLS client stream over the XRootD connection.
+/// A TLS client stream over the `XRootD` connection.
 pub(super) type TlsStream = StreamOwned<ClientConnection, TcpStream>;
 
 /// Switch `tcp` to TLS with `host`, verifying its certificate, and finish the
@@ -278,7 +278,7 @@ fn add_ca_dir(roots: &mut RootCertStore, dir: &Path) {
     }
 }
 
-/// The connection to an XRootD server: plain TCP, or TLS on top of it.
+/// The connection to an `XRootD` server: plain TCP, or TLS on top of it.
 pub(super) enum Stream {
     Plain(TcpStream),
     Tls(Box<TlsStream>),
@@ -286,15 +286,15 @@ pub(super) enum Stream {
 
 impl Stream {
     pub(super) fn is_tls(&self) -> bool {
-        matches!(self, Stream::Tls(_))
+        matches!(self, Self::Tls(_))
     }
 }
 
 impl Read for Stream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(s) => s.read(buf),
-            Stream::Tls(s) => s.read(buf),
+            Self::Plain(s) => s.read(buf),
+            Self::Tls(s) => s.read(buf),
         }
     }
 }
@@ -302,15 +302,15 @@ impl Read for Stream {
 impl Write for Stream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Plain(s) => s.write(buf),
-            Stream::Tls(s) => s.write(buf),
+            Self::Plain(s) => s.write(buf),
+            Self::Tls(s) => s.write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Stream::Plain(s) => s.flush(),
-            Stream::Tls(s) => s.flush(),
+            Self::Plain(s) => s.flush(),
+            Self::Tls(s) => s.flush(),
         }
     }
 }

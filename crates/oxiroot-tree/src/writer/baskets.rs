@@ -1,10 +1,11 @@
 //! Writing branch data into `TBasket` records, whole or in chunks.
 
+use oxiroot_io_core::Compression;
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::raw::{ContainerWriter, DATIME, DirId, Key, compress_if_smaller};
-use oxiroot_io_core::{Result, WBuffer};
+use oxiroot_io_core::{Error, Result, WBuffer};
 
 use super::branch::{Branch, BranchKind, vec_row_lengths};
 use super::layout::Kind;
@@ -27,7 +28,7 @@ pub(super) fn write_basket<W: Write + Seek>(
     branch: &Branch,
     tree_name: &str,
 ) -> Result<BasketRec> {
-    let prepared = prepare_basket(branch, tree_name, file.compression_setting());
+    let prepared = prepare_basket(branch, tree_name, file.compression())?;
     place_basket(file, dir, &prepared, tree_name)
 }
 
@@ -44,8 +45,22 @@ pub(super) struct PreparedBasket {
     payload: Vec<u8>,
 }
 
+/// The most bytes a basket's key header and uncompressed buffer may take
+/// together: `fLast`, `fNbytes` and the entry offsets are signed 32-bit.
+const MAX_BASKET_BYTES: usize = i32::MAX as usize;
+
 /// Serialize `branch`'s entries into a basket buffer and compress it.
-pub(super) fn prepare_basket(branch: &Branch, tree_name: &str, compression: u32) -> PreparedBasket {
+///
+/// # Errors
+///
+/// [`Error::InvalidInput`] if the basket would pass the format's 2 GiB limit:
+/// its sizes and offsets would not fit their fields, and the file would be
+/// corrupt. Writing fewer entries per basket avoids it.
+pub(super) fn prepare_basket(
+    branch: &Branch,
+    tree_name: &str,
+    compression: Compression,
+) -> Result<PreparedBasket> {
     let (data, offsets) = branch.basket_content();
     let n_entries = branch.n_entries();
     let leaf = branch.leaf();
@@ -57,6 +72,18 @@ pub(super) fn prepare_basket(branch: &Branch, tree_name: &str, compression: u32)
     };
 
     let klen = u32::saturating_from(Key::header_len("TBasket", &branch.name, tree_name, true)) + 19;
+    // One 4-byte offset per entry plus the count, when the branch has them.
+    let offsets_len = offsets.as_ref().map_or(0, |o| 4 * (o.len() + 1));
+    let total = (klen as usize)
+        .saturating_add(data.len())
+        .saturating_add(offsets_len);
+    if total > MAX_BASKET_BYTES {
+        return Err(Error::InvalidInput(format!(
+            "branch {:?}: a basket of {n_entries} entries takes {total} bytes, more than the \
+             2 GiB a TBasket can hold; write fewer entries per basket",
+            branch.name
+        )));
+    }
     let border = u32::saturating_from(data.len());
 
     // The uncompressed buffer is the entry data, then (for a variable branch)
@@ -71,7 +98,7 @@ pub(super) fn prepare_basket(branch: &Branch, tree_name: &str, compression: u32)
     }
     let obj_len = u32::saturating_from(buffer.len());
     let payload = compress_if_smaller(&buffer, compression).into_owned();
-    PreparedBasket {
+    Ok(PreparedBasket {
         name: branch.name.clone(),
         n_entries,
         nev_buf_size,
@@ -79,7 +106,7 @@ pub(super) fn prepare_basket(branch: &Branch, tree_name: &str, compression: u32)
         obj_len,
         border,
         payload,
-    }
+    })
 }
 
 /// Write a prepared basket at the end of `file`: its key header, with the
@@ -138,7 +165,7 @@ fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
 pub(super) fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
     use BranchValues::*;
     macro_rules! sl {
-        ($variant:ident, $v:expr_2021) => {{
+        ($variant:ident, $v:expr) => {{
             let end = (start + len).min($v.len());
             let s = start.min(end);
             $variant($v[s..end].to_vec())

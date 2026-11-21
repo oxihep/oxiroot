@@ -1,6 +1,6 @@
-//! An XRootD (`root://`) byte-range [`ByteSource`] (the `xrootd` feature).
+//! An `XRootD` (`root://`) byte-range [`ByteSource`] (the `xrootd` feature).
 //!
-//! XRootD is the binary TCP protocol most CERN data is served over. This is a
+//! `XRootD` is the binary TCP protocol most CERN data is served over. This is a
 //! read-only client: it speaks the `xroot` protocol directly (no libXrdCl, and
 //! just `std::net` by default) and authenticates with the credential-free
 //! `unix` security protocol, so it reads world-readable files from servers that
@@ -95,7 +95,7 @@ const READV_MAX_ELEMENT_LEN: usize = 2_097_136;
 /// The size of a `readahead_list` element: fhandle[4], rlen(i32), offset(i64).
 const READV_ELEMENT: usize = 16;
 
-/// Default XRootD port.
+/// Default `XRootD` port.
 const DEFAULT_PORT: u16 = 1094;
 /// Guard against a redirect loop.
 const MAX_REDIRECTS: u32 = 8;
@@ -112,7 +112,7 @@ struct XrootdUrl {
 }
 
 impl XrootdUrl {
-    fn parse(url: &str) -> Result<XrootdUrl> {
+    fn parse(url: &str) -> Result<Self> {
         let (rest, tls) = if let Some(rest) = url.strip_prefix("root://") {
             (rest, false)
         } else if let Some(rest) = url.strip_prefix("roots://") {
@@ -148,7 +148,7 @@ impl XrootdUrl {
         } else {
             format!("/{path}")
         };
-        Ok(XrootdUrl {
+        Ok(Self {
             host,
             port,
             path,
@@ -157,7 +157,7 @@ impl XrootdUrl {
     }
 }
 
-/// A live connection to one XRootD server with a file open, serialized so the
+/// A live connection to one `XRootD` server with a file open, serialized so the
 /// request/response stream stays in step under concurrent reads.
 struct Conn {
     stream: Stream,
@@ -176,7 +176,7 @@ impl Conn {
         path: &str,
         tls: bool,
         opts: &XrootdOptions,
-    ) -> Result<(Conn, u64)> {
+    ) -> Result<(Self, u64)> {
         let mut host = host.to_string();
         let mut port = port;
         // A redirector (e.g. EOS) hands back an opaque capability token that must
@@ -189,7 +189,7 @@ impl Conn {
             stream.set_write_timeout(Some(TIMEOUT)).ok();
 
             handshake(&mut stream)?;
-            let mut conn = Conn {
+            let mut conn = Self {
                 #[cfg(feature = "xrootd-tls")]
                 stream: Stream::Plain(stream),
                 #[cfg(not(feature = "xrootd-tls"))]
@@ -467,10 +467,9 @@ impl Conn {
             KXR_WAIT => {
                 let secs = payload
                     .get(0..4)
-                    .map(|b| {
+                    .map_or(1, |b| {
                         u64::saturating_from(i32::from_be_bytes([b[0], b[1], b[2], b[3]]).max(0))
                     })
-                    .unwrap_or(1)
                     .min(10);
                 std::thread::sleep(Duration::from_secs(secs));
                 Ok(None)
@@ -590,7 +589,7 @@ enum OpenOutcome {
     },
 }
 
-/// A ROOT file accessed over XRootD (`root://`) with byte-range reads.
+/// A ROOT file accessed over `XRootD` (`root://`) with byte-range reads.
 pub struct XrootdSource {
     conn: Mutex<Conn>,
     size: u64,
@@ -611,20 +610,20 @@ impl XrootdSource {
     /// with the `xrootd-tls` feature), log in, authenticate, and open the file
     /// for reading. A bearer token and grid CAs are found from the environment
     /// (see `XrootdOptions`).
-    pub fn open(url: &str) -> Result<XrootdSource> {
+    pub fn open(url: &str) -> Result<Self> {
         Self::connect(url, &XrootdOptions::default())
     }
 
     /// [`open`](Self::open) with an explicit bearer token or CA directory.
     #[cfg(feature = "xrootd-tls")]
-    pub fn open_with(url: &str, opts: &XrootdOptions) -> Result<XrootdSource> {
+    pub fn open_with(url: &str, opts: &XrootdOptions) -> Result<Self> {
         Self::connect(url, opts)
     }
 
-    fn connect(url: &str, opts: &XrootdOptions) -> Result<XrootdSource> {
+    fn connect(url: &str, opts: &XrootdOptions) -> Result<Self> {
         let parsed = XrootdUrl::parse(url)?;
         let (conn, size) = Conn::open(&parsed.host, parsed.port, &parsed.path, parsed.tls, opts)?;
-        Ok(XrootdSource {
+        Ok(Self {
             conn: Mutex::new(conn),
             size,
             url: url.to_string(),
@@ -649,7 +648,10 @@ impl ByteSource for XrootdSource {
                 available: usize::saturating_from(self.size.saturating_sub(offset)),
             })?;
         // One request/response at a time keeps the shared stream in step.
-        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conn = self
+            .conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.read_at(offset, len)
     }
 
@@ -663,7 +665,10 @@ impl ByteSource for XrootdSource {
                     available: usize::saturating_from(self.size.saturating_sub(offset)),
                 })?;
         }
-        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conn = self
+            .conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.read_many(ranges)
     }
 
@@ -730,7 +735,7 @@ fn server_error(ctx: &str, status: u16, payload: &[u8]) -> Error {
     }
 }
 
-/// A server response that breaks the XRootD protocol.
+/// A server response that breaks the `XRootD` protocol.
 fn protocol_err(message: String) -> Error {
     Error::Io {
         kind: std::io::ErrorKind::InvalidData,

@@ -1,15 +1,18 @@
-//! [`Dataset`]: one reader for a `TTree` or an RNTuple, yielding
+//! [`Dataset`]: one reader for a `TTree` or an `RNTuple`, yielding
 //! [`Batch`]es.
 
 use std::ops::Range;
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, FileReader, Result};
-use oxiroot_rntuple::{ANCHOR_CLASS, FieldValues, NtupleReader};
-use oxiroot_tree::{BranchLayout, BranchValues, LeafType, TreeReader};
+use oxiroot_rntuple::raw::FieldValues;
+use oxiroot_rntuple::{ANCHOR_CLASS, ColumnType, Header, NtupleReader};
+use oxiroot_tree::raw::BranchValues;
+use oxiroot_tree::{BranchLayout, LeafType, TreeReader};
 
 use crate::batch::Batch;
 use crate::column::{Column, IntoColumn};
+use crate::schema::{DataType, Schema};
 
 /// Which of ROOT's two columnar formats a dataset is stored in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,11 +20,11 @@ use crate::column::{Column, IntoColumn};
 pub enum Format {
     /// A `TTree`.
     Tree,
-    /// An RNTuple.
+    /// An `RNTuple`.
     Ntuple,
 }
 
-/// A `TTree` or an RNTuple, read as [`Batch`]es of flat columns. The format
+/// A `TTree` or an `RNTuple`, read as [`Batch`]es of flat columns. The format
 /// is detected when it is opened.
 ///
 /// ```no_run
@@ -46,52 +49,25 @@ pub struct Dataset<'f> {
 enum Source<'f> {
     Tree(TreeReader<'f>),
     Ntuple(NtupleReader<'f>),
+    /// Several datasets read one after the other; never empty.
+    Chain(Vec<Dataset<'f>>),
 }
 
 impl<'f> Dataset<'f> {
-    /// Open the `TTree` or RNTuple named `name` in `file`'s top directory.
+    /// Open the `TTree` or `RNTuple` at `path` in `file`: `"events"`, or
+    /// `"dir/sub/events;cycle"` for one in a subdirectory or at a given cycle.
     ///
     /// # Errors
     ///
-    /// No such key, a key that is neither a `TTree` nor an RNTuple, or a
+    /// No such key, a key that is neither a `TTree` nor an `RNTuple`, or a
     /// malformed one.
-    pub fn open(file: &'f FileReader, name: &str) -> Result<Dataset<'f>> {
-        let class = file
-            .key(name)
-            .ok_or_else(|| Error::NotFound {
-                what: "key",
-                name: name.to_string(),
-            })?
-            .class_name
-            .clone();
+    pub fn open(file: &'f FileReader, path: &str) -> Result<Self> {
+        let class = file.key(path)?.class_name;
         Self::open_class(
             &class,
-            name,
-            || TreeReader::open(file, name),
-            || NtupleReader::open(file, name),
-        )
-    }
-
-    /// Open the `TTree` or RNTuple named `name` in subdirectory `subdir` (a
-    /// `/`-separated path).
-    ///
-    /// # Errors
-    ///
-    /// As [`open`](Self::open).
-    pub fn open_in(file: &'f FileReader, subdir: &str, name: &str) -> Result<Dataset<'f>> {
-        let dir = file.subdir(subdir)?;
-        let class = oxiroot_io_core::raw::find_key(&dir.keys, name)
-            .ok_or_else(|| Error::NotFound {
-                what: "key",
-                name: format!("{}/{name}", subdir.trim_end_matches('/')),
-            })?
-            .class_name
-            .clone();
-        Self::open_class(
-            &class,
-            name,
-            || TreeReader::open_in(file, subdir, name),
-            || NtupleReader::open_in(file, subdir, name),
+            path,
+            || TreeReader::open(file, path),
+            || NtupleReader::open(file, path),
         )
     }
 
@@ -100,7 +76,7 @@ impl<'f> Dataset<'f> {
         name: &str,
         tree: impl FnOnce() -> Result<TreeReader<'f>>,
         ntuple: impl FnOnce() -> Result<NtupleReader<'f>>,
-    ) -> Result<Dataset<'f>> {
+    ) -> Result<Self> {
         let source = match class {
             "TTree" | "TNtuple" | "TNtupleD" => Source::Tree(tree()?),
             c if c == ANCHOR_CLASS => Source::Ntuple(ntuple()?),
@@ -115,12 +91,53 @@ impl<'f> Dataset<'f> {
         Ok(Dataset { source })
     }
 
-    /// The format the dataset is stored in.
+    /// Several datasets with the same columns, read as one: their entries one
+    /// after the other, in the order given, the way ROOT's `TChain` spans a
+    /// dataset split over many files. The parts can be trees, `RNTuple`s, or
+    /// both.
+    ///
+    /// ```no_run
+    /// use oxiroot_dataset::Dataset;
+    /// use oxiroot_io_core::FileReader;
+    ///
+    /// let (a, b) = (FileReader::open("a.root")?, FileReader::open("b.root")?);
+    /// let events = Dataset::chain([Dataset::open(&a, "events")?, Dataset::open(&b, "events")?])?;
+    /// let pt = events.read(["pt"])?; // the entries of both files
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// No parts, or a part whose columns are not the first's.
+    pub fn chain(parts: impl IntoIterator<Item = Self>) -> Result<Self> {
+        let parts: Vec<Self> = parts.into_iter().collect();
+        let first = parts
+            .first()
+            .ok_or_else(|| Error::InvalidInput("a chain needs at least one dataset".into()))?;
+        for (i, part) in parts.iter().enumerate().skip(1) {
+            if part.columns() != first.columns() {
+                return Err(Error::SchemaChanged {
+                    detail: format!(
+                        "dataset {i} of the chain has the columns {:?}, not the first's {:?}",
+                        part.columns(),
+                        first.columns()
+                    ),
+                });
+            }
+        }
+        Ok(Self {
+            source: Source::Chain(parts),
+        })
+    }
+
+    /// The format the dataset is stored in; for a [`chain`](Self::chain), its
+    /// first part's.
     #[must_use]
     pub fn format(&self) -> Format {
-        match self.source {
+        match &self.source {
             Source::Tree(_) => Format::Tree,
             Source::Ntuple(_) => Format::Ntuple,
+            Source::Chain(parts) => parts[0].format(),
         }
     }
 
@@ -130,12 +147,13 @@ impl<'f> Dataset<'f> {
         match &self.source {
             Source::Tree(t) => t.entries(),
             Source::Ntuple(n) => n.entries(),
+            Source::Chain(parts) => parts.iter().map(Self::entries).sum(),
         }
     }
 
-    /// The column names: a tree's branches, an RNTuple's top-level fields.
+    /// The column names: a tree's branches, an `RNTuple`'s top-level fields.
     /// A tree's split `std::vector<Struct>` is one column (`hits`), read as a
-    /// list of structs, as in an RNTuple; its members (`hits.x`) can still be
+    /// list of structs, as in an `RNTuple`; its members (`hits.x`) can still be
     /// read on their own.
     #[must_use]
     pub fn columns(&self) -> Vec<&str> {
@@ -152,6 +170,7 @@ impl<'f> Dataset<'f> {
                 out
             }
             Source::Ntuple(n) => n.field_names(),
+            Source::Chain(parts) => parts[0].columns(),
         }
     }
 
@@ -161,18 +180,49 @@ impl<'f> Dataset<'f> {
     pub fn as_tree(&self) -> Option<&TreeReader<'f>> {
         match &self.source {
             Source::Tree(t) => Some(t),
-            Source::Ntuple(_) => None,
+            Source::Ntuple(_) | Source::Chain(_) => None,
         }
     }
 
-    /// The RNTuple reader underneath, for what only an RNTuple has (records,
+    /// The `RNTuple` reader underneath, for what only an `RNTuple` has (records,
     /// variants, the raw columns).
     #[must_use]
     pub fn as_ntuple(&self) -> Option<&NtupleReader<'f>> {
         match &self.source {
             Source::Ntuple(n) => Some(n),
-            Source::Tree(_) => None,
+            Source::Tree(_) | Source::Chain(_) => None,
         }
+    }
+
+    /// How each column is stored in the file: `std::vector` or C-style array,
+    /// plain or half-precision float, `std::set` or `std::map`. Hand it to
+    /// [`DatasetWriter::schema`](crate::DatasetWriter::schema) to write the
+    /// same types back.
+    ///
+    /// # Errors
+    ///
+    /// A column a [`Batch`] cannot hold (an `RNTuple` variant, a tree branch of
+    /// an unsupported class), or a read error.
+    pub fn schema(&self) -> Result<Schema> {
+        if let Source::Chain(parts) = &self.source {
+            return parts[0].schema();
+        }
+        let names: Vec<String> = self.columns().into_iter().map(str::to_string).collect();
+        // The shapes are those of an empty read; the file's metadata says how
+        // each one is stored.
+        let shapes = self.read_window(&names, 0..0, false)?;
+        Ok(shapes
+            .iter()
+            .map(|(name, column)| {
+                let shape = column.data_type();
+                let stored = match &self.source {
+                    Source::Tree(t) => tree_type(t, name, shape),
+                    Source::Ntuple(n) => ntuple_type(n.header(), name, shape),
+                    Source::Chain(_) => unreachable!("a chain returned above"),
+                };
+                (name, stored)
+            })
+            .collect())
     }
 
     /// Every entry of `columns`, as one batch.
@@ -180,7 +230,7 @@ impl<'f> Dataset<'f> {
     /// # Errors
     ///
     /// A column that does not exist, or one of a shape a [`Batch`] cannot
-    /// hold (an RNTuple record or variant); read those through
+    /// hold (an `RNTuple` record or variant); read those through
     /// [`as_ntuple`](Self::as_ntuple).
     pub fn read<I, S>(&self, columns: I) -> Result<Batch>
     where
@@ -195,7 +245,7 @@ impl<'f> Dataset<'f> {
     }
 
     /// `columns` in batches of entries, in order. By default each batch is
-    /// one cluster (an RNTuple cluster, or the entries where every selected
+    /// one cluster (an `RNTuple` cluster, or the entries where every selected
     /// branch of a tree starts a basket); [`step`](Batches::step) asks for
     /// bigger or smaller ones.
     pub fn batches<I, S>(&self, columns: I) -> Batches<'_, 'f>
@@ -222,6 +272,17 @@ impl<'f> Dataset<'f> {
     /// count.
     fn cut_points(&self, names: &[String]) -> Result<Vec<u64>> {
         match &self.source {
+            Source::Chain(parts) => {
+                // Each part's own cuts, shifted to where the part starts.
+                let mut cuts = vec![0];
+                let mut start = 0;
+                for part in parts {
+                    cuts.extend(part.cut_points(names)?.into_iter().map(|c| start + c));
+                    start += part.entries();
+                }
+                cuts.dedup();
+                Ok(cuts)
+            }
             Source::Ntuple(n) => Ok(n.cluster_boundaries()),
             Source::Tree(t) => {
                 let mut common: Option<Vec<u64>> = None;
@@ -249,10 +310,33 @@ impl<'f> Dataset<'f> {
     }
 
     fn read_window(&self, names: &[String], range: Range<u64>, parallel: bool) -> Result<Batch> {
+        if let Source::Chain(parts) = &self.source {
+            // The entries of each part the range covers, one after the other.
+            let mut out: Option<Batch> = None;
+            let mut start = 0;
+            for part in parts {
+                let end = start + part.entries();
+                let (from, to) = (range.start.max(start), range.end.min(end));
+                if from < to {
+                    let batch = part.read_window(names, from - start..to - start, parallel)?;
+                    match &mut out {
+                        None => out = Some(batch),
+                        Some(all) => all.append(batch)?,
+                    }
+                }
+                start = end;
+            }
+            return match out {
+                Some(batch) => Ok(batch),
+                // No entries: the columns alone, as the first part has them.
+                None => parts[0].read_window(names, 0..0, parallel),
+            };
+        }
         let read = |name: &String| -> Result<Column> {
             match &self.source {
                 Source::Tree(t) => tree_column(t, name, range.clone(), parallel),
                 Source::Ntuple(n) => ntuple_column(n, name, range.clone(), parallel),
+                Source::Chain(_) => unreachable!("a chain returned above"),
             }
         };
         #[cfg(feature = "rayon")]
@@ -387,7 +471,7 @@ fn tree_column(
             }),
             Err(_) => array_of(branch_column(branch().values()?)?, len, name),
         },
-        BranchLayout::List if !is_str => match branch().flat() {
+        BranchLayout::List | BranchLayout::CArray if !is_str => match branch().flat() {
             Ok(j) => Ok(Column::List {
                 offsets: j.offsets,
                 values: Box::new(branch_column(j.values)?),
@@ -495,7 +579,7 @@ fn branch_column(values: BranchValues) -> Result<Column> {
     })
 }
 
-/// Read one RNTuple field's window as a flat column.
+/// Read one `RNTuple` field's window as a flat column.
 fn ntuple_column(
     n: &NtupleReader<'_>,
     name: &str,
@@ -538,7 +622,7 @@ fn ntuple_column(
     }
 }
 
-/// An RNTuple field's values as a column.
+/// An `RNTuple` field's values as a column.
 fn field_column(name: &str, values: FieldValues) -> Result<Column> {
     Ok(match values {
         FieldValues::Bool(v) => Column::Bool(v),
@@ -587,4 +671,121 @@ fn field_column(name: &str, values: FieldValues) -> Result<Column> {
             )));
         }
     })
+}
+
+/// A tree column's stored type, from its in-memory `shape`: a list counted by
+/// another leaf is a C-style array.
+fn tree_type(t: &TreeReader<'_>, name: &str, shape: DataType) -> DataType {
+    match (t.branch_layout(name), shape) {
+        (Some(BranchLayout::CArray), DataType::List(item)) => DataType::CArray(item),
+        (_, shape) => shape,
+    }
+}
+
+/// An `RNTuple` column's stored type, from its in-memory `shape` and the
+/// header's description of the top-level field `name`.
+fn ntuple_type(header: &Header, name: &str, shape: DataType) -> DataType {
+    let top = header
+        .fields
+        .iter()
+        .enumerate()
+        .position(|(i, f)| f.name == name && f.parent_field_id as usize == i);
+    match top {
+        Some(id) => field_type(header, id, shape),
+        None => shape,
+    }
+}
+
+/// The fields directly inside field `id`, in order.
+fn child_fields(header: &Header, id: usize) -> Vec<usize> {
+    header
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|&(i, f)| i != id && f.parent_field_id as usize == id)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Whether the C++ type `name` is the template `template` (`std::set`) or its
+/// unordered or multi form.
+fn is_template(name: &str, template: &str) -> bool {
+    let base = name.split('<').next().unwrap_or(name);
+    let base = base.strip_prefix("std::").unwrap_or(base);
+    [
+        template.to_string(),
+        format!("unordered_{template}"),
+        format!("multi{template}"),
+        format!("unordered_multi{template}"),
+    ]
+    .iter()
+    .any(|t| t == base)
+}
+
+/// Refine `shape` with how field `id` and the fields inside it are stored.
+/// Where the header and the shape do not line up, the shape is kept as it is.
+fn field_type(header: &Header, id: usize, shape: DataType) -> DataType {
+    let field = &header.fields[id];
+    let kids = child_fields(header, id);
+    let type_name = field.type_name.as_str();
+    let inner = |kid: Option<&usize>, shape: DataType| match kid {
+        Some(&kid) => field_type(header, kid, shape),
+        None => shape,
+    };
+    if is_template(type_name, "atomic") && kids.len() == 1 {
+        return DataType::Atomic(Box::new(field_type(header, kids[0], shape)));
+    }
+    match shape {
+        DataType::F32 => {
+            let column = header.columns.iter().find(|c| c.field_id as usize == id);
+            match column.map(|c| (c.column_type, c.bits_on_storage, c.value_range)) {
+                Some((ColumnType::Real16 | ColumnType::SplitReal16, ..)) => DataType::Half,
+                Some((ColumnType::Real32Trunc, bits, _)) => DataType::Truncated { bits },
+                Some((ColumnType::Real32Quant, bits, Some((min, max)))) => {
+                    DataType::Quantized { bits, min, max }
+                }
+                _ => DataType::F32,
+            }
+        }
+        DataType::List(item) if is_template(type_name, "set") => {
+            DataType::Set(Box::new(inner(kids.first(), *item)))
+        }
+        DataType::List(item) if is_template(type_name, "map") => {
+            // A map is a collection of `std::pair<K, V>` records.
+            let pair = kids.first().map(|&k| child_fields(header, k));
+            match (*item, pair.as_deref()) {
+                (DataType::Struct(members), Some([key, value])) if members.len() == 2 => {
+                    let mut members = members.into_iter().map(|(_, t)| t);
+                    let (k, v) = (members.next(), members.next());
+                    match (k, v) {
+                        (Some(k), Some(v)) => DataType::Map(
+                            Box::new(field_type(header, *key, k)),
+                            Box::new(field_type(header, *value, v)),
+                        ),
+                        _ => unreachable!("two members were counted"),
+                    }
+                }
+                (item, _) => DataType::List(Box::new(item)),
+            }
+        }
+        DataType::List(item) => DataType::List(Box::new(inner(kids.first(), *item))),
+        DataType::Array(len, item)
+            if type_name.starts_with("std::bitset<") && *item == DataType::Bool =>
+        {
+            DataType::Bitset(len)
+        }
+        DataType::Array(len, item) => DataType::Array(len, Box::new(inner(kids.first(), *item))),
+        DataType::Optional(item) if type_name.starts_with("std::unique_ptr<") => {
+            DataType::UniquePtr(Box::new(inner(kids.first(), *item)))
+        }
+        DataType::Optional(item) => DataType::Optional(Box::new(inner(kids.first(), *item))),
+        DataType::Struct(members) if members.len() == kids.len() => DataType::Struct(
+            members
+                .into_iter()
+                .zip(&kids)
+                .map(|((name, t), &kid)| (name, field_type(header, kid, t)))
+                .collect(),
+        ),
+        other => other,
+    }
 }

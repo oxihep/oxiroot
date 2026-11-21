@@ -9,9 +9,9 @@
 //!
 //! ```
 //! use oxiroot_hist_func::Func1D;
-//! let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0, 6.283).unwrap()
-//!     .with_params(vec![2.0, 1.5, 0.5]);
+//! let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0..=6.283)?.with_params(&[2.0, 1.5, 0.5])?;
 //! assert!((f.eval(1.0) - 2.494_990).abs() < 1e-6);
+//! # Ok::<(), oxiroot_io_core::Error>(())
 //! ```
 //!
 //! The functions are part of the histogram family: they describe `Func1D` with

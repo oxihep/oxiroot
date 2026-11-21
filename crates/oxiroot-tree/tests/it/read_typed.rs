@@ -3,7 +3,8 @@
 use std::io::Cursor;
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues, TreeWriter};
 
 use crate::support::write_tree_file_baskets;
 
@@ -101,7 +102,8 @@ fn a_read_branch_writes_back_the_same_way() {
         .iter()
         .map(|n| t.branch(n).range(1..3).to_branch().unwrap())
         .collect();
-    let mut w = TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::None).unwrap();
+    let mut w =
+        TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::Stored).unwrap();
     w.write_batch(&branches).unwrap();
     assert_eq!(w.entries(), 2);
     let out = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
@@ -130,7 +132,7 @@ fn reports_branch_layouts() {
     let t = TreeReader::open(&f, "T").unwrap();
     assert_eq!(t.branch_layout("pt"), Some(BranchLayout::Scalar));
     assert_eq!(t.branch_layout("idx"), Some(BranchLayout::List));
-    assert_eq!(t.branch_layout("w"), Some(BranchLayout::List));
+    assert_eq!(t.branch_layout("w"), Some(BranchLayout::CArray));
     assert_eq!(
         t.branch_layout("nw"),
         Some(BranchLayout::Scalar),
@@ -208,7 +210,8 @@ fn writes_vector_bool_string_and_vector_vector() {
 
 #[test]
 fn an_empty_first_batch_writes_a_tree_with_no_entries() {
-    let mut w = TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::None).unwrap();
+    let mut w =
+        TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::Stored).unwrap();
     w.write_batch(&[Branch::f64("x", vec![]), Branch::vector_i32("v", vec![])])
         .unwrap();
     let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();

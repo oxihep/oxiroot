@@ -26,7 +26,7 @@ fn main() -> oxiroot::Result<()> {
     // --- The data: a tiny histogram, as an analysis would produce. -------------
     let mut mass = Hist::reg(20, 80.0, 100.0)
         .double()
-        .to_root()
+        .to_root()?
         .named("mass")
         .titled("di-muon mass [GeV]");
     for &(x, w) in &[(90.9, 1.0), (91.2, 1.2), (91.4, 0.9), (92.0, 1.0)] {
@@ -45,11 +45,11 @@ fn main() -> oxiroot::Result<()> {
     let lumi = Parameter::f64("integrated_lumi_fb", 32.7); // inverse femtobarns
     let run = Parameter::i64("run_number", 380_947); // a real-sized run number
 
-    // A `TList` of the input files that fed this histogram. `ObjList::list()`
+    // A `TList` of the input files that fed this histogram. `ObjList::new(ListKind::List)`
     // builds a `TList` (use `array()` for a `TObjArray`); `add` takes any writable
     // object, so we push one `ObjString` per file name.
     let inputs = ["skim_000.root", "skim_001.root", "skim_002.root"];
-    let mut file_list = ObjList::list().named("input_files");
+    let mut file_list = ObjList::new(ListKind::List).named("input_files");
     for f in inputs {
         file_list = file_list.add(&ObjString::new(f));
     }
@@ -64,7 +64,7 @@ fn main() -> oxiroot::Result<()> {
         .add(&lumi)
         .add(&run)
         .add(&file_list)
-        .write(Compression::Zstd(5))?;
+        .write()?;
     println!("wrote data + provenance -> {}", path.display());
     println!(
         "  file holds: mass (TH1D), config (TObjString), lumi + run (TParameter), \
@@ -72,11 +72,11 @@ fn main() -> oxiroot::Result<()> {
         inputs.len(),
     );
 
-    // --- Read it back (the `ReadRoot` trait: `Type::read_root(&file, key)`). ----
+    // --- Read it back (the `ReadRoot` trait: `file.get::<Type>(key)`). ----
     // Each object type knows how to decode itself from a key by name.
     let f = FileReader::open(&path)?;
 
-    let mass_back = Hist1D::read_root(&f, "mass")?;
+    let mass_back = f.get::<Hist1D>("mass")?;
     println!(
         "\nread back the data:\n  mass: {} entries, integral {:.2}, mean {:.3} GeV",
         mass_back.entries(),
@@ -85,7 +85,7 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // The config string comes straight back out with `.value()`.
-    let config_back = ObjString::read_root(&f, "config")?;
+    let config_back = f.get::<ObjString>("config")?;
     println!(
         "\nread back the provenance:\n  config = {}",
         config_back.value()
@@ -93,13 +93,13 @@ fn main() -> oxiroot::Result<()> {
 
     // `Parameter::value()` returns a typed `ParamValue`; `as_f64()` widens any of
     // them, or match on the enum to keep the exact type.
-    let lumi_back = Parameter::read_root(&f, "integrated_lumi_fb")?;
+    let lumi_back = f.get::<Parameter>("integrated_lumi_fb")?;
     println!(
         "  integrated luminosity = {:.1} fb^-1",
         lumi_back.value().as_f64(),
     );
 
-    let run_back = Parameter::read_root(&f, "run_number")?;
+    let run_back = f.get::<Parameter>("run_number")?;
     match run_back.value() {
         ParamValue::Long64(n) => println!("  run number = {n} (stored as TParameter<Long64_t>)"),
         other => println!("  run number = {:.0}", other.as_f64()),
@@ -107,7 +107,7 @@ fn main() -> oxiroot::Result<()> {
 
     // A `TList` reads back as an `ObjList`; `items::<T>()` pulls out every member
     // of one type, so we recover the file names as `ObjString`s.
-    let list_back = ObjList::read_root(&f, "input_files")?;
+    let list_back = f.get::<ObjList>("input_files")?;
     let names = list_back.items::<ObjString>()?;
     println!("  input files ({} of them):", names.len());
     for name in &names {

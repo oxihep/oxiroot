@@ -1,10 +1,16 @@
 # TTree
 
-The classic ROOT columnar store. For reading and writing columns the same way
-for a `TTree` and an RNTuple, use [Datasets](datasets.md). This page covers
-the `TTree`-specific layer underneath (`oxiroot::tree`): every branch kind,
-including split `std::vector<Struct>` branches and C-style `x[n]` arrays, the
-low-level reader, friends and indices, and chains.
+The classic ROOT columnar store.
+
+!!! note "Read and write columns with Datasets"
+    [Datasets](datasets.md) is the API for reading and writing columns, the
+    same way for a `TTree` and an RNTuple, C-style `x[n]` arrays and chains
+    included. This page covers the format's own layer underneath,
+    `oxiroot::tree::raw` (`Branch`, `TreeWriter`, `BranchValues`): what a
+    merger or an inspector works with, and what a batch does not hold, such as
+    leaflists and split single objects. The tree's metadata (`TreeReader`:
+    friends, the index, aliases, branch layouts) is reached from a dataset
+    with `as_tree()`.
 
 ## Branches
 
@@ -28,7 +34,7 @@ numeric type: `bool`, `i8`/`u8`, `i16`/`u16`, `i32`/`u32`, `i64`/`u64`,
 
 ```rust
 use oxiroot::prelude::*;
-use oxiroot::tree::Branch;
+use oxiroot::tree::raw::Branch;
 
 let branches = vec![
     Branch::i32("event", (0..10).collect()),
@@ -66,7 +72,7 @@ lengths. A `TStreamerInfo` for the element class is generated so the file is
 self-describing.
 
 ```rust
-use oxiroot::tree::SplitMember;
+use oxiroot::tree::raw::SplitMember;
 
 // Three events, each with a differing number of hits.
 let xs = vec![vec![1.0, 2.0], vec![3.0], vec![]];
@@ -100,7 +106,7 @@ writes the `TTree` metadata, the streamer info and the key list, then patches
 the file header.
 
 ```rust
-use oxiroot::tree::TreeWriter;
+use oxiroot::tree::raw::TreeWriter;
 
 let mut w = TreeWriter::create("big.root", "Events", Compression::Zstd(5))?;
 for batch in 0..1_000 {
@@ -131,7 +137,8 @@ read a branch with `branch(name)`, optionally narrowed, and take its values in
 the form you need.
 
 ```rust
-use oxiroot::tree::{BranchValues, TreeReader};
+use oxiroot::tree::{TreeReader};
+use oxiroot::tree::raw::{BranchValues};
 
 let file = FileReader::open("tree.root")?;
 let t = TreeReader::open(&file, "Events")?;
@@ -272,28 +279,10 @@ let aligned: Vec<Option<f64>> = rows
 that carries no index is an error rather than a silent fall back to pairing by
 entry number, which would pair the wrong entries.
 
-## Spanning files with `ChainReader`
+## Spanning files
 
-`ChainReader` reads a branch across several same-schema trees as one
-concatenated column, the way ROOT's `TChain` spans a dataset split over many
-files. The files are borrowed, so keep them alive for the chain's lifetime.
-
-```rust
-use oxiroot::tree::ChainReader;
-
-let f1 = FileReader::open("part1.root")?;
-let f2 = FileReader::open("part2.root")?;
-
-let mut chain = ChainReader::new();
-chain.add(&f1, "Events")?;
-chain.add(&f2, "Events")?;
-
-println!("{} entries over {} files", chain.entries(), chain.num_trees());
-let pt: Vec<f32> = chain.branch("pt").read()?; // both files, in add order
-```
-
-A chain read fails if a tree lacks the branch or yields a different element
-type than the others.
+Read a tree split over several files with
+[`Dataset::chain`](datasets.md#several-files-as-one-chains).
 
 ## See also
 

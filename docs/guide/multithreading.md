@@ -35,7 +35,7 @@ use oxiroot::prelude::*;
 let data: Vec<f64> = (0..1_000_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
 
 // A binning prototype (normally empty); each thread copies it on first fill.
-let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("mass"));
+let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root()?.named("mass"));
 
 let n_threads = std::thread::available_parallelism().map_or(4, |n| n.get());
 
@@ -105,7 +105,7 @@ acquisition instead of one per value:
 ```rust
 use oxiroot::prelude::*;
 
-let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("h"));
+let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root()?.named("h"));
 
 hist.with_local(|h| {
     for x in batch {
@@ -137,7 +137,7 @@ println!("filled across {} thread-local copies", hist.num_slots());
 `fill_par` are [oxihist](https://github.com/oxihep/oxihist)'s, shared by both
 crates: the trait has its own `Error` type, so each implementation reports
 errors its own way, and the same accumulator fills oxihist histograms (what
-`Hist` builds before `.to_root()`) and ROOT ones.
+`Hist` builds before `.to_root()?`) and ROOT ones.
 
 oxiroot implements it for:
 
@@ -179,7 +179,7 @@ items into a private `template.clone()`, and the partials reduce with
 use oxiroot::prelude::*;
 
 let data: Vec<f64> = (0..1_000_000).map(|i| i as f64 % 100.0).collect();
-let template = Hist::reg(100, 0.0, 100.0).double().to_root().named("h");
+let template = Hist::reg(100, 0.0, 100.0).double().to_root()?.named("h");
 
 let hist = fill_par(&template, &data, |h, &x| h.fill(x));
 assert_eq!(hist.entries(), data.len() as f64);

@@ -3,7 +3,8 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues, TreeWriter};
 
 /// A unique temp path per test (tests run in parallel in one process).
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -13,7 +14,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
 #[test]
 fn streaming_scalars_round_trip() {
     let out = tmp("scalars");
-    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     // Three batches of differing sizes -> three baskets per branch.
     let batches: [(Vec<i32>, Vec<f64>); 3] = [
         (vec![0, 1, 2], vec![0.0, 1.0, 2.0]),
@@ -50,7 +51,7 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     // More than ROOT's default fMaxBaskets (10): the writer must grow the basket
     // arrays so every basket is addressable.
     let out = tmp("many");
-    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     let n_batches = 25;
     for b in 0..n_batches {
         let x: Vec<i64> = (0..4).map(|i| i64::from(b * 4 + i)).collect();
@@ -82,7 +83,7 @@ fn streaming_jagged_vector_string_round_trip() {
     let vec_branch: Vec<Vec<i32>> = vec![vec![10], vec![20, 21], vec![], vec![30, 31, 32]];
     let strs: Vec<String> = ["a", "bb", "ccc", "dddd"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     // Two batches: [0,2) then [2,4).
@@ -122,7 +123,7 @@ fn streaming_create_large_writes_big_container_round_trip() {
     // entries in order — exercising the same wide header/dir/key path a genuine
     // >2 GiB file uses, without producing 2 GiB.
     let out = tmp("large_scalars");
-    let mut w = TreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
+    let mut w = TreeWriter::create_large(&out, "T", Compression::Stored).expect("create_large");
     let batches: [(Vec<i32>, Vec<f64>); 3] = [
         (vec![0, 1, 2], vec![0.0, 1.0, 2.0]),
         (vec![3, 4], vec![3.0, 4.0]),
@@ -177,7 +178,7 @@ fn streaming_jagged_big_container_round_trips() {
 #[test]
 fn streaming_schema_mismatch_is_rejected() {
     let out = tmp("mismatch");
-    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     w.write_batch(&[Branch::i32("x", vec![1, 2])])
         .expect("first");
     // A second batch with a different element type for the same branch.
@@ -190,7 +191,7 @@ fn streaming_schema_mismatch_is_rejected() {
 #[test]
 fn streaming_uneven_batch_entries_is_rejected() {
     let out = tmp("uneven");
-    let mut w = TreeWriter::create(&out, "T", Compression::None).expect("create");
+    let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     let err = w
         .write_batch(&[Branch::i32("x", vec![1, 2, 3]), Branch::i32("y", vec![1])])
         .expect_err("uneven entry counts must error");
@@ -207,7 +208,7 @@ fn streaming_uneven_batch_entries_is_rejected() {
 #[test]
 fn streaming_no_batches_is_rejected() {
     let out = tmp("empty");
-    let w = TreeWriter::create(&out, "T", Compression::None).expect("create");
+    let w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     assert!(w.finish().is_err(), "finishing with no batch must error");
 }
 
@@ -220,7 +221,7 @@ fn streaming_no_batches_is_rejected() {
 #[ignore = "writes a real >2 GiB file"]
 fn streaming_real_over_two_gib() {
     let out = tmp("real_big");
-    let mut w = TreeWriter::create_large(&out, "T", Compression::None).expect("create_large");
+    let mut w = TreeWriter::create_large(&out, "T", Compression::Stored).expect("create_large");
     // 300 batches × 1_000_000 f64 (8 MB each) ≈ 2.4 GiB of basket payload, well
     // past kStartBigFile. The last batch's baskets sit above 2 GiB.
     let per_batch = 1_000_000i64;

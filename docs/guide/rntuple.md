@@ -4,11 +4,16 @@ RNTuple is ROOT's columnar event-data format (the successor to `TTree`).
 oxiroot reads and writes it in pure Rust — anchor, header/footer envelopes,
 page lists, and per-column page decoding — with a typed field API that covers
 scalars, strings, nested collections, records, variants, fixed-size arrays, and
-user classes. For reading and writing columns the same way for an RNTuple and a `TTree`, use
-[Datasets](datasets.md). This page covers the RNTuple-specific layer underneath
-(`oxiroot::ntuple`): every field type, including records, variants and
-reduced-precision reals, the cluster-by-cluster writer, and the low-level
-reader.
+user classes. 
+!!! note "Read and write columns with Datasets"
+    [Datasets](datasets.md) is the API for reading and writing columns, the
+    same way for an RNTuple and a `TTree`: records, maps and sets,
+    reduced-precision reals, optionals and bitsets included, chosen with a
+    schema. This page covers the format's own layer underneath,
+    `oxiroot::ntuple::raw` (`Field`, `NtupleWriter`, `FieldValues`): what a
+    merger or an inspector works with, and the one field type a batch does not
+    hold, `std::variant`, along with schema extension. The header and footer
+    (`NtupleReader`) are reached from a dataset with `as_ntuple()`.
 
 ## Writing fields
 
@@ -17,14 +22,15 @@ common column types directly from `Vec`s; the type name and physical column
 encoding are derived for you.
 
 ```rust
-use oxiroot::ntuple::{Column, Field, FieldValues, NtupleReader, NtupleWriter};
+use oxiroot::ntuple::{NtupleReader};
+use oxiroot::ntuple::raw::{Column, Field, FieldValues, NtupleWriter};
 
 let fields = vec![
     Field::f64("mass", vec![91.2, 125.0]),
     Field::i32("charge", vec![0, -1]),
 ];
 
-let mut w = NtupleWriter::create("data.root", "events", Compression::None)?;
+let mut w = NtupleWriter::create("data.root", "events", Compression::Stored)?;
 w.write_batch(&fields)?; // one cluster
 w.finish()?;
 ```

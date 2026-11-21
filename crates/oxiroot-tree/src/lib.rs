@@ -10,7 +10,6 @@
 //! `TStreamerInfo` for the element struct so the file is self-describing.
 
 mod basket;
-mod chain;
 mod entrylist;
 mod merge;
 mod reader;
@@ -18,9 +17,21 @@ mod streamer_gen;
 mod value;
 mod writer;
 
-pub use chain::{ChainBranchRead, ChainReader};
 pub use entrylist::EntryList;
-pub use merge::append_trees;
-pub use reader::{BranchLayout, BranchRead, Friend, TreeIndex, TreeReader};
-pub use value::{BranchValues, FromBranch, Jagged, LeafType};
-pub use writer::{Branch, SplitMember, TreeWriter, raw};
+pub use reader::{BranchLayout, Friend, TreeIndex, TreeReader};
+pub use value::LeafType;
+
+/// The `TTree` format's own reader and writer types: typed branch values,
+/// branch constructors, the streaming writer, and the functions that lay a
+/// tree out in a file.
+///
+/// `oxiroot-dataset` is the API for reading and writing columns, in a tree
+/// or an `RNTuple` alike. These are what it is built on, for tools that work
+/// at the level of the format (a merger, an inspector).
+pub mod raw {
+    pub use crate::merge::append_trees;
+    pub use crate::reader::BranchRead;
+    pub use crate::value::{BranchValues, FromBranch, Jagged};
+    pub use crate::writer::raw::*;
+    pub use crate::writer::{Branch, SplitMember, TreeWriter};
+}

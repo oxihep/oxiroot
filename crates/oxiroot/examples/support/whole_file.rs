@@ -1,14 +1,14 @@
 //! Whole-file writing for the interop harnesses, on the low-level `raw`
-//! writers: one `TTree` or RNTuple per file, written in one cluster, with every
+//! writers: one `TTree` or `RNTuple` per file, written in one cluster, with every
 //! branch and field kind (split branches included) that ROOT and uproot must
 //! read back.
 
 use std::path::Path;
 
 use oxiroot::file::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
-use oxiroot::ntuple::Field;
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::Compression;
-use oxiroot::tree::Branch;
+use oxiroot::tree::raw::Branch;
 
 fn write(
     path: impl AsRef<Path>,
@@ -41,7 +41,7 @@ pub fn write_tree_file(
     })
 }
 
-/// Write a file holding the RNTuple `name`, in one cluster.
+/// Write a file holding the `RNTuple` `name`, in one cluster.
 pub fn write_rntuple_file(
     path: impl AsRef<Path>,
     name: &str,

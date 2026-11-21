@@ -1,5 +1,5 @@
 //! One API to read and write ROOT's two columnar formats, `TTree` and
-//! RNTuple: a [`Batch`] of named, flat columns is what reading returns and
+//! `RNTuple`: a [`Batch`] of named, flat columns is what reading returns and
 //! writing takes, whatever the format.
 //!
 //! ```no_run
@@ -15,7 +15,7 @@
 //!     let pt: &[f32] = batch.values("pt")?;               // a slice, no copy
 //!     let jets = batch.jagged::<f32>("jet_pt")?;          // offsets + flat values
 //!     let keep: Vec<bool> = pt.iter().zip(jets.rows()).map(|(&p, j)| p > 25.0 && j.len() >= 2).collect();
-//!     out.write(&batch.filter(&keep)?)?;                  // a skim, no per-type code
+//!     out.write(batch.filter(&keep)?)?;                   // a skim, no per-type code
 //! }
 //! out.finish()?;
 //! # Ok::<(), oxiroot_io_core::Error>(())
@@ -30,7 +30,7 @@
 //! `std::vector<float>` allocates two buffers per batch, not one `Vec` per
 //! entry.
 //!
-//! | Rust | `TTree` | RNTuple |
+//! | Rust | `TTree` | `RNTuple` |
 //! |---|---|---|
 //! | `bool`, `i8` … `u64`, `f32`, `f64` | scalar leaf | scalar field |
 //! | `String` | `TLeafC` string | `std::string` |
@@ -51,10 +51,31 @@
 //! `into_polars`, `from_polars`). Every column shape converts, structs and
 //! optionals (as nulls) included.
 //!
-//! The format-specific readers and writers (`oxiroot_tree`,
-//! `oxiroot_rntuple`) remain underneath for what only one format has: split
-//! objects, friends and indices, RNTuple half-precision and quantized floats,
-//! variants and schema extension.
+//! # Stored types
+//!
+//! A column's shape does not say everything about how it is stored: a list
+//! can be a `std::vector`, a `std::set` or a C-style `x[n]`, and an `f32` can
+//! be kept in half precision. A [`Schema`] of [`DataType`]s says so.
+//! [`Dataset::schema`] reports what a file holds, and a writer stores each
+//! column as its own shape unless [`DatasetWriter::schema`] says otherwise:
+//!
+//! | Stored type | Held as | Format |
+//! |---|---|---|
+//! | [`DataType::Half`], [`Truncated`](DataType::Truncated), [`Quantized`](DataType::Quantized) | `f32` | `RNTuple` |
+//! | [`DataType::CArray`] (`x[n]`) | list | `TTree` |
+//! | [`DataType::Set`] | list | `RNTuple` |
+//! | [`DataType::Map`] | list of `{_0, _1}` structs | `RNTuple` |
+//! | [`DataType::Bitset`] | array of `bool` | `RNTuple` |
+//! | [`DataType::UniquePtr`] | optional | `RNTuple` |
+//! | [`DataType::Atomic`] | the bare value | `RNTuple` |
+//!
+//! [`Dataset::chain`] reads several datasets as one.
+//!
+//! The formats' own types (`oxiroot_tree::raw`, `oxiroot_rntuple::raw`) are
+//! underneath, for a tool that works at the level of one format and for what
+//! a batch does not hold: a `std::variant`, schema extension, split objects.
+//! A tree's friends and index, and an `RNTuple`'s header and footer, are
+//! reached through [`Dataset::as_tree`] and [`Dataset::as_ntuple`].
 
 #[cfg(feature = "arrow")]
 mod arrow_conv;
@@ -63,11 +84,13 @@ mod column;
 #[cfg(feature = "polars")]
 mod polars_conv;
 mod read;
+mod schema;
 mod write;
 
 pub use batch::Batch;
 pub use column::{Column, IntoColumn, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
+pub use schema::{DataType, Schema};
 pub use write::{DatasetObject, DatasetWriter};
 
 /// The arrow-rs crates the `arrow` feature converts to and from, re-exported

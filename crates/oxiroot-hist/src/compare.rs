@@ -57,7 +57,7 @@ impl Hist1D {
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn chi2_test(&self, other: &Hist1D) -> Result<Chi2TestResult> {
+    pub fn chi2_test(&self, other: &Self) -> Result<Chi2TestResult> {
         self.chi2_test_with(other, Chi2TestKind::UnweightedUnweighted)
     }
 
@@ -67,7 +67,7 @@ impl Hist1D {
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn chi2_test_with(&self, other: &Hist1D, kind: Chi2TestKind) -> Result<Chi2TestResult> {
+    pub fn chi2_test_with(&self, other: &Self, kind: Chi2TestKind) -> Result<Chi2TestResult> {
         if !self.xaxis.same_binning(&other.xaxis) {
             return Err(Error::BinningMismatch {
                 detail: "chi2_test: histograms have different binning".into(),
@@ -156,14 +156,14 @@ impl Hist1D {
     ///
     /// # Errors
     /// Returns [`Error::BinningMismatch`] if the two axes are not identical.
-    pub fn kolmogorov_test(&self, other: &Hist1D) -> Result<KsTestResult> {
+    pub fn kolmogorov_test(&self, other: &Self) -> Result<KsTestResult> {
         if !self.xaxis.same_binning(&other.xaxis) {
             return Err(Error::BinningMismatch {
                 detail: "kolmogorov_test: histograms have different binning".into(),
             });
         }
         let n = usize::saturating_from(self.xaxis.nbins.max(0));
-        let bin = |h: &Hist1D, i: usize| h.contents.get(i).copied().unwrap_or(0.0);
+        let bin = |h: &Self, i: usize| h.contents.get(i).copied().unwrap_or(0.0);
         let sum1: f64 = (1..=n).map(|i| bin(self, i)).sum();
         let sum2: f64 = (1..=n).map(|i| bin(other, i)).sum();
         if sum1 <= 0.0 || sum2 <= 0.0 {

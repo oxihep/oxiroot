@@ -2,7 +2,8 @@
 
 use crate::support::write_tree_file_baskets;
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues};
 
 #[test]
 fn multi_basket_round_trips() {
@@ -23,7 +24,7 @@ fn multi_basket_round_trips() {
 
     let out = std::env::temp_dir().join("oxiroot_multibasket.root");
     // 7 entries, 3 per basket -> 3 baskets per branch ([0,3), [3,6), [6,7)).
-    write_tree_file_baskets(&out, "T", &branches, Compression::None, 3).expect("write");
+    write_tree_file_baskets(&out, "T", &branches, Compression::Stored, 3).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");

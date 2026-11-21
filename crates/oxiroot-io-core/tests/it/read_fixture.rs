@@ -99,12 +99,12 @@ fn decompresses_zstd_object_matching_uncompressed() {
 
     // The uncompressed fixture stores the object verbatim.
     assert!(unc_key.is_uncompressed());
-    let unc_obj = unc.key_payload(unc_key).expect("uncompressed payload");
+    let unc_obj = unc.key_payload(&unc_key).expect("uncompressed payload");
 
     // The zstd fixture stores it compressed; decode it via the real ROOT block
     // framing + zrip and require a byte-for-byte match with the plain object.
     assert!(!zst_key.is_uncompressed());
-    let zst_payload = zst.key_payload(zst_key).expect("zstd payload");
+    let zst_payload = zst.key_payload(&zst_key).expect("zstd payload");
     let decoded =
         oxiroot_compress::decompress(&zst_payload, zst_key.obj_len as usize).expect("zstd decode");
 

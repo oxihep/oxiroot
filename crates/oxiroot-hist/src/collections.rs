@@ -9,23 +9,21 @@
 //! class tags oxiroot writes and the back-references ROOT writes.
 
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::{Object, ReadRoot};
 use std::ops::Range;
 
 use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, TagReader, read_object_base, write_named, write_object_any,
-    write_object_base,
+    K_BYTE_COUNT_MASK, K_CLASS_MASK, K_NEW_CLASS_TAG, TagReader, read_object_base, write_named,
+    write_object_any, write_object_base,
 };
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, objptr};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerSet, WBuffer};
+use oxiroot_io_core::{Error, RBuffer, Result, StreamerSet, WBuffer};
 
-use crate::base::object_bytes_any_keyed;
 use crate::graph::{Graph, decode_tgraph};
 use crate::hist1d::{Hist1D, decode_th1};
 use crate::threaded::Mergeable;
 use crate::write::{WriteRoot, hist_streamer_classes};
 
-const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
-const K_CLASS_MASK: u32 = 0x8000_0000;
 /// HistStack/GraphStack leave `fMaximum`/`fMinimum` at this sentinel until drawn.
 const UNSET_LIMIT: f64 = -1111.0;
 
@@ -86,7 +84,7 @@ fn write_object_list(w: &mut WBuffer, list_name: &str, members: &[(String, Vec<u
 }
 
 /// Read a `Named` base (version header, `TObject`, `fName`, `fTitle`).
-fn read_named(r: &mut RBuffer) -> Result<(String, String)> {
+fn read_named(r: &mut RBuffer<'_>) -> Result<(String, String)> {
     r.read_version()?;
     read_object_base(r)?;
     let name = r.string()?;
@@ -99,7 +97,7 @@ fn read_named(r: &mut RBuffer) -> Result<(String, String)> {
 /// null member pointer (an absent list) yields an empty vector. Reuses
 /// [`TagReader`] so ROOT's class back-references resolve.
 fn list_member_ranges(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
 ) -> Result<Vec<(String, Range<usize>)>> {
     let start = r.pos();
@@ -130,7 +128,8 @@ fn list_member_ranges(
     r.string()?; // the list's fName
     let n = r.be_i32()?.max(0);
 
-    let mut out = Vec::with_capacity(usize::saturating_from(n));
+    // `n` comes from the file; every entry takes at least a 4-byte header.
+    let mut out = Vec::with_capacity(r.bounded_capacity(usize::saturating_from(n), 4));
     for _ in 0..n {
         let header = tags.read_header(r)?;
         match (header.class_name, header.end) {
@@ -154,7 +153,7 @@ fn list_member_ranges(
 /// A `HistStack` — a named stack of histograms (drawn overlaid or summed). Build
 /// one with [`HistStack::new`], name it with [`named`](HistStack::named), and
 /// [`add`](HistStack::add) the histograms; write it through
-/// [`FileWriter`](crate::FileWriter) or [`write_root`](crate::WriteRoot::write_root).
+/// [`FileWriter`](oxiroot_io_core::FileWriter).
 #[derive(Debug, Clone, Default, PartialEq)]
 #[doc(alias = "THStack")]
 pub struct HistStack {
@@ -165,20 +164,21 @@ pub struct HistStack {
 
 impl HistStack {
     /// An empty stack (give it a key name with [`named`](Self::named)).
-    pub fn new() -> HistStack {
-        HistStack::default()
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Set the key name this stack is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> HistStack {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// Set the stack's title.
     #[must_use]
-    pub fn titled(mut self, title: impl Into<String>) -> HistStack {
+    pub fn titled(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
@@ -187,20 +187,23 @@ impl HistStack {
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
-    pub fn add(mut self, hist: Hist1D) -> HistStack {
+    pub fn add(mut self, hist: Hist1D) -> Self {
         self.hists.push(hist);
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The title.
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.title
     }
     /// The stacked histograms, in the order they were added.
+    #[must_use]
     pub fn hists(&self) -> &[Hist1D] {
         &self.hists
     }
@@ -216,7 +219,7 @@ impl Mergeable for HistStack {
     /// Returns [`oxiroot_io_core::Error::BinningMismatch`] if two histograms of
     /// the same name have different binnings; the histograms merged before it
     /// keep their sums.
-    fn merge(&mut self, other: &HistStack) -> Result<()> {
+    fn merge(&mut self, other: &Self) -> Result<()> {
         for from in &other.hists {
             match self.hists.iter_mut().find(|h| h.name == from.name) {
                 Some(h) => h.add(from, 1.0)?,
@@ -239,7 +242,7 @@ impl WriteRoot for HistStack {
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
-        let obj = w.begin_object(2); // HistStack version 2
+        let obj = w.begin_object(2); // THStack version 2
         write_named(&mut w, 0, &self.name, &self.title);
         let members: Vec<(String, Vec<u8>)> = self
             .hists
@@ -274,27 +277,30 @@ fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<HistStack
         });
     }
     let mut r = RBuffer::new(object);
-    r.read_version()?; // HistStack version
+    r.read_version()?; // THStack version
     let (name, title) = read_named(&mut r)?;
     let mut tags = TagReader::new(keylen);
     let ranges = list_member_ranges(&mut r, &mut tags)?;
     let mut hists = Vec::with_capacity(ranges.len());
     for (member_class, range) in ranges {
         if member_class.starts_with("TH1") {
-            hists.push(decode_th1((member_class, object[range].to_vec()))?);
+            hists.push(decode_th1(&member_class, &object[range])?);
         }
     }
     Ok(HistStack { name, title, hists })
 }
 
-pub(crate) fn read_thstack(file: &FileReader, name: &str) -> Result<HistStack> {
-    let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
-    decode_thstack(&class, &object, keylen)
-}
+impl ReadRoot for HistStack {
+    const CLASS: &'static str = "THStack";
 
-pub(crate) fn read_thstack_in(file: &FileReader, subdir: &str, name: &str) -> Result<HistStack> {
-    let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
-    decode_thstack(&class, &object, keylen)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| {
+            let key_len = object.key_len.ok_or_else(|| {
+                Error::Unsupported("a THStack inside a collection cannot be read".into())
+            })?;
+            decode_thstack(object.class, object.bytes, key_len)
+        })
+    }
 }
 
 // --- GraphStack -------------------------------------------------------------
@@ -312,20 +318,21 @@ pub struct GraphStack {
 
 impl GraphStack {
     /// An empty multigraph (give it a key name with [`named`](Self::named)).
-    pub fn new() -> GraphStack {
-        GraphStack::default()
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Set the key name this multigraph is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> GraphStack {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// Set the multigraph's title.
     #[must_use]
-    pub fn titled(mut self, title: impl Into<String>) -> GraphStack {
+    pub fn titled(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
@@ -334,20 +341,23 @@ impl GraphStack {
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
-    pub fn add(mut self, graph: Graph) -> GraphStack {
+    pub fn add(mut self, graph: Graph) -> Self {
         self.graphs.push(graph);
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The title.
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.title
     }
     /// The member graphs, in the order they were added.
+    #[must_use]
     pub fn graphs(&self) -> &[Graph] {
         &self.graphs
     }
@@ -365,7 +375,7 @@ impl WriteRoot for GraphStack {
     }
     fn to_root_bytes(&self) -> Vec<u8> {
         let mut w = WBuffer::new();
-        let obj = w.begin_object(2); // GraphStack version 2
+        let obj = w.begin_object(2); // TMultiGraph version 2
         write_named(&mut w, 0, &self.name, &self.title);
         let members: Vec<(String, Vec<u8>)> = self
             .graphs
@@ -401,14 +411,14 @@ fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<Graph
         });
     }
     let mut r = RBuffer::new(object);
-    r.read_version()?; // GraphStack version
+    r.read_version()?; // TMultiGraph version
     let (name, title) = read_named(&mut r)?;
     let mut tags = TagReader::new(keylen);
     let ranges = list_member_ranges(&mut r, &mut tags)?;
     let mut graphs = Vec::with_capacity(ranges.len());
     for (member_class, range) in ranges {
         if member_class.starts_with("TGraph") {
-            graphs.push(decode_tgraph(&name, &member_class, &object[range])?);
+            graphs.push(decode_tgraph(&name, &member_class, &object[range], None)?);
         }
     }
     Ok(GraphStack {
@@ -418,16 +428,15 @@ fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<Graph
     })
 }
 
-pub(crate) fn read_tmultigraph(file: &FileReader, name: &str) -> Result<GraphStack> {
-    let (class, object, keylen) = object_bytes_any_keyed(file, name)?;
-    decode_tmultigraph(&class, &object, keylen)
-}
+impl ReadRoot for GraphStack {
+    const CLASS: &'static str = "TMultiGraph";
 
-pub(crate) fn read_tmultigraph_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<GraphStack> {
-    let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
-    decode_tmultigraph(&class, &object, keylen)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| {
+            let key_len = object.key_len.ok_or_else(|| {
+                Error::Unsupported("a TMultiGraph inside a collection cannot be read".into())
+            })?;
+            decode_tmultigraph(object.class, object.bytes, key_len)
+        })
+    }
 }

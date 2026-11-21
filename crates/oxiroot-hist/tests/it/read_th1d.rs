@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist1D, ReadRoot};
+use oxiroot_hist::Hist1D;
 use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
@@ -20,7 +20,7 @@ const GOLDEN_ENTRIES: f64 = 533.0;
 
 fn check_h1(file: &str) {
     let f = FileReader::open(fixture(file)).expect("open fixture");
-    let h = Hist1D::read_root(&f, "h1").expect("read TH1D");
+    let h = f.get::<Hist1D>("h1").expect("read TH1D");
 
     assert_eq!(h.name, "h1");
     assert_eq!(h.title, "");
@@ -66,12 +66,14 @@ fn reads_th1d_zstd() {
 
 #[test]
 fn zstd_and_uncompressed_agree() {
-    let a = Hist1D::read_root(
-        &FileReader::open(fixture("th1d_uncompressed.root")).unwrap(),
-        "h1",
-    )
-    .unwrap();
-    let b = Hist1D::read_root(&FileReader::open(fixture("th1d_zstd.root")).unwrap(), "h1").unwrap();
+    let a = FileReader::open(fixture("th1d_uncompressed.root"))
+        .unwrap()
+        .get::<Hist1D>("h1")
+        .unwrap();
+    let b = FileReader::open(fixture("th1d_zstd.root"))
+        .unwrap()
+        .get::<Hist1D>("h1")
+        .unwrap();
     assert_eq!(
         a, b,
         "compressed and uncompressed histograms must be identical"

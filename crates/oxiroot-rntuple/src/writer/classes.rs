@@ -1,4 +1,4 @@
-//! The streamer classes an RNTuple's record fields need, and their checksums.
+//! The streamer classes an `RNTuple`'s record fields need, and their checksums.
 
 use oxiroot_io_core::streamer_gen::{ClassDef, basic, streamer_info_list};
 
@@ -8,7 +8,7 @@ use crate::anchor::anchor_streamer_class;
 /// ROOT's class checksum (`TClass::GetCheckSum`) for a flat record: fold each
 /// character of the class name, then of every member's name and C++ type, into
 /// `id = id * 3 + ch`. Matches `TClass::GetCheckSum()` for plain-member classes,
-/// which the RNTuple field record stores so ROOT can validate the on-disk schema.
+/// which the `RNTuple` field record stores so ROOT can validate the on-disk schema.
 pub(super) fn class_checksum(class_name: &str, members: &[(String, Column)]) -> u32 {
     let fold = |id: u32, s: &str| {
         s.bytes()
@@ -100,8 +100,8 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<ClassDef<'a>>) {
     }
 }
 
-/// The `TStreamerInfo` entries a file holding RNTuples with these fields needs:
-/// the anchor class, which ROOT describes in every RNTuple file, then the user
+/// The `TStreamerInfo` entries a file holding `RNTuples` with these fields needs:
+/// the anchor class, which ROOT describes in every `RNTuple` file, then the user
 /// classes of `fields`.
 pub(super) fn ntuple_classes<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<ClassDef<'a>> {
     let mut classes = vec![anchor_streamer_class()];

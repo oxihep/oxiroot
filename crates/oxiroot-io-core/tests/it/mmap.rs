@@ -5,7 +5,7 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, MmapSource};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,12 +14,13 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 #[test]
-fn open_mmap_matches_open() {
+fn a_mapped_file_matches_one_in_memory() {
     let path = fixture("th1d_uncompressed.root");
     let owned = FileReader::open(&path).expect("open");
     // SAFETY: the fixture is not modified while it is mapped.
     #[allow(unsafe_code)]
-    let mapped = unsafe { FileReader::open_mmap(&path) }.expect("open_mmap");
+    let source = unsafe { MmapSource::open(&path) }.expect("map");
+    let mapped = FileReader::from_source(Box::new(source)).expect("open");
 
     assert_eq!(mapped.size(), owned.size(), "same length");
     let whole = |f: &FileReader| {

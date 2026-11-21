@@ -1,4 +1,4 @@
-//! M3 (chunk 1): parse + checksum-verify the RNTuple anchor and load the
+//! M3 (chunk 1): parse + checksum-verify the `RNTuple` anchor and load the
 //! header/footer envelopes from a real ROOT fixture.
 
 use std::path::PathBuf;

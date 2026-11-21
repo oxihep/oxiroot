@@ -1,10 +1,29 @@
-//! Summing histogram files with [`merge_histogram_files`]: 2-D and 3-D profiles
+//! Summing histogram files with a `Merger`: 2-D and 3-D profiles
 //! add up to one combined fill, and a key that cannot be merged is skipped or
 //! named rather than written as a partial sum.
 
 use oxiroot::file::Error;
-use oxiroot::hadd::merge_histogram_files;
+use oxiroot::hadd::{HistMergeOutcome, MergeKind, Merger};
 use oxiroot::prelude::*;
+
+/// Merge the histogram files `inputs` into `out`, uncompressed.
+fn merge_histogram_files<P: AsRef<std::path::Path>>(
+    out: &std::path::Path,
+    inputs: &[P],
+) -> Result<HistMergeOutcome, Error> {
+    let report = Merger::new()
+        .inputs(inputs)
+        .compression(Compression::Stored)
+        .merge(out)
+        .map_err(|e| match e {
+            oxiroot::Error::Root(e) => e,
+            other => panic!("not a ROOT error: {other}"),
+        })?;
+    match report.kind {
+        MergeKind::Histograms(outcome) => Ok(outcome),
+        other => panic!("not a histogram merge: {other:?}"),
+    }
+}
 
 // --------------------------------------------------------------------- data
 
@@ -49,6 +68,7 @@ fn empty_2d() -> Profile2D {
         .reg(2, 0.0, 2.0)
         .mean()
         .to_root()
+        .unwrap()
         .named("p2")
 }
 
@@ -58,6 +78,7 @@ fn empty_3d() -> Profile3D {
         .reg(2, 0.0, 2.0)
         .mean()
         .to_root()
+        .unwrap()
         .named("p3")
 }
 
@@ -104,26 +125,21 @@ fn file_merge_sums_2d_and_3d_profiles() {
     FileWriter::create(&in1)
         .add(&a2)
         .add(&a3)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     FileWriter::create(&in2)
         .add(&b2)
         .add(&b3)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
-    let inputs = [
-        FileReader::open(&in1).unwrap(),
-        FileReader::open(&in2).unwrap(),
-    ];
-    let outcome = merge_histogram_files(&out, &inputs, Compression::None).unwrap();
+    let outcome = merge_histogram_files(&out, &[&in1, &in2]).unwrap();
 
     let result = (|| {
         let f = FileReader::open(&out)?;
-        Ok::<_, Error>((
-            Profile2D::read_root(&f, "p2")?,
-            Profile3D::read_root(&f, "p3")?,
-        ))
+        Ok::<_, Error>((f.get::<Profile2D>("p2")?, f.get::<Profile3D>("p3")?))
     })();
     for p in [&in1, &in2, &out] {
         let _ = std::fs::remove_file(p);
@@ -148,7 +164,11 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     let out_a = dir.join(format!("oxiroot_pskip_out_a_{tag}.root"));
     let out_b = dir.join(format!("oxiroot_pskip_out_b_{tag}.root"));
 
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.fill(0.5);
     let p2 = profile_2d(&[&SET_A_2D]);
     let mut broken = p2.clone();
@@ -156,18 +176,19 @@ fn an_unreadable_profile_is_skipped_not_fatal() {
     FileWriter::create(&good)
         .add(&h)
         .add(&p2)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     FileWriter::create(&bad)
         .add(&h)
         .add(&broken)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let run = |inputs: [&std::path::Path; 2], out: &std::path::Path| {
-        let files = inputs.map(|p| FileReader::open(p).unwrap());
-        let outcome = merge_histogram_files(out, &files, Compression::None).unwrap();
-        let summed_h = Hist1D::read_root(&FileReader::open(out).unwrap(), "h").unwrap();
+        let outcome = merge_histogram_files(out, &inputs).unwrap();
+        let summed_h = FileReader::open(out).unwrap().get::<Hist1D>("h").unwrap();
         (outcome, summed_h)
     };
     // The bad object last, then first: either way the key is skipped whole.
@@ -197,23 +218,29 @@ fn a_binning_mismatch_names_the_key() {
     let f1 = dir.join(format!("oxiroot_pmis_1_{tag}.root"));
     let f2 = dir.join(format!("oxiroot_pmis_2_{tag}.root"));
     let out = dir.join(format!("oxiroot_pmis_out_{tag}.root"));
-    Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .named("pt")
-        .write_root(&f1, Compression::None)
+    FileWriter::create(&f1)
+        .add(
+            &Hist::reg(4, 0.0, 4.0)
+                .double()
+                .to_root()
+                .unwrap()
+                .named("pt"),
+        )
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    Hist::reg(5, 0.0, 4.0)
-        .double()
-        .to_root()
-        .named("pt")
-        .write_root(&f2, Compression::None)
+    FileWriter::create(&f2)
+        .add(
+            &Hist::reg(5, 0.0, 4.0)
+                .double()
+                .to_root()
+                .unwrap()
+                .named("pt"),
+        )
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    let files = [
-        FileReader::open(&f1).unwrap(),
-        FileReader::open(&f2).unwrap(),
-    ];
-    let result = merge_histogram_files(&out, &files, Compression::None);
+    let result = merge_histogram_files(&out, &[&f1, &f2]);
     for p in [&f1, &f2, &out] {
         let _ = std::fs::remove_file(p);
     }

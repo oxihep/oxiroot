@@ -1,4 +1,4 @@
-//! Write an RNTuple with *nested* collection fields and read it back. Run:
+//! Write an `RNTuple` with *nested* collection fields and read it back. Run:
 //!
 //! ```sh
 //! cargo run -p oxiroot --example rntuple_nested
@@ -7,10 +7,11 @@
 //! Shows the three nesting shapes — a vector of strings, a vector of vectors,
 //! and a vector of records (a `std::pair`) — written so that official ROOT and
 //! uproot read them too. Records are RNTuple-only, so this uses the low-level
-//! RNTuple writer and reader rather than `oxiroot::data`. Pass an output path as the first argument to keep the
+//! `RNTuple` writer and reader rather than `oxiroot::data`. Pass an output path as the first argument to keep the
 //! file (default: a temporary file that is read back and removed).
 
-use oxiroot::ntuple::{Column, Field, NtupleReader, NtupleWriter};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Column, Field, NtupleWriter};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {

@@ -1,24 +1,36 @@
 //! Growable write buffer for ROOT structures, with back-patching.
 //!
 //! Correct ROOT output is full of "write a placeholder now, fill in the real
-//! value once the size/offset is known": object byte counts, TFile seek
-//! pointers, RNTuple envelope and frame lengths. [`WBuffer`] provides reserved
+//! value once the size/offset is known": object byte counts, `TFile` seek
+//! pointers, `RNTuple` envelope and frame lengths. [`WBuffer`] provides reserved
 //! regions ([`Patch`]) and a byte-count helper ([`CountToken`]) for exactly
 //! this pattern.
 
 use super::reader::K_BYTE_COUNT_MASK;
 use crate::cast::SaturatingFrom;
 
-/// Handle to a reserved, fixed-size region awaiting a later value.
-#[derive(Debug, Clone, Copy)]
-pub struct Patch {
+/// Handle to a reserved region of `N` bytes awaiting a later value. It is
+/// used up by the call that fills the region, so a region is filled once, and
+/// its width is part of the type, so a 4-byte region cannot take a `u64`.
+#[derive(Debug)]
+#[must_use = "a reserved region must be patched"]
+pub struct Patch<const N: usize> {
     offset: usize,
-    len: usize,
+}
+
+impl<const N: usize> Patch<N> {
+    /// The offset of the region in its buffer (useful when computing seek
+    /// pointers).
+    #[must_use]
+    pub const fn offset(&self) -> usize {
+        self.offset
+    }
 }
 
 /// Handle returned by [`WBuffer::begin_object`] and consumed by
 /// [`WBuffer::end_object`] to back-patch a streamed object's byte count.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
+#[must_use = "an object begun must be ended with `end_object`"]
 pub struct CountToken {
     count_pos: usize,
 }
@@ -40,11 +52,13 @@ macro_rules! num_writer {
 
 impl WBuffer {
     /// Create an empty buffer.
+    #[must_use]
     pub fn new() -> Self {
         Self { buf: Vec::new() }
     }
 
     /// Create an empty buffer with reserved capacity.
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
@@ -52,21 +66,25 @@ impl WBuffer {
     }
 
     /// Number of bytes written so far (also the next write offset).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.buf.len()
     }
 
     /// Whether nothing has been written yet.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
     }
 
     /// Borrow the bytes written so far.
+    #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.buf
     }
 
     /// Consume the buffer, returning the written bytes.
+    #[must_use]
     pub fn into_vec(self) -> Vec<u8> {
         self.buf
     }
@@ -186,27 +204,29 @@ impl WBuffer {
         self.buf.extend_from_slice(b);
     }
 
-    /// Reserve `n` zero bytes for later patching and return a handle to them.
-    pub fn reserve(&mut self, n: usize) -> Patch {
+    /// Reserve `N` zero bytes for later patching and return a handle to them:
+    /// `w.reserve::<4>()` for a value [`patch_be_u32`](Self::patch_be_u32) fills.
+    pub fn reserve<const N: usize>(&mut self) -> Patch<N> {
         let offset = self.buf.len();
-        self.buf.resize(offset + n, 0);
-        Patch { offset, len: n }
+        self.buf.resize(offset + N, 0);
+        Patch { offset }
     }
 
-    /// The offset a [`Patch`] points at (useful when computing seek pointers).
-    pub fn patch_offset(&self, p: Patch) -> usize {
-        p.offset
-    }
-
-    /// Overwrite a reserved 4-byte region with a big-endian `u32`.
-    pub fn patch_be_u32(&mut self, p: Patch, v: u32) {
-        assert_eq!(p.len, 4, "patch_be_u32 on a {}-byte region", p.len);
+    /// Fill a reserved 4-byte region with a big-endian `u32`.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "taking the handle is what makes a region fillable once"
+    )]
+    pub fn patch_be_u32(&mut self, p: Patch<4>, v: u32) {
         self.buf[p.offset..p.offset + 4].copy_from_slice(&v.to_be_bytes());
     }
 
-    /// Overwrite a reserved 8-byte region with a big-endian `u64`.
-    pub fn patch_be_u64(&mut self, p: Patch, v: u64) {
-        assert_eq!(p.len, 8, "patch_be_u64 on a {}-byte region", p.len);
+    /// Fill a reserved 8-byte region with a big-endian `u64`.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "taking the handle is what makes a region fillable once"
+    )]
+    pub fn patch_be_u64(&mut self, p: Patch<8>, v: u64) {
         self.buf[p.offset..p.offset + 8].copy_from_slice(&v.to_be_bytes());
     }
 
@@ -222,6 +242,10 @@ impl WBuffer {
     /// Finish a streamed object, back-patching the byte count to cover
     /// everything written since [`WBuffer::begin_object`] (excluding the count
     /// word itself), with [`K_BYTE_COUNT_MASK`] set.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "taking the token is what makes an object endable once"
+    )]
     pub fn end_object(&mut self, tok: CountToken) {
         let nbytes = u32::saturating_from(self.buf.len() - (tok.count_pos + 4));
         let word = nbytes | K_BYTE_COUNT_MASK;
@@ -285,7 +309,7 @@ mod tests {
     #[test]
     fn reserve_and_patch() {
         let mut w = WBuffer::new();
-        let p = w.reserve(4);
+        let p = w.reserve::<4>();
         w.be_u32(0xAABB_CCDD);
         w.patch_be_u32(p, 0x1122_3344);
         let bytes = w.into_vec();

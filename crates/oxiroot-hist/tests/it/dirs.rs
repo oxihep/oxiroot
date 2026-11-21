@@ -4,14 +4,16 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, Hist1D, ReadRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::FileReader;
+use oxiroot_io_core::FileWriter;
 
 #[test]
 fn writes_histograms_into_subdirectories() {
     let mut top = Hist::reg(3, 0.0, 3.0)
         .double()
         .to_root()
+        .unwrap()
         .named("top")
         .titled("top-level");
     top.fill(0.5);
@@ -19,6 +21,7 @@ fn writes_histograms_into_subdirectories() {
     let mut sr = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("mll")
         .titled("signal region");
     sr.fill(1.5);
@@ -26,6 +29,7 @@ fn writes_histograms_into_subdirectories() {
     let mut cr = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("mll")
         .titled("control region");
     cr.fill(0.5);
@@ -35,7 +39,8 @@ fn writes_histograms_into_subdirectories() {
         .add(&top)
         .dir("signal", |d| d.add(&sr))
         .dir("control", |d| d.add(&cr))
-        .write(oxiroot_io_core::Compression::None)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
@@ -51,9 +56,9 @@ fn writes_histograms_into_subdirectories() {
     assert!(root_keys.contains(&("control", "TDirectory")));
 
     // The top-level histogram and both subdirectory histograms read back.
-    assert_eq!(Hist1D::read_root(&f, "top").unwrap(), top);
-    assert_eq!(Hist1D::read_root_in(&f, "signal", "mll").unwrap(), sr);
-    assert_eq!(Hist1D::read_root_in(&f, "control", "mll").unwrap(), cr);
+    assert_eq!(f.get::<Hist1D>("top").unwrap(), top);
+    assert_eq!(f.get::<Hist1D>("signal/mll").unwrap(), sr);
+    assert_eq!(f.get::<Hist1D>("control/mll").unwrap(), cr);
 
     // The subdirectory's own key list is navigable.
     let signal = f.subdir("signal").expect("signal dir");
@@ -74,7 +79,11 @@ fn writes_histograms_into_subdirectories() {
 #[test]
 fn writes_directories_nested_several_levels_deep() {
     let named = |name: &str, weight: f64| {
-        let mut h = Hist::reg(1, 0.0, 1.0).double().to_root().named(name);
+        let mut h = Hist::reg(1, 0.0, 1.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named(name);
         h.fill_weight(0.5, weight);
         h
     };
@@ -94,18 +103,16 @@ fn writes_directories_nested_several_levels_deep() {
                 .dir("b", |d| d.add(&b).dir("c", |d| d.add(&c)))
                 .dir("sibling", |d| d.add(&sibling))
         })
-        .write(oxiroot_io_core::Compression::None)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(Hist1D::read_root(&f, "top").unwrap(), top);
-    assert_eq!(Hist1D::read_root_in(&f, "a", "in_a").unwrap(), a);
-    assert_eq!(Hist1D::read_root_in(&f, "a/b", "in_b").unwrap(), b);
-    assert_eq!(Hist1D::read_root_in(&f, "a/b/c", "in_c").unwrap(), c);
-    assert_eq!(
-        Hist1D::read_root_in(&f, "a/sibling", "in_sibling").unwrap(),
-        sibling
-    );
+    assert_eq!(f.get::<Hist1D>("top").unwrap(), top);
+    assert_eq!(f.get::<Hist1D>("a/in_a").unwrap(), a);
+    assert_eq!(f.get::<Hist1D>("a/b/in_b").unwrap(), b);
+    assert_eq!(f.get::<Hist1D>("a/b/c/in_c").unwrap(), c);
+    assert_eq!(f.get::<Hist1D>("a/sibling/in_sibling").unwrap(), sibling);
 
     // Each level lists what it holds: its objects and the directories below it.
     let names = |path: &str| {
@@ -131,10 +138,15 @@ fn writes_directories_nested_several_levels_deep() {
 /// it, not silently written for a reader to trip over.
 #[test]
 fn a_clash_inside_a_nested_directory_names_its_path() {
-    let h = Hist::reg(1, 0.0, 1.0).double().to_root().named("same");
+    let h = Hist::reg(1, 0.0, 1.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("same");
     let err = FileWriter::create("/tmp/oxiroot_nested_clash.root")
         .dir("a", |d| d.dir("b", |d| d.add(&h).add(&h)))
-        .to_bytes(oxiroot_io_core::Compression::None)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .to_bytes()
         .expect_err("a duplicate name must be refused");
     let message = err.to_string();
     assert!(message.contains("same") && message.contains("a/b"), "{err}");

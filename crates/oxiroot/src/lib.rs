@@ -1,6 +1,6 @@
 //! `oxiroot`: pure-Rust IO for the CERN ROOT file format.
 //!
-//! Read and write [RNTuple](oxiroot_rntuple) (ROOT's columnar event-data
+//! Read and write [`RNTuple`](oxiroot_rntuple) (ROOT's columnar event-data
 //! format), classic [`TTree`](oxiroot_tree), the [histogram](oxiroot_hist)
 //! family (`Hist1D`/`Hist2D`/`Hist3D`, `Profile1D`/`2D`/`3D`, `Efficiency`, `SparseHist`,
 //! `PolyHist`), and [graphs](oxiroot_hist::Graph) (`Graph`/`TGraphErrors`/
@@ -14,15 +14,15 @@
 //! use oxiroot::prelude::*;
 //!
 //! // Fill and save a histogram (the Hist builder; `weight()` tracks Sumw2).
-//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight().to_root();
+//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight().to_root()?;
 //! h.fill_weight(42.0, 1.5);
-//! h.write_root("out.root", Compression::Zstd(5))?; // WriteRoot trait
+//! FileWriter::create("out.root").add(&h).write()?; // WriteRoot trait
 //!
 //! // Write a columnar dataset — an RNTuple here, `Format::Tree` for a TTree —
 //! // then read it back.
 //! let batch = Batch::new().column("mass", vec![91.2_f64, 125.0])?;
 //! let mut out = DatasetWriter::create("data.root", "events", Format::Ntuple)?;
-//! out.write(&batch)?;
+//! out.write(batch)?;
 //! out.finish()?;
 //! let f = FileReader::open("data.root")?;
 //! let events = Dataset::open(&f, "events")?;
@@ -32,7 +32,7 @@
 //!
 //! # Datasets
 //!
-//! [`data`] reads and writes ROOT's two columnar formats, `TTree` and RNTuple,
+//! [`data`] reads and writes ROOT's two columnar formats, `TTree` and `RNTuple`,
 //! through one API: a [`Batch`](data::Batch) of flat columns is what
 //! [`Dataset`](data::Dataset) reads and [`DatasetWriter`](data::DatasetWriter)
 //! writes, whatever the format. The format-specific readers and writers in
@@ -42,10 +42,10 @@
 //!
 //! Types are named as Rust, not as C++: no `T` prefix. Types that read a file
 //! end in `Reader` ([`FileReader`], [`TreeReader`](tree::TreeReader),
-//! [`NtupleReader`](ntuple::NtupleReader), [`ChainReader`](tree::ChainReader)),
-//! and types that write one end in `Writer` ([`FileWriter`](file::FileWriter),
-//! [`DatasetWriter`](data::DatasetWriter), [`TreeWriter`](tree::TreeWriter),
-//! [`NtupleWriter`](ntuple::NtupleWriter)). The rest is in-memory data named
+//! [`NtupleReader`](ntuple::NtupleReader)), and types that write one end in
+//! `Writer` ([`FileWriter`], [`DatasetWriter`](data::DatasetWriter)). A
+//! columnar dataset, in either format, is a [`Dataset`](data::Dataset). The
+//! rest is in-memory data named
 //! for what it is — [`Hist1D`](hist::Hist1D), [`Profile1D`](hist::Profile1D),
 //! [`Graph`](hist::Graph), [`Func1D`](hist::Func1D), [`Batch`](data::Batch).
 //!
@@ -65,7 +65,7 @@ mod error;
 
 pub use error::{Error, Result};
 #[doc(inline)]
-pub use oxiroot_io_core::{Compression, FileReader, Value, read_object};
+pub use oxiroot_io_core::{Compression, FileReader, FileUpdater, FileWriter, Value};
 
 /// The ROOT file container and the object framework: reading and writing files,
 /// keys and directories, streamer info, and the traits objects implement
@@ -76,7 +76,7 @@ pub mod file {
 
 pub mod hadd;
 
-/// One API to read and write `TTree` and RNTuple: [`Batch`](data::Batch)es of
+/// One API to read and write `TTree` and `RNTuple`: [`Batch`](data::Batch)es of
 /// flat columns, read by [`Dataset`](data::Dataset) and written by
 /// [`DatasetWriter`](data::DatasetWriter) (from `oxiroot-dataset`).
 pub mod data {
@@ -102,14 +102,14 @@ pub mod linalg {
     pub use oxiroot_linalg::*;
 }
 
-/// RNTuple, ROOT's columnar event-data format, low level (from
-/// `oxiroot-rntuple`). For one API over `TTree` and RNTuple, see [`data`].
+/// `RNTuple`, ROOT's columnar event-data format, low level (from
+/// `oxiroot-rntuple`). For one API over `TTree` and `RNTuple`, see [`data`].
 pub mod ntuple {
     pub use oxiroot_rntuple::*;
 }
 
 /// Classic `TTree` columnar storage, low level (from `oxiroot-tree`). For one
-/// API over `TTree` and RNTuple, see [`data`].
+/// API over `TTree` and `RNTuple`, see [`data`].
 pub mod tree {
     pub use oxiroot_tree::*;
 }
@@ -153,20 +153,20 @@ pub mod plot {
 /// The common types and functions for reading and writing ROOT files.
 ///
 /// `use oxiroot::prelude::*;` brings in the file reader and writer
-/// ([`FileReader`], [`FileWriter`](crate::file::FileWriter)), [`Compression`],
+/// ([`FileReader`], [`FileWriter`]), [`Compression`],
 /// the histogram types with their `read_*`/`write_*` helpers, and the dataset
-/// API for `TTree` and RNTuple ([`Dataset`](crate::data::Dataset),
+/// API for `TTree` and `RNTuple` ([`Dataset`](crate::data::Dataset),
 /// [`DatasetWriter`](crate::data::DatasetWriter), [`Batch`](crate::data::Batch),
 /// [`Format`](crate::data::Format)).
 pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
     pub use oxiroot_io_core::{
-        Compression, FileReader, FileWriter, FromMember, ListKind, ObjList, ObjMap, ObjString,
-        ParamValue, Parameter, ReadRoot, SubdirWriter, WriteInto, WriteRoot,
+        Compression, FileReader, FileUpdater, FileWriter, ListKind, ObjList, ObjMap, ObjString,
+        ParamValue, Parameter, ReadRoot, SubdirWriter, WriteRoot,
     };
 
-    pub use crate::hadd::{MergeKind, MergeReport, Merger, merge_files};
+    pub use crate::hadd::{MergeKind, MergeReport, Merger};
 
     #[cfg(feature = "fit")]
     // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
@@ -182,11 +182,11 @@ pub mod prelude {
     #[cfg(feature = "rayon")]
     pub use oxiroot_hist::fill_par;
     /// The ROOT-free histogram the `Hist` builder makes (from oxihist);
-    /// `.to_root()` turns it into a `Hist1D`/`Hist2D`/…
+    /// `.to_root()?` turns it into a `Hist1D`/`Hist2D`/…
     pub use oxiroot_hist::oxihist::Histogram;
     pub use oxiroot_hist::{
-        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, FromRoot, Graph,
-        Graph2D, GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
+        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, Graph, Graph2D,
+        GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
         KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
         Profile3D, Random, RootHistogram, SparseBin, SparseHist, ThreadedFill1, ThreadedFill2,
         ThreadedFill3, ThreadedFill4, ThreadedHist, ToRoot,

@@ -1,9 +1,11 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
 use crate::support::{NtupleObject, TreeObject};
-use oxiroot::hadd::{MergeKind, Merger, merge_files};
-use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
+use oxiroot::hadd::{MergeKind, Merger};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, TreeReader};
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::{Branch, BranchValues};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -17,6 +19,7 @@ fn sums_histograms_and_copies_other_objects() {
         let mut h = Hist::reg(4, 0.0, 4.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("h");
         for x in xs {
@@ -25,45 +28,67 @@ fn sums_histograms_and_copies_other_objects() {
         FileWriter::create(tmp(tag))
             .add(&h)
             .add(&ObjString::new("provenance").named("meta"))
-            .write(Compression::None)
+            .compression(Compression::Stored)
+            .write()
             .unwrap();
     }
 
     let out = tmp("hist_out");
-    let report = merge_files(&out, &[tmp("hist_a"), tmp("hist_b")], Compression::None).unwrap();
+    let report = Merger::new()
+        .inputs([tmp("hist_a"), tmp("hist_b")])
+        .compression(Compression::Stored)
+        .merge(&out)
+        .unwrap();
 
-    assert_eq!(report.kind, MergeKind::Histograms);
-    assert!(report.merged.contains(&"h".to_string()), "{report}");
-    assert!(report.copied.contains(&"meta".to_string()), "{report}");
-    assert!(report.skipped.is_empty(), "{report}");
+    let MergeKind::Histograms(outcome) = &report.kind else {
+        panic!("not a histogram merge: {report}");
+    };
+    assert!(outcome.summed.contains(&"h".to_string()), "{report}");
+    assert!(outcome.copied.contains(&"meta".to_string()), "{report}");
+    assert!(outcome.skipped.is_empty(), "{report}");
 
     // The merged histogram is the bin-by-bin sum: 4 in-range entries total.
     let fo = FileReader::open(&out).unwrap();
-    let h = Hist1D::read_root(&fo, "h").unwrap();
+    let h = fo.get::<Hist1D>("h").unwrap();
     assert_eq!(h.integral(), 4.0);
     // The non-summable object was carried over verbatim.
-    assert!(ObjString::read_root(&fo, "meta").is_ok());
+    assert!(fo.get::<ObjString>("meta").is_ok());
 }
 
 #[test]
 fn concatenates_tree_files() {
-    TreeObject::new("Events", vec![Branch::i32("i", vec![0, 1])])
-        .write_root(tmp("tree_a"), Compression::None)
+    FileWriter::create(tmp("tree_a"))
+        .add(TreeObject::new(
+            "Events",
+            vec![Branch::i32("i", vec![0, 1])],
+        ))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    TreeObject::new("Events", vec![Branch::i32("i", vec![2, 3, 4])])
-        .write_root(tmp("tree_b"), Compression::None)
+    FileWriter::create(tmp("tree_b"))
+        .add(TreeObject::new(
+            "Events",
+            vec![Branch::i32("i", vec![2, 3, 4])],
+        ))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let out = tmp("tree_out");
     let report = Merger::new()
         .input(tmp("tree_a"))
         .input(tmp("tree_b"))
-        .compression(Compression::None)
+        .compression(Compression::Stored)
         .merge(&out)
         .unwrap();
 
-    assert_eq!(report.kind, MergeKind::Tree("Events".into()));
-    assert_eq!(report.entries, Some(5));
+    assert_eq!(
+        report.kind,
+        MergeKind::Tree {
+            name: "Events".into(),
+            entries: 5
+        }
+    );
 
     let fo = FileReader::open(&out).unwrap();
     let t = TreeReader::open(&fo, "Events").unwrap();
@@ -76,18 +101,37 @@ fn concatenates_tree_files() {
 
 #[test]
 fn concatenates_rntuple_files() {
-    NtupleObject::new("ntpl", vec![Field::f64("x", vec![0.0, 1.0])])
-        .write_root(tmp("rn_a"), Compression::None)
+    FileWriter::create(tmp("rn_a"))
+        .add(NtupleObject::new(
+            "ntpl",
+            vec![Field::f64("x", vec![0.0, 1.0])],
+        ))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    NtupleObject::new("ntpl", vec![Field::f64("x", vec![2.0, 3.0, 4.0])])
-        .write_root(tmp("rn_b"), Compression::None)
+    FileWriter::create(tmp("rn_b"))
+        .add(NtupleObject::new(
+            "ntpl",
+            vec![Field::f64("x", vec![2.0, 3.0, 4.0])],
+        ))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let out = tmp("rn_out");
-    let report = merge_files(&out, &[tmp("rn_a"), tmp("rn_b")], Compression::None).unwrap();
+    let report = Merger::new()
+        .inputs([tmp("rn_a"), tmp("rn_b")])
+        .compression(Compression::Stored)
+        .merge(&out)
+        .unwrap();
 
-    assert_eq!(report.kind, MergeKind::Ntuple("ntpl".into()));
-    assert_eq!(report.entries, Some(5));
+    assert_eq!(
+        report.kind,
+        MergeKind::Ntuple {
+            name: "ntpl".into(),
+            entries: 5
+        }
+    );
 
     let fo = FileReader::open(&out).unwrap();
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
@@ -100,15 +144,32 @@ fn concatenates_rntuple_files() {
 
 #[test]
 fn refuses_a_fileset_mixing_a_tree_with_histograms() {
-    TreeObject::new("Events", vec![Branch::i32("i", vec![0, 1])])
-        .write_root(tmp("mix_tree"), Compression::None)
+    FileWriter::create(tmp("mix_tree"))
+        .add(TreeObject::new(
+            "Events",
+            vec![Branch::i32("i", vec![0, 1])],
+        ))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.fill(1.5);
-    h.write_root(tmp("mix_hist"), Compression::None).unwrap();
+    FileWriter::create(tmp("mix_hist"))
+        .add(&h)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
 
     let out = tmp("mix_out");
-    let Err(err) = merge_files(&out, &[tmp("mix_tree"), tmp("mix_hist")], Compression::None) else {
+    let Err(err) = Merger::new()
+        .inputs([tmp("mix_tree"), tmp("mix_hist")])
+        .compression(Compression::Stored)
+        .merge(&out)
+    else {
         panic!("expected a mixed-fileset error");
     };
     assert!(err.to_string().contains("cannot combine"), "{err}");
@@ -120,29 +181,38 @@ fn a_tree_merge_streams_one_batch_per_input() {
         .map(|k| {
             let path = tmp(&format!("stream_tree_{k}"));
             let n = k + 1;
-            TreeObject::new(
-                "Events",
-                vec![
-                    Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
-                    Branch::jagged_f32(
-                        "hits",
-                        (0..n)
-                            .map(|x| vec![x as f32; usize::saturating_from(x)])
-                            .collect(),
-                    ),
-                    Branch::string("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
-                    Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
-                ],
-            )
-            .write_root(&path, Compression::Zstd(3))
-            .unwrap();
+            FileWriter::create(&path)
+                .add(TreeObject::new(
+                    "Events",
+                    vec![
+                        Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
+                        Branch::jagged_f32(
+                            "hits",
+                            (0..n)
+                                .map(|x| vec![x as f32; usize::saturating_from(x)])
+                                .collect(),
+                        ),
+                        Branch::string("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
+                        Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
+                    ],
+                ))
+                .compression(Compression::Zstd(3))
+                .write()
+                .unwrap();
             path
         })
         .collect();
 
     let out = tmp("stream_tree_out");
-    let report = merge_files(&out, &inputs, Compression::Zstd(3)).unwrap();
-    assert_eq!(report.entries, Some(6));
+    let report = Merger::new()
+        .inputs(&inputs)
+        .compression(Compression::Zstd(3))
+        .merge(&out)
+        .unwrap();
+    assert!(
+        matches!(report.kind, MergeKind::Tree { entries: 6, .. }),
+        "{report}"
+    );
 
     let fo = FileReader::open(&out).unwrap();
     let t = TreeReader::open(&fo, "Events").unwrap();
@@ -187,21 +257,27 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
     let inputs: Vec<_> = (0..3)
         .map(|k| {
             let path = tmp(&format!("stream_rn_{k}"));
-            NtupleObject::new(
-                "ntpl",
-                vec![
-                    Field::i64("id", vec![k, k + 100]),
-                    Field::string("s", vec![format!("a{k}"), format!("b{k}")]),
-                ],
-            )
-            .write_root(&path, Compression::None)
-            .unwrap();
+            FileWriter::create(&path)
+                .add(NtupleObject::new(
+                    "ntpl",
+                    vec![
+                        Field::i64("id", vec![k, k + 100]),
+                        Field::string("s", vec![format!("a{k}"), format!("b{k}")]),
+                    ],
+                ))
+                .compression(Compression::Stored)
+                .write()
+                .unwrap();
             path
         })
         .collect();
 
     let out = tmp("stream_rn_out");
-    merge_files(&out, &inputs, Compression::Zstd(1)).unwrap();
+    Merger::new()
+        .inputs(&inputs)
+        .compression(Compression::Zstd(1))
+        .merge(&out)
+        .unwrap();
 
     let fo = FileReader::open(&out).unwrap();
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
@@ -223,18 +299,22 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
 #[test]
 fn empty_inputs_merge_to_an_empty_tree() {
     for k in 0..2 {
-        TreeObject::new("T", vec![Branch::f64("x", vec![])])
-            .write_root(tmp(&format!("empty_tree_{k}")), Compression::None)
+        FileWriter::create(tmp(&format!("empty_tree_{k}")))
+            .add(TreeObject::new("T", vec![Branch::f64("x", vec![])]))
+            .compression(Compression::Stored)
+            .write()
             .unwrap();
     }
     let out = tmp("empty_tree_out");
-    let report = merge_files(
-        &out,
-        &[tmp("empty_tree_0"), tmp("empty_tree_1")],
-        Compression::None,
-    )
-    .unwrap();
-    assert_eq!(report.entries, Some(0));
+    let report = Merger::new()
+        .inputs([tmp("empty_tree_0"), tmp("empty_tree_1")])
+        .compression(Compression::Stored)
+        .merge(&out)
+        .unwrap();
+    assert!(
+        matches!(report.kind, MergeKind::Tree { entries: 0, .. }),
+        "{report}"
+    );
     let fo = FileReader::open(&out).unwrap();
     assert_eq!(TreeReader::open(&fo, "T").unwrap().entries(), 0);
 }
@@ -242,10 +322,16 @@ fn empty_inputs_merge_to_an_empty_tree() {
 #[test]
 fn the_output_cannot_be_an_input() {
     let path = tmp("self_merge");
-    TreeObject::new("T", vec![Branch::i32("x", vec![1])])
-        .write_root(&path, Compression::None)
+    FileWriter::create(&path)
+        .add(TreeObject::new("T", vec![Branch::i32("x", vec![1])]))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    let err = merge_files(&path, &[&path], Compression::None).unwrap_err();
+    let err = Merger::new()
+        .inputs([&path])
+        .compression(Compression::Stored)
+        .merge(&path)
+        .unwrap_err();
     assert!(err.to_string().contains("also an input"), "{err}");
     // The input is untouched.
     let f = FileReader::open(&path).unwrap();

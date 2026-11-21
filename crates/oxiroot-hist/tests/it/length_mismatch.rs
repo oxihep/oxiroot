@@ -22,11 +22,23 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
         mismatch("TGraph y", 2, 1)
     );
     assert_eq!(
-        Graph::with_errors(two(), two(), one(), two()).unwrap_err(),
+        Graph::new(two(), two())
+            .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Symmetric {
+                ex: one(),
+                ey: two()
+            }))
+            .unwrap_err(),
         mismatch("TGraphErrors ex", 2, 1)
     );
     assert_eq!(
-        Graph::with_asymm_errors(two(), two(), two(), two(), two(), one()).unwrap_err(),
+        Graph::new(two(), two())
+            .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Asymmetric {
+                ex_low: two(),
+                ex_high: two(),
+                ey_low: two(),
+                ey_high: one()
+            }))
+            .unwrap_err(),
         mismatch("TGraphAsymmErrors ey_high", 2, 1)
     );
     assert_eq!(
@@ -39,7 +51,7 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
     );
     let g = MultiErrorGraph::new(two(), two(), two(), two(), two(), two()).unwrap();
     assert_eq!(
-        g.add_y_error(two(), one()).unwrap_err(),
+        g.with_y_error(two(), one()).unwrap_err(),
         mismatch("TGraphMultiErrors ey_high", 2, 1)
     );
     // Equal lengths still build.
@@ -49,7 +61,7 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
 
 #[test]
 fn fill_many_weighted_fills_nothing_on_a_mismatch() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     assert_eq!(
         h.fill_many_weighted(&[0.5, 1.5, 2.5], &[1.0, 2.0])
             .unwrap_err(),

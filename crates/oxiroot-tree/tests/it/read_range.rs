@@ -1,10 +1,11 @@
-//! Entry-range reads (B5): read_branch_range fetches only the baskets covering
+//! Entry-range reads (B5): `read_branch_range` fetches only the baskets covering
 //! the window. Uses the two-basket fixture so basket selection is exercised.
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 fn open(name: &str) -> FileReader {
     FileReader::open(

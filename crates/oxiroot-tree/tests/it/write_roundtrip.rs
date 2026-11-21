@@ -1,7 +1,8 @@
 //! Write a flat tree, read it back through our own reader.
 use crate::support::{TreeObject, write_tree_file};
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues};
 
 #[test]
 fn write_then_read_roundtrips() {
@@ -12,7 +13,7 @@ fn write_then_read_roundtrips() {
         Branch::bool("b1", vec![true, false, true, false, true]),
         Branch::u32("u4", vec![100, 200, 300, 400, 4_000_000_000]),
     ];
-    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+    write_tree_file(&out, "Events", &branches, Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
@@ -55,7 +56,7 @@ fn write_then_read_arrays_and_strings() {
         Branch::string("s", ss.clone()),
         Branch::array_i32("n", ns.clone()),
     ];
-    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+    write_tree_file(&out, "Events", &branches, Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
@@ -76,7 +77,7 @@ fn write_then_read_jagged() {
         Branch::jagged_f64("y", ys.clone()),
         Branch::jagged_i32("n", ns.clone()),
     ];
-    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+    write_tree_file(&out, "Events", &branches, Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
@@ -134,7 +135,7 @@ fn write_then_read_std_vector() {
         Branch::vector_f32("vf", vf.clone()),
         Branch::vector_i32("vi", vi.clone()),
     ];
-    write_tree_file(&out, "T", &branches, Compression::None).expect("write");
+    write_tree_file(&out, "T", &branches, Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
@@ -153,7 +154,7 @@ fn ragged_fixed_arrays_are_rejected() {
     use crate::support::tree_file_bytes;
     // A *fixed*-array constructor given unequal rows is an error (use jagged_*).
     let branches = vec![Branch::array_i32("j", vec![vec![1, 2], vec![3]])];
-    let err = tree_file_bytes("f.root", "T", &branches, Compression::None).unwrap_err();
+    let err = tree_file_bytes("f.root", "T", &branches, Compression::Stored).unwrap_err();
     assert!(format!("{err}").contains("differ in length"), "got: {err}");
 }
 
@@ -163,7 +164,7 @@ fn ragged_fixed_arrays_are_rejected() {
 fn write_then_read_empty_tree() {
     let out = std::path::PathBuf::from("/tmp/oxiroot_empty_tree.root");
     let branches = vec![Branch::i32("i4", vec![]), Branch::f64("f8", vec![])];
-    write_tree_file(&out, "Events", &branches, Compression::None).expect("write");
+    write_tree_file(&out, "Events", &branches, Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
@@ -183,7 +184,7 @@ fn branches_with_different_entry_counts_are_rejected() {
         ]
     };
     let out = std::env::temp_dir().join("oxiroot_tree_uneven_branches.root");
-    let err = write_tree_file(&out, "T", &branches(), Compression::None).unwrap_err();
+    let err = write_tree_file(&out, "T", &branches(), Compression::Stored).unwrap_err();
     assert_eq!(
         err,
         Error::LengthMismatch {
@@ -194,8 +195,9 @@ fn branches_with_different_entry_counts_are_rejected() {
     );
     // The builder path (`FileWriter::put`) goes through the same check.
     let err = FileWriter::create(&out)
-        .put(TreeObject::new("T", branches()))
-        .to_bytes(Compression::None)
+        .add(TreeObject::new("T", branches()))
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap_err();
     assert!(matches!(err, Error::LengthMismatch { .. }), "{err:?}");
 }

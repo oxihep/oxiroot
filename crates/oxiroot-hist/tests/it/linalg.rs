@@ -5,7 +5,7 @@
 //! `oxiroot-linalg`). The per-type read/write and byte-exactness are tested in
 //! `oxiroot-linalg`.
 
-use oxiroot_hist::{FileWriter, ReadRoot};
+use oxiroot_io_core::FileWriter;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
@@ -24,19 +24,17 @@ fn root_file_writes_linalg_objects() {
                 .unwrap()
                 .named("s"),
         )
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(
-        Vector::read_root(&f, "v").unwrap().elements(),
-        &[1.5, 2.5, 3.5]
-    );
-    let m = Matrix::read_root(&f, "m").unwrap();
-    assert_eq!(m.get(0, 0), 1.0);
-    assert_eq!(m.get(1, 2), 6.0);
-    let s = SymMatrix::read_root(&f, "s").unwrap();
-    assert_eq!(s.get(0, 1), 0.5);
-    assert_eq!(s.get(1, 0), 0.5);
+    assert_eq!(f.get::<Vector>("v").unwrap().as_slice(), &[1.5, 2.5, 3.5]);
+    let m = f.get::<Matrix>("m").unwrap();
+    assert_eq!(m[(0, 0)], 1.0);
+    assert_eq!(m[(1, 2)], 6.0);
+    let s = f.get::<SymMatrix>("s").unwrap();
+    assert_eq!(s[(0, 1)], 0.5);
+    assert_eq!(s[(1, 0)], 0.5);
     let _ = std::fs::remove_file(&out);
 }

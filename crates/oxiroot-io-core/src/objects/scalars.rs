@@ -3,10 +3,9 @@
 //! own keys. Both read and write byte-for-byte as ROOT serializes them, so ROOT
 //! and uproot read what oxiroot writes and vice versa.
 
-use crate::FileReader;
 use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
-use crate::object_io::{ReadRoot, WriteRoot, object_bytes_any};
+use crate::object_io::{Object, ReadRoot, WriteRoot};
 use crate::streamer::{read_object_base, write_object_base};
 use crate::streamer_gen::{ClassDef, base, basic, strf};
 
@@ -18,8 +17,8 @@ const PARAM_BITS: u32 = 0x0020_0000;
 
 /// An `ObjString` — ROOT's wrapper for a single `TString`, stored under a key
 /// (e.g. a metadata label). Build with [`ObjString::new`] then
-/// [`named`](ObjString::named); write it through a file builder
-/// or [`write_root`](WriteRoot::write_root).
+/// [`named`](ObjString::named); write it with
+/// [`FileWriter::add`](crate::FileWriter::add).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[doc(alias = "TObjString")]
 pub struct ObjString {
@@ -30,8 +29,8 @@ pub struct ObjString {
 impl ObjString {
     /// An `ObjString` holding `value` (give it a key name with
     /// [`named`](Self::named) before writing).
-    pub fn new(value: impl Into<String>) -> ObjString {
-        ObjString {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self {
             name: String::new(),
             value: value.into(),
         }
@@ -39,17 +38,19 @@ impl ObjString {
 
     /// Set the key name this string is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> ObjString {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The stored string.
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -119,28 +120,29 @@ impl ParamValue {
     /// streamer-info names, so uproot resolves the class).
     fn type_name(&self) -> &'static str {
         match self {
-            ParamValue::Double(_) => "double",
-            ParamValue::Float(_) => "float",
-            ParamValue::Int(_) => "int",
-            ParamValue::Long64(_) => "long long",
+            Self::Double(_) => "double",
+            Self::Float(_) => "float",
+            Self::Int(_) => "int",
+            Self::Long64(_) => "long long",
         }
     }
     fn write(&self, w: &mut WBuffer) {
         match *self {
-            ParamValue::Double(v) => w.be_f64(v),
-            ParamValue::Float(v) => w.be_f32(v),
-            ParamValue::Int(v) => w.be_i32(v),
-            ParamValue::Long64(v) => w.be_i64(v),
+            Self::Double(v) => w.be_f64(v),
+            Self::Float(v) => w.be_f32(v),
+            Self::Int(v) => w.be_i32(v),
+            Self::Long64(v) => w.be_i64(v),
         }
     }
     /// The value as an `f64` (integers and floats widen losslessly except for a
     /// very large `Long64`).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         match *self {
-            ParamValue::Double(v) => v,
-            ParamValue::Float(v) => f64::from(v),
-            ParamValue::Int(v) => f64::from(v),
-            ParamValue::Long64(v) => v as f64,
+            Self::Double(v) => v,
+            Self::Float(v) => f64::from(v),
+            Self::Int(v) => f64::from(v),
+            Self::Long64(v) => v as f64,
         }
     }
 }
@@ -156,30 +158,31 @@ pub struct Parameter {
 
 impl Parameter {
     /// A `Parameter<double>` named `name`.
-    pub fn f64(name: impl Into<String>, value: f64) -> Parameter {
-        Parameter::new(name, ParamValue::Double(value))
+    pub fn f64(name: impl Into<String>, value: f64) -> Self {
+        Self::new(name, ParamValue::Double(value))
     }
     /// A `Parameter<float>` named `name`.
-    pub fn f32(name: impl Into<String>, value: f32) -> Parameter {
-        Parameter::new(name, ParamValue::Float(value))
+    pub fn f32(name: impl Into<String>, value: f32) -> Self {
+        Self::new(name, ParamValue::Float(value))
     }
     /// A `Parameter<int>` named `name`.
-    pub fn i32(name: impl Into<String>, value: i32) -> Parameter {
-        Parameter::new(name, ParamValue::Int(value))
+    pub fn i32(name: impl Into<String>, value: i32) -> Self {
+        Self::new(name, ParamValue::Int(value))
     }
     /// A `Parameter<Long64_t>` (64-bit integer) named `name`.
-    pub fn i64(name: impl Into<String>, value: i64) -> Parameter {
-        Parameter::new(name, ParamValue::Long64(value))
+    pub fn i64(name: impl Into<String>, value: i64) -> Self {
+        Self::new(name, ParamValue::Long64(value))
     }
 
-    fn new(name: impl Into<String>, value: ParamValue) -> Parameter {
-        Parameter {
+    fn new(name: impl Into<String>, value: ParamValue) -> Self {
+        Self {
             name: name.into(),
             value,
         }
     }
 
     /// The parameter name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -188,7 +191,7 @@ impl Parameter {
     ///
     /// Returns [`Error::InvalidInput`] and makes no change if the two hold
     /// different types (a `Parameter<int>` and a `Parameter<double>`, say).
-    pub fn add(&mut self, other: &Parameter) -> Result<()> {
+    pub fn add(&mut self, other: &Self) -> Result<()> {
         self.value = match (self.value, other.value) {
             (ParamValue::Double(a), ParamValue::Double(b)) => ParamValue::Double(a + b),
             (ParamValue::Float(a), ParamValue::Float(b)) => ParamValue::Float(a + b),
@@ -206,6 +209,7 @@ impl Parameter {
     }
 
     /// The stored value (typed).
+    #[must_use]
     pub fn value(&self) -> ParamValue {
         self.value
     }
@@ -316,40 +320,22 @@ pub(crate) fn member_classes(class: &str) -> Vec<ClassDef<'static>> {
     }
 }
 
-pub(crate) fn read_tobjstring(file: &FileReader, name: &str) -> Result<ObjString> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tobjstring(name, &class, &object)
-}
-
-pub(crate) fn read_tobjstring_in(file: &FileReader, subdir: &str, name: &str) -> Result<ObjString> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tobjstring(name, &class, &object)
-}
-
-pub(crate) fn read_tparameter(file: &FileReader, name: &str) -> Result<Parameter> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tparameter(name, &class, &object)
-}
-
-pub(crate) fn read_tparameter_in(file: &FileReader, subdir: &str, name: &str) -> Result<Parameter> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tparameter(name, &class, &object)
-}
-
 impl ReadRoot for ObjString {
-    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-        read_tobjstring(file, name)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-        read_tobjstring_in(file, dir, name)
+    const CLASS: &'static str = "TObjString";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == "TObjString")
+            .then(|| decode_tobjstring(object.name, object.class, object.bytes))
     }
 }
 
 impl ReadRoot for Parameter {
-    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-        read_tparameter(file, name)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-        read_tparameter_in(file, dir, name)
+    const CLASS: &'static str = "TParameter";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        object
+            .class
+            .starts_with("TParameter<")
+            .then(|| decode_tparameter(object.name, object.class, object.bytes))
     }
 }

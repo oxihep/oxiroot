@@ -1,13 +1,14 @@
-//! The typed errors a caller can match on when reading an RNTuple: a missing
-//! RNTuple, field or column, a key holding another class, and corrupt data.
+//! The typed errors a caller can match on when reading an `RNTuple`: a missing
+//! `RNTuple`, field or column, a key holding another class, and corrupt data.
 
 use crate::support::rntuple_file_bytes;
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
-use oxiroot_rntuple::{Field, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::Field;
 
 fn bytes() -> Vec<u8> {
     let fields = [Field::f64("x", vec![1.0, 2.0, 3.0])];
-    rntuple_file_bytes("f.root", "events", &fields, Compression::None).unwrap()
+    rntuple_file_bytes("f.root", "events", &fields, Compression::Stored).unwrap()
 }
 
 #[test]
@@ -38,7 +39,8 @@ fn a_missing_rntuple_field_or_column_is_not_found() {
 fn a_key_that_is_not_an_rntuple_is_the_wrong_class() {
     let bytes = FileWriter::create("unused.root")
         .add(&ObjString::new("hi").named("s"))
-        .to_bytes(Compression::None)
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
     let Err(err) = NtupleReader::open(&f, "s") else {

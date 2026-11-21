@@ -29,11 +29,8 @@ pub struct EntryList {
 
 impl EntryList {
     /// Open the `EntryList` named `name` in `file`.
-    pub fn open(file: &FileReader, name: &str) -> Result<EntryList> {
-        let key = file.key(name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: name.to_string(),
-        })?;
+    pub fn open(file: &FileReader, name: &str) -> Result<Self> {
+        let key = file.key(name)?;
         if key.class_name != "TEntryList" {
             return Err(Error::WrongClass {
                 name: name.to_string(),
@@ -41,43 +38,50 @@ impl EntryList {
                 expected: "TEntryList".to_string(),
             });
         }
-        let payload = file.key_payload(key)?;
+        let payload = file.key_payload(&key)?;
         let object = decompress_payload(&payload, key.obj_len as usize, "TEntryList")?;
         read_entry_list(&object, key.key_len as usize)
     }
 
     /// The entry-list name (`fName`).
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The name of the tree these entries index (`fTreeName`).
+    #[must_use]
     pub fn tree_name(&self) -> &str {
         &self.tree_name
     }
 
     /// The file the indexed tree lives in (`fFileName`), or `""` for the file
     /// holding the list.
+    #[must_use]
     pub fn file_name(&self) -> &str {
         &self.file_name
     }
 
     /// The selected entry numbers, ascending.
+    #[must_use]
     pub fn entries(&self) -> &[u64] {
         &self.entries
     }
 
     /// How many entries the list selects.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the list selects no entries.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Whether `entry` is in the list.
+    #[must_use]
     pub fn contains(&self, entry: u64) -> bool {
         self.entries.binary_search(&entry).is_ok()
     }
@@ -146,7 +150,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<EntryList> {
 
 /// Decode one `TEntryListBlock` (the object header already consumed), appending
 /// its passing entries — offset by `block_index * K_BLOCK_SIZE` — to `out`.
-fn read_block(r: &mut RBuffer, block_index: u64, out: &mut Vec<u64>) -> Result<()> {
+fn read_block(r: &mut RBuffer<'_>, block_index: u64, out: &mut Vec<u64>) -> Result<()> {
     let vh = r.read_version()?; // TEntryListBlock version header
     read_object_base(r)?;
     let n_passed = usize::saturating_from(r.be_i32()?.max(0));

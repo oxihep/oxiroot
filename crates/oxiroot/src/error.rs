@@ -47,7 +47,7 @@ impl Error {
     #[must_use]
     pub fn as_root(&self) -> Option<&oxiroot_io_core::Error> {
         match self {
-            Error::Root(e) => Some(e),
+            Self::Root(e) => Some(e),
             _ => None,
         }
     }
@@ -56,14 +56,14 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Root(e) => fmt::Display::fmt(e, f),
-            Error::Stat(e) => write!(f, "statistics: {e}"),
-            Error::Formula(e) => write!(f, "invalid formula: {e}"),
-            Error::Hist(e) => write!(f, "histogram: {e}"),
+            Self::Root(e) => fmt::Display::fmt(e, f),
+            Self::Stat(e) => write!(f, "statistics: {e}"),
+            Self::Formula(e) => write!(f, "invalid formula: {e}"),
+            Self::Hist(e) => write!(f, "histogram: {e}"),
             #[cfg(feature = "plot")]
-            Error::Plot(e) => write!(f, "plotting: {e}"),
+            Self::Plot(e) => write!(f, "plotting: {e}"),
             #[cfg(feature = "fit")]
-            Error::Fit(e) => write!(f, "fitting: {e}"),
+            Self::Fit(e) => write!(f, "fitting: {e}"),
         }
     }
 }
@@ -71,14 +71,14 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Root(e) => Some(e),
-            Error::Stat(e) => Some(e),
-            Error::Formula(e) => Some(e),
-            Error::Hist(e) => Some(e),
+            Self::Root(e) => Some(e),
+            Self::Stat(e) => Some(e),
+            Self::Formula(e) => Some(e),
+            Self::Hist(e) => Some(e),
             #[cfg(feature = "plot")]
-            Error::Plot(e) => Some(e),
+            Self::Plot(e) => Some(e),
             #[cfg(feature = "fit")]
-            Error::Fit(e) => Some(e),
+            Self::Fit(e) => Some(e),
         }
     }
 }
@@ -107,6 +107,6 @@ from!(
 /// I/O errors (e.g. from `std::fs`) arrive as ROOT-side I/O errors.
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Error::Root(e.into())
+        Self::Root(e.into())
     }
 }

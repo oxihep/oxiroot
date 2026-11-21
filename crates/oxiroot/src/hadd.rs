@@ -1,15 +1,14 @@
 //! Merging ROOT files — a pure-Rust `hadd`.
 //!
-//! [`merge_files`] (and the [`Merger`] builder) combine several ROOT files the
-//! way ROOT's `hadd` command-line tool does: histograms are summed bin-by-bin,
-//! and `TTree` / RNTuple entries are concatenated. It returns a [`MergeReport`]
-//! describing exactly what each key became — so nothing is silently dropped.
+//! A [`Merger`] combines several ROOT files the way ROOT's `hadd` command-line
+//! tool does: histograms are summed bin-by-bin, and `TTree` / `RNTuple` entries
+//! are concatenated. It returns a [`MergeReport`] describing exactly what each
+//! key became, so nothing is silently dropped.
 //!
 //! ```no_run
-//! use oxiroot::hadd::merge_files;
-//! use oxiroot::Compression;
+//! use oxiroot::hadd::Merger;
 //!
-//! let report = merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?;
+//! let report = Merger::new().inputs(["run1.root", "run2.root"]).merge("all.root")?;
 //! println!("{report}");
 //! # Ok::<(), oxiroot::Error>(())
 //! ```
@@ -17,9 +16,9 @@
 //! # What a fileset may contain
 //!
 //! One invocation writes **one** output file. The merger does not yet combine
-//! histograms with a `TTree` or RNTuple in one output (a
+//! histograms with a `TTree` or `RNTuple` in one output (a
 //! [`FileWriter`](oxiroot_io_core::FileWriter) can hold all three, but the merger
-//! concatenates each tree or RNTuple on its own path). So a fileset must be one
+//! concatenates each tree or `RNTuple` on its own path). So a fileset must be one
 //! of:
 //!
 //! * **all histogram-family objects** — everything ROOT's `hadd` merges is
@@ -30,65 +29,69 @@
 //!   (`Func1D`/`2`/`3`, `Graph2D`, `MultiErrorGraph`, `GraphStack`, strings,
 //!   maps, matrices); unknown classes are skipped and reported;
 //! * **a single `TTree`** (and nothing else) — entries concatenated;
-//! * **a single RNTuple** (and nothing else) — entries concatenated.
+//! * **a single `RNTuple`** (and nothing else) — entries concatenated.
 //!
-//! Anything else — a `TTree` or RNTuple alongside histograms, or more than one
+//! Anything else — a `TTree` or `RNTuple` alongside histograms, or more than one
 //! of them — is refused with an error that names the keys, rather than writing a
 //! partial file.
 //!
-//! The inputs are read on demand rather than loaded whole. A tree or RNTuple is
+//! The inputs are read on demand rather than loaded whole. A tree or `RNTuple` is
 //! streamed to the output one input at a time (one batch of baskets, or one
 //! cluster, per input), so memory holds a single input's entries. A large
 //! merge is written in ROOT's 64-bit container form. The output must not be
-//! one of the inputs. For finer control, merge the pieces yourself with
-//! [`merge_histogram_files`], [`oxiroot_tree::append_trees`], or
-//! [`oxiroot_rntuple::append_ntuples`].
+//! one of the inputs.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
-use oxiroot_io_core::{Compression, Error, FileReader, Result};
+use oxiroot_io_core::{Compression, Error, FileReader, FileSource, Result};
 
 mod histograms;
-pub use histograms::{HistMergeOutcome, merge_histogram_files};
-use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader, NtupleWriter, append_ntuples};
-use oxiroot_tree::{TreeReader, TreeWriter, append_trees};
+pub use histograms::HistMergeOutcome;
+use histograms::merge_histogram_files;
+use oxiroot_rntuple::raw::{NtupleWriter, append_ntuples};
+use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{TreeWriter, append_trees};
 
 /// Inputs larger than this in total are merged straight into the 64-bit
 /// container form; smaller ones switch to it only if the output turns out not to
 /// fit the 32-bit form.
 const LARGE_INPUT_BYTES: u64 = KSTART_BIG_FILE / 2;
 
-/// What kind of merge [`merge_files`] performed.
+/// Which merge ran, and what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MergeKind {
     /// A histogram-family fileset: histograms summed, other objects copied.
-    Histograms,
-    /// A single `TTree`, its entries concatenated. Holds the tree name.
-    Tree(String),
-    /// A single RNTuple, its entries concatenated. Holds the RNTuple name.
-    Ntuple(String),
+    Histograms(HistMergeOutcome),
+    /// A single `TTree`, its entries concatenated.
+    Tree {
+        /// The tree's name.
+        name: String,
+        /// Entries written.
+        entries: u64,
+    },
+    /// A single `RNTuple`, its entries concatenated.
+    Ntuple {
+        /// The `RNTuple`'s name.
+        name: String,
+        /// Entries written.
+        entries: u64,
+    },
 }
 
-/// A summary of a [`merge_files`] run: what was written and how.
+/// A summary of a [`Merger::merge`] run: what was written and how.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MergeReport {
     /// The output file path.
     pub output: PathBuf,
     /// Number of input files merged.
     pub inputs: usize,
-    /// Which merge path ran.
+    /// Which merge ran, and what it did.
     pub kind: MergeKind,
-    /// Keys summed / concatenated (histogram names, or the one tree/RNTuple).
-    pub merged: Vec<String>,
-    /// Keys copied from the first file (histogram path only).
-    pub copied: Vec<String>,
-    /// Keys skipped, with the reason (histogram path only).
-    pub skipped: Vec<(String, String)>,
-    /// Total entries written, for a `TTree`/RNTuple merge.
-    pub entries: Option<u64>,
 }
 
 impl fmt::Display for MergeReport {
@@ -100,37 +103,31 @@ impl fmt::Display for MergeReport {
             self.output.display()
         )?;
         match &self.kind {
-            MergeKind::Histograms => {
+            MergeKind::Histograms(outcome) => {
                 write!(
                     f,
                     ": {} summed, {} copied, {} skipped",
-                    self.merged.len(),
-                    self.copied.len(),
-                    self.skipped.len()
+                    outcome.summed.len(),
+                    outcome.copied.len(),
+                    outcome.skipped.len()
                 )?;
+                for (name, reason) in &outcome.skipped {
+                    write!(f, "\n  skipped {name:?}: {reason}")?;
+                }
             }
-            MergeKind::Tree(name) | MergeKind::Ntuple(name) => {
-                let what = if matches!(self.kind, MergeKind::Tree(_)) {
-                    "TTree"
-                } else {
-                    "RNTuple"
-                };
-                write!(
-                    f,
-                    ": {what} {name:?} with {} entries",
-                    self.entries.unwrap_or(0)
-                )?;
+            MergeKind::Tree { name, entries } => {
+                write!(f, ": TTree {name:?} with {entries} entries")?;
             }
-        }
-        for (name, reason) in &self.skipped {
-            write!(f, "\n  skipped {name:?}: {reason}")?;
+            MergeKind::Ntuple { name, entries } => {
+                write!(f, ": RNTuple {name:?} with {entries} entries")?;
+            }
         }
         Ok(())
     }
 }
 
-/// A builder for a file merge — collect inputs, choose compression, then
-/// [`merge`](Merger::merge). Equivalent to [`merge_files`] but composable.
+/// A file merge: collect inputs, choose compression, then
+/// [`merge`](Merger::merge).
 ///
 /// ```no_run
 /// use oxiroot::hadd::Merger;
@@ -152,20 +149,20 @@ pub struct Merger {
 impl Merger {
     /// A new, empty merger (default compression: Zstd level 5).
     #[must_use]
-    pub fn new() -> Merger {
-        Merger::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add one input file.
     #[must_use]
-    pub fn input(mut self, path: impl AsRef<Path>) -> Merger {
+    pub fn input(mut self, path: impl AsRef<Path>) -> Self {
         self.inputs.push(path.as_ref().to_path_buf());
         self
     }
 
     /// Add several input files.
     #[must_use]
-    pub fn inputs<P: AsRef<Path>>(mut self, paths: impl IntoIterator<Item = P>) -> Merger {
+    pub fn inputs<P: AsRef<Path>>(mut self, paths: impl IntoIterator<Item = P>) -> Self {
         self.inputs
             .extend(paths.into_iter().map(|p| p.as_ref().to_path_buf()));
         self
@@ -173,36 +170,32 @@ impl Merger {
 
     /// Set the output compression (default: Zstd level 5).
     #[must_use]
-    pub fn compression(mut self, compression: Compression) -> Merger {
+    pub fn compression(mut self, compression: Compression) -> Self {
         self.compression = Some(compression);
         self
     }
 
-    /// Merge the collected inputs into `output`.
-    pub fn merge(self, output: impl AsRef<Path>) -> Result<MergeReport> {
-        let compression = self.compression.unwrap_or(Compression::Zstd(5));
-        merge_files(output, &self.inputs, compression)
+    /// Merge the collected inputs into `output`, dispatching on what the
+    /// fileset contains (see the [module docs](self)).
+    ///
+    /// # Errors
+    ///
+    /// If there are no inputs, a file cannot be read, the output is also an
+    /// input, the fileset mixes histograms with a `TTree`/`RNTuple` (or holds
+    /// more than one of them), or the merge itself fails (incompatible
+    /// histogram binnings, a branch or field type oxiroot cannot write back).
+    pub fn merge(self, output: impl AsRef<Path>) -> crate::Result<MergeReport> {
+        Ok(merge(
+            output.as_ref(),
+            &self.inputs,
+            self.compression.unwrap_or_default(),
+        )?)
     }
 }
 
-/// Merge `inputs` into `output`, dispatching on what the fileset contains (see
-/// the [module docs](self)). Returns a [`MergeReport`] describing the result.
-///
-/// # Errors
-///
-/// Returns an error if `inputs` is empty, if a file cannot be read, if the
-/// fileset mixes histograms with a `TTree`/RNTuple (or holds more than one of
-/// them), or if the underlying histogram / tree / RNTuple merge fails (e.g.
-/// incompatible histogram binnings, or a branch/field type oxiroot cannot write
-/// back).
-pub fn merge_files<P: AsRef<Path>>(
-    output: impl AsRef<Path>,
-    inputs: &[P],
-    compression: Compression,
-) -> Result<MergeReport> {
-    let output = output.as_ref();
+fn merge(output: &Path, inputs: &[PathBuf], compression: Compression) -> Result<MergeReport> {
     if inputs.is_empty() {
-        return Err(Error::InvalidInput("merge_files: no input files".into()));
+        return Err(Error::InvalidInput("merge: no input files".into()));
     }
 
     // The inputs are read on demand, so the output must not be one of them.
@@ -210,7 +203,7 @@ pub fn merge_files<P: AsRef<Path>>(
     for input in inputs {
         if out_path.is_some() && std::fs::canonicalize(input).ok() == out_path {
             return Err(Error::InvalidInput(format!(
-                "merge_files: the output {} is also an input",
+                "merge: the output {} is also an input",
                 output.display()
             )));
         }
@@ -219,7 +212,7 @@ pub fn merge_files<P: AsRef<Path>>(
     // input's worth of tree or RNTuple entries at a time.
     let files: Vec<FileReader> = inputs
         .iter()
-        .map(FileReader::open_ranged)
+        .map(|path| FileReader::from_source(Box::new(FileSource::open(path)?)))
         .collect::<Result<Vec<_>>>()?;
     let large = files.iter().map(FileReader::size).sum::<u64>() > LARGE_INPUT_BYTES;
 
@@ -257,11 +250,10 @@ pub fn merge_files<P: AsRef<Path>>(
         ),
         // Anything mixed or plural: refuse loudly rather than write a partial file.
         _ => Err(Error::Unsupported(format!(
-            "merge_files: this fileset mixes objects oxiroot cannot combine into one file yet \
+            "merge: this fileset mixes objects oxiroot cannot combine into one file yet \
              ({} TTree(s): {trees:?}; {} RNTuple(s): {rntuples:?}; {others} other object(s)). \
              oxiroot merges either an all-histogram fileset, a single TTree, or a single RNTuple \
-             per call; merge the pieces separately with append_trees / append_ntuples / \
-             merge_histogram_files.",
+             per call; merge the pieces separately.",
             trees.len(),
             rntuples.len(),
         ))),
@@ -278,11 +270,7 @@ fn merge_histograms(
     Ok(MergeReport {
         output: output.to_path_buf(),
         inputs,
-        kind: MergeKind::Histograms,
-        merged: outcome.summed,
-        copied: outcome.copied,
-        skipped: outcome.skipped,
-        entries: None,
+        kind: MergeKind::Histograms(outcome),
     })
 }
 
@@ -318,12 +306,12 @@ fn merge_tree(
     compression: Compression,
     large: bool,
 ) -> Result<MergeReport> {
-    let trees: Vec<TreeReader> = files
+    let trees: Vec<TreeReader<'_>> = files
         .iter()
         .map(|f| TreeReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
     let entries = trees.iter().map(TreeReader::entries).sum();
-    let inputs_ref: Vec<&TreeReader> = trees.iter().collect();
+    let inputs_ref: Vec<&TreeReader<'_>> = trees.iter().collect();
 
     if entries == 0 {
         // The streaming writer needs at least one entry; write the empty tree
@@ -355,11 +343,10 @@ fn merge_tree(
     Ok(MergeReport {
         output: output.to_path_buf(),
         inputs,
-        kind: MergeKind::Tree(name.to_string()),
-        merged: vec![name.to_string()],
-        copied: Vec::new(),
-        skipped: Vec::new(),
-        entries: Some(entries),
+        kind: MergeKind::Tree {
+            name: name.to_string(),
+            entries,
+        },
     })
 }
 
@@ -371,12 +358,12 @@ fn merge_rntuple(
     compression: Compression,
     large: bool,
 ) -> Result<MergeReport> {
-    let ntuples: Vec<NtupleReader> = files
+    let ntuples: Vec<NtupleReader<'_>> = files
         .iter()
         .map(|f| NtupleReader::open(f, name))
         .collect::<Result<Vec<_>>>()?;
     let entries = ntuples.iter().map(NtupleReader::entries).sum();
-    let inputs_ref: Vec<&NtupleReader> = ntuples.iter().collect();
+    let inputs_ref: Vec<&NtupleReader<'_>> = ntuples.iter().collect();
 
     if entries == 0 {
         // The streaming writer needs at least one entry; write the empty
@@ -407,11 +394,10 @@ fn merge_rntuple(
     Ok(MergeReport {
         output: output.to_path_buf(),
         inputs,
-        kind: MergeKind::Ntuple(name.to_string()),
-        merged: vec![name.to_string()],
-        copied: Vec::new(),
-        skipped: Vec::new(),
-        entries: Some(entries),
+        kind: MergeKind::Ntuple {
+            name: name.to_string(),
+            entries,
+        },
     })
 }
 

@@ -9,8 +9,9 @@ use std::path::Path;
 use oxiroot::file::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use oxiroot::file::streamer_gen::ClassDef;
 use oxiroot::file::{Compression, Result, WriteInto};
-use oxiroot::ntuple::Field;
-use oxiroot::tree::{Branch, raw};
+use oxiroot::ntuple::raw::Field;
+use oxiroot::tree::raw;
+use oxiroot::tree::raw::Branch;
 
 fn tree_bytes(
     file_name: &str,
@@ -84,15 +85,17 @@ pub struct TreeObject {
 }
 
 impl TreeObject {
-    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> TreeObject {
-        TreeObject {
+    pub fn new(name: impl Into<String>, branches: Vec<Branch>) -> Self {
+        Self {
             name: name.into(),
             branches,
         }
     }
+}
 
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        write_tree_file(path, &self.name, &self.branches, compression)
+impl oxiroot_io_core::Storable for TreeObject {
+    fn into_stored(self) -> oxiroot_io_core::Stored {
+        oxiroot_io_core::Stored::records(self)
     }
 }
 
@@ -127,7 +130,7 @@ fn ntuple_bytes(
     })
 }
 
-/// The bytes of a file holding one RNTuple, in one cluster.
+/// The bytes of a file holding one `RNTuple`, in one cluster.
 pub fn rntuple_file_bytes(
     file_name: &str,
     name: &str,
@@ -137,7 +140,7 @@ pub fn rntuple_file_bytes(
     ntuple_bytes(file_name, name, fields, &[], compression)
 }
 
-/// Write a file holding one RNTuple, in one cluster.
+/// Write a file holding one `RNTuple`, in one cluster.
 pub fn write_rntuple_file(
     path: impl AsRef<Path>,
     name: &str,
@@ -152,7 +155,7 @@ pub fn write_rntuple_file(
     Ok(())
 }
 
-/// An RNTuple for [`FileWriter::put`](oxiroot_io_core::FileWriter::put), or to
+/// An `RNTuple` for [`FileWriter::put`](oxiroot_io_core::FileWriter::put), or to
 /// write on its own.
 pub struct NtupleObject {
     name: String,
@@ -160,15 +163,11 @@ pub struct NtupleObject {
 }
 
 impl NtupleObject {
-    pub fn new(name: impl Into<String>, fields: Vec<Field>) -> NtupleObject {
-        NtupleObject {
+    pub fn new(name: impl Into<String>, fields: Vec<Field>) -> Self {
+        Self {
             name: name.into(),
             fields,
         }
-    }
-
-    pub fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        write_rntuple_file(path, &self.name, &self.fields, compression)
     }
 
     pub fn to_root_bytes(&self, file_name: &str, compression: Compression) -> Result<Vec<u8>> {
@@ -188,6 +187,12 @@ impl NtupleObject {
             ntuple_bytes(file_name(path), &self.name, &self.fields, late, compression)?,
         )?;
         Ok(())
+    }
+}
+
+impl oxiroot_io_core::Storable for NtupleObject {
+    fn into_stored(self) -> oxiroot_io_core::Stored {
+        oxiroot_io_core::Stored::records(self)
     }
 }
 

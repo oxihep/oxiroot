@@ -1,4 +1,4 @@
-//! M2 integration test: parse the TStreamerInfo list and verify it against the
+//! M2 integration test: parse the `TStreamerInfo` list and verify it against the
 //! fixture's known classes (cross-checked with uproot's `file.streamers`).
 
 use std::path::PathBuf;

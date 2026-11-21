@@ -8,14 +8,14 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, Profile1D, ReadRoot, WriteRoot};
+use oxiroot_hist::{Hist, Profile1D};
 use oxiroot_io_core::{Compression, FileReader};
 
 // ---------------------------------------------------------------- histograms
 
 #[test]
 fn th1_weighted_fill_tracks_squared_weights() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root(); // no `.weight()`
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap(); // no `.weight()`
     assert!(h.sumw2().is_none());
     h.fill_weight(0.5, 2.0);
     // One entry of weight 2: error = √Σw² = 2, not √Σw = √2.
@@ -25,7 +25,7 @@ fn th1_weighted_fill_tracks_squared_weights() {
 
 #[test]
 fn th1_tracking_seeds_from_earlier_unit_fills() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     h.fill(0.5); // unit weight, no tracking yet
     h.fill_weight(0.5, 3.0); // turns tracking on; the earlier fill contributes 1²
     assert_eq!(h.sumw2().expect("error tracking is on")[1], 1.0 + 9.0);
@@ -34,7 +34,7 @@ fn th1_tracking_seeds_from_earlier_unit_fills() {
 
 #[test]
 fn unit_weight_fills_still_do_not_allocate() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     h.fill(0.5);
     h.fill_weight(1.5, 1.0);
     assert!(h.sumw2().is_none(), "unit weights need no Σw² array");
@@ -43,7 +43,11 @@ fn unit_weight_fills_still_do_not_allocate() {
 
 #[test]
 fn th2_and_th3_weighted_fills_track_squared_weights() {
-    let mut h2 = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().to_root();
+    let mut h2 = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap();
     h2.fill_weight(0.5, 0.5, 2.0);
     let bin2 = 1 + (2 + 2); // bx + (nx + 2)·by
     assert_eq!(h2.bin_error(bin2), 2.0);
@@ -52,7 +56,8 @@ fn th2_and_th3_weighted_fills_track_squared_weights() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root();
+        .to_root()
+        .unwrap();
     h3.fill_weight(0.5, 0.5, 0.5, 2.0);
     let bin3 = 1 + 4 * (1 + 4); // bx + (nx + 2)·(by + (ny + 2)·bz)
     assert_eq!(h3.bin_error(bin3), 2.0);
@@ -64,7 +69,7 @@ fn th2_and_th3_weighted_fills_track_squared_weights() {
 fn tprofile_weighted_fill_counts_effective_entries() {
     // The original report: one fill of weight 2 has Σw = 2 and Σw² = 4, so
     // (Σw)²/Σw² = 1 effective entry. Without Σw² tracking it read 2.
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     p.fill_weight(0.5, 1.0, 2.0);
     assert_eq!(p.bin_sumw2()[1], 4.0);
     assert_eq!(p.effective_entries(1), 1.0);
@@ -75,7 +80,7 @@ fn tprofile_weighted_errors_use_squared_weights() {
     // Two weight-2 fills at y = 1 and y = 3 in one bin:
     //   mean = 2, spread² = 1, Σw = 4, Σw² = 8, neff = 16/8 = 2
     //   error on the mean = √(1/2); assuming unit weights gave √(1/4) = 0.5.
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     p.fill_weight(0.5, 1.0, 2.0);
     p.fill_weight(0.5, 3.0, 2.0);
     let err = p.bin_error(1);
@@ -84,7 +89,7 @@ fn tprofile_weighted_errors_use_squared_weights() {
 
 #[test]
 fn tprofile_tracking_seeds_from_earlier_unit_fills() {
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     p.fill(0.5, 1.0); // Σw = 1, Σw² = 1, not yet tracked
     p.fill_weight(0.5, 1.0, 2.0); // turns tracking on
     assert_eq!(p.bin_entries()[1], 3.0);
@@ -98,7 +103,7 @@ fn tprofile_tracking_seeds_from_earlier_unit_fills() {
 #[test]
 fn tprofile_rejected_fill_does_not_turn_tracking_on() {
     // A y-range rejects the point before anything is counted, as in ROOT.
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     p.ymin = 0.0;
     p.ymax = 10.0;
     p.fill_weight(0.5, 50.0, 2.0);
@@ -108,7 +113,7 @@ fn tprofile_rejected_fill_does_not_turn_tracking_on() {
 
 #[test]
 fn tprofile_unit_fills_do_not_allocate() {
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root();
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap();
     p.fill(0.5, 1.0);
     p.fill_weight(0.5, 2.0, 1.0);
     assert!(p.bin_sumw2().is_empty());
@@ -117,7 +122,11 @@ fn tprofile_unit_fills_do_not_allocate() {
 
 #[test]
 fn tprofile2d_weighted_fill_tracks_squared_weights() {
-    let mut p = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).mean().to_root();
+    let mut p = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .mean()
+        .to_root()
+        .unwrap();
     p.fill_weight(0.5, 0.5, 1.0, 2.0);
     p.fill_weight(0.5, 0.5, 3.0, 2.0);
     let cell = 1 + 4; // bx + (nx + 2)·by
@@ -133,7 +142,8 @@ fn tprofile3d_weighted_fill_tracks_squared_weights() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .mean()
-        .to_root();
+        .to_root()
+        .unwrap();
     p.fill(0.5, 0.5, 0.5, 1.0); // unit, untracked
     p.fill_weight(0.5, 0.5, 0.5, 1.0, 2.0); // turns tracking on
     let cell = 1 + 4 * (1 + 4); // bx + sx·(by + sy·bz)
@@ -146,6 +156,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
     let mut p = Hist::reg(4, 0.0, 4.0)
         .mean()
         .to_root()
+        .unwrap()
         .named("wp")
         .titled("weighted profile");
     p.fill_weight(0.5, 1.0, 2.0);
@@ -155,8 +166,15 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
         "oxiroot_weighted_tprofile_{}.root",
         std::process::id()
     ));
-    p.write_root(&out, Compression::None).expect("write");
-    let back = Profile1D::read_root(&FileReader::open(&out).expect("open"), "wp").expect("read");
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&p)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .expect("open")
+        .get::<Profile1D>("wp")
+        .expect("read");
     let _ = std::fs::remove_file(&out);
 
     assert_eq!(back.bin_sumw2(), p.bin_sumw2());
@@ -170,7 +188,7 @@ fn weighted_tprofile_round_trips_its_squared_weights() {
 fn unit_weight_root_fixture_still_has_no_squared_weights() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tprofile2d.root");
     let f = FileReader::open(path).expect("open fixture");
-    let p = oxiroot_hist::Profile2D::read_root(&f, "p2").expect("read");
+    let p = f.get::<oxiroot_hist::Profile2D>("p2").expect("read");
     assert!(p.bin_sumw2().is_empty());
 }
 
@@ -184,7 +202,7 @@ fn unit_weight_root_fixture_still_has_no_squared_weights() {
 
 #[test]
 fn rebin_folds_variances_into_the_flow_bins() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     h.fill_weight(-1.0, 2.0); // underflow
     h.fill_weight(0.5, 2.0);
     h.fill_weight(3.5, 3.0); // bin 4: left over by rebin(3), folds into overflow
@@ -198,7 +216,7 @@ fn rebin_folds_variances_into_the_flow_bins() {
 
 #[test]
 fn slice_folds_variances_into_the_flow_bins() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     h.fill_weight(0.5, 2.0); // dropped below the slice -> underflow
     h.fill_weight(1.5, 2.0);
     h.fill_weight(2.5, 3.0);
@@ -215,7 +233,7 @@ fn slice_folds_variances_into_the_flow_bins() {
 
 #[test]
 fn scale_turns_tracking_on_so_later_fills_seed_correctly() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     for _ in 0..4 {
         h.fill(0.5);
     }
@@ -227,15 +245,19 @@ fn scale_turns_tracking_on_so_later_fills_seed_correctly() {
     assert_eq!(h.bin_error(1), 5.0_f64.sqrt());
 
     // The same through the `*=` operator, and in two dimensions.
-    let mut h2 = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().to_root();
+    let mut h2 = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap();
     h2.fill(0.5, 0.5);
-    h2 *= 3.0;
+    h2.scale(3.0);
     assert_eq!(h2.bin_error(1 + 4), 3.0);
 }
 
 #[test]
 fn cumulative_accumulates_variances() {
-    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root();
+    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().unwrap();
     h.fill_weight(0.5, 2.0);
     h.fill_weight(1.5, 2.0);
 
@@ -259,7 +281,7 @@ fn cumulative_accumulates_variances() {
     assert_eq!(fwd.sumw2().expect("error tracking is on")[2], 8.0 + 9.0);
 
     // Counts stay untracked, with √content errors.
-    let mut counts = Hist::reg(2, 0.0, 2.0).double().to_root();
+    let mut counts = Hist::reg(2, 0.0, 2.0).double().to_root().unwrap();
     counts.fill(0.5);
     counts.fill(1.5);
     let c = counts.cumulative(true);
@@ -269,12 +291,16 @@ fn cumulative_accumulates_variances() {
 
 #[test]
 fn profile_of_a_weighted_th2_matches_a_direct_weighted_profile() {
-    let mut h2 = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().to_root();
+    let mut h2 = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap();
     h2.fill_weight(0.5, 0.5, 2.0);
     h2.fill_weight(0.5, 1.5, 2.0);
     let from_th2 = h2.profile_x("px");
 
-    let mut direct = Hist::reg(2, 0.0, 2.0).mean().to_root();
+    let mut direct = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap();
     direct.fill_weight(0.5, 0.5, 2.0);
     direct.fill_weight(0.5, 1.5, 2.0);
 
@@ -293,7 +319,11 @@ fn profile_of_a_weighted_th2_matches_a_direct_weighted_profile() {
     assert_eq!(merged.effective_entries(1), 4.0);
 
     // An unweighted Hist2D still profiles without tracking.
-    let mut counts = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).double().to_root();
+    let mut counts = Hist::reg(2, 0.0, 2.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap();
     counts.fill(0.5, 0.5);
     assert!(counts.profile_x("p").bin_sumw2().is_empty());
 }

@@ -7,10 +7,10 @@ with no libROOT dependency. The output is written through oxiroot's own typed
 writers, so ROOT and uproot read it back.
 
 ```rust
-use oxiroot::hadd::merge_files;
+use oxiroot::hadd::Merger;
 use oxiroot::Compression;
 
-let report = merge_files("all.root", &["run1.root", "run2.root"], Compression::Zstd(5))?;
+let report = Merger::new().inputs(["run1.root", "run2.root"]).merge("all.root")?;
 println!("{report}"); // merged 2 file(s) into all.root: 3 summed, 1 copied, 0 skipped
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -44,26 +44,21 @@ A file holding a single `TTree` (and nothing else) has its entries
 concatenated:
 
 ```rust
-use oxiroot::hadd::merge_files;
+use oxiroot::hadd::Merger;
 use oxiroot::Compression;
 
-let report = merge_files("events.root", &["skim1.root", "skim2.root"], Compression::Zstd(5))?;
+let report = Merger::new().inputs(["skim1.root", "skim2.root"]).merge("events.root")?;
 println!("{report}"); // TTree "Events" with <n1 + n2> entries
 # Ok::<(), oxiroot::Error>(())
 ```
 
 Each branch is reconstructed with its original kind — scalar, fixed array
 (`x[N]`), jagged (`x[n]`), `std::vector<T>`, or string. An RNTuple fileset works
-the same way (fields concatenated). Under the hood these are the streaming
-[`oxiroot_tree::append_trees`] and [`oxiroot_rntuple::append_ntuples`] functions,
-which you can call directly for finer control.
+the same way (fields concatenated). The entries are streamed one input at a time.
 
-[`oxiroot_tree::append_trees`]: https://oxihep.github.io/oxiroot/api/oxiroot_tree/fn.append_trees.html
-[`oxiroot_rntuple::append_ntuples`]: https://oxihep.github.io/oxiroot/api/oxiroot_rntuple/fn.append_ntuples.html
+## Options
 
-## The `Merger` builder
-
-`Merger` is the composable form — collect inputs, pick compression, then merge:
+Collect inputs, pick compression (Zstd 5 by default), then merge:
 
 ```rust
 use oxiroot::hadd::Merger;
@@ -78,10 +73,9 @@ let report = Merger::new()
 
 ## The report
 
-`merge_files` returns a `MergeReport` describing exactly what happened: the
-`kind` of merge (`Histograms`, `Tree(name)`, or `Ntuple(name)`), the keys
-`merged` / `copied` / `skipped` (with reasons), and the total `entries` for a
-tree or RNTuple. Its `Display` prints a one-line summary. **Nothing is dropped
+`merge` returns a `MergeReport` describing exactly what happened. Its `kind` is
+`Histograms(outcome)`, holding the keys `summed` / `copied` / `skipped` (with
+reasons), or `Tree { name, entries }` / `Ntuple { name, entries }`. Its `Display` prints a one-line summary. **Nothing is dropped
 without appearing in `skipped`.**
 
 ## What a fileset may contain
@@ -97,9 +91,7 @@ must be one of:
 
 Anything else — a tree or RNTuple alongside histograms, or more than one of them
 — is refused with an error that names the offending keys, rather than writing a
-partial file. To merge such a fileset, merge the pieces separately with
-`oxiroot::hadd::merge_histogram_files`, `oxiroot_tree::append_trees`, and
-`oxiroot_rntuple::append_ntuples`.
+partial file. To merge such a fileset, merge the pieces separately.
 
 ## Memory
 

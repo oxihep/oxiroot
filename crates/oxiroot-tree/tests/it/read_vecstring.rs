@@ -1,6 +1,7 @@
-//! Read a std::vector<std::string> TTree branch (B11).
+//! Read a `std::vector`<std::string> `TTree` branch (B11).
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 use std::path::PathBuf;
 #[test]
 fn reads_vector_of_strings() {

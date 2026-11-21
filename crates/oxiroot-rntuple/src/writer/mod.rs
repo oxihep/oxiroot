@@ -1,13 +1,14 @@
-//! Writing an RNTuple into a ROOT file.
+//! Writing an `RNTuple` into a ROOT file.
 //!
-//! [`NtupleWriter`] writes an RNTuple to its own file, one cluster per batch,
+//! [`NtupleWriter`] writes an `RNTuple` to its own file, one cluster per batch,
 //! so a large dataset need not be held in memory at once; [`raw::write_ntuple`]
-//! places a whole RNTuple (schema-extension fields included) into an open
+//! places a whole `RNTuple` (schema-extension fields included) into an open
 //! container, next to other objects. The header/page/
 //! page-list/footer envelopes are written as raw blobs at the offsets the anchor
 //! (and the page locators) point to; only the anchor is a `Key`. Validated by
 //! reading the result back and by official ROOT / uproot.
 
+use oxiroot_io_core::Compression;
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 
@@ -37,7 +38,7 @@ const K_BYTE_COUNT_MASK: u32 = 0x4000_0000;
 /// The stored bytes of one page: compressed when that makes it smaller (a reader
 /// tells the two apart by comparing the stored size with the size the element
 /// count implies, as ROOT does).
-fn on_disk_page(page: &[u8], compression: u32) -> Vec<u8> {
+fn on_disk_page(page: &[u8], compression: Compression) -> Vec<u8> {
     compress_if_smaller(page, compression).into_owned()
 }
 
@@ -62,7 +63,7 @@ const COLUMN_FLAG_RANGE: u16 = 0x02;
 /// descriptor carries an `i64` first-element index trailer.
 const COLUMN_FLAG_DEFERRED: u16 = 0x01;
 
-/// One RNTuple's fully-lowered, page-encoded payload, ready to place into a file
+/// One `RNTuple`'s fully-lowered, page-encoded payload, ready to place into a file
 /// at any offset: the header envelope (and its checksum), each column's on-disk
 /// page bytes, the column plans, and the entry count. Independent of where in the
 /// file it lands, so the same prep serves both container-form passes.
@@ -74,7 +75,7 @@ struct NtuplePrep {
     disk_sizes: Vec<usize>,
     cols: Vec<ColumnPlan>,
     n_entries: u32,
-    /// Set when this is a schema-extended RNTuple: the late field/column
+    /// Set when this is a schema-extended `RNTuple`: the late field/column
     /// descriptors (placed in the footer's extension record) and the per-column
     /// element offsets. `cols`/`disk_pages` already include the late columns.
     ext: Option<ExtPrep>,
@@ -90,18 +91,18 @@ struct ExtPrep {
     element_offsets: Vec<i64>,
 }
 
-/// Lower one RNTuple's fields and encode its pages (the placement-independent
+/// Lower one `RNTuple`'s fields and encode its pages (the placement-independent
 /// work), shared by every multi-RNTuple file pass.
-fn prep_ntuple(name: &str, fields: &[Field], compression: u32) -> Result<NtuplePrep> {
+fn prep_ntuple(name: &str, fields: &[Field], compression: Compression) -> Result<NtuplePrep> {
     let (field_plans, cols, n_entries) = lower(fields)?;
     let header_env = build_header(name, &field_plans, &cols);
-    let header_checksum =
-        u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+    let header_checksum = crate::envelope::trailing_checksum(&header_env)
+        .ok_or_else(|| Error::Format("the header envelope has no checksum".into()))?;
     let disk_pages: Vec<Vec<u8>> = cols
         .iter()
         .map(|c| on_disk_page(&c.page, compression))
         .collect();
-    let disk_sizes: Vec<usize> = disk_pages.iter().map(|p| p.len()).collect();
+    let disk_sizes: Vec<usize> = disk_pages.iter().map(std::vec::Vec::len).collect();
     Ok(NtuplePrep {
         name: name.to_string(),
         header_env,
@@ -114,7 +115,7 @@ fn prep_ntuple(name: &str, fields: &[Field], compression: u32) -> Result<NtupleP
     })
 }
 
-/// Lower a schema-extended RNTuple: `base_fields` go in the header, and each
+/// Lower a schema-extended `RNTuple`: `base_fields` go in the header, and each
 /// `(first_entry, late_field)` becomes a deferred field in the footer's extension
 /// record whose data covers entries `first_entry..n_entries`. The late field's
 /// IDs continue the base's. Late fields must be scalar leaves (one column each)
@@ -123,12 +124,12 @@ fn prep_ntuple_extended(
     name: &str,
     base_fields: &[Field],
     late: &[(u64, Field)],
-    compression: u32,
+    compression: Compression,
 ) -> Result<NtuplePrep> {
     let (base_fields_plan, base_cols, n_entries) = lower(base_fields)?;
     let header_env = build_header(name, &base_fields_plan, &base_cols);
-    let header_checksum =
-        u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+    let header_checksum = crate::envelope::trailing_checksum(&header_env)
+        .ok_or_else(|| Error::Format("the header envelope has no checksum".into()))?;
 
     let base_col_count = base_cols.len();
     let mut cols = base_cols;
@@ -172,7 +173,7 @@ fn prep_ntuple_extended(
         .iter()
         .map(|c| on_disk_page(&c.page, compression))
         .collect();
-    let disk_sizes: Vec<usize> = disk_pages.iter().map(|p| p.len()).collect();
+    let disk_sizes: Vec<usize> = disk_pages.iter().map(std::vec::Vec::len).collect();
 
     Ok(NtuplePrep {
         name: name.to_string(),
@@ -191,14 +192,14 @@ fn prep_ntuple_extended(
     })
 }
 
-/// Write one RNTuple's blobs (header, pages, page list, footer) at the end of
+/// Write one `RNTuple`'s blobs (header, pages, page list, footer) at the end of
 /// `file`, then its anchor key in directory `dir`.
 fn write_one_rntuple<W: Write + Seek>(
     file: &mut ContainerWriter<W>,
     dir: DirId,
     p: &NtuplePrep,
 ) -> Result<()> {
-    let compression = file.compression_setting();
+    let compression = file.compression();
     let seek_header = file.place_blob(&p.header_env)?;
     let mut page_offsets = Vec::with_capacity(p.cols.len());
     for dp in &p.disk_pages {
@@ -265,10 +266,10 @@ fn offset(seek: u64) -> Result<usize> {
         .map_err(|_| Error::Unsupported(format!("file offset {seek} does not fit this platform")))
 }
 
-/// Low-level writing of a whole RNTuple into an open ROOT container — what a
+/// Low-level writing of a whole `RNTuple` into an open ROOT container — what a
 /// [`WriteInto`](oxiroot_io_core::WriteInto) object (such as
-/// `oxiroot::data::Dataset`'s) calls to place an RNTuple next to other
-/// objects. For an RNTuple written to its own file, cluster by cluster, use
+/// `oxiroot::data::Dataset`'s) calls to place an `RNTuple` next to other
+/// objects. For an `RNTuple` written to its own file, cluster by cluster, use
 /// [`NtupleWriter`].
 pub mod raw {
     use std::io::{Seek, Write};
@@ -279,7 +280,7 @@ pub mod raw {
 
     use super::Field;
 
-    /// Write the RNTuple `name` with `fields` into `file` under directory
+    /// Write the `RNTuple` `name` with `fields` into `file` under directory
     /// `dir`: header, pages, page list, footer, then its anchor key. `late`
     /// adds schema-extension fields, each `(first entry, field)`: the field
     /// holds values from that entry on, and ROOT reads defaults before it.
@@ -295,7 +296,7 @@ pub mod raw {
         fields: &[Field],
         late: &[(u64, Field)],
     ) -> Result<()> {
-        let setting = file.compression_setting();
+        let setting = file.compression();
         let prep = if late.is_empty() {
             super::prep_ntuple(name, fields, setting)?
         } else {
@@ -304,7 +305,7 @@ pub mod raw {
         super::write_one_rntuple(file, dir, &prep)
     }
 
-    /// The `TStreamerInfo` classes an RNTuple with these fields needs in its
+    /// The `TStreamerInfo` classes an `RNTuple` with these fields needs in its
     /// file.
     #[must_use]
     pub fn ntuple_streamer_classes<'a>(
@@ -321,7 +322,8 @@ pub mod raw {
 mod tests {
     use super::envelopes::check_page_limits;
     use super::*;
-    use crate::{FieldValues, NtupleReader};
+    use crate::NtupleReader;
+    use crate::raw::FieldValues;
     use oxiroot_io_core::raw::KSTART_BIG_FILE;
     use oxiroot_io_core::{Compression, FileReader};
 
@@ -358,7 +360,8 @@ mod tests {
         // Tiny file, but forced into the 64-bit container form via a low
         // threshold — it must still parse and yield identical values.
         let bytes =
-            rntuple_file_bytes_threshold("t.root", "ntpl", &fields, Compression::None, 64).unwrap();
+            rntuple_file_bytes_threshold("t.root", "ntpl", &fields, Compression::Stored, 64)
+                .unwrap();
         // Also drop it to a temp file so an external reader (uproot) can be run
         // against the one-shot big-format output out of band.
         let _ = std::fs::write("/tmp/rootrs_oneshot_big.root", &bytes);
@@ -376,7 +379,7 @@ mod tests {
         );
 
         // The same data under the real threshold stays in small (32-bit) form.
-        let small = rntuple_file_bytes("t.root", "ntpl", &fields, Compression::None).unwrap();
+        let small = rntuple_file_bytes("t.root", "ntpl", &fields, Compression::Stored).unwrap();
         let fs = FileReader::from_bytes(small).unwrap();
         assert!(!fs.header().is_big());
         let ntpl = NtupleReader::open(&fs, "ntpl").unwrap();

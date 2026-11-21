@@ -11,10 +11,10 @@
 //! ```
 //! use oxiroot_hist::ToRoot;
 //! use oxiroot_hist::{Hist, Random};
-//! let mut src = Hist::reg(100, -5.0, 5.0).double().to_root();
+//! let mut src = Hist::reg(100, -5.0, 5.0).double().to_root().unwrap();
 //! for x in [-1.0, 0.0, 0.0, 1.0, 2.0] { src.fill(x); }
 //! let mut rng = Random::seed(1);
-//! let mut drawn = Hist::reg(100, -5.0, 5.0).double().to_root();
+//! let mut drawn = Hist::reg(100, -5.0, 5.0).double().to_root().unwrap();
 //! drawn.fill_random(&src, 10_000, &mut rng); // draw 10k from src's shape
 //! assert!((drawn.mean() - src.mean()).abs() < 0.1);
 //! ```
@@ -41,7 +41,7 @@ impl Hist1D {
 
     /// Fill this histogram with `n` values drawn from `source`'s distribution
     /// (ROOT's `FillRandom(Hist1D*, n)`). Efficient: the cumulative is built once.
-    pub fn fill_random(&mut self, source: &Hist1D, n: usize, rng: &mut Random) {
+    pub fn fill_random(&mut self, source: &Self, n: usize, rng: &mut Random) {
         if let Some(sampler) = BinnedSampler::new(source.values(), &source.xaxis.edges()) {
             for _ in 0..n {
                 self.fill(sampler.sample(rng));
@@ -83,7 +83,8 @@ impl Hist1D {
 fn median(n: usize, hh: &[f64]) -> f64 {
     let mut v: [f64; 5] = [0.0; 5];
     v[..n].copy_from_slice(&hh[..n]);
-    v[..n].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // A total order: a NaN bin content must not panic the smoother.
+    v[..n].sort_by(f64::total_cmp);
     v[n / 2]
 }
 
@@ -194,7 +195,7 @@ mod tests {
     fn smooth_matches_root() {
         // ROOT: TH1D(10,0,10) contents [2,8,4,9,3,7,1,6,5,2]; Smooth(1) →
         // [2, 3.5, 4, 4.25, 4.75, 5, 5, 5, 5, 5].
-        let mut h = Hist::reg(10, 0.0, 10.0).double().to_root();
+        let mut h = Hist::reg(10, 0.0, 10.0).double().to_root().unwrap();
         for (i, &v) in [2.0, 8.0, 4.0, 9.0, 3.0, 7.0, 1.0, 6.0, 5.0, 2.0]
             .iter()
             .enumerate()
@@ -211,7 +212,7 @@ mod tests {
     #[test]
     fn get_random_reproduces_the_source_distribution() {
         // A source peaked at 5 with width ~1; drawing from it recovers the shape.
-        let mut src = Hist::reg(100, 0.0, 10.0).double().to_root();
+        let mut src = Hist::reg(100, 0.0, 10.0).double().to_root().unwrap();
         src.fill_random_fn(
             |x| (-0.5 * (x - 5.0).powi(2)).exp(),
             400_000,
@@ -220,7 +221,7 @@ mod tests {
         assert!((src.mean() - 5.0).abs() < 0.02, "mean {}", src.mean());
         assert!((src.std_dev() - 1.0).abs() < 0.02, "std {}", src.std_dev());
 
-        let mut drawn = Hist::reg(100, 0.0, 10.0).double().to_root();
+        let mut drawn = Hist::reg(100, 0.0, 10.0).double().to_root().unwrap();
         drawn.fill_random(&src, 400_000, &mut Random::seed(11));
         assert!((drawn.mean() - src.mean()).abs() < 0.03);
         assert!((drawn.std_dev() - src.std_dev()).abs() < 0.03);
@@ -259,7 +260,7 @@ mod tests {
 
     #[test]
     fn get_random_on_a_malformed_histogram_returns_the_lower_edge() {
-        let mut h = Hist::reg(4, 1.0, 5.0).double().to_root();
+        let mut h = Hist::reg(4, 1.0, 5.0).double().to_root().unwrap();
         for x in [1.5, 2.5, 3.5, 4.5] {
             h.fill(x);
         }
@@ -279,5 +280,22 @@ mod tests {
             sum += x;
         }
         assert!((sum / 100_000.0 - 0.5).abs() < 0.01); // mean ≈ 0.5
+    }
+}
+
+#[cfg(test)]
+mod nan_tests {
+    use crate::Hist1D;
+
+    /// A NaN bin (a 0/0 from a division, say) must not panic the smoother.
+    #[test]
+    fn smoothing_a_histogram_with_a_nan_bin_does_not_panic() {
+        let mut h = Hist1D::new(6, 0.0, 6.0);
+        for (i, c) in h.contents_mut().iter_mut().enumerate() {
+            *c = i as f64;
+        }
+        h.contents_mut()[3] = f64::NAN;
+        h.smooth(2);
+        assert_eq!(h.contents().len(), 8);
     }
 }

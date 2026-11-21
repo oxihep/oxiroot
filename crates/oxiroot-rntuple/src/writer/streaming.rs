@@ -1,4 +1,4 @@
-//! [`NtupleWriter`]: an RNTuple written one cluster per batch, so the whole
+//! [`NtupleWriter`]: an `RNTuple` written one cluster per batch, so the whole
 //! dataset need not be in memory.
 
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -70,7 +70,7 @@ struct HeaderState {
     streamer_info: Vec<u8>,
 }
 
-/// A streaming RNTuple writer: each [`write_batch`](NtupleWriter::write_batch)
+/// A streaming `RNTuple` writer: each [`write_batch`](NtupleWriter::write_batch)
 /// flushes one *cluster* to the sink, so a large dataset can be written one
 /// chunk at a time without ever holding it all in memory. Call
 /// [`finish`](NtupleWriter::finish) to write the page list, footer, and anchor.
@@ -92,7 +92,7 @@ pub struct NtupleWriter<W: Write + Seek> {
 }
 
 impl NtupleWriter<std::fs::File> {
-    /// Create a streaming RNTuple file at `path` (32-bit container; supports up
+    /// Create a streaming `RNTuple` file at `path` (32-bit container; supports up
     /// to 2 GiB — [`finish`](NtupleWriter::finish) errors if that is exceeded).
     pub fn create(
         path: impl AsRef<Path>,
@@ -127,12 +127,12 @@ impl NtupleWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        NtupleWriter::new_fmt(file, &file_name, ntuple_name, compression, big)
+        Self::new_fmt(file, &file_name, ntuple_name, compression, big)
     }
 }
 
 impl<W: Write + Seek> NtupleWriter<W> {
-    /// Begin writing into an arbitrary seekable sink (the TFile header and root
+    /// Begin writing into an arbitrary seekable sink (the `TFile` header and root
     /// directory are written immediately, with pointers to patch at the end).
     /// Small (32-bit) container — see [`new_large`](NtupleWriter::new_large) for
     /// the >2 GiB form.
@@ -163,8 +163,13 @@ impl<W: Write + Seek> NtupleWriter<W> {
         compression: Compression,
         big: bool,
     ) -> Result<Self> {
-        Ok(NtupleWriter {
-            file: ContainerWriter::new(sink, file_name, compression, big)?,
+        Ok(Self {
+            file: ContainerWriter::new(
+                sink,
+                file_name,
+                compression,
+                oxiroot_io_core::raw::Form::big_if(big),
+            )?,
             ntuple_name: ntuple_name.to_string(),
             header: None,
             element_base: Vec::new(),
@@ -189,7 +194,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
     }
 
     fn write_chunks(&mut self, batches: &[&[Field]]) -> Result<()> {
-        let compression = self.file.compression_setting();
+        let compression = self.file.compression();
         let prepare = |fields: &&[Field]| -> Result<Option<PreparedCluster>> {
             if fields.is_empty() {
                 return Ok(None);
@@ -251,8 +256,8 @@ impl<W: Write + Seek> NtupleWriter<W> {
             None => {
                 // First batch fixes the schema and writes the header.
                 let header_env = build_header(&self.ntuple_name, &field_plans, &cols);
-                let checksum =
-                    u64::from_le_bytes(header_env[header_env.len() - 8..].try_into().unwrap());
+                let checksum = crate::envelope::trailing_checksum(&header_env)
+                    .ok_or_else(|| Error::Format("the header envelope has no checksum".into()))?;
                 let seek = self.file.place_blob(&header_env)?;
                 self.element_base = vec![0u64; cols.len()];
                 self.header = Some(HeaderState {
@@ -301,7 +306,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
         })?;
         let num_clusters = u32::saturating_from(self.summaries.len());
 
-        let compression = self.file.compression_setting();
+        let compression = self.file.compression();
         let page_list_env = build_page_list_multi(
             &self.summaries,
             &self.cluster_pages,
@@ -350,7 +355,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
 fn build_page_list_multi(
     summaries: &[(u64, u64)],
     cluster_pages: &[Vec<PageRec>],
-    compression: u32,
+    compression: Compression,
     header_checksum: u64,
 ) -> Result<Vec<u8>> {
     let mut p = Vec::new();
@@ -380,7 +385,7 @@ fn build_page_list_multi(
             body.extend_from_slice(&1u32.to_le_bytes()); // one page
             body.extend_from_slice(&page);
             body.extend_from_slice(&pr.element_offset.to_le_bytes());
-            body.extend_from_slice(&compression.to_le_bytes());
+            body.extend_from_slice(&compression.setting().to_le_bytes());
             let size = i64::saturating_from(8 + body.len());
             let mut frame = (-size).to_le_bytes().to_vec();
             frame.extend_from_slice(&body);

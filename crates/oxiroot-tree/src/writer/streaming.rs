@@ -151,9 +151,9 @@ struct StreamCol {
 ///
 /// ```no_run
 /// use oxiroot_io_core::Compression;
-/// use oxiroot_tree::{Branch, TreeWriter};
+/// use oxiroot_tree::raw::{Branch, TreeWriter};
 ///
-/// let mut w = TreeWriter::create("big.root", "T", Compression::None)?;
+/// let mut w = TreeWriter::create("big.root", "T", Compression::Stored)?;
 /// for batch in 0..1_000 {
 ///     let x: Vec<f64> = (0..10_000).map(|i| (batch * 10_000 + i) as f64).collect();
 ///     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
@@ -210,7 +210,7 @@ impl TreeWriter<std::fs::File> {
             .unwrap_or("file.root")
             .to_string();
         let file = std::fs::File::create(path)?;
-        TreeWriter::new_fmt(file, &file_name, tree_name, compression, big)
+        Self::new_fmt(file, &file_name, tree_name, compression, big)
     }
 }
 
@@ -247,8 +247,13 @@ impl<W: Write + Seek> TreeWriter<W> {
         compression: Compression,
         big: bool,
     ) -> Result<Self> {
-        Ok(TreeWriter {
-            file: ContainerWriter::new(sink, file_name, compression, big)?,
+        Ok(Self {
+            file: ContainerWriter::new(
+                sink,
+                file_name,
+                compression,
+                oxiroot_io_core::raw::Form::big_if(big),
+            )?,
             tree_name: tree_name.to_string(),
             columns: Vec::new(),
             schema: None,
@@ -323,16 +328,16 @@ impl<W: Write + Seek> TreeWriter<W> {
                 col += 1;
             }
         }
-        let compression = self.file.compression_setting();
+        let compression = self.file.compression();
         let tree_name = self.tree_name.clone();
         let prepare = |(_, b): &(usize, &Branch)| prepare_basket(b, &tree_name, compression);
         #[cfg(feature = "rayon")]
         let prepared: Vec<PreparedBasket> = {
             use rayon::prelude::*;
-            jobs.par_iter().map(prepare).collect()
+            jobs.par_iter().map(prepare).collect::<Result<_>>()?
         };
         #[cfg(not(feature = "rayon"))]
-        let prepared: Vec<PreparedBasket> = jobs.iter().map(prepare).collect();
+        let prepared: Vec<PreparedBasket> = jobs.iter().map(prepare).collect::<Result<_>>()?;
 
         for (p, &(col, branch)) in prepared.iter().zip(&jobs) {
             let rec = place_basket(&mut self.file, DirId::TOP, p, &tree_name)?;

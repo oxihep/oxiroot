@@ -55,7 +55,7 @@ impl Hist1D {
     /// the overflow (as ROOT does). Contents and `Sumw2` sum per group; the
     /// statistical moments are unchanged (same fills, coarser bins).
     #[must_use]
-    pub fn rebin(&self, ngroup: usize) -> Hist1D {
+    pub fn rebin(&self, ngroup: usize) -> Self {
         let ng = ngroup.max(1);
         let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let newn = n / ng;
@@ -64,9 +64,9 @@ impl Hist1D {
         let new_edges: Vec<f64> = (0..=newn).map(|k| edges[k * ng]).collect();
 
         let mut out = if new_edges.len() >= 2 {
-            Hist1D::new_variable(&new_edges)
+            Self::new_variable(&new_edges)
         } else {
-            Hist1D::new(i32::saturating_from(newn.max(1)), edges[0], edges[n])
+            Self::new(i32::saturating_from(newn.max(1)), edges[0], edges[n])
         }
         .named(self.name.clone())
         .titled(self.title.clone());
@@ -108,17 +108,17 @@ impl Hist1D {
     /// moment sums are recomputed from the kept
     /// bins (their centres), so `mean`/`std_dev` describe the slice.
     #[must_use]
-    pub fn slice(&self, lo: f64, hi: f64) -> Hist1D {
+    pub fn slice(&self, lo: f64, hi: f64) -> Self {
         let n = usize::saturating_from(self.xaxis.nbins.max(0));
         if n == 0 {
             return self.clone();
         }
-        let ilo = self.find_bin(lo).clamp(1, n);
-        let ihi = self.find_bin(hi).clamp(1, n);
+        let ilo = self.xaxis.find_bin(lo).clamp(1, n);
+        let ihi = self.xaxis.find_bin(hi).clamp(1, n);
         let (ilo, ihi) = (ilo.min(ihi), ilo.max(ihi));
         let edges = self.xaxis.edges();
         let sub_edges: Vec<f64> = edges[ilo - 1..=ihi].to_vec();
-        let mut out = Hist1D::new_variable(&sub_edges)
+        let mut out = Self::new_variable(&sub_edges)
             .named(self.name.clone())
             .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
@@ -171,12 +171,12 @@ impl Hist1D {
     /// variances it accumulates, as in ROOT; otherwise the result stays untracked
     /// and its errors are `√content`, which is right for counts.
     #[must_use]
-    pub fn cumulative(&self, forward: bool) -> Hist1D {
+    pub fn cumulative(&self, forward: bool) -> Self {
         let n = usize::saturating_from(self.xaxis.nbins.max(0));
         let track = !self.sumw2.is_empty();
         let mut out = self.clone();
-        out.contents.iter_mut().for_each(|v| *v = 0.0);
-        out.sumw2.iter_mut().for_each(|v| *v = 0.0);
+        out.contents.fill(0.0);
+        out.sumw2.fill(0.0);
         let order: Vec<usize> = if forward {
             (1..=n).collect()
         } else {
@@ -345,7 +345,7 @@ impl Hist2D {
     /// Merge `ngx`×`ngy` blocks of adjacent bins into one (ROOT's `Rebin2D`).
     /// Contents and `Sumw2` sum per block; the moment sums are unchanged.
     #[must_use]
-    pub fn rebin2d(&self, ngx: usize, ngy: usize) -> Hist2D {
+    pub fn rebin2d(&self, ngx: usize, ngy: usize) -> Self {
         let (nx, ny) = (self.nx(), self.ny());
         let (ngx, ngy) = (ngx.clamp(1, nx.max(1)), ngy.clamp(1, ny.max(1)));
         let (newnx, mapx) = rebin_map(nx, ngx);
@@ -353,7 +353,7 @@ impl Hist2D {
         let xedges = group_edges(&self.xaxis.edges(), ngx, newnx);
         let yedges = group_edges(&self.yaxis.edges(), ngy, newny);
 
-        let mut out = Hist2D::new_variable(&xedges, &yedges)
+        let mut out = Self::new_variable(&xedges, &yedges)
             .named(self.name.clone())
             .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
@@ -382,7 +382,7 @@ impl Hist3D {
     /// Merge `ngx`×`ngy`×`ngz` blocks of adjacent bins into one. Contents and
     /// `Sumw2` sum per block; the moment sums are unchanged.
     #[must_use]
-    pub fn rebin3d(&self, ngx: usize, ngy: usize, ngz: usize) -> Hist3D {
+    pub fn rebin3d(&self, ngx: usize, ngy: usize, ngz: usize) -> Self {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (ngx, ngy, ngz) = (
             ngx.clamp(1, nx.max(1)),
@@ -394,7 +394,7 @@ impl Hist3D {
         let (newnz, mapz) = rebin_map(nz, ngz);
 
         // Hist3D has no variable-bin constructor; build it and set the axes.
-        let mut out = Hist3D::new(
+        let mut out = Self::new(
             i32::saturating_from(newnx),
             0.0,
             1.0,
@@ -408,9 +408,9 @@ impl Hist3D {
         .named(self.name.clone())
         .titled(self.title.clone());
         out.bin_content_type = self.bin_content_type;
-        out.xaxis = Axis::variable("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
-        out.yaxis = Axis::variable("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
-        out.zaxis = Axis::variable("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));
+        out.xaxis = Axis::from_edges("xaxis", &group_edges(&self.xaxis.edges(), ngx, newnx));
+        out.yaxis = Axis::from_edges("yaxis", &group_edges(&self.yaxis.edges(), ngy, newny));
+        out.zaxis = Axis::from_edges("zaxis", &group_edges(&self.zaxis.edges(), ngz, newnz));
         let track = !self.sumw2.is_empty();
         if track {
             out.sumw2 = vec![0.0; out.contents.len()];

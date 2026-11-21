@@ -94,14 +94,13 @@ pub(crate) fn lz4_decode(
     payload: &[u8],
     uncompressed_size: usize,
 ) -> Result<Vec<u8>, CompressError> {
-    if payload.len() < 8 {
+    let Some((checksum, data)) = payload.split_first_chunk::<8>() else {
         return Err(CompressError::Truncated {
             needed: 8,
             available: payload.len(),
         });
-    }
-    let (checksum, data) = payload.split_at(8);
-    let stored = u64::from_be_bytes(checksum.try_into().expect("8 bytes"));
+    };
+    let stored = u64::from_be_bytes(*checksum);
     if xxh64(data, 0) != stored {
         return Err(CompressError::Codec("lz4: xxh64 checksum mismatch".into()));
     }

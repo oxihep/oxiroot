@@ -1,6 +1,6 @@
 //! Reading a `TBasket` — the unit of branch data on disk.
 //!
-//! A basket is a `Key` whose `fKeyLen` *includes* a 19-byte TBasket extension
+//! A basket is a `Key` whose `fKeyLen` *includes* a 19-byte `TBasket` extension
 //! after the title strings: `fVersion(u16) fBufferSize(i32) fNevBufSize(i32)
 //! fNevBuf(i32) fLast(i32) flag(u8)`. The data starts at `fSeekKey + fKeyLen`
 //! and is compressed iff its on-disk size differs from the key's `fObjLen`. The
@@ -45,7 +45,7 @@ impl Basket {
     /// on-disk size (`fBasketBytes`) when the branch recorded it — then the whole
     /// basket is fetched in one exact request; otherwise the key header is probed
     /// to discover the size.
-    pub fn read(file: &FileReader, seek: u64, nbytes: Option<usize>) -> Result<Basket> {
+    pub fn read(file: &FileReader, seek: u64, nbytes: Option<usize>) -> Result<Self> {
         // With the exact size known, fetch the whole record at once; otherwise
         // probe a bounded window to parse the key header (which reveals `fNbytes`).
         let avail = file.size().saturating_sub(seek);
@@ -148,7 +148,7 @@ impl Basket {
             None
         };
 
-        Ok(Basket {
+        Ok(Self {
             n_entries,
             border,
             data,

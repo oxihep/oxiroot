@@ -2,7 +2,8 @@
 //! ROOT splits a class with a dictionary into a Record of named sub-fields, so
 //! it reads back through the existing recursive Record/Collection path.
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::FieldValues;
 use std::path::PathBuf;
 fn open(name: &str) -> FileReader {
     FileReader::open(

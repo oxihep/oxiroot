@@ -7,8 +7,9 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, Hist1D, ListKind, ObjList, ObjString, Parameter, ReadRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_io_core::{FileWriter, ListKind, ObjList, ObjString, Parameter};
 
 fn fixture() -> FileReader {
     FileReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/objlist.root"))
@@ -19,7 +20,7 @@ fn fixture() -> FileReader {
 fn reads_root_written_list_and_array() {
     let f = fixture();
 
-    let l = ObjList::read_root(&f, "mylist").unwrap();
+    let l = f.get::<ObjList>("mylist").unwrap();
     assert_eq!(l.name(), "mylist");
     assert_eq!(l.kind(), ListKind::List);
     assert_eq!(l.len(), 3);
@@ -32,7 +33,7 @@ fn reads_root_written_list_and_array() {
     assert_eq!(l.items::<ObjString>().unwrap()[0].value(), "hello");
     assert_eq!(l.items::<Parameter>().unwrap()[0].value().as_f64(), 12.5);
 
-    let a = ObjList::read_root(&f, "myarr").unwrap();
+    let a = f.get::<ObjList>("myarr").unwrap();
     assert_eq!(a.kind(), ListKind::Array);
     assert_eq!(a.len(), 2);
     assert_eq!(a.items::<Hist1D>().unwrap().len(), 2);
@@ -40,32 +41,49 @@ fn reads_root_written_list_and_array() {
 
 #[test]
 fn round_trips_list_and_array_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.fill(0.5);
-    let list = ObjList::list()
+    let list = ObjList::new(ListKind::List)
         .named("mylist")
         .add(&h)
         .add(&ObjString::new("hello"))
         .add(&Parameter::f64("lumi", 12.5));
-    let arr = ObjList::array()
+    let arr = ObjList::new(ListKind::Array)
         .named("myarr")
-        .add(&Hist::reg(3, 0.0, 3.0).double().to_root().named("a0"))
-        .add(&Hist::reg(3, 0.0, 3.0).double().to_root().named("a1"));
+        .add(
+            &Hist::reg(3, 0.0, 3.0)
+                .double()
+                .to_root()
+                .unwrap()
+                .named("a0"),
+        )
+        .add(
+            &Hist::reg(3, 0.0, 3.0)
+                .double()
+                .to_root()
+                .unwrap()
+                .named("a1"),
+        );
 
     let out = std::env::temp_dir().join("oxiroot_objlist_rt.root");
     FileWriter::create(&out)
         .add(&list)
         .add(&arr)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let l = ObjList::read_root(&f, "mylist").unwrap();
+    let l = f.get::<ObjList>("mylist").unwrap();
     assert_eq!(l.len(), 3);
     assert_eq!(l.items::<Hist1D>().unwrap().len(), 1);
     assert_eq!(l.items::<ObjString>().unwrap()[0].value(), "hello");
     assert_eq!(l.items::<Parameter>().unwrap()[0].value().as_f64(), 12.5);
-    let a = ObjList::read_root(&f, "myarr").unwrap();
+    let a = f.get::<ObjList>("myarr").unwrap();
     assert_eq!(a.kind(), ListKind::Array);
     assert_eq!(a.items::<Hist1D>().unwrap().len(), 2);
     let _ = std::fs::remove_file(&out);

@@ -1,7 +1,7 @@
 //! `Axis` — a histogram axis.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
+use oxiroot_io_core::raw::{read_named, read_object_base, read_pointer_header, skip_versioned};
 use oxiroot_io_core::{Error, RBuffer, Result};
 
 use crate::base::end_record;
@@ -38,8 +38,9 @@ pub struct Axis {
 
 impl Axis {
     /// Create a uniform axis of `nbins` bins over `[xmin, xmax)`.
-    pub fn new(name: &str, nbins: i32, xmin: f64, xmax: f64) -> Axis {
-        Axis {
+    #[must_use]
+    pub fn new(name: &str, nbins: i32, xmin: f64, xmax: f64) -> Self {
+        Self {
             name: name.to_string(),
             title: String::new(),
             nbins,
@@ -53,18 +54,13 @@ impl Axis {
     }
 
     /// Create a variable-width axis from `edges` (the `nbins + 1` bin
-    /// boundaries, ascending). Panics if fewer than two edges are given or if
-    /// they are not strictly ascending; use [`try_variable`](Self::try_variable)
-    /// for caller-supplied edges you would rather validate than trust.
-    #[must_use]
-    pub fn variable(name: &str, edges: &[f64]) -> Axis {
-        Self::try_variable(name, edges).expect("invalid variable axis edges")
-    }
-
-    /// Like [`variable`](Self::variable), but returns an error instead of
-    /// panicking when `edges` has fewer than two entries or is not strictly
-    /// ascending — the fallible form for untrusted input.
-    pub fn try_variable(name: &str, edges: &[f64]) -> Result<Axis> {
+    /// boundaries, ascending).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `edges` has fewer than two values or is not
+    /// strictly ascending.
+    pub fn variable(name: &str, edges: &[f64]) -> Result<Self> {
         if edges.len() < 2 {
             return Err(Error::InvalidInput(
                 "a variable axis needs at least two edges".to_string(),
@@ -75,17 +71,24 @@ impl Axis {
                 "variable axis edges must be strictly ascending".to_string(),
             ));
         }
-        Ok(Axis {
+        Ok(Self::from_edges(name, edges))
+    }
+
+    /// A variable-width axis from edges already known to be valid: at least
+    /// two, strictly ascending (the edges of another axis, or a regrouping of
+    /// them). Fewer than two give an axis with no bins.
+    pub(crate) fn from_edges(name: &str, edges: &[f64]) -> Self {
+        Self {
             name: name.to_string(),
             title: String::new(),
-            nbins: i32::saturating_from(edges.len() - 1),
-            xmin: edges[0],
-            xmax: edges[edges.len() - 1],
+            nbins: i32::saturating_from(edges.len().saturating_sub(1)),
+            xmin: edges.first().copied().unwrap_or(0.0),
+            xmax: edges.last().copied().unwrap_or(0.0),
             xbins: edges.to_vec(),
             labels: Vec::new(),
             time_display: false,
             time_format: String::new(),
-        })
+        }
     }
 
     /// Find the bin for value `x`: 0 = underflow, `1..=nbins` = in range,
@@ -96,6 +99,7 @@ impl Axis {
         clippy::cast_sign_loss,
         reason = "x lies in [xmin, xmax): a non-negative bin offset"
     )]
+    #[must_use]
     pub fn find_bin(&self, x: f64) -> usize {
         let n = usize::saturating_from(self.nbins.max(0));
         if n == 0 {
@@ -129,7 +133,7 @@ impl Axis {
     /// edge-by-edge (so a uniform axis and an equivalent variable one match)
     /// without allocating either edge array.
     #[must_use]
-    pub fn same_binning(&self, other: &Axis) -> bool {
+    pub fn same_binning(&self, other: &Self) -> bool {
         self.nbins == other.nbins
             && (0..=usize::saturating_from(self.nbins.max(0)))
                 .all(|i| self.edge(i) == other.edge(i))
@@ -141,7 +145,7 @@ impl Axis {
     /// Class versions 6 to 10 are read (ROOT 3.02 onwards): version 7 added
     /// `fLabels`, version 8 `fBits2`, and version 10 `fModLabs`. Earlier versions
     /// used a hand-written streamer and are an error.
-    pub fn read(r: &mut RBuffer) -> Result<Axis> {
+    pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let vh = r.read_version()?; // Axis (e.g. version 10)
         if vh.version < 6 {
             return Err(Error::UnsupportedVersion {
@@ -164,6 +168,9 @@ impl Axis {
         for _ in 0..n {
             xbins.push(r.be_f64()?);
         }
+        // Variable edges must be the `fNbins + 1` ascending boundaries: the
+        // bin lookups, `edges()` and every derived histogram index them by bin.
+        check_edges(nbins, &xbins)?;
 
         // fFirst, fLast, fBits2, fTimeDisplay, fTimeFormat precede the labels.
         let _first = r.be_i32()?;
@@ -182,7 +189,7 @@ impl Axis {
         // Skip the remainder (fModLabs) via the axis byte count.
         end_record(r, &vh, "TAxis")?;
 
-        Ok(Axis {
+        Ok(Self {
             name: named.name,
             title: named.title,
             nbins,
@@ -205,11 +212,13 @@ impl Axis {
     }
 
     /// The 1-based bin carrying label `label`, if any.
+    #[must_use]
     pub fn find_label(&self, label: &str) -> Option<usize> {
         self.labels.iter().position(|l| l == label).map(|i| i + 1)
     }
 
     /// Whether the axis carries alphanumeric bin labels (`fLabels`).
+    #[must_use]
     pub fn is_labelled(&self) -> bool {
         self.labels.iter().any(|l| !l.is_empty())
     }
@@ -224,7 +233,7 @@ impl Axis {
     /// ```
     /// use oxiroot_hist::ToRoot;
     /// # use oxiroot_hist::Hist;
-    /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().named("rate");
+    /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().unwrap().named("rate");
     /// h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
     /// assert!(h.xaxis().time_display);
     /// ```
@@ -253,6 +262,7 @@ impl Axis {
     }
 
     /// The `nbins + 1` bin edges, low to high (uniform when `xbins` is empty).
+    #[must_use]
     pub fn edges(&self) -> Vec<f64> {
         if !self.xbins.is_empty() {
             return self.xbins.clone();
@@ -311,13 +321,23 @@ impl Axis {
     }
 }
 
-/// Consume an object pointer's class tag (already past the byte count): a
-/// `kNewClassTag` (`0xFFFFFFFF`) is followed by a NUL-terminated class name; a
-/// class back-reference is the bare 4-byte tag. We never need to *resolve* the
-/// class — context fixes the type — so we just advance past whichever form.
-fn skip_class_tag(r: &mut RBuffer) -> Result<()> {
-    if r.be_u32()? == 0xFFFF_FFFF {
-        while r.u8()? != 0 {}
+/// Check a `TAxis`'s variable edges (`fXbins`) against its bin count: none (a
+/// uniform axis), or exactly `nbins + 1` strictly ascending values.
+fn check_edges(nbins: i32, xbins: &[f64]) -> Result<()> {
+    if xbins.is_empty() {
+        return Ok(());
+    }
+    let expected = usize::saturating_from(nbins.max(0)) + 1;
+    if xbins.len() != expected {
+        return Err(Error::Format(format!(
+            "TAxis has {} bin edges for {nbins} bins, not {expected}",
+            xbins.len()
+        )));
+    }
+    if !xbins.windows(2).all(|w| w[0] < w[1]) {
+        return Err(Error::Format(
+            "TAxis bin edges are not strictly ascending".into(),
+        ));
     }
     Ok(())
 }
@@ -326,11 +346,11 @@ fn skip_class_tag(r: &mut RBuffer) -> Result<()> {
 /// 1-based bin number in `fUniqueID` and the label text in `fString`. Returns a
 /// `Vec` of length `nbins` (empty strings for unlabelled bins), or empty when
 /// the pointer is null (an ordinary numeric axis).
-fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
-    if r.be_u32()? == 0 {
+fn read_labels(r: &mut RBuffer<'_>, nbins: usize) -> Result<Vec<String>> {
+    // The class is known from context (a THashList), so its tag needs no map.
+    if read_pointer_header(r)?.is_none() {
         return Ok(Vec::new()); // null fLabels pointer
     }
-    skip_class_tag(r)?; // THashList class tag
     r.read_version()?; // THashList (a TList, version 5)
     read_object_base(r)?;
     let _name = r.string()?; // fName (empty)
@@ -338,10 +358,9 @@ fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
 
     let mut labels = vec![String::new(); nbins];
     for _ in 0..size {
-        if r.be_u32()? == 0 {
+        if read_pointer_header(r)?.is_none() {
             continue; // null entry
         }
-        skip_class_tag(r)?; // ObjString class tag
         let body = r.read_version()?; // ObjString body {byte count, version}
         let obj = read_object_base(r)?; // fUniqueID = 1-based bin number
         let label = r.string()?; // fString
@@ -358,4 +377,25 @@ fn read_labels(r: &mut RBuffer, nbins: usize) -> Result<Vec<String>> {
         return Ok(Vec::new());
     }
     Ok(labels)
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::check_edges;
+
+    /// A uniform axis has no edges; a variable one has `nbins + 1` ascending
+    /// ones. Anything else would be indexed out of range later.
+    #[test]
+    fn variable_edges_must_match_the_bin_count_and_ascend() {
+        assert!(check_edges(4, &[]).is_ok());
+        assert!(check_edges(2, &[0.0, 1.0, 3.0]).is_ok());
+        assert!(check_edges(3, &[0.0, 1.0, 3.0]).is_err(), "one edge short");
+        assert!(
+            check_edges(1, &[0.0, 1.0, 3.0]).is_err(),
+            "one edge too many"
+        );
+        assert!(check_edges(2, &[0.0, 0.0, 3.0]).is_err(), "repeated edge");
+        assert!(check_edges(2, &[0.0, 2.0, 1.0]).is_err(), "descending");
+        assert!(check_edges(2, &[0.0, f64::NAN, 1.0]).is_err(), "NaN edge");
+    }
 }

@@ -68,7 +68,7 @@ bash scripts/interop_local.sh --keep          # keep the work dir + regenerated 
 | Phase | Check |
 |-------|-------|
 | Canonical round-trip | The lean smoke test: a `TH1D`, an RNTuple, and a `TTree` (with every branch kind) plus the multi-object / subdirectory / append files written by `FileWriter`, round-tripped both ways against ROOT C++ and uproot. |
-| Examples smoke | Runs the `analysis`, `tree`, and `rntuple_nested` examples (pure Rust) so a regression in `FileWriter`, `read_root_in`, or the `Tree`/`Ntuple` writers fails even with no oracle present. |
+| Examples smoke | Runs the `analysis`, `tree`, and `rntuple_nested` examples (pure Rust) so a regression in `FileWriter`, `FileReader::get`, or the `Tree`/`Ntuple` writers fails even with no oracle present. |
 | Manifest-driven matrix | `interop_matrix` writes ~38 cases plus a `manifest.json`; the ROOT C++ and uproot oracles consume the manifest and assert their parse matches (Rust → oracle). |
 | `cargo test --workspace` | The pure-Rust read-compat suite against the committed fixtures. |
 | Fixture-regen drift check | Regenerates the committed fixtures from your *local* ROOT/uproot and re-tests, catching version drift. Skipped with `--no-fixtures`. |
@@ -79,7 +79,7 @@ The matrix is the broad write-compat coverage. Its cases span:
 - **Histograms** — every `Hist1D`/`Hist2D`/`Hist3D` precision (`D`/`F`/`I`/`S`/`C`/`L`)
   and dimension, `Profile1D`, `Sumw2` per-bin errors, and variable bin edges.
 - **File composition** — multiple objects, subdirectories, and append (the
-  `FileWriter`, plus `read_root` / `read_root_in` on the read side).
+  `FileWriter`, plus `FileReader::get` on the read side).
 - **RNTuple** — every scalar and vector field type, across multiple clusters.
 - **`TTree`** — every branch kind and scalar width, including the split
   `std::vector<Struct>` (`TBranchElement`) branch.
@@ -119,15 +119,15 @@ The write side composes a histogram, an RNTuple, and a `TTree`:
 use oxiroot::prelude::*;
 
 // A histogram.
-let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h").titled("interop");
+let mut h = Hist::reg(4, 0.0, 4.0).double().to_root()?.named("h").titled("interop");
 h.fill(0.5);
-h.write_root("rust_hist.root", Compression::None)?;
+FileWriter::create("rust_hist.root").add(&h).compression(Compression::Stored).write()?;
 
 // Several objects and a subdirectory via FileWriter.
 FileWriter::create("rust_multi.root")
     .add(&h)
     .dir("sub", |d| d.add(&other))
-    .write(Compression::None)?;
+    .compression(Compression::Stored).write()?;
 ```
 
 The read side opens what an oracle wrote and asserts the decoded values, reading
@@ -137,13 +137,13 @@ both from the top level and from a subdirectory:
 use oxiroot::prelude::*;
 
 let f = FileReader::open("oracle_dirs.root")?;
-let dh = Hist1D::read_root(&f, "dh")?;                 // top-level key
-let rh = Hist1D::read_root_in(&f, "region", "rh")?;    // inside subdirectory "region"
+let dh = f.get::<Hist1D>("dh")?;                 // top-level key
+let rh = f.get::<Hist1D>("region/rh")?;    // inside subdirectory "region"
 assert_eq!(dh.values(), &[2.0, 4.0]);
 ```
 
-The same `read_root` / `read_root_in` (the `ReadRoot` trait) and
-`write_root` / `FileWriter` (the `WriteRoot` trait) are the only entry
+The same `FileReader::get` (the `ReadRoot` trait) and
+`FileWriter::add` (the `WriteRoot` trait) are the only entry
 points; there is one way per operation. See
 [Reading & writing](reading-writing.md) for the full surface.
 

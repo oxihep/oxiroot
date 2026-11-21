@@ -38,7 +38,7 @@ struct RangeServer {
 
 impl RangeServer {
     /// Serve `data` on a background thread; return the server with its URL.
-    fn start(data: Vec<u8>) -> RangeServer {
+    fn start(data: Vec<u8>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let port = listener.local_addr().unwrap().port();
         let stats = Arc::new(Mutex::new(Stats {
@@ -55,7 +55,7 @@ impl RangeServer {
                 std::thread::spawn(move || handle(stream, &data, &stats));
             }
         });
-        RangeServer {
+        Self {
             url: format!("http://127.0.0.1:{port}/file.root"),
             stats,
         }
@@ -207,7 +207,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
 #[test]
 fn a_branch_of_many_baskets_reads_over_http() {
     use crate::support::write_tree_file_baskets;
-    use oxiroot::tree::Branch;
+    use oxiroot::tree::raw::Branch;
     let dir = std::env::temp_dir().join(format!("oxiroot-http-batch-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("baskets.root");

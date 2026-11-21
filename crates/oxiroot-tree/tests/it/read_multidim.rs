@@ -1,7 +1,8 @@
 //! Read a multidimensional fixed-array branch float m[2][3]. The data is stored
-//! row-major flat (6 per entry); the [2,3] shape is exposed via branch_shape.
+//! row-major flat (6 per entry); the [2,3] shape is exposed via `branch_shape`.
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 use std::path::PathBuf;
 
 #[test]

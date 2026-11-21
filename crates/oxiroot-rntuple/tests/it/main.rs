@@ -1,4 +1,4 @@
-//! The oxiroot-rntuple RNTuple integration tests, compiled as one binary so the
+//! The oxiroot-rntuple `RNTuple` integration tests, compiled as one binary so the
 //! suite links once. Each module is one topic.
 
 mod assoc;

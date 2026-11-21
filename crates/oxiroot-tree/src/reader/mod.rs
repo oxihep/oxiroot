@@ -12,7 +12,7 @@
 //! *split* (`fSplitLevel > 0`) `std::vector<MyStruct>` branches, which are
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
-use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload, find_key};
+use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload};
 use oxiroot_io_core::{Error, FileReader, Result};
 
 use std::ops::Range;
@@ -32,8 +32,8 @@ use parse::read_tree;
 /// count, and branches; branch data is read on demand, one branch at a time,
 /// with [`branch`](Self::branch).
 ///
-/// This is the low-level, TTree-specific reader. For one API over TTree and
-/// RNTuple, read through `oxiroot::data::Dataset`.
+/// This is the low-level, TTree-specific reader. For one API over `TTree` and
+/// `RNTuple`, read through `oxiroot::data::Dataset`.
 #[doc(alias = "TTree", alias = "TTreeReader")]
 #[derive(Debug, Clone)]
 pub struct TreeReader<'f> {
@@ -83,8 +83,8 @@ impl TreeIndex {
         minor_name: String,
         keys: Vec<(i64, i64)>,
         entries: Vec<u64>,
-    ) -> TreeIndex {
-        TreeIndex {
+    ) -> Self {
+        Self {
             major_name,
             minor_name,
             keys,
@@ -150,23 +150,27 @@ pub struct Friend {
 
 impl Friend {
     /// The friend tree's key name (`fTreeName`).
+    #[must_use]
     pub fn tree_name(&self) -> &str {
         &self.tree_name
     }
 
     /// The file holding the friend, or `""` when it is in the same file as the
     /// main tree.
+    #[must_use]
     pub fn file_name(&self) -> &str {
         &self.file_name
     }
 
     /// The alias the friend is referred to by.
+    #[must_use]
     pub fn alias(&self) -> &str {
         &self.alias
     }
 
     /// Whether the friend lives in the same file as the main tree (`AddFriend`
     /// called without an explicit file name stores an empty file name).
+    #[must_use]
     pub fn is_same_file(&self) -> bool {
         self.file_name.is_empty()
     }
@@ -234,7 +238,7 @@ struct ObjectMember {
 
 /// The write-reconstruction metadata of a read branch — the private-field
 /// summary [`BranchRead::to_branch`] needs to rebuild a branch as a
-/// writable [`Branch`](crate::Branch) with the correct kind (scalar / fixed
+/// writable [`Branch`](crate::raw::Branch) with the correct kind (scalar / fixed
 /// array / jagged / `std::vector` / string), or to reject the kinds this crate
 /// cannot write back.
 pub(crate) struct BranchMetaLite {
@@ -263,32 +267,14 @@ struct Leaf {
 }
 
 impl<'f> TreeReader<'f> {
-    /// Open the `TTree` named `name` in `file`.
-    pub fn open(file: &'f FileReader, name: &str) -> Result<TreeReader<'f>> {
-        let key = file.key(name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: name.to_string(),
-        })?;
-        Self::open_from_key(file, key)
-    }
-
-    /// Open the `TTree` named `name` from the subdirectory `subdir` (a
-    /// `/`-separated path descends through nested `TDirectory`s).
-    pub fn open_in(file: &'f FileReader, subdir: &str, name: &str) -> Result<TreeReader<'f>> {
-        let dir = file.subdir(subdir)?;
-        // The cycle `name` asks for, or the highest — `FileReader::key`'s rule.
-        let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: format!("{}/{name}", subdir.trim_end_matches('/')),
-        })?;
-        // Detach from the borrowed `dir` so the returned tree owns nothing tied to
-        // it; the key's seek offsets are absolute, so decoding is identical.
-        let key = key.clone();
-        Self::open_from_key(file, &key)
+    /// Open the `TTree` at `path` in `file`: `"events"`, or
+    /// `"dir/sub/events;cycle"` for one in a subdirectory or at a given cycle.
+    pub fn open(file: &'f FileReader, path: &str) -> Result<Self> {
+        Self::open_from_key(file, &file.key(path)?)
     }
 
     /// Decode a `TTree` (or `TNtuple`/`TNtupleD`) from an already-located key.
-    fn open_from_key(file: &'f FileReader, key: &Key) -> Result<TreeReader<'f>> {
+    fn open_from_key(file: &'f FileReader, key: &Key) -> Result<Self> {
         // `TNtuple` / `TNtupleD` are `TTree` subclasses (a `TTree` base wrapped in
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
@@ -309,7 +295,7 @@ impl<'f> TreeReader<'f> {
             file,
             &object,
             key.key_len as usize,
-            &registry,
+            registry,
             &key.class_name,
         )?;
         tree.streamer_classes = registry
@@ -321,16 +307,19 @@ impl<'f> TreeReader<'f> {
     }
 
     /// Total number of entries in the tree (`fEntries`).
+    #[must_use]
     pub fn entries(&self) -> u64 {
         self.entries
     }
 
     /// The tree name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The names of the (readable) branches, in tree order.
+    #[must_use]
     pub fn branch_names(&self) -> Vec<&str> {
         self.branches.iter().map(|b| b.name.as_str()).collect()
     }
@@ -341,6 +330,7 @@ impl<'f> TreeReader<'f> {
     /// [`TreeReader::open`]`(file, friend.tree_name())` (the same `file` when
     /// [`Friend::is_same_file`]) and read its branches as usual; the columns line
     /// up by entry.
+    #[must_use]
     pub fn friends(&self) -> &[Friend] {
         &self.friends
     }
@@ -350,6 +340,7 @@ impl<'f> TreeReader<'f> {
     ///
     /// The index maps a `(major, minor)` key to the entry holding it, which is
     /// what [`join_by_index`](Self::join_by_index) joins a friend on.
+    #[must_use]
     pub fn index(&self) -> Option<&TreeIndex> {
         self.index.as_ref()
     }
@@ -367,7 +358,8 @@ impl<'f> TreeReader<'f> {
     ///
     /// ```no_run
     /// # use oxiroot_io_core::FileReader;
-    /// # use oxiroot_tree::{BranchValues, TreeReader};
+    /// # use oxiroot_tree::{TreeReader};
+    /// # use oxiroot_tree::raw::{BranchValues};
     /// # fn main() -> oxiroot_io_core::Result<()> {
     /// # let (file, friend_file) = (FileReader::open("f.root")?, FileReader::open("f.root")?);
     /// let main = TreeReader::open(&file, "main")?;
@@ -407,7 +399,7 @@ impl<'f> TreeReader<'f> {
     /// Read branch `name` as the integers an index key is made of.
     fn index_column(&self, name: &str) -> Result<Vec<i64>> {
         let values = self.branch(name).values()?;
-        values.as_i64_vec().ok_or_else(|| {
+        values.to_i64_vec().ok_or_else(|| {
             Error::InvalidInput(format!(
                 "branch {name:?} of tree {:?} holds {:?} values, which are not index keys",
                 self.name(),
@@ -420,12 +412,14 @@ impl<'f> TreeReader<'f> {
     /// `fAliases`). An alias is a shorthand name standing for a branch
     /// expression (e.g. `"pt"` → `"sqrt(px*px+py*py)"`); oxiroot reads the pairs
     /// but does not evaluate the expressions.
+    #[must_use]
     pub fn aliases(&self) -> &[(String, String)] {
         &self.aliases
     }
 
     /// The expression that alias `name` stands for, or `None` if there is no
     /// such alias.
+    #[must_use]
     pub fn alias(&self, name: &str) -> Option<&str> {
         self.aliases
             .iter()
@@ -435,6 +429,7 @@ impl<'f> TreeReader<'f> {
 
     /// The element type of branch `name` (without reading its data), or `None`
     /// if there is no such readable branch.
+    #[must_use]
     pub fn branch_type(&self, name: &str) -> Option<LeafType> {
         self.find_branch(name).map(|b| b.leaf_type)
     }
@@ -442,12 +437,14 @@ impl<'f> TreeReader<'f> {
     /// `fLen` for branch `name`: the per-entry element count of a fixed-size
     /// array branch (`1` for a scalar; jagged branches report `1` and vary per
     /// entry). `None` if there is no such branch.
+    #[must_use]
     pub fn branch_len(&self, name: &str) -> Option<i32> {
         self.find_branch(name).map(|b| b.leaf_len)
     }
 
     /// The title (`fTitle`) of branch `name` — the leaf-list / shape string such
     /// as `x[3]` or `n` — or `None` if there is no such branch.
+    #[must_use]
     pub fn branch_title(&self, name: &str) -> Option<&str> {
         self.find_branch(name).map(|b| b.title.as_str())
     }
@@ -455,10 +452,13 @@ impl<'f> TreeReader<'f> {
     /// How branch `name`'s entries are shaped — one value, a fixed array, a
     /// variable-length list, or a list of lists — or `None` if there is no
     /// such branch.
+    #[must_use]
     pub fn branch_layout(&self, name: &str) -> Option<BranchLayout> {
         self.find_branch(name).map(|b| {
             if b.nested_elem.is_some() {
                 BranchLayout::ListOfLists
+            } else if b.variable && b.elem_header == 0 && b.collection.is_none() {
+                BranchLayout::CArray
             } else if b.variable {
                 BranchLayout::List
             } else if b.leaf_type == LeafType::Str {
@@ -482,6 +482,7 @@ impl<'f> TreeReader<'f> {
     /// variable-length branch. The values are stored row-major flat (each entry's
     /// inner vector has `N` or `N*M` elements); use this to reshape them. `None`
     /// if there is no such branch.
+    #[must_use]
     pub fn branch_shape(&self, name: &str) -> Option<&[usize]> {
         self.find_branch(name).map(|b| b.dims.as_slice())
     }
@@ -490,6 +491,7 @@ impl<'f> TreeReader<'f> {
     /// `(name, reason)` pairs (e.g. multi-leaf/leaflist branches or unsupported
     /// element types). These are absent from [`branch_names`](Self::branch_names),
     /// so this is the way to see what was skipped and why.
+    #[must_use]
     pub fn unsupported_branches(&self) -> Vec<(&str, &str)> {
         self.unsupported
             .iter()
@@ -501,6 +503,7 @@ impl<'f> TreeReader<'f> {
     /// the schema this tree was written against (e.g. `("TTree", 20)`,
     /// `("TBranch", 13)`). Empty if the file carries no streamer info. This is the
     /// member layout the reader walks on [`open`](Self::open) to parse the tree.
+    #[must_use]
     pub fn streamer_classes(&self) -> Vec<(&str, i32)> {
         self.streamer_classes
             .iter()
@@ -715,9 +718,12 @@ pub enum BranchLayout {
     /// The same number of values in every entry: a fixed array `x[N]` (a
     /// multidimensional `x[N][M]` counts `N × M`).
     Array(usize),
-    /// A variable number of values per entry: a C-style `x[n]`, a
-    /// `std::vector<T>`, or a member of a split `std::vector<Struct>`.
+    /// A variable number of values per entry: a `std::vector<T>`, or a member
+    /// of a split `std::vector<Struct>`.
     List,
+    /// A variable number of values per entry, counted by another leaf: a
+    /// C-style `x[n]`.
+    CArray,
     /// A `std::vector<std::vector<T>>`.
     ListOfLists,
 }

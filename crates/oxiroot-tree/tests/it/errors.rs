@@ -3,7 +3,8 @@
 
 use crate::support::tree_file_bytes;
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString};
-use oxiroot_tree::{Branch, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::Branch;
 
 #[test]
 fn a_missing_tree_or_branch_is_not_found() {
@@ -11,7 +12,7 @@ fn a_missing_tree_or_branch_is_not_found() {
         "f.root",
         "T",
         &[Branch::f64("x", vec![1.0, 2.0])],
-        Compression::None,
+        Compression::Stored,
     )
     .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
@@ -34,7 +35,8 @@ fn a_missing_tree_or_branch_is_not_found() {
 fn a_key_that_is_not_a_tree_is_the_wrong_class() {
     let bytes = FileWriter::create("unused.root")
         .add(&ObjString::new("hi").named("s"))
-        .to_bytes(Compression::None)
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(

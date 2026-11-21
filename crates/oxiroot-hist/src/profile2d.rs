@@ -1,16 +1,17 @@
 //! `Profile2D` — a 2-D profile histogram. For each `(x, y)` cell it stores the
 //! running sums needed to recover the mean (and spread) of a third quantity `z`:
-//! `Σw` (`bin_entries`), `Σ(w·z)` (`sums`, the Hist2D contents), and `Σ(w·z²)`
-//! (`sumz2`, the Hist2D `fSumw2`). On disk it is a `TH2D` plus the profile members,
+//! `Σw` (`bin_entries`), `Σ(w·z)` (`sums`, the `Hist2D` contents), and `Σ(w·z²)`
+//! (`sumz2`, the `Hist2D` `fSumw2`). On disk it is a `TH2D` plus the profile members,
 //! exactly as `Profile1D` is a `TH1D` plus profile members.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, cell_count, check_cells, end_record, in_range_sum, object_bytes,
-    object_bytes_in, read_tarray, read_th1_base, unsupported_version,
+    BinContentType, cell_count, check_cells, end_record, in_range_sum, read_tarray, read_th1_base,
+    unsupported_version,
 };
 use crate::profile1d::ErrorMode;
 
@@ -44,9 +45,9 @@ pub struct Profile2D {
     pub(crate) tsumwy2: f64,
     /// Sum of `w·x·y` (`fTsumwxy`).
     pub(crate) tsumwxy: f64,
-    /// Per-cell `Σ(w·z)` (the Hist2D contents, `fArray`); length `ncells`.
+    /// Per-cell `Σ(w·z)` (the `Hist2D` contents, `fArray`); length `ncells`.
     pub(crate) sums: Vec<f64>,
-    /// Per-cell `Σ(w·z²)` (the Hist2D `fSumw2`); length `ncells`.
+    /// Per-cell `Σ(w·z²)` (the `Hist2D` `fSumw2`); length `ncells`.
     pub(crate) sumz2: Vec<f64>,
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub(crate) bin_entries: Vec<f64>,
@@ -67,11 +68,11 @@ pub struct Profile2D {
 impl Profile2D {
     /// Create an empty `Profile2D` with uniform x and y bins and no z
     /// restriction. Internal primitive behind the public builder:
-    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()`.
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()?`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Profile2D {
+    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Self {
         let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2));
-        Profile2D {
+        Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
@@ -98,11 +99,13 @@ impl Profile2D {
     }
 
     /// Number of x bins (excluding flow).
+    #[must_use]
     pub fn nx(&self) -> usize {
         usize::saturating_from(self.xaxis.nbins.max(0))
     }
 
     /// Number of y bins (excluding flow).
+    #[must_use]
     pub fn ny(&self) -> usize {
         usize::saturating_from(self.yaxis.nbins.max(0))
     }
@@ -148,6 +151,7 @@ impl Profile2D {
 
     /// Profiled `z` value per in-range cell as `values[ix][iy]`: `Σ(w·z) / Σw`,
     /// or `0` where a cell has no entries. Matches ROOT/uproot.
+    #[must_use]
     pub fn values(&self) -> Vec<Vec<f64>> {
         let (nx, ny) = (self.nx(), self.ny());
         let stride = nx + 2;
@@ -160,7 +164,7 @@ impl Profile2D {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<Profile2D> {
+    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         // Older class versions lack the trailing members: fTsumwz/fTsumwz2 arrived
         // in version 5 (ROOT 4) and fBinSumw2 in version 7 (ROOT 5.24). Version 1
         // (ROOT 1) stored fZmin/fZmax as floats, and its TH2D its members in
@@ -188,7 +192,7 @@ impl Profile2D {
 
         let sums = read_tarray(r, BinContentType::F64)?; // TH2D TArrayD = Σ(w·z)
         let bin_entries = read_tarray(r, BinContentType::F64)?;
-        let error_mode = ErrorMode::from_code(r.be_i32()?);
+        let error_mode = ErrorMode::from_code(r.be_i32()?)?;
         let zmin = r.be_f64()?;
         let zmax = r.be_f64()?;
         let stored_z_sums = if version >= 5 {
@@ -216,7 +220,7 @@ impl Profile2D {
             (in_range_sum(&sums, &nbins), in_range_sum(&c.sumw2, &nbins))
         });
 
-        Ok(Profile2D {
+        Ok(Self {
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -243,17 +247,10 @@ impl Profile2D {
     }
 }
 
-/// Read a `Profile2D` named `name` from `file`.
-pub(crate) fn read_tprofile2d(file: &FileReader, name: &str) -> Result<Profile2D> {
-    Profile2D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile2D")?))
-}
+impl ReadRoot for Profile2D {
+    const CLASS: &'static str = "TProfile2D";
 
-/// Read a `Profile2D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile2d_in(file: &FileReader, subdir: &str, name: &str) -> Result<Profile2D> {
-    Profile2D::read(&mut RBuffer::new(&object_bytes_in(
-        file,
-        subdir,
-        name,
-        "TProfile2D",
-    )?))
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+    }
 }

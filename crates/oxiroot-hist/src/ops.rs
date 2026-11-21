@@ -8,18 +8,13 @@ use std::collections::HashMap;
 
 use oxiroot_io_core::{Error, Result};
 
+use crate::family::err2;
 use crate::graph::GraphErrors;
 use crate::sparsehist::SparseBin;
 use crate::{
     Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D,
     SparseHist,
 };
-
-/// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
-/// content (for an unweighted histogram, `Σw² == Σw == content`).
-fn err2(sumw2: &[f64], contents: &[f64], i: usize) -> f64 {
-    sumw2.get(i).copied().unwrap_or_else(|| contents[i].abs())
-}
 
 /// Build a [`Error::BinningMismatch`] describing which operation rejected which
 /// pair of incompatible histograms.
@@ -33,7 +28,7 @@ impl Hist1D {
     /// Multiply bin-by-bin by `other`, propagating errors as ROOT does
     /// (`e² = e1²·c2² + e2²·c1²`). Returns [`Error::BinningMismatch`] if the
     /// binnings differ.
-    pub fn multiply(&mut self, other: &Hist1D) -> Result<()> {
+    pub fn multiply(&mut self, other: &Self) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
             return Err(binning_mismatch("multiply"));
         }
@@ -52,7 +47,7 @@ impl Hist1D {
     /// Divide bin-by-bin by `other` (0 where the denominator is 0), propagating
     /// errors as ROOT's default `e² = (e1²·c2² + e2²·c1²) / c2⁴`. Returns
     /// [`Error::BinningMismatch`] if the binnings differ.
-    pub fn divide(&mut self, other: &Hist1D) -> Result<()> {
+    pub fn divide(&mut self, other: &Self) -> Result<()> {
         if !self.xaxis.same_binning(&other.xaxis) || self.contents.len() != other.contents.len() {
             return Err(binning_mismatch("divide"));
         }
@@ -195,55 +190,6 @@ impl_profile_add!(
     ],
 );
 
-// --- Standard operator/formatting traits over the inherent histogram ops. ---
-// `scale` is infallible, so `*=`/`*` are clean; `add`/`multiply`/`divide` stay
-// inherent + fallible (binning can mismatch), so no `AddAssign`/`+`.
-
-macro_rules! impl_scale_ops {
-    ($ty:ty) => {
-        impl std::ops::MulAssign<f64> for $ty {
-            /// `h *= c` scales every bin (and its error) by `c`, like ROOT's `Scale`.
-            fn mul_assign(&mut self, c: f64) {
-                self.scale(c);
-            }
-        }
-        impl std::ops::Mul<f64> for $ty {
-            type Output = $ty;
-            fn mul(mut self, c: f64) -> $ty {
-                self.scale(c);
-                self
-            }
-        }
-    };
-}
-impl_scale_ops!(Hist1D);
-impl_scale_ops!(Hist2D);
-impl_scale_ops!(Hist3D);
-
-/// `h[cell]` reads, and `for &c in &h` iterates, bin contents by flat cell
-/// index — `0` is the first under/overflow cell, x varies fastest — the same
-/// indexing as [`Hist1D::bin_error`]. Both cover every cell, flow bins included.
-macro_rules! impl_index_iter {
-    ($ty:ty) => {
-        impl std::ops::Index<usize> for $ty {
-            type Output = f64;
-            fn index(&self, cell: usize) -> &f64 {
-                &self.contents[cell]
-            }
-        }
-        impl<'a> IntoIterator for &'a $ty {
-            type Item = &'a f64;
-            type IntoIter = std::slice::Iter<'a, f64>;
-            fn into_iter(self) -> std::slice::Iter<'a, f64> {
-                self.contents.iter()
-            }
-        }
-    };
-}
-impl_index_iter!(Hist1D);
-impl_index_iter!(Hist2D);
-impl_index_iter!(Hist3D);
-
 impl std::fmt::Display for Hist1D {
     /// A one-line summary, e.g. `TH1D "pt": 100 bins [0, 100), entries=4096`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -333,7 +279,7 @@ impl Efficiency {
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change if the binnings
     /// differ.
-    pub fn add(&mut self, other: &Efficiency) -> Result<()> {
+    pub fn add(&mut self, other: &Self) -> Result<()> {
         // Both first, so a mismatch leaves the efficiency untouched.
         let mut passed = self.passed.clone();
         let mut total = self.total.clone();
@@ -352,7 +298,7 @@ impl PolyHist {
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change unless the two
     /// hold the same bins, in the same order.
-    pub fn add(&mut self, other: &PolyHist, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.bins.len() == other.bins.len()
             && (self.bins.iter())
                 .zip(&other.bins)
@@ -385,7 +331,7 @@ impl SparseHist {
     ///
     /// Returns [`Error::BinningMismatch`] and makes no change if the axes
     /// differ.
-    pub fn add(&mut self, other: &SparseHist, c: f64) -> Result<()> {
+    pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.axes.len() == other.axes.len()
             && (self.axes.iter())
                 .zip(&other.axes)
@@ -425,9 +371,9 @@ impl Graph {
     ///
     /// Returns [`Error::InvalidInput`] and makes no change if the two carry
     /// different kinds of error bars (a `Graph` and a `TGraphErrors`, say).
-    pub fn append(&mut self, other: &Graph) -> Result<()> {
+    pub fn append(&mut self, other: &Self) -> Result<()> {
         match (&mut self.errors, &other.errors) {
-            (GraphErrors::None, GraphErrors::None) => {}
+            (GraphErrors::Plain, GraphErrors::Plain) => {}
             (
                 GraphErrors::Symmetric { ex, ey },
                 GraphErrors::Symmetric {

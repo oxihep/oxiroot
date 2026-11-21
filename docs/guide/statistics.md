@@ -203,7 +203,7 @@ use oxiroot::stat;
 
 fn correlate(path: &str) -> oxiroot::Result<f64> {
     let file = FileReader::open(path)?;          // oxiroot::Error
-    let h = Hist1D::read_root(&file, "h")?;
+    let h = file.get::<Hist1D>("h")?;
     let x: Vec<f64> = (1..=h.xaxis().nbins() as usize).map(|i| h.bin_center(i)).collect();
     let y = &h.contents()[1..=x.len()];
     let (r, _) = stat::pearsonr(&x, y)?;    // StatError, converted
@@ -343,7 +343,7 @@ parameter — `Model::crystal_ball`, `voigtian`, `double_crystal_ball`,
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(80, 90.0, 110.0).double().to_root().named("mass");
+let mut h = Hist::reg(80, 90.0, 110.0).double().to_root()?.named("mass");
 // … fill h …
 let model = Model::crystal_ball("cb").estimate_from(&h).lower_limit("sigma", 0.0);
 let result = h.fit(&model);

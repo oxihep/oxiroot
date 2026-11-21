@@ -1,4 +1,4 @@
-//! RNTuple envelopes and frames (little-endian).
+//! `RNTuple` envelopes and frames (little-endian).
 //!
 //! An envelope is a 64-bit word packing a 16-bit type id (low bits) and a
 //! 48-bit uncompressed length (high bits), followed by the payload and a
@@ -24,15 +24,24 @@ pub struct Envelope<'a> {
     pub payload: &'a [u8],
 }
 
+/// The XXH3-64 checksum an envelope ends with, if it is long enough to have one.
+pub(crate) fn trailing_checksum(envelope: &[u8]) -> Option<u64> {
+    envelope.last_chunk::<8>().map(|c| u64::from_le_bytes(*c))
+}
+
 /// Parse a fully-decompressed envelope, verifying its XXH3-64 checksum.
 pub fn read_envelope(bytes: &[u8]) -> Result<Envelope<'_>> {
-    if bytes.len() < 16 {
+    // A leading word and a trailing checksum, eight bytes each.
+    let (Some(word), Some(stored)) = (
+        bytes.first_chunk::<8>().filter(|_| bytes.len() >= 16),
+        trailing_checksum(bytes),
+    ) else {
         return Err(Error::Format(format!(
             "envelope too short: {} bytes",
             bytes.len()
         )));
-    }
-    let word = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    };
+    let word = u64::from_le_bytes(*word);
     let type_id = (word & 0xFFFF) as u16;
     let length = (word >> 16) as usize;
 
@@ -44,7 +53,6 @@ pub fn read_envelope(bytes: &[u8]) -> Result<Envelope<'_>> {
     }
 
     let checksum_pos = length - 8;
-    let stored = u64::from_le_bytes(bytes[checksum_pos..length].try_into().unwrap());
     let computed = xxhash_rust::xxh3::xxh3_64(&bytes[..checksum_pos]);
     if computed != stored {
         return Err(Error::ChecksumMismatch {
@@ -73,7 +81,7 @@ pub struct Frame {
 /// Read a frame header at the cursor, leaving the cursor at the inner payload.
 /// `size` is a signed 64-bit count of total frame bytes; a negative value marks
 /// a list frame and is followed by a 32-bit item count.
-pub fn read_frame(r: &mut RBuffer) -> Result<Frame> {
+pub fn read_frame(r: &mut RBuffer<'_>) -> Result<Frame> {
     let start = r.pos();
     let raw = r.le_i64()?;
     let is_list = raw < 0;
@@ -107,7 +115,7 @@ pub struct Locator {
 
 /// Read a type-0 locator. A negative size flags a non-standard locator, which
 /// is not supported here.
-pub fn read_locator(r: &mut RBuffer) -> Result<Locator> {
+pub fn read_locator(r: &mut RBuffer<'_>) -> Result<Locator> {
     let size = r.le_i32()?;
     if size < 0 {
         return Err(Error::Unsupported(
@@ -121,8 +129,8 @@ pub fn read_locator(r: &mut RBuffer) -> Result<Locator> {
     })
 }
 
-/// Read an RNTuple string: a 32-bit little-endian length, then the UTF-8 bytes.
-pub(crate) fn read_string(r: &mut RBuffer) -> Result<String> {
+/// Read an `RNTuple` string: a 32-bit little-endian length, then the UTF-8 bytes.
+pub(crate) fn read_string(r: &mut RBuffer<'_>) -> Result<String> {
     let n = r.le_u32()? as usize;
     let bytes = r.bytes(n)?;
     String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidUtf8)
@@ -130,7 +138,7 @@ pub(crate) fn read_string(r: &mut RBuffer) -> Result<String> {
 
 /// Consume the feature-flag fields (continuing while the signed value is
 /// negative, per the spec's extension convention).
-pub(crate) fn read_feature_flags(r: &mut RBuffer) -> Result<()> {
+pub(crate) fn read_feature_flags(r: &mut RBuffer<'_>) -> Result<()> {
     while r.le_i64()? < 0 {}
     Ok(())
 }

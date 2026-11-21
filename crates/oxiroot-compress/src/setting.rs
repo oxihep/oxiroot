@@ -3,21 +3,20 @@
 
 use crate::Algorithm;
 
-/// How a writer should compress object payloads and RNTuple pages.
+/// How a writer should compress object payloads and `RNTuple` pages.
 ///
 /// Maps to ROOT's `algorithm * 100 + level` setting integer
 /// ([`setting`](Compression::setting)), which files record in their header and
 /// which [`compress`](crate::compress) takes. This crate encodes and decodes all
 /// four algorithms. Levels run from 1 to 9 in ROOT; a level above 99 is treated
 /// as 99, since it would otherwise spill into the algorithm digit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Compression {
     /// Store uncompressed.
-    #[default]
-    None,
+    Stored,
     /// Zstandard (ROOT's default algorithm, at level 5). The pure-Rust encoder
-    /// has a single compressing level, so the level is recorded but does not
-    /// change the ratio.
+    /// has four levels: ROOT's 1 to 3 select the first three, and 4 and above
+    /// the fourth, which compresses about as well as C zstd's level 5.
     Zstd(u32),
     /// zlib / DEFLATE (ROOT's classic default, at level 1). The level tunes the
     /// encoder.
@@ -29,53 +28,65 @@ pub enum Compression {
     Lzma(u32),
 }
 
+/// What every writer in the workspace uses unless told otherwise: Zstandard at
+/// level 5, ROOT's own default.
+impl Default for Compression {
+    fn default() -> Self {
+        Self::Zstd(5)
+    }
+}
+
+/// The compression a ROOT setting integer (`algorithm * 100 + level`)
+/// describes. `0`, and any setting whose algorithm digit is 0, is
+/// [`Compression::Stored`]; the error is the setting itself, for an algorithm
+/// this crate cannot encode.
+impl TryFrom<u32> for Compression {
+    type Error = u32;
+
+    fn try_from(setting: u32) -> Result<Self, u32> {
+        let level = setting % 100;
+        Ok(match setting / 100 {
+            0 => Self::Stored,
+            1 => Self::Zlib(level),
+            2 => Self::Lzma(level),
+            4 => Self::Lz4(level),
+            5 => Self::Zstd(level),
+            _ => return Err(setting),
+        })
+    }
+}
+
 impl Compression {
     /// The ROOT setting integer (`algorithm * 100 + level`, 0 = none).
     #[must_use]
     pub const fn setting(self) -> u32 {
         let (algorithm, level) = match self {
-            Compression::None => return 0,
-            Compression::Zlib(level) => (1, level),
-            Compression::Lzma(level) => (2, level),
-            Compression::Lz4(level) => (4, level),
-            Compression::Zstd(level) => (5, level),
+            Self::Stored => return 0,
+            Self::Zlib(level) => (1, level),
+            Self::Lzma(level) => (2, level),
+            Self::Lz4(level) => (4, level),
+            Self::Zstd(level) => (5, level),
         };
         algorithm * 100 + if level > 99 { 99 } else { level }
     }
 
-    /// The compression a ROOT setting integer describes, or `None` for an
-    /// algorithm this crate cannot encode. `0` (and any setting whose algorithm
-    /// digit is 0) is [`Compression::None`].
-    #[must_use]
-    pub const fn from_setting(setting: u32) -> Option<Compression> {
-        let level = setting % 100;
-        Some(match setting / 100 {
-            0 => Compression::None,
-            1 => Compression::Zlib(level),
-            2 => Compression::Lzma(level),
-            4 => Compression::Lz4(level),
-            5 => Compression::Zstd(level),
-            _ => return None,
-        })
-    }
-
     /// The block algorithm this setting encodes with, or `None` for
-    /// [`Compression::None`].
+    /// [`Compression::Stored`].
     #[must_use]
     pub const fn algorithm(self) -> Option<Algorithm> {
         match self {
-            Compression::None => None,
-            Compression::Zstd(_) => Some(Algorithm::Zstd),
-            Compression::Zlib(_) => Some(Algorithm::Zlib),
-            Compression::Lz4(_) => Some(Algorithm::Lz4),
-            Compression::Lzma(_) => Some(Algorithm::Lzma),
+            Self::Stored => None,
+            Self::Zstd(_) => Some(Algorithm::Zstd),
+            Self::Zlib(_) => Some(Algorithm::Zlib),
+            Self::Lz4(_) => Some(Algorithm::Lz4),
+            Self::Lzma(_) => Some(Algorithm::Lzma),
         }
     }
 
-    /// Whether anything is compressed (i.e. not [`Compression::None`]).
+    /// Whether anything is compressed (i.e. not [`Compression::Stored`]).
     #[must_use]
     pub const fn is_enabled(self) -> bool {
-        !matches!(self, Compression::None)
+        !matches!(self, Self::Stored)
     }
 }
 
@@ -86,18 +97,18 @@ mod tests {
     #[test]
     fn settings_round_trip() {
         for c in [
-            Compression::None,
+            Compression::Stored,
             Compression::Zstd(5),
             Compression::Zlib(1),
             Compression::Lz4(4),
             Compression::Lzma(9),
         ] {
-            assert_eq!(Compression::from_setting(c.setting()), Some(c));
+            assert_eq!(Compression::try_from(c.setting()), Ok(c));
         }
         assert_eq!(Compression::Zstd(5).setting(), 505);
         assert_eq!(
-            Compression::from_setting(301),
-            None,
+            Compression::try_from(301),
+            Err(301),
             "the legacy algorithm 3"
         );
     }

@@ -16,7 +16,7 @@ let batch = Batch::new()
     .column("label", vec!["Z", "H", "top"])?
     .column("jet_pt", vec![vec![30.0_f32, 25.0], vec![], vec![120.0]])?;
 let mut out = DatasetWriter::create("events.root", "events", Format::Ntuple)?;
-out.write(&batch)?;
+out.write(batch)?;
 out.finish()?;
 
 // Read: the format is detected.
@@ -95,7 +95,7 @@ let mut out = DatasetWriter::create("skim.root", "events", Format::Tree)?;
 for batch in events.batches(["mass", "jet_pt"]) {
     let batch = batch?;
     let keep: Vec<bool> = batch.values::<f64>("mass")?.iter().map(|&m| m > 100.0).collect();
-    out.write(&batch.filter(&keep)?)?;
+    out.write(batch.filter(&keep)?)?; 
 }
 out.finish()?;
 # Ok::<(), oxiroot::Error>(())
@@ -103,7 +103,7 @@ out.finish()?;
 
 ## Reading
 
-`Dataset::open(&file, name)` (or `open_in` for a subdirectory) opens a
+`Dataset::open(&file, path)` (`"events"`, or `"dir/events"` in a subdirectory) opens a
 `TTree` or an RNTuple. `entries()`, `columns()` and `format()` describe it.
 
 - `read(columns)` reads every entry of the columns into one batch.
@@ -118,8 +118,8 @@ out.finish()?;
 Remote files work the same: over `root://` or HTTP a batch's baskets are
 fetched together (see [Reading and writing](reading-writing.md)).
 
-RNTuple records read as `Column::Struct`; variants have no batch column, so
-read them with `as_ntuple()`. `as_tree()` likewise reaches the `TTree` reader underneath for
+RNTuple records read as `Column::Struct`; a `std::variant` has no batch column,
+so read it through `as_ntuple()` and `oxiroot::ntuple::raw`. `as_tree()` likewise reaches the `TTree` reader underneath for
 friends, indices and split objects.
 
 ## Writing
@@ -129,9 +129,9 @@ writes to any `Write + Seek`.
 
 - `.compression(c)` sets the compression (Zstd level 5 by default);
 - `.cluster_bytes(n)` sets the cluster size (32 MiB of values by default);
-- `.large(true)` selects ROOT's 64-bit layout, for files past 2 GiB.
+- `.large()` selects ROOT's 64-bit layout, for files past 2 GiB.
 
-`write(&batch)` buffers entries and writes a cluster whenever enough have
+`write(batch)` takes the batch and buffers its entries and writes a cluster whenever enough have
 accumulated, however you size the batches. `finish()` writes the rest and
 closes the file. Each cluster is cut into chunks of about 1 MiB per column (a
 `TTree` basket per branch, or an RNTuple cluster, per chunk), so later reads of
@@ -147,8 +147,71 @@ columns and types. A writer given only empty batches writes a dataset with
 their columns and no entries, fixed arrays keeping their width. A column the format cannot hold, such as `Option<T>` in a
 `TTree`, is refused on that first write, before anything reaches the file.
 
+## Stored types: the schema
+
+A column's shape does not say everything about how it is stored. A list can be
+a `std::vector`, a `std::set`, or a C-style `x[n]`; an `f32` can be kept in
+half precision. A `Schema` holds one `DataType` per column and says which.
+
+`Dataset::schema()` reports what a file holds. A writer stores each column as
+its own shape (`Vec<T>` as `std::vector<T>`, `Option<T>` as `std::optional<T>`)
+unless `.schema(…)` says otherwise:
+
+```rust,no_run
+use oxiroot::prelude::*;
+use oxiroot::data::{DataType, Schema};
+
+let batch = Batch::new()
+    .column("pt", vec![41.5_f32, 37.2])?
+    .column("hits", vec![vec![3_i32, 7], vec![]])?;
+let schema = batch
+    .schema()                                                   // the defaults
+    .with("pt", DataType::Half)                                 // 16 bits per value
+    .with("hits", DataType::Set(Box::new(DataType::I32)));      // a std::set<int>
+let mut out = DatasetWriter::create("out.root", "events", Format::Ntuple)?.schema(schema);
+out.write(batch)?;
+out.finish()?;
+# Ok::<(), oxiroot::Error>(())
+```
+
+| `DataType` | Held in a batch as | Format |
+|---|---|---|
+| `Half`, `Truncated { bits }`, `Quantized { bits, min, max }` | `f32` | RNTuple |
+| `CArray(T)`, a C-style `x[n]` | list | `TTree` |
+| `Set(T)` | list | RNTuple |
+| `Map(K, V)` | list of `{_0: K, _1: V}` structs | RNTuple |
+| `Bitset(N)` | array of `N` `bool` | RNTuple |
+| `UniquePtr(T)` | optional | RNTuple |
+| `Atomic(T)` | the bare `T` | RNTuple |
+
+A skim that keeps every stored type passes the source's schema on:
+`DatasetWriter::create(…)?.schema(events.schema()?)`. A type the format does
+not have (half precision in a `TTree`) or a batch that does not fit the schema
+is refused on the first write. A tree writes a counted array `x` together with
+the branch `nx` that counts it; a column of that name read back from a tree is
+recognised as that branch and not written twice.
+
+## Several files as one: chains
+
+`Dataset::chain` reads datasets with the same columns one after the other, the
+way ROOT's `TChain` spans a dataset split over many files. The parts can be
+trees, RNTuples, or both:
+
+```rust,no_run
+use oxiroot::prelude::*;
+
+let (a, b) = (FileReader::open("part1.root")?, FileReader::open("part2.root")?);
+let events = Dataset::chain([Dataset::open(&a, "events")?, Dataset::open(&b, "events")?])?;
+for batch in events.batches(["pt"]) {
+    let batch = batch?; // one cluster at a time, across both files
+}
+# Ok::<(), oxiroot::Error>(())
+```
+
+## Datasets next to other objects
+
 To put a dataset next to histograms or other datasets in one file, give a
-`DatasetObject` to a `FileWriter`:
+`DatasetObject` to a `FileWriter` (it takes a `.schema(…)` too):
 
 ```rust,no_run
 use oxiroot::prelude::*;
@@ -156,9 +219,9 @@ use oxiroot::prelude::*;
 let events = Batch::new().column("energy", vec![10.5_f64, 20.1])?;
 let runs = Batch::new().column("run", vec![101_i32])?;
 FileWriter::create("run.root")
-    .put(DatasetObject::new("events", Format::Tree, &events)?)
-    .put(DatasetObject::new("runs", Format::Ntuple, &runs)?)
-    .write(Compression::Zstd(5))?;
+    .add(DatasetObject::new("events", Format::Tree, events))
+    .add(DatasetObject::new("runs", Format::Ntuple, runs))
+    .write()?;
 # Ok::<(), oxiroot::Error>(())
 ```
 
@@ -189,7 +252,5 @@ the matching versions.
 
 The low-level readers and writers cover what only one format has:
 
-- [TTree](ttree.md): C-style `x[n]` arrays, leaflists, split single objects,
-  friends and indices, `ChainReader`.
-- [RNTuple](rntuple.md): records, variants, maps and sets, reduced-precision
-  floats, schema extension.
+- [TTree](ttree.md): leaflists, split single objects, friends and indices.
+- [RNTuple](rntuple.md): variants and schema extension.

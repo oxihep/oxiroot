@@ -10,12 +10,13 @@
 //! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{FileReader, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, cell_count, check_cells, end_record, in_range_sum, object_bytes,
-    object_bytes_in, read_tarray, read_th1_object, unsupported_version,
+    BinContentType, cell_count, check_cells, end_record, in_range_sum, read_tarray,
+    read_th1_object, unsupported_version,
 };
 
 /// How a profile's per-bin error bar is computed (ROOT's `fErrorMode`). Shared
@@ -36,26 +37,33 @@ pub enum ErrorMode {
 }
 
 impl ErrorMode {
-    /// Map a ROOT `fErrorMode` code; an unrecognized code falls back to
-    /// [`Mean`](ErrorMode::Mean) (ROOT only ever writes `0..=3`).
-    #[must_use]
-    pub fn from_code(code: i32) -> ErrorMode {
-        match code {
-            1 => ErrorMode::Spread,
-            2 => ErrorMode::SpreadI,
-            3 => ErrorMode::SpreadG,
-            _ => ErrorMode::Mean,
-        }
+    /// The mode a ROOT `fErrorMode` code names (ROOT writes `0..=3`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Format`](oxiroot_io_core::Error::Format) for any other code.
+    pub fn from_code(code: i32) -> Result<Self> {
+        Ok(match code {
+            0 => Self::Mean,
+            1 => Self::Spread,
+            2 => Self::SpreadI,
+            3 => Self::SpreadG,
+            other => {
+                return Err(oxiroot_io_core::Error::Format(format!(
+                    "unknown profile error mode {other}"
+                )));
+            }
+        })
     }
 
     /// The ROOT `fErrorMode` code written to disk.
     #[must_use]
-    pub fn to_code(self) -> i32 {
+    pub const fn code(self) -> i32 {
         match self {
-            ErrorMode::Mean => 0,
-            ErrorMode::Spread => 1,
-            ErrorMode::SpreadI => 2,
-            ErrorMode::SpreadG => 3,
+            Self::Mean => 0,
+            Self::Spread => 1,
+            Self::SpreadI => 2,
+            Self::SpreadG => 3,
         }
     }
 }
@@ -103,7 +111,7 @@ pub struct Profile1D {
 }
 
 impl Profile1D {
-    pub(crate) fn read(r: &mut RBuffer) -> Result<Profile1D> {
+    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let tprofile = r.read_version()?; // Profile1D wrapper
         let version = tprofile.version;
         if version < 2 {
@@ -114,7 +122,7 @@ impl Profile1D {
         let (core, sums) = read_th1_object(r, BinContentType::F64)?;
 
         let bin_entries = read_tarray(r, BinContentType::F64)?;
-        let error_mode = ErrorMode::from_code(r.be_i32()?);
+        let error_mode = ErrorMode::from_code(r.be_i32()?)?;
         let ymin = r.be_f64()?;
         let ymax = r.be_f64()?;
         let stored_y_sums = if version >= 4 {
@@ -145,7 +153,7 @@ impl Profile1D {
             )
         });
 
-        Ok(Profile1D {
+        Ok(Self {
             name: core.name,
             title: core.title,
             xaxis: core.xaxis,
@@ -169,6 +177,7 @@ impl Profile1D {
 
     /// The profiled value per bin (excluding flow): `sum / entries`, or 0 where
     /// a bin has no entries. Matches ROOT/uproot `Profile1D::values()`.
+    #[must_use]
     pub fn values(&self) -> Vec<f64> {
         let n = self.sums.len();
         if n < 2 {
@@ -178,16 +187,17 @@ impl Profile1D {
     }
 
     /// The X-axis bin edges (`nbins + 1` values).
+    #[must_use]
     pub fn edges(&self) -> Vec<f64> {
         self.xaxis.edges()
     }
 
     /// Create an empty `Profile1D` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and no y restriction. Internal primitive behind the public builder:
-    /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).mean().to_root()`.
-    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> Profile1D {
+    /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).mean().to_root()?`.
+    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> Self {
         let ncells = usize::saturating_from(nbins.max(0) + 2);
-        Profile1D {
+        Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nbins, xlo, xhi),
@@ -244,14 +254,10 @@ impl Profile1D {
     }
 }
 
-/// Read a `Profile1D` from an open ROOT file.
-pub(crate) fn read_tprofile(file: &FileReader, name: &str) -> Result<Profile1D> {
-    Profile1D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile")?))
-}
+impl ReadRoot for Profile1D {
+    const CLASS: &'static str = "TProfile";
 
-/// Read a `Profile1D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile_in(file: &FileReader, subdir: &str, name: &str) -> Result<Profile1D> {
-    Profile1D::read(&mut RBuffer::new(&object_bytes_in(
-        file, subdir, name, "TProfile",
-    )?))
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+    }
 }

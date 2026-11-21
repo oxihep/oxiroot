@@ -1,4 +1,4 @@
-//! The RNTuple header envelope: the schema (fields + columns).
+//! The `RNTuple` header envelope: the schema (fields + columns).
 
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -36,14 +36,14 @@ pub enum StructRole {
 }
 
 impl StructRole {
-    fn from_code(code: u16) -> StructRole {
+    fn from_code(code: u16) -> Self {
         match code {
-            0 => StructRole::Leaf,
-            1 => StructRole::Collection,
-            2 => StructRole::Record,
-            3 => StructRole::Variant,
-            4 => StructRole::Streamer,
-            other => StructRole::Unknown(other),
+            0 => Self::Leaf,
+            1 => Self::Collection,
+            2 => Self::Record,
+            3 => Self::Variant,
+            4 => Self::Streamer,
+            other => Self::Unknown(other),
         }
     }
 }
@@ -92,12 +92,12 @@ pub struct ColumnDescriptor {
     pub value_range: Option<(f64, f64)>,
 }
 
-/// The parsed header: the RNTuple's name/description and full schema.
+/// The parsed header: the `RNTuple`'s name/description and full schema.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Header {
-    /// RNTuple name.
+    /// `RNTuple` name.
     pub name: String,
-    /// RNTuple description.
+    /// `RNTuple` description.
     pub description: String,
     /// Writer/library identifier.
     pub writer: String,
@@ -110,7 +110,7 @@ pub struct Header {
 impl Header {
     /// Parse the header from the envelope payload (after the 8-byte type/length
     /// word, before the checksum).
-    pub fn parse(payload: &[u8]) -> Result<Header> {
+    pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(payload);
 
         read_feature_flags(&mut r)?;
@@ -122,7 +122,7 @@ impl Header {
         let columns = read_column_list(&mut r)?;
         // (Alias columns and extra type info follow; not needed yet.)
 
-        Ok(Header {
+        Ok(Self {
             name,
             description,
             writer,
@@ -132,7 +132,7 @@ impl Header {
     }
 }
 
-pub(crate) fn read_field_list(r: &mut RBuffer) -> Result<Vec<FieldDescriptor>> {
+pub(crate) fn read_field_list(r: &mut RBuffer<'_>) -> Result<Vec<FieldDescriptor>> {
     let list = read_frame(r)?;
     let mut fields = Vec::with_capacity((list.n_items as usize).min(r.remaining()));
     for _ in 0..list.n_items {
@@ -178,7 +178,7 @@ pub(crate) fn read_field_list(r: &mut RBuffer) -> Result<Vec<FieldDescriptor>> {
     Ok(fields)
 }
 
-pub(crate) fn read_column_list(r: &mut RBuffer) -> Result<Vec<ColumnDescriptor>> {
+pub(crate) fn read_column_list(r: &mut RBuffer<'_>) -> Result<Vec<ColumnDescriptor>> {
     let list = read_frame(r)?;
     let mut columns = Vec::with_capacity((list.n_items as usize).min(r.remaining()));
     for _ in 0..list.n_items {

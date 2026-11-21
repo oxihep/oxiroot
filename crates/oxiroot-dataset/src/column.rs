@@ -50,14 +50,14 @@ pub enum Column {
         /// Cumulative boundaries into `values`, one per entry plus a leading `0`.
         offsets: Vec<u64>,
         /// Every entry's values, back to back.
-        values: Box<Column>,
+        values: Box<Self>,
     },
     /// `len` values per entry: entry `i` is `values[i * len..(i + 1) * len]`.
     Array {
         /// Values per entry.
         len: usize,
         /// Every entry's values, back to back.
-        values: Box<Column>,
+        values: Box<Self>,
     },
     /// An optional value per entry: `valid[i]` says whether entry `i` has one,
     /// and `values` holds only the present values, in entry order.
@@ -65,12 +65,12 @@ pub enum Column {
         /// Whether each entry holds a value.
         valid: Vec<bool>,
         /// The present values, densely packed.
-        values: Box<Column>,
+        values: Box<Self>,
     },
     /// A record per entry: named member columns, each with one value per
-    /// entry (a struct of arrays). An RNTuple record or user class; a
+    /// entry (a struct of arrays). An `RNTuple` record or user class; a
     /// `std::vector<Struct>` is a [`List`](Self::List) of these.
-    Struct(Vec<(String, Column)>),
+    Struct(Vec<(String, Self)>),
 }
 
 /// Apply `$body` to the vector inside any scalar variant (bound as `$v`), and
@@ -103,31 +103,31 @@ impl Column {
     #[must_use]
     pub fn len(&self) -> usize {
         match self {
-            Column::Bool(v) => v.len(),
-            Column::I8(v) => v.len(),
-            Column::U8(v) => v.len(),
-            Column::I16(v) => v.len(),
-            Column::U16(v) => v.len(),
-            Column::I32(v) => v.len(),
-            Column::U32(v) => v.len(),
-            Column::I64(v) => v.len(),
-            Column::U64(v) => v.len(),
-            Column::F32(v) => v.len(),
-            Column::F64(v) => v.len(),
-            Column::String { offsets, .. } | Column::List { offsets, .. } => {
+            Self::Bool(v) => v.len(),
+            Self::I8(v) => v.len(),
+            Self::U8(v) => v.len(),
+            Self::I16(v) => v.len(),
+            Self::U16(v) => v.len(),
+            Self::I32(v) => v.len(),
+            Self::U32(v) => v.len(),
+            Self::I64(v) => v.len(),
+            Self::U64(v) => v.len(),
+            Self::F32(v) => v.len(),
+            Self::F64(v) => v.len(),
+            Self::String { offsets, .. } | Self::List { offsets, .. } => {
                 offsets.len().saturating_sub(1)
             }
-            Column::Array { len, values } => values.len().checked_div(*len).unwrap_or(0),
-            Column::Optional { valid, .. } => valid.len(),
-            Column::Struct(members) => members.first().map_or(0, |(_, c)| c.len()),
+            Self::Array { len, values } => values.len().checked_div(*len).unwrap_or(0),
+            Self::Optional { valid, .. } => valid.len(),
+            Self::Struct(members) => members.first().map_or(0, |(_, c)| c.len()),
         }
     }
 
     /// The member `name` of a struct column, if this is one and it has it.
     #[must_use]
-    pub fn member(&self, name: &str) -> Option<&Column> {
+    pub fn member(&self, name: &str) -> Option<&Self> {
         match self {
-            Column::Struct(members) => members.iter().find(|(n, _)| n == name).map(|(_, c)| c),
+            Self::Struct(members) => members.iter().find(|(n, _)| n == name).map(|(_, c)| c),
             _ => None,
         }
     }
@@ -143,22 +143,22 @@ impl Column {
     #[must_use]
     pub fn type_name(&self) -> String {
         match self {
-            Column::Bool(_) => "bool".into(),
-            Column::I8(_) => "i8".into(),
-            Column::U8(_) => "u8".into(),
-            Column::I16(_) => "i16".into(),
-            Column::U16(_) => "u16".into(),
-            Column::I32(_) => "i32".into(),
-            Column::U32(_) => "u32".into(),
-            Column::I64(_) => "i64".into(),
-            Column::U64(_) => "u64".into(),
-            Column::F32(_) => "f32".into(),
-            Column::F64(_) => "f64".into(),
-            Column::String { .. } => "String".into(),
-            Column::List { values, .. } => format!("Vec<{}>", values.type_name()),
-            Column::Array { len, values } => format!("[{}; {len}]", values.type_name()),
-            Column::Optional { values, .. } => format!("Option<{}>", values.type_name()),
-            Column::Struct(members) => {
+            Self::Bool(_) => "bool".into(),
+            Self::I8(_) => "i8".into(),
+            Self::U8(_) => "u8".into(),
+            Self::I16(_) => "i16".into(),
+            Self::U16(_) => "u16".into(),
+            Self::I32(_) => "i32".into(),
+            Self::U32(_) => "u32".into(),
+            Self::I64(_) => "i64".into(),
+            Self::U64(_) => "u64".into(),
+            Self::F32(_) => "f32".into(),
+            Self::F64(_) => "f64".into(),
+            Self::String { .. } => "String".into(),
+            Self::List { values, .. } => format!("Vec<{}>", values.type_name()),
+            Self::Array { len, values } => format!("[{}; {len}]", values.type_name()),
+            Self::Optional { values, .. } => format!("Option<{}>", values.type_name()),
+            Self::Struct(members) => {
                 let inner: Vec<String> = members
                     .iter()
                     .map(|(n, c)| format!("{n}: {}", c.type_name()))
@@ -173,22 +173,22 @@ impl Column {
     #[must_use]
     pub fn byte_size(&self) -> usize {
         match self {
-            Column::Bool(v) => v.len(),
-            Column::I8(v) => v.len(),
-            Column::U8(v) => v.len(),
-            Column::I16(v) => 2 * v.len(),
-            Column::U16(v) => 2 * v.len(),
-            Column::I32(v) => 4 * v.len(),
-            Column::U32(v) => 4 * v.len(),
-            Column::F32(v) => 4 * v.len(),
-            Column::I64(v) => 8 * v.len(),
-            Column::U64(v) => 8 * v.len(),
-            Column::F64(v) => 8 * v.len(),
-            Column::String { offsets, bytes } => 8 * offsets.len() + bytes.len(),
-            Column::List { offsets, values } => 8 * offsets.len() + values.byte_size(),
-            Column::Array { values, .. } => values.byte_size(),
-            Column::Optional { valid, values } => valid.len() + values.byte_size(),
-            Column::Struct(members) => members.iter().map(|(_, c)| c.byte_size()).sum(),
+            Self::Bool(v) => v.len(),
+            Self::I8(v) => v.len(),
+            Self::U8(v) => v.len(),
+            Self::I16(v) => 2 * v.len(),
+            Self::U16(v) => 2 * v.len(),
+            Self::I32(v) => 4 * v.len(),
+            Self::U32(v) => 4 * v.len(),
+            Self::F32(v) => 4 * v.len(),
+            Self::I64(v) => 8 * v.len(),
+            Self::U64(v) => 8 * v.len(),
+            Self::F64(v) => 8 * v.len(),
+            Self::String { offsets, bytes } => 8 * offsets.len() + bytes.len(),
+            Self::List { offsets, values } => 8 * offsets.len() + values.byte_size(),
+            Self::Array { values, .. } => values.byte_size(),
+            Self::Optional { valid, values } => valid.len() + values.byte_size(),
+            Self::Struct(members) => members.iter().map(|(_, c)| c.byte_size()).sum(),
         }
     }
 
@@ -211,7 +211,7 @@ impl Column {
             Ok(())
         };
         match self {
-            Column::String { offsets, bytes } => {
+            Self::String { offsets, bytes } => {
                 check_offsets(offsets, bytes.len())?;
                 for w in offsets.windows(2) {
                     if std::str::from_utf8(&bytes[to_usize(w[0])..to_usize(w[1])]).is_err() {
@@ -220,11 +220,11 @@ impl Column {
                 }
                 Ok(())
             }
-            Column::List { offsets, values } => {
+            Self::List { offsets, values } => {
                 check_offsets(offsets, values.len())?;
                 values.validate(name)
             }
-            Column::Array { len, values } => {
+            Self::Array { len, values } => {
                 // A zero width only fits no values (an empty TTree cannot
                 // record the width of a fixed array).
                 if (*len == 0 && !values.is_empty()) || (*len > 0 && values.len() % len != 0) {
@@ -235,7 +235,7 @@ impl Column {
                 }
                 values.validate(name)
             }
-            Column::Optional { valid, values } => {
+            Self::Optional { valid, values } => {
                 let present = valid.iter().filter(|&&v| v).count();
                 if present != values.len() {
                     return bad(format!(
@@ -245,7 +245,7 @@ impl Column {
                 }
                 values.validate(name)
             }
-            Column::Struct(members) => {
+            Self::Struct(members) => {
                 let n = self.len();
                 for (m, c) in members {
                     if c.len() != n {
@@ -261,37 +261,37 @@ impl Column {
 
     /// Entries `[start, end)` as a new column (clamped to the column).
     #[must_use]
-    pub fn slice(&self, start: usize, end: usize) -> Column {
+    pub fn slice(&self, start: usize, end: usize) -> Self {
         let end = end.min(self.len());
         let start = start.min(end);
         map_scalar!(self, v => v[start..end].to_vec(), other => match other {
-            Column::String { offsets, bytes } => {
+            Self::String { offsets, bytes } => {
                 let (lo, hi) = (to_usize(offsets[start]), to_usize(offsets[end]));
-                Column::String {
+                Self::String {
                     offsets: offsets[start..=end].iter().map(|&o| o - offsets[start]).collect(),
                     bytes: bytes[lo..hi].to_vec(),
                 }
             }
-            Column::List { offsets, values } => {
+            Self::List { offsets, values } => {
                 let (lo, hi) = (to_usize(offsets[start]), to_usize(offsets[end]));
-                Column::List {
+                Self::List {
                     offsets: offsets[start..=end].iter().map(|&o| o - offsets[start]).collect(),
                     values: Box::new(values.slice(lo, hi)),
                 }
             }
-            Column::Array { len, values } => Column::Array {
+            Self::Array { len, values } => Self::Array {
                 len: *len,
                 values: Box::new(values.slice(start * len, end * len)),
             },
-            Column::Optional { valid, values } => {
+            Self::Optional { valid, values } => {
                 let lo = valid[..start].iter().filter(|&&v| v).count();
                 let hi = lo + valid[start..end].iter().filter(|&&v| v).count();
-                Column::Optional {
+                Self::Optional {
                     valid: valid[start..end].to_vec(),
                     values: Box::new(values.slice(lo, hi)),
                 }
             }
-            Column::Struct(members) => Column::Struct(
+            Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.slice(start, end))).collect(),
             ),
             _ => unreachable!("scalars are handled above"),
@@ -300,7 +300,7 @@ impl Column {
 
     /// The entries whose `mask` value is `true`, as a new column. `mask` must
     /// have one value per entry.
-    pub(crate) fn filter(&self, mask: &[bool]) -> Column {
+    pub(crate) fn filter(&self, mask: &[bool]) -> Self {
         fn keep<T: Copy>(v: &[T], mask: &[bool]) -> Vec<T> {
             v.iter()
                 .zip(mask)
@@ -309,16 +309,16 @@ impl Column {
                 .collect()
         }
         map_scalar!(self, v => keep(v, mask), other => match other {
-            Column::String { offsets, bytes } => {
+            Self::String { offsets, bytes } => {
                 let mut out_off = vec![0u64];
                 let mut out = Vec::new();
                 for (w, _) in offsets.windows(2).zip(mask).filter(|&(_, &m)| m) {
                     out.extend_from_slice(&bytes[to_usize(w[0])..to_usize(w[1])]);
                     out_off.push(out.len() as u64);
                 }
-                Column::String { offsets: out_off, bytes: out }
+                Self::String { offsets: out_off, bytes: out }
             }
-            Column::List { offsets, values } => {
+            Self::List { offsets, values } => {
                 let mut out_off = vec![0u64];
                 let mut child = Vec::with_capacity(values.len());
                 for (w, &m) in offsets.windows(2).zip(mask) {
@@ -328,17 +328,17 @@ impl Column {
                         out_off.push(out_off.last().copied().unwrap_or(0) + (w[1] - w[0]));
                     }
                 }
-                Column::List { offsets: out_off, values: Box::new(values.filter(&child)) }
+                Self::List { offsets: out_off, values: Box::new(values.filter(&child)) }
             }
-            Column::Array { len, values } => {
+            Self::Array { len, values } => {
                 let child: Vec<bool> = mask.iter().flat_map(|&m| std::iter::repeat_n(m, *len)).collect();
-                Column::Array { len: *len, values: Box::new(values.filter(&child)) }
+                Self::Array { len: *len, values: Box::new(values.filter(&child)) }
             }
-            Column::Optional { valid, values } => {
+            Self::Optional { valid, values } => {
                 let child: Vec<bool> = valid.iter().zip(mask).filter(|&(&v, _)| v).map(|(_, &m)| m).collect();
-                Column::Optional { valid: keep(valid, mask), values: Box::new(values.filter(&child)) }
+                Self::Optional { valid: keep(valid, mask), values: Box::new(values.filter(&child)) }
             }
-            Column::Struct(members) => Column::Struct(
+            Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.filter(mask))).collect(),
             ),
             _ => unreachable!("scalars are handled above"),
@@ -346,26 +346,26 @@ impl Column {
     }
 
     /// Append `other`'s entries; it must be the same type.
-    pub(crate) fn append(&mut self, other: Column) -> std::result::Result<(), Column> {
+    pub(crate) fn append(&mut self, other: Self) -> std::result::Result<(), Self> {
         fn rebase(offsets: &mut Vec<u64>, more: &[u64]) {
             let base = offsets.last().copied().unwrap_or(0);
             offsets.extend(more.iter().skip(1).map(|&o| o + base));
         }
         match (self, other) {
-            (Column::Bool(a), Column::Bool(b)) => a.extend(b),
-            (Column::I8(a), Column::I8(b)) => a.extend(b),
-            (Column::U8(a), Column::U8(b)) => a.extend(b),
-            (Column::I16(a), Column::I16(b)) => a.extend(b),
-            (Column::U16(a), Column::U16(b)) => a.extend(b),
-            (Column::I32(a), Column::I32(b)) => a.extend(b),
-            (Column::U32(a), Column::U32(b)) => a.extend(b),
-            (Column::I64(a), Column::I64(b)) => a.extend(b),
-            (Column::U64(a), Column::U64(b)) => a.extend(b),
-            (Column::F32(a), Column::F32(b)) => a.extend(b),
-            (Column::F64(a), Column::F64(b)) => a.extend(b),
+            (Self::Bool(a), Self::Bool(b)) => a.extend(b),
+            (Self::I8(a), Self::I8(b)) => a.extend(b),
+            (Self::U8(a), Self::U8(b)) => a.extend(b),
+            (Self::I16(a), Self::I16(b)) => a.extend(b),
+            (Self::U16(a), Self::U16(b)) => a.extend(b),
+            (Self::I32(a), Self::I32(b)) => a.extend(b),
+            (Self::U32(a), Self::U32(b)) => a.extend(b),
+            (Self::I64(a), Self::I64(b)) => a.extend(b),
+            (Self::U64(a), Self::U64(b)) => a.extend(b),
+            (Self::F32(a), Self::F32(b)) => a.extend(b),
+            (Self::F64(a), Self::F64(b)) => a.extend(b),
             (
-                Column::String { offsets, bytes },
-                Column::String {
+                Self::String { offsets, bytes },
+                Self::String {
                     offsets: o2,
                     bytes: b2,
                 },
@@ -374,8 +374,8 @@ impl Column {
                 bytes.extend(b2);
             }
             (
-                Column::List { offsets, values },
-                Column::List {
+                Self::List { offsets, values },
+                Self::List {
                     offsets: o2,
                     values: v2,
                 },
@@ -384,8 +384,8 @@ impl Column {
                 rebase(offsets, &o2);
             }
             (
-                Column::Array { len, values },
-                Column::Array {
+                Self::Array { len, values },
+                Self::Array {
                     len: l2,
                     values: v2,
                 },
@@ -393,8 +393,8 @@ impl Column {
                 values.append(*v2)?;
             }
             (
-                Column::Optional { valid, values },
-                Column::Optional {
+                Self::Optional { valid, values },
+                Self::Optional {
                     valid: m2,
                     values: v2,
                 },
@@ -402,7 +402,7 @@ impl Column {
                 values.append(*v2)?;
                 valid.extend(m2);
             }
-            (Column::Struct(members), Column::Struct(more))
+            (Self::Struct(members), Self::Struct(more))
                 if members.len() == more.len()
                     && members.iter().zip(&more).all(|((a, _), (b, _))| a == b) =>
             {

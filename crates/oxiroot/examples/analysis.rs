@@ -2,7 +2,7 @@
 //! bins), combine and normalize them (`*=`, `Index`, the `Histogram` trait),
 //! write them — into subdirectories and a flat heterogeneous file via the
 //! `FileWriter` (with a float-precision `TH1F`) — write a columnar event
-//! dataset, and read it back (`Hist1D::read_root`) — all readable by official ROOT
+//! dataset, and read it back (`FileReader::get`) — all readable by official ROOT
 //! and uproot.
 //!
 //! Run with: `cargo run -p oxiroot --example analysis`
@@ -17,7 +17,7 @@ fn main() -> oxiroot::Result<()> {
     let edges = [0.0, 10.0, 20.0, 40.0, 80.0, 160.0];
     let mut pt = Hist::var(&edges)
         .double()
-        .to_root()
+        .to_root()?
         .named("pt")
         .titled("p_{T} spectrum");
     pt.track_sumw2(); // track per-bin errors for the weighted fills
@@ -26,7 +26,7 @@ fn main() -> oxiroot::Result<()> {
     let mut eta_phi = Hist::reg(5, -2.5, 2.5)
         .reg(4, -3.2, 3.2)
         .double()
-        .to_root()
+        .to_root()?
         .named("eta_phi")
         .titled("#eta vs #phi");
 
@@ -45,9 +45,9 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "pt: {} entries, integral {:.2}, all-cell sum {:.2}, bin-2 = {:.2} ± {:.2}",
         pt.entries(),
-        pt.integral(), // in-range bins only
-        pt.sum(),      // RootHistogram trait: every cell, flow included
-        pt[2],         // Index: bin content by cell index
+        pt.integral(),    // in-range bins only
+        pt.sum(),         // RootHistogram trait: every cell, flow included
+        pt.contents()[2], // bin content by cell index
         pt.bin_error(2),
     );
 
@@ -61,7 +61,7 @@ fn main() -> oxiroot::Result<()> {
     let acc = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()
-            .to_root()
+            .to_root()?
             .named("mass")
             .titled("toy mass"),
     );
@@ -88,9 +88,9 @@ fn main() -> oxiroot::Result<()> {
     // --- Combine and normalize, as when merging samples. -----------------------
     let mut signal = pt.clone();
     let mut background = pt.clone();
-    background *= 0.1; // MulAssign — scale background down
+    background.scale(0.1); // scale background down
     signal.add(&background, 1.0)?; // stack background onto signal (a merge)
-    signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
+    signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
     println!("normalized signal integral = {:.6}", signal.integral());
     println!("{signal}"); // Display: one-line summary
 
@@ -102,13 +102,13 @@ fn main() -> oxiroot::Result<()> {
         .add(&eta_phi)
         .dir("signal", |d| d.add(&signal)) // a TDirectory per region
         .dir("background", |d| d.add(&background))
-        .write(Compression::Zstd(5))?;
+        .write()?;
     println!("wrote histograms -> {}", hist_path.display());
 
     // --- A flat file mixing any writable types — histograms, profiles, graphs. -
     let mut prof = Hist::reg(5, 0.0, 5.0)
         .mean()
-        .to_root()
+        .to_root()?
         .named("pt_prof")
         .titled("<pt> per region");
     for (region, &(p, ..)) in events.iter().enumerate() {
@@ -121,20 +121,18 @@ fn main() -> oxiroot::Result<()> {
         .add(&pt_f32)
         .add(&eta_phi)
         .add(&prof)
-        .write(Compression::Zstd(5))?;
+        .write()?;
     println!(
         "wrote {} as {} + TH2D + TProfile",
         multi_path.display(),
         pt_f32.class_name(),
     );
 
-    // --- Append one more object to that existing file (FileWriter::open). --------
+    // --- Append one more object to that existing file (FileUpdater::open). -------
     // The file keeps its existing keys; the normalized signal is added alongside.
     let mut sig = signal.clone();
     sig.name = "signal".to_string();
-    FileWriter::open(&multi_path)?
-        .add(&sig)
-        .write(Compression::Zstd(5))?;
+    oxiroot::FileUpdater::open(&multi_path)?.add(&sig).write()?;
     println!("appended `{}` to {}", sig.name, multi_path.display());
 
     // --- Write a columnar event dataset: a `Batch`, written as an RNTuple. ----
@@ -145,21 +143,21 @@ fn main() -> oxiroot::Result<()> {
         .column("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]])?;
     let ntuple_path = dir.join("analysis_events.root");
     let mut out = DatasetWriter::create(&ntuple_path, "events", Format::Ntuple)?;
-    out.write(&events_batch)?;
+    out.write(events_batch.clone())?;
     out.finish()?;
     println!("wrote RNTuple -> {}", ntuple_path.display());
 
     // --- The same batch as a classic TTree: only the format changes. -----------
     let tree_path = dir.join("analysis_tree.root");
     let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
-    out.write(&events_batch)?;
+    out.write(events_batch)?;
     out.finish()?;
     println!("wrote TTree   -> {}", tree_path.display());
 
-    // --- Read it all back (idiomatic `Hist1D::read_root`; subdir via `read_root_in`).
+    // --- Read it all back (`file.get::<Hist1D>(path)`; a subdirectory is part of the path).
     let f = FileReader::open(&hist_path)?;
-    let pt_back = Hist1D::read_root(&f, "pt")?;
-    let sig_back = Hist1D::read_root_in(&f, "signal", "pt")?;
+    let pt_back = f.get::<Hist1D>("pt")?;
+    let sig_back = f.get::<Hist1D>("signal/pt")?;
     println!(
         "read back: pt has {} bins, signal/pt integral = {:.6}",
         pt_back.values().len(),

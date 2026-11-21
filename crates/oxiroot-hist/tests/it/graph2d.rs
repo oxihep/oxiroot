@@ -1,10 +1,11 @@
-//! Graph2D: read a ROOT fixture, self round-trip, and build from scratch.
+//! `Graph2D`: read a ROOT fixture, self round-trip, and build from scratch.
 //! (Cross-checked against compiled ROOT C++ and uproot, which read the
-//! oxiroot-written Graph2D with the right class and values.)
+//! oxiroot-written `Graph2D` with the right class and values.)
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Compression, Graph2D, ReadRoot, WriteRoot};
+use oxiroot_hist::Graph2D;
+use oxiroot_io_core::Compression;
 use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
@@ -16,7 +17,7 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn reads_root_written_graph2d() {
     let f = FileReader::open(fixture("graph2d.root")).expect("open");
-    let g = Graph2D::read_root(&f, "g2d").expect("read g2d");
+    let g = f.get::<Graph2D>("g2d").expect("read g2d");
     assert_eq!(g.name, "g2d");
     assert_eq!(g.title, "surface fixture");
     assert_eq!(g.x(), vec![1.0, 2.0, 3.0, 4.0]);
@@ -27,10 +28,17 @@ fn reads_root_written_graph2d() {
 #[test]
 fn graph2d_round_trip_from_fixture() {
     let f = FileReader::open(fixture("graph2d.root")).expect("open");
-    let g = Graph2D::read_root(&f, "g2d").unwrap();
+    let g = f.get::<Graph2D>("g2d").unwrap();
     let out = std::env::temp_dir().join("oxiroot_g2d_rt.root");
-    g.write_root(&out, Compression::None).expect("write");
-    let back = Graph2D::read_root(&FileReader::open(&out).unwrap(), "g2d").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<Graph2D>("g2d")
+        .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -46,8 +54,15 @@ fn graph2d_build_from_scratch() {
     .named("scratch")
     .titled("built in Rust");
     let out = std::env::temp_dir().join("oxiroot_g2d_scratch.root");
-    g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = Graph2D::read_root(&FileReader::open(&out).unwrap(), "scratch").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Zstd(3))
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<Graph2D>("scratch")
+        .unwrap();
     assert_eq!(back, g);
     assert_eq!(back.len(), 3);
     let _ = std::fs::remove_file(&out);
@@ -58,8 +73,15 @@ fn empty_graph2d_round_trip() {
     let g = Graph2D::new(vec![], vec![], vec![]).unwrap().named("empty");
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_g2d_empty.root");
-    g.write_root(&out, Compression::None).expect("write");
-    let back = Graph2D::read_root(&FileReader::open(&out).unwrap(), "empty").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<Graph2D>("empty")
+        .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }

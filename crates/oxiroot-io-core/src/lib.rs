@@ -4,12 +4,12 @@
 //! # Files
 //!
 //! [`FileReader`] opens a file from disk, from memory, through a memory map (the
-//! `mmap` feature), or remotely over HTTP(S) (`http`) or XRootD (`xrootd`), and
+//! `mmap` feature), or remotely over HTTP(S) (`http`) or `XRootD` (`xrootd`), and
 //! reads its keys, directories and streamer info on demand through a
 //! [`ByteSource`]. [`FileWriter`] writes a new file, or appends to an existing
 //! one, with subdirectories ([`SubdirWriter`]). [`ContainerWriter`](raw::ContainerWriter) is the layer
 //! beneath it, which places keys and raw records: formats such as `TTree` and
-//! RNTuple are more than one keyed object.
+//! `RNTuple` are more than one keyed object.
 //!
 //! # Objects
 //!
@@ -36,7 +36,7 @@
 //! classes; and [`TagReader`](raw::TagReader) resolves class tags and back-references. The
 //! [`streamer_gen`] module describes a class's members for the `TStreamerInfo`
 //! record a written file carries. ROOT's classic on-disk integers are big-endian;
-//! the buffers name their endianness, so the same types serve RNTuple's
+//! the buffers name their endianness, so the same types serve `RNTuple`'s
 //! little-endian payloads.
 //!
 //! Every item is exported at the crate root, except the [`streamer_gen`] helpers,
@@ -68,10 +68,13 @@ pub use file::MmapSource;
 pub use file::XrootdOptions;
 #[cfg(feature = "xrootd")]
 pub use file::XrootdSource;
-pub use file::{ByteSource, BytesSource, FileReader, FileSource, FileWriter, SubdirWriter};
+pub use file::{
+    ByteSource, BytesSource, FileReader, FileSource, FileUpdater, FileWriter, Storable, Stored,
+    SubdirWriter,
+};
 
-pub use object_io::{ReadRoot, StreamerSet, WriteInto, WriteRoot};
-pub use objects::{FromMember, ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter};
+pub use object_io::{Object, ReadRoot, StreamerSet, WriteInto, WriteRoot};
+pub use objects::{ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter};
 pub use read_object::read_object;
 
 pub use streamer_info::StreamerRegistry;
@@ -83,19 +86,35 @@ pub use value::Value;
 /// at the level of the format; reading and writing objects needs none of it.
 pub mod raw {
     pub use crate::buffer::{K_BYTE_COUNT_MASK, VersionHeader};
-    pub use crate::error::decompress_payload;
+    pub use crate::error::{check_len, decompress_payload};
     pub use crate::file::{
         BIG_FILE_VERSION, ContainerWriter, DATIME, Datime, DirId, Directory, FILE_VERSION,
-        FileHeader, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Uuid, compress_if_smaller, find_key,
-        read_free, split_cycle,
+        FileHeader, Form, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Uuid, compress_if_smaller,
+        find_key, read_free, split_cycle,
     };
-    pub use crate::object::{ObjectRef, RecordHeader, TagReader};
-    pub use crate::object_io::{ObjectRecord, object_bytes_any, object_bytes_any_keyed, record_of};
+    pub use crate::object::{
+        K_CLASS_MASK, K_NEW_CLASS_TAG, ObjectRef, PointerHeader, RecordHeader, TagReader,
+        read_pointer_header,
+    };
+    pub use crate::object_io::{ObjectRecord, object_bytes, record_of};
     pub use crate::streamer::{
-        Named, ObjectBase, read_named, read_object_base, skip_versioned, write_named,
-        write_object_any, write_object_base,
+        Named, ObjectBase, begin_object_any, end_object_any, read_named, read_object_base,
+        skip_versioned, write_named, write_object_any, write_object_base, write_object_ptr,
     };
     pub use crate::streamer_info::{StreamerElement, StreamerInfo, parse_streamer_info};
+
+    /// A file's streamer-info record as stored: the decompressed
+    /// `TList<TStreamerInfo>` bytes and the key length they were written under,
+    /// or `None` if the file has no record.
+    ///
+    /// # Errors
+    ///
+    /// If the record cannot be read or decompressed.
+    pub fn streamer_info_bytes(
+        file: &crate::FileReader,
+    ) -> crate::Result<Option<(Vec<u8>, usize)>> {
+        file.streamer_info_bytes()
+    }
 
     /// The deepest nesting of streamed objects and base classes a reader follows.
     /// Streamer info comes from the file, so a class that lists itself as its own

@@ -1,6 +1,6 @@
 //! ROOT's 9-byte compression block header.
 //!
-//! Every compressed ROOT payload — Key object data and RNTuple pages alike —
+//! Every compressed ROOT payload — Key object data and `RNTuple` pages alike —
 //! is a sequence of independently-compressed blocks, each prefixed by this
 //! 9-byte header. A single block holds at most [`MAX_CHUNK_SIZE`] uncompressed
 //! bytes; larger payloads are split across consecutive blocks.
@@ -39,26 +39,28 @@ pub enum Algorithm {
 
 impl Algorithm {
     /// Identify the algorithm from its 2-character block tag.
+    #[must_use]
     pub fn from_tag(tag: [u8; 2]) -> Self {
         match &tag {
-            b"ZL" => Algorithm::Zlib,
-            b"XZ" => Algorithm::Lzma,
-            b"CS" => Algorithm::OldRoot,
-            b"L4" => Algorithm::Lz4,
-            b"ZS" => Algorithm::Zstd,
-            _ => Algorithm::Unknown(tag),
+            b"ZL" => Self::Zlib,
+            b"XZ" => Self::Lzma,
+            b"CS" => Self::OldRoot,
+            b"L4" => Self::Lz4,
+            b"ZS" => Self::Zstd,
+            _ => Self::Unknown(tag),
         }
     }
 
     /// The 2-character tag for this algorithm.
+    #[must_use]
     pub fn tag(self) -> [u8; 2] {
         match self {
-            Algorithm::Zlib => *b"ZL",
-            Algorithm::Lzma => *b"XZ",
-            Algorithm::OldRoot => *b"CS",
-            Algorithm::Lz4 => *b"L4",
-            Algorithm::Zstd => *b"ZS",
-            Algorithm::Unknown(t) => t,
+            Self::Zlib => *b"ZL",
+            Self::Lzma => *b"XZ",
+            Self::OldRoot => *b"CS",
+            Self::Lz4 => *b"L4",
+            Self::Zstd => *b"ZS",
+            Self::Unknown(t) => t,
         }
     }
 }
@@ -66,8 +68,8 @@ impl Algorithm {
 impl From<[u8; 2]> for Algorithm {
     /// The std-trait counterpart to [`from_tag`](Algorithm::from_tag) (total: an
     /// unrecognized tag becomes [`Algorithm::Unknown`]), so callers can `.into()`.
-    fn from(tag: [u8; 2]) -> Algorithm {
-        Algorithm::from_tag(tag)
+    fn from(tag: [u8; 2]) -> Self {
+        Self::from_tag(tag)
     }
 }
 
@@ -93,6 +95,7 @@ pub struct BlockHeader {
 
 impl BlockHeader {
     /// The algorithm this block was compressed with.
+    #[must_use]
     pub fn algorithm(&self) -> Algorithm {
         Algorithm::from_tag(self.tag)
     }
@@ -105,7 +108,7 @@ impl BlockHeader {
                 available: buf.len(),
             });
         }
-        Ok(BlockHeader {
+        Ok(Self {
             tag: [buf[0], buf[1]],
             method: buf[2],
             compressed_size: u24_le(&buf[3..6]),

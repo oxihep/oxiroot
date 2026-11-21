@@ -2,9 +2,9 @@
 //!
 //! ROOT tracks reusable gaps as a list of `[first, last]` byte ranges stored in
 //! a `Key`-wrapped record at `fSeekFree`. Each `TFree` entry uses 64-bit
-//! offsets when its version exceeds 1000. Parsing is informational for reading;
-//! the allocator that consumes/produces this list arrives with `update`-mode
-//! writing (M6).
+//! offsets when its version exceeds 1000. The list is read for inspection only:
+//! the writer does not reuse freed space, and declares the list empty in the
+//! files it writes.
 
 use super::header::FileHeader;
 use super::key::Key;
@@ -45,7 +45,9 @@ pub fn read_free(source: &dyn ByteSource, header: &FileHeader) -> Result<Vec<Fre
     // The free list is wrapped in a Key; its payload is `nfree` TFree records.
     let _wrapper = Key::read(&mut r)?;
 
-    let mut segments = Vec::with_capacity(header.nfree as usize);
+    // `nfree` comes from the header; a `TFree` takes at least ten bytes.
+    let mut segments =
+        Vec::with_capacity(r.bounded_capacity(usize::saturating_from(header.nfree), 10));
     for _ in 0..header.nfree {
         let version = r.be_i16()?;
         let (first, last) = if version > FREE_BIG_VERSION {

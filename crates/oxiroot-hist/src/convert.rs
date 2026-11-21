@@ -4,16 +4,16 @@
 //! uproot read, and a ROOT histogram read from a file becomes an oxihist one.
 //!
 //! ```
-//! use oxiroot_hist::{FromRoot, Hist, ToRoot};
+//! use oxiroot_hist::{Hist, Hist1D, ToRoot};
 //! # fn main() -> oxiroot_io_core::Result<()> {
 //! # let dir = std::env::temp_dir();
 //! # let path = dir.join("oxiroot-convert-doc.root");
 //! let mut h = Hist::reg(10, 0.0, 10.0).name("pt").title("p_T").weight();
 //! h.fill_weight(3.5, 2.0);
-//! h.write_root(&path, oxiroot_io_core::Compression::None)?; // a TH1D with Sumw2
+//! oxiroot_io_core::FileWriter::create(&path).add(&h.to_root()?).write()?; // a TH1D with Sumw2
 //!
 //! let file = oxiroot_io_core::FileReader::open(&path)?;
-//! let back = oxihist::Histogram::<oxihist::Weight, 1>::read_root(&file, "pt")?;
+//! let back = file.get::<Hist1D>("pt")?.to_hist()?;
 //! assert_eq!(back.value([3]), Some(2.0));
 //! assert_eq!(back.variance([3]), Some(4.0));
 //! # Ok(()) }
@@ -52,7 +52,7 @@
 //! - the fill count is not kept, since `fEntries` is written as the sum of the
 //!   bin values.
 //!
-//! [`ToRoot::try_to_root`] refuses what ROOT cannot hold at all: an axis with
+//! [`ToRoot::to_root`] refuses what ROOT cannot hold at all: an axis with
 //! more than `i32::MAX` bins, or an axis kind this version does not know.
 //!
 //! A profile's sums convert exactly, but the two libraries put different error
@@ -62,98 +62,32 @@
 //! entries.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use std::path::Path;
 
 use oxihist::{
     AxisKind, Double, Histogram, Int64, Mean, MeanBin, Storage, Weight, WeightedMean,
     WeightedMeanBin, WeightedSum,
 };
-use oxiroot_io_core::{Compression, Error, FileReader, ReadRoot, Result, WriteRoot};
+use oxiroot_io_core::{Error, Result, WriteRoot};
 
 use crate::axis::Axis;
 use crate::base::BinContentType;
 use crate::{Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D};
 
-/// Convert an oxihist histogram into the ROOT histogram that models it, and
-/// write it to a ROOT file.
+/// Convert an oxihist histogram into the ROOT histogram that models it.
 pub trait ToRoot {
     /// The ROOT histogram type it becomes.
     type Root: WriteRoot;
 
-    /// The ROOT histogram, as a `TH1D`/`TH2D`/`TH3D` (`TH1L`/… for [`Int64`]
-    /// storage) or a profile, stored with the given bin content type (`TH1F`
-    /// for [`BinContentType::F32`], …; profiles have no content type, so it is
-    /// ignored for them).
+    /// The ROOT histogram: a `TH1D`/`TH2D`/`TH3D` (`TH1L`/… for [`Int64`]
+    /// storage) or a profile. Store a histogram with another content type
+    /// (`TH1F`, `TH1I`, …) by calling `with_bin_content_type` on the result.
     ///
     /// # Errors
     ///
     /// [`Error::InvalidInput`] if an axis has more than `i32::MAX` bins, or is
     /// of a kind this version cannot map (oxihist's `AxisKind` is
     /// non-exhaustive).
-    fn try_to_root_as(&self, content: BinContentType) -> Result<Self::Root>;
-
-    /// [`try_to_root_as`](ToRoot::try_to_root_as) with the storage's own
-    /// content type.
-    ///
-    /// # Errors
-    ///
-    /// As [`try_to_root_as`](ToRoot::try_to_root_as).
-    fn try_to_root(&self) -> Result<Self::Root>;
-
-    /// The ROOT histogram, as a `TH1D`/`TH2D`/`TH3D` (`TH1L`/… for [`Int64`]
-    /// storage) or a profile.
-    ///
-    /// # Panics
-    ///
-    /// If ROOT cannot hold the histogram; see
-    /// [`try_to_root`](ToRoot::try_to_root), which returns the error instead.
-    #[must_use]
-    fn to_root(&self) -> Self::Root {
-        self.try_to_root().unwrap_or_else(|e| panic!("{e}"))
-    }
-
-    /// Like [`to_root`](ToRoot::to_root), stored with the given bin content
-    /// type (`TH1F` for [`BinContentType::F32`], …). Profiles have no content
-    /// type, so it is ignored for them.
-    ///
-    /// # Panics
-    ///
-    /// As [`to_root`](ToRoot::to_root).
-    #[must_use]
-    fn to_root_as(&self, content: BinContentType) -> Self::Root {
-        self.try_to_root_as(content)
-            .unwrap_or_else(|e| panic!("{e}"))
-    }
-
-    /// Write the histogram, under its name, as the only object of a new ROOT
-    /// file at `path`.
-    ///
-    /// # Errors
-    ///
-    /// If ROOT cannot hold the histogram (see
-    /// [`try_to_root`](ToRoot::try_to_root)), it has no name, or the file
-    /// cannot be written.
-    fn write_root(&self, path: impl AsRef<Path>, compression: Compression) -> Result<()> {
-        self.try_to_root()?.write_root(path, compression)
-    }
-}
-
-/// Read a ROOT histogram from a file as an oxihist histogram.
-pub trait FromRoot: Sized {
-    /// Read the histogram stored under key `name` in the file's top directory.
-    ///
-    /// # Errors
-    ///
-    /// If there is no such key, it is not a histogram of the matching kind, or
-    /// an axis cannot be represented (no bins).
-    fn read_root(file: &FileReader, name: &str) -> Result<Self>;
-
-    /// Read the histogram stored under key `name` inside subdirectory `dir`.
-    ///
-    /// # Errors
-    ///
-    /// As [`read_root`](FromRoot::read_root).
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self>;
+    fn to_root(&self) -> Result<Self::Root>;
 }
 
 // --- axes -------------------------------------------------------------------
@@ -187,7 +121,7 @@ fn root_axis(a: &oxihist::Axis, name: &str) -> Result<Axis> {
         AxisKind::Regular { bins, lo, hi } => Axis::new(name, root_count(*bins)?, *lo, *hi),
         AxisKind::Variable { edges } => {
             root_count(edges.len().saturating_sub(1))?;
-            Axis::variable(name, edges)
+            Axis::variable(name, edges)?
         }
         AxisKind::Integer { lo, hi } => {
             Axis::new(name, root_count(a.size())?, *lo as f64, *hi as f64)
@@ -360,15 +294,11 @@ fn cells<S: Storage, const D: usize>(
 }
 
 macro_rules! count_to_root {
-    ($s:ty, $d:literal, $root:ty, |$h:ident, $c:ident, $axes:ident| $build:expr_2021) => {
+    ($s:ty, $d:literal, $root:ty, |$h:ident, $c:ident, $axes:ident| $build:expr) => {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
-            fn try_to_root(&self) -> Result<$root> {
-                self.try_to_root_as(<$s as RootCount>::CONTENT)
-            }
-
-            fn try_to_root_as(&self, content: BinContentType) -> Result<$root> {
+            fn to_root(&self) -> Result<$root> {
                 let $h = self;
                 let $axes = root_axes(self.axes())?;
                 let $c = cells(self, <$s>::value, <$s>::variance);
@@ -384,7 +314,7 @@ macro_rules! count_to_root {
                 if <$s as RootCount>::SUMW2 {
                     r.sumw2 = $c.sumw2;
                 }
-                Ok(r.with_bin_content_type(content))
+                Ok(r.with_bin_content_type(<$s as RootCount>::CONTENT))
             }
         }
     };
@@ -518,11 +448,11 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
 }
 
 macro_rules! mean_to_root {
-    ($s:ty, $d:tt, $root:ty, |$c:ident, $axes:ident| $build:expr_2021) => {
+    ($s:ty, $d:tt, $root:ty, |$c:ident, $axes:ident| $build:expr) => {
         impl ToRoot for Histogram<$s, $d> {
             type Root = $root;
 
-            fn try_to_root(&self) -> Result<$root> {
+            fn to_root(&self) -> Result<$root> {
                 let $axes = root_axes(self.axes())?;
                 let p = profile_cells(self);
                 let $c = &p.cells;
@@ -541,10 +471,6 @@ macro_rules! mean_to_root {
                 }
                 mean_to_root!(@moments $d, r, p, $c);
                 Ok(r)
-            }
-
-            fn try_to_root_as(&self, _content: BinContentType) -> Result<$root> {
-                self.try_to_root()
             }
         }
     };
@@ -804,30 +730,9 @@ impl Profile3D {
     }
 }
 
-macro_rules! from_root {
-    ($($hist:ty => $root:ty),* $(,)?) => {$(
-        impl FromRoot for $hist {
-            fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-                <$root as ReadRoot>::read_root(file, name)?.to_hist()
-            }
-            fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-                <$root as ReadRoot>::read_root_in(file, dir, name)?.to_hist()
-            }
-        }
-    )*};
-}
-from_root!(
-    Histogram<Weight, 1> => Hist1D,
-    Histogram<Weight, 2> => Hist2D,
-    Histogram<Weight, 3> => Hist3D,
-    Histogram<WeightedMean, 1> => Profile1D,
-    Histogram<WeightedMean, 2> => Profile2D,
-    Histogram<WeightedMean, 3> => Profile3D,
-);
-
 #[cfg(test)]
 mod tests {
-    use oxihist::{Hist, Histogram, Weight, WeightedMean};
+    use oxihist::{Hist, Histogram, WeightedMean};
 
     use super::*;
 
@@ -842,7 +747,7 @@ mod tests {
         h.fill_weight(7.0, 3.0);
         h.fill(-1.0);
         h.fill(20.0);
-        let r = h.to_root();
+        let r = h.to_root().unwrap();
         assert_eq!(r.contents, vec![1.0, 2.0, 0.0, 3.0, 1.0]);
         assert_eq!(r.sumw2, vec![1.0, 4.0, 0.0, 9.0, 1.0]);
         assert_eq!((r.tsumw, r.tsumw2, r.entries), (5.0, 13.0, 7.0));
@@ -856,14 +761,21 @@ mod tests {
     fn storages_pick_the_root_class() {
         let mut d = Hist::reg(3, 0.0, 3.0).double();
         d.fill(1.5);
-        let r = d.to_root();
+        let r = d.to_root().unwrap();
         assert!(r.sumw2.is_empty());
         assert_eq!(r.contents[2], 1.0);
         assert_eq!(
-            Hist::reg(3, 0.0, 3.0).int64().to_root().class_name(),
+            Hist::reg(3, 0.0, 3.0)
+                .int64()
+                .to_root()
+                .unwrap()
+                .class_name(),
             "TH1L"
         );
-        let f = d.to_root_as(BinContentType::F32);
+        let f = d
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(BinContentType::F32);
         assert_eq!(f.class_name(), "TH1F");
     }
 
@@ -872,7 +784,7 @@ mod tests {
         let mut h = Hist::str_cat(&["ee", "mumu"]).name("c").weight();
         h.fill("mumu");
         h.fill("tautau"); // overflow
-        let r = h.to_root();
+        let r = h.to_root().unwrap();
         assert_eq!(r.xaxis.bin_label(2), Some("mumu"));
         assert_eq!(r.contents, vec![0.0, 0.0, 1.0, 1.0]);
         let back = r.to_hist().unwrap();
@@ -884,7 +796,7 @@ mod tests {
     fn two_d_layout_matches_root() {
         let mut h = Hist::reg(2, 0.0, 2.0).reg(3, 0.0, 3.0).weight();
         h.fill(1.5, 2.5);
-        let r = h.to_root();
+        let r = h.to_root().unwrap();
         // ROOT cell = ix + (nx + 2) * iy, with 1-based in-range bins.
         assert_eq!(r.contents[2 + 4 * 3], 1.0);
         assert_eq!(r.tsumwxy, 1.5 * 2.5);
@@ -893,7 +805,7 @@ mod tests {
             .reg(2, 0.0, 2.0)
             .reg(2, 0.0, 2.0)
             .weight();
-        assert_eq!(h3.to_root().to_hist().unwrap(), h3);
+        assert_eq!(h3.to_root().unwrap().to_hist().unwrap(), h3);
     }
 
     #[test]
@@ -902,7 +814,7 @@ mod tests {
         p.fill_sample_weight(0.5, 1.0, 2.0);
         p.fill_sample_weight(0.5, 4.0, 1.0);
         p.fill_sample(1.5, 3.0);
-        let r = p.to_root();
+        let r = p.to_root().unwrap();
         assert_eq!(r.bin_entries[1], 3.0);
         assert_eq!(r.sums[1], 6.0);
         assert_eq!(r.sumy2[1], 18.0);
@@ -917,7 +829,7 @@ mod tests {
         let mut m = Hist::reg(2, 0.0, 2.0).mean();
         m.fill_sample(0.5, 1.0);
         m.fill_sample(0.5, 3.0);
-        let r = m.to_root();
+        let r = m.to_root().unwrap();
         assert!(r.bin_sumw2.is_empty());
         assert_eq!(r.to_hist().unwrap().value([0]), Some(2.0));
     }
@@ -929,7 +841,7 @@ mod tests {
         let empty: [&str; 0] = [];
         let mut h = Hist::str_cat(&empty).name("c").weight();
         h.fill("ee"); // overflow: the axis does not grow
-        let r = h.try_to_root().unwrap();
+        let r = h.to_root().unwrap();
         assert_eq!(r.xaxis.nbins, 1);
         assert_eq!(r.contents, vec![0.0, 0.0, 1.0]);
         assert_eq!(r.sumw2.len(), r.contents.len());
@@ -941,7 +853,7 @@ mod tests {
 
         let mut p = Hist::str_cat(&empty).reg(2, 0.0, 2.0).mean();
         p.fill_sample("x", 0.5, 3.0);
-        let r = p.try_to_root().unwrap();
+        let r = p.to_root().unwrap();
         assert_eq!(r.sums.len(), 3 * 4);
         assert_eq!(r.sums[2 + 3], 3.0); // x overflow (cell 2), y bin 1 (stride 3)
     }
@@ -951,7 +863,7 @@ mod tests {
         // Integer → Regular over the same bins.
         let mut h = Hist::int(-2, 3).weight();
         h.fill(0);
-        let back = h.to_root().to_hist().unwrap();
+        let back = h.to_root().unwrap().to_hist().unwrap();
         assert!(matches!(
             back.axis(0).kind(),
             AxisKind::Regular { bins: 5, lo, hi } if *lo == -2.0 && *hi == 3.0
@@ -966,7 +878,7 @@ mod tests {
             .label("PDG id")
             .weight();
         h.fill(13);
-        let back = h.to_root().to_hist().unwrap();
+        let back = h.to_root().unwrap().to_hist().unwrap();
         match back.axis(0).kind() {
             AxisKind::StrCategory { categories, growth } => {
                 assert_eq!(categories, &["11".to_owned(), "13".to_owned()]);
@@ -981,7 +893,7 @@ mod tests {
         // fEntries is the sum of the bin values, not the fill count.
         let mut h = Hist::reg(2, 0.0, 2.0).weight();
         h.fill_weight(0.5, 2.5);
-        assert_eq!(h.to_root().entries, 2.5);
+        assert_eq!(h.to_root().unwrap().entries, 2.5);
     }
 
     #[test]
@@ -998,14 +910,18 @@ mod tests {
         let path = dir.join("h.root");
         let mut h = Hist::reg(4, 0.0, 4.0).reg(2, 0.0, 2.0).name("h2").weight();
         h.fill_weight(1.5, 0.5, 2.5);
-        h.write_root(&path, Compression::Zstd(3)).unwrap();
-        let file = FileReader::open(&path).unwrap();
-        let back = Histogram::<Weight, 2>::read_root(&file, "h2").unwrap();
+        oxiroot_io_core::FileWriter::create(&path)
+            .add(&h.to_root().unwrap())
+            .compression(oxiroot_io_core::Compression::Zstd(3))
+            .write()
+            .unwrap();
+        let file = oxiroot_io_core::FileReader::open(&path).unwrap();
+        let back = file.get::<crate::Hist2D>("h2").unwrap().to_hist().unwrap();
         assert_eq!(back, h);
         assert!(
-            Hist::reg(1, 0.0, 1.0)
-                .weight()
-                .write_root(&path, Compression::None)
+            oxiroot_io_core::FileWriter::create(&path)
+                .add(&Hist::reg(1, 0.0, 1.0).weight().to_root().unwrap())
+                .write()
                 .is_err()
         );
         std::fs::remove_dir_all(&dir).ok();

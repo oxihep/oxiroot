@@ -1,4 +1,4 @@
-//! The RNTuple page-list envelope: cluster summaries and page locations.
+//! The `RNTuple` page-list envelope: cluster summaries and page locations.
 //!
 //! Page locations are a triple-nested list: clusters → columns → pages. Each
 //! per-column frame ends with the column's element offset and compression
@@ -57,7 +57,7 @@ pub struct PageList {
 
 impl PageList {
     /// Parse a page-list envelope payload.
-    pub fn parse(payload: &[u8]) -> Result<PageList> {
+    pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(payload);
         let _header_checksum = r.le_u64()?;
 
@@ -90,7 +90,7 @@ impl PageList {
         }
         r.seek(cluster_list.end)?;
 
-        Ok(PageList {
+        Ok(Self {
             summaries,
             clusters,
         })
@@ -100,7 +100,7 @@ impl PageList {
 /// Read one column's pages: a list frame of page descriptions, then the
 /// column's element offset and (unless suppressed) compression settings — all
 /// inside the frame.
-fn read_column_pages(r: &mut RBuffer) -> Result<ColumnPages> {
+fn read_column_pages(r: &mut RBuffer<'_>) -> Result<ColumnPages> {
     let frame = read_frame(r)?;
     let mut pages = Vec::with_capacity((frame.n_items as usize).min(r.remaining()));
     for _ in 0..frame.n_items {

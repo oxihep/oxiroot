@@ -33,7 +33,6 @@ pub(super) struct LeafInfo {
 impl Branch {
     /// Number of entries (rows for arrays/strings).
     pub(super) fn n_entries(&self) -> u32 {
-        use BranchValues::*;
         if let Some(spec) = self.split() {
             return u32::saturating_from(
                 spec.members
@@ -41,34 +40,7 @@ impl Branch {
                     .map_or(0, |m| vec_row_lengths(&m.values).len()),
             );
         }
-        let n = match &self.values {
-            Bool(v) => v.len(),
-            I8(v) => v.len(),
-            U8(v) => v.len(),
-            I16(v) => v.len(),
-            U16(v) => v.len(),
-            I32(v) => v.len(),
-            U32(v) => v.len(),
-            I64(v) => v.len(),
-            U64(v) => v.len(),
-            F32(v) => v.len(),
-            F64(v) => v.len(),
-            VecBool(r) => r.len(),
-            VecI8(r) => r.len(),
-            VecU8(r) => r.len(),
-            VecI16(r) => r.len(),
-            VecU16(r) => r.len(),
-            VecI32(r) => r.len(),
-            VecU32(r) => r.len(),
-            VecI64(r) => r.len(),
-            VecU64(r) => r.len(),
-            VecF32(r) => r.len(),
-            VecF64(r) => r.len(),
-            Str(v) => v.len(),
-            VecStr(v) => v.len(),
-            Nested { offsets, .. } => offsets.len().saturating_sub(1),
-        };
-        u32::saturating_from(n)
+        u32::saturating_from(self.values.len())
     }
 
     /// The element leaf type (the inner type for arrays). A `std::vector<T>`
@@ -144,7 +116,7 @@ impl Branch {
         }
     }
 
-    /// The TLeafC `fLen` (longest string length + 1) for a string branch.
+    /// The `TLeafC` `fLen` (longest string length + 1) for a string branch.
     pub(super) fn str_len(&self) -> i32 {
         match &self.values {
             BranchValues::Str(v) => {
@@ -192,7 +164,7 @@ impl Branch {
             _ => None,
         };
         macro_rules! jag {
-            ($r:expr_2021) => {{
+            ($r:expr) => {{
                 let n = width.unwrap_or_else(|| $r.first().map_or(0, Vec::len));
                 $r.iter().any(|x| x.len() != n)
             }};
@@ -240,32 +212,13 @@ impl Branch {
     /// Per-row element counts (for a jagged branch's count branch); empty for
     /// non-array branches.
     fn row_lengths(&self) -> Vec<i32> {
-        use BranchValues::*;
-        macro_rules! lens {
-            ($r:expr_2021) => {
-                $r.iter().map(|x| i32::saturating_from(x.len())).collect()
-            };
-        }
-        match &self.values {
-            VecBool(r) => lens!(r),
-            VecI8(r) => lens!(r),
-            VecU8(r) => lens!(r),
-            VecI16(r) => lens!(r),
-            VecU16(r) => lens!(r),
-            VecI32(r) => lens!(r),
-            VecU32(r) => lens!(r),
-            VecI64(r) => lens!(r),
-            VecU64(r) => lens!(r),
-            VecF32(r) => lens!(r),
-            VecF64(r) => lens!(r),
-            _ => Vec::new(),
-        }
+        vec_row_lengths(&self.values)
     }
 
     /// The paired count branch (`n<name>`, a scalar `i32` of row lengths) for a
     /// jagged branch; `None` for any other branch.
-    pub(super) fn count_branch(&self) -> Option<Branch> {
-        self.jagged().then(|| Branch {
+    pub(super) fn count_branch(&self) -> Option<Self> {
+        self.jagged().then(|| Self {
             name: self.count_name(),
             values: BranchValues::I32(self.row_lengths()),
             kind: BranchKind::Count,
@@ -316,7 +269,7 @@ impl Branch {
         let mut data = Vec::new();
         let mut offsets = vec![0u32];
         macro_rules! emit {
-            ($rows:expr_2021, $w:expr_2021, $conv:expr_2021) => {{
+            ($rows:expr, $w:expr, $conv:expr) => {{
                 for row in $rows {
                     let n = u32::saturating_from(row.len());
                     let bc = (6 + n * $w) | 0x4000_0000;
@@ -374,7 +327,7 @@ impl Branch {
             return (data, Some(offsets));
         }
         macro_rules! be {
-            ($v:expr_2021, $w:expr_2021) => {{
+            ($v:expr, $w:expr) => {{
                 let mut out = Vec::with_capacity($v.len() * $w);
                 for x in $v {
                     out.extend_from_slice(&x.to_be_bytes());
@@ -383,7 +336,7 @@ impl Branch {
             }};
         }
         macro_rules! be_rows {
-            ($r:expr_2021, $w:expr_2021) => {{
+            ($r:expr, $w:expr) => {{
                 let mut out = Vec::new();
                 for row in $r {
                     for x in row {
@@ -437,7 +390,8 @@ impl Branch {
             let mut acc = 0u32;
             offsets.push(0);
             for len in self.row_lengths() {
-                acc += len.cast_unsigned() * elem;
+                // Saturating: a basket this large is refused when it is prepared.
+                acc = acc.saturating_add(len.cast_unsigned().saturating_mul(elem));
                 offsets.push(acc);
             }
             return (data, Some(offsets));

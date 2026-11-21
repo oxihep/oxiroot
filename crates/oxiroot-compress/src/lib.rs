@@ -2,8 +2,7 @@
 //!
 //! ROOT stores compressed payloads as a sequence of independently-compressed
 //! blocks, each prefixed by a 9-byte `header`. This crate is a leaf dependency
-//! of the rest of the workspace and owns the (eventually feature-gated) choice
-//! of codec backends.
+//! of the rest of the workspace and owns the choice of codec backends.
 //!
 //! **Decode and encode** are both implemented for Zstd, zlib, LZ4, and LZMA
 //! (XZ) — every codec ROOT writes except the legacy `CS`. All backends are pure
@@ -44,43 +43,27 @@ pub enum CompressError {
 impl fmt::Display for CompressError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CompressError::Truncated { needed, available } => {
+            Self::Truncated { needed, available } => {
                 write!(
                     f,
                     "truncated compressed data: needed {needed} bytes, {available} available"
                 )
             }
-            CompressError::SizeMismatch { expected, got } => {
+            Self::SizeMismatch { expected, got } => {
                 write!(
                     f,
                     "decompressed size mismatch: expected {expected} bytes, got {got}"
                 )
             }
-            CompressError::CodecUnavailable(algo) => {
+            Self::CodecUnavailable(algo) => {
                 write!(f, "no codec available for algorithm {algo:?}")
             }
-            CompressError::Codec(msg) => write!(f, "codec error: {msg}"),
+            Self::Codec(msg) => write!(f, "codec error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for CompressError {}
-
-/// Build the ROOT compression-settings integer: `algorithm * 100 + level`.
-///
-/// `algorithm_code` follows ROOT's `ECompressionAlgorithm` enum (zlib = 1,
-/// LZMA = 2, LZ4 = 4, Zstd = 5); `level` is 1..=9.
-pub fn compression_settings(algorithm_code: u8, level: u8) -> u32 {
-    u32::from(algorithm_code) * 100 + u32::from(level)
-}
-
-/// Split a compression-settings integer back into `(algorithm_code, level)`.
-pub fn split_settings(settings: u32) -> (u8, u8) {
-    (
-        u8::try_from(settings / 100).unwrap_or(u8::MAX),
-        u8::try_from(settings % 100).unwrap_or(u8::MAX),
-    )
-}
 
 /// Decompress `src` into exactly `uncompressed_len` bytes.
 ///
@@ -153,41 +136,38 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
     Ok(out)
 }
 
-/// Compress `src` according to `settings` (`algorithm * 100 + level`, as
-/// [`Compression::setting`] returns).
+/// Compress `src` with `compression`.
 ///
-/// `settings == 0` means "store uncompressed": the input is returned unchanged
-/// (the caller stores it without a block header). Otherwise the data is encoded
-/// into ROOT compression blocks. Supported encoders are Zstd (5), zlib (1),
-/// LZ4 (4), and LZMA (2). The level tunes the zlib backend; the pure-Rust Zstd,
-/// LZ4, and LZMA backends ignore it (the output is always valid and ROOT reads
-/// it back correctly).
-pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
-    if settings == 0 {
-        return Ok(src.to_vec());
-    }
-    let (algorithm, level) = split_settings(settings);
-    // (tag, method byte) for each supported encoder, matching ROOT's framing.
-    let (tag, method): ([u8; 2], u8) = match algorithm {
-        1 => (*b"ZL", 8), // zlib, Z_DEFLATED
-        2 => (*b"XZ", 0), // LZMA, an XZ stream (method byte 0, per R__zipLZMA)
-        4 => (*b"L4", 1), // LZ4, version byte 1
-        5 => (*b"ZS", 1), // Zstd
-        other => {
-            return Err(CompressError::Codec(format!(
-                "encoding algorithm {other} is not supported"
-            )));
-        }
+/// [`Compression::Stored`] means "store uncompressed": the input is returned
+/// unchanged (the caller stores it without a block header). Otherwise the data
+/// is encoded into ROOT compression blocks. The level tunes zlib, selects the
+/// XZ preset for LZMA, and for Zstd is mapped onto the encoder's four levels
+/// (ROOT's 4 and above all use the highest). The LZ4 encoder has one level and
+/// ignores it.
+///
+/// # Errors
+///
+/// [`CompressError::Codec`] if an encoder fails or a block does not fit ROOT's
+/// 24-bit block size.
+pub fn compress(src: &[u8], compression: Compression) -> Result<Vec<u8>, CompressError> {
+    // (tag, method byte) for each encoder, matching ROOT's framing.
+    let (tag, method, level): ([u8; 2], u8, u32) = match compression {
+        Compression::Stored => return Ok(src.to_vec()),
+        Compression::Zlib(level) => (*b"ZL", 8, level), // Z_DEFLATED
+        Compression::Lzma(level) => (*b"XZ", 0, level), // an XZ stream, per R__zipLZMA
+        Compression::Lz4(level) => (*b"L4", 1, level),  // version byte 1
+        Compression::Zstd(level) => (*b"ZS", 1, level),
     };
+    let level = u8::try_from(level.min(99)).unwrap_or(99);
 
     let mut out = Vec::new();
     for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
-        let frame = match algorithm {
-            1 => codec::zlib_encode(chunk, level),
-            2 => codec::lzma_encode(chunk, level)?,
-            4 => codec::lz4_encode(chunk),
-            5 => codec::zstd_encode(chunk, level)?,
-            _ => unreachable!("algorithm validated above"),
+        let frame = match compression {
+            Compression::Stored => unreachable!("returned above"),
+            Compression::Zlib(_) => codec::zlib_encode(chunk, level),
+            Compression::Lzma(_) => codec::lzma_encode(chunk, level)?,
+            Compression::Lz4(_) => codec::lz4_encode(chunk),
+            Compression::Zstd(_) => codec::zstd_encode(chunk, level)?,
         };
         if frame.len() > MAX_CHUNK_SIZE {
             return Err(CompressError::Codec(
@@ -211,12 +191,9 @@ pub fn compress(src: &[u8], settings: u32) -> Result<Vec<u8>, CompressError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn settings_round_trip() {
-        // Zstd level 5 -> 505.
-        assert_eq!(compression_settings(5, 5), 505);
-        assert_eq!(split_settings(505), (5, 5));
-        assert_eq!(split_settings(101), (1, 1)); // zlib level 1
+    /// The compression a ROOT setting integer names.
+    fn setting(setting: u32) -> Compression {
+        Compression::try_from(setting).expect("a known algorithm")
     }
 
     #[test]
@@ -229,14 +206,14 @@ mod tests {
     #[test]
     fn compress_uncompressed_passthrough() {
         let data = b"hello root".to_vec();
-        assert_eq!(compress(&data, 0).unwrap(), data);
+        assert_eq!(compress(&data, setting(0)).unwrap(), data);
     }
 
     #[test]
     fn compress_zstd_round_trips() {
         // Zstd level 5 -> settings 505. Compress, then decompress back.
         let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
-        let compressed = compress(&data, 505).unwrap();
+        let compressed = compress(&data, setting(505)).unwrap();
         // The first block must carry the Zstd tag.
         assert_eq!(&compressed[0..2], b"ZS");
         let out = decompress(&compressed, data.len()).unwrap();
@@ -266,7 +243,7 @@ mod tests {
     fn compress_zlib_and_lz4_round_trip() {
         let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
         for (settings, tag) in [(105u32, b"ZL"), (404, b"L4")] {
-            let compressed = compress(&data, settings).unwrap();
+            let compressed = compress(&data, setting(settings)).unwrap();
             assert_eq!(&compressed[0..2], tag, "wrong block tag for {settings}");
             assert!(compressed.len() < data.len(), "should actually shrink");
             assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
@@ -280,7 +257,7 @@ mod tests {
     fn a_block_cannot_expand_past_its_declared_size() {
         let data = vec![0u8; 4 << 20]; // 4 MiB of zeros: a few KiB compressed
         for setting in [101, 505, 205] {
-            let mut block = compress(&data, setting).unwrap();
+            let mut block = compress(&data, Compression::try_from(setting).unwrap()).unwrap();
             assert!(block.len() < data.len() / 64, "setting {setting}");
             // Declare 100 bytes in the header and ask for 100 bytes.
             block[6..9].copy_from_slice(&[100, 0, 0]);
@@ -293,7 +270,7 @@ mod tests {
             }
         }
         // LZ4 decodes into a buffer of the declared size and fails on overflow.
-        let mut block = compress(&data, 404).unwrap();
+        let mut block = compress(&data, setting(404)).unwrap();
         block[6..9].copy_from_slice(&[100, 0, 0]);
         assert!(decompress(&block, 100).is_err());
     }
@@ -303,7 +280,7 @@ mod tests {
         // A valid LZ4 block whose stored XXH64 prefix has been flipped must be
         // rejected, not silently decoded.
         let data = b"oxiroot oxiroot oxiroot oxiroot".repeat(8);
-        let mut block = compress(&data, 404).unwrap();
+        let mut block = compress(&data, setting(404)).unwrap();
         block[HDR_SIZE] ^= 0xff; // corrupt the first checksum byte
         assert!(matches!(
             decompress(&block, data.len()),
@@ -316,7 +293,7 @@ mod tests {
         // LZMA level 5 -> settings 205. The block must carry the "XZ" tag (a
         // complete XZ stream) and decode back to the original bytes.
         let data = b"the quick brown fox jumps over the lazy dog. ".repeat(40);
-        let compressed = compress(&data, 205).unwrap();
+        let compressed = compress(&data, setting(205)).unwrap();
         assert_eq!(&compressed[0..2], b"XZ", "wrong block tag for LZMA");
         assert!(compressed.len() < data.len(), "should actually shrink");
         assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
@@ -333,7 +310,7 @@ mod tests {
             .cycle()
             .take(MAX_CHUNK_SIZE + 4096)
             .collect();
-        let compressed = compress(&data, 505).unwrap();
+        let compressed = compress(&data, setting(505)).unwrap();
 
         let mut blocks = 0;
         let mut cur = &compressed[..];

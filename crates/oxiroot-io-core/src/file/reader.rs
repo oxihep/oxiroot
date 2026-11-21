@@ -1,8 +1,9 @@
 //! [`FileReader`] — the high-level entry point for reading a ROOT file.
 //!
 //! Mirrors the spirit of `ROOT::Experimental::RFile`: a small Open/Get/List
-//! surface over the TFile container. M1 provides reading and key enumeration;
-//! object materialization (`get`) and writing arrive in later milestones.
+//! surface over the `TFile` container. Typed objects are read through
+//! [`get`](FileReader::get), which also reads any class as a
+//! [`Value`](crate::Value); [`FileWriter`](crate::FileWriter) writes.
 
 use crate::cast::SaturatingFrom;
 use std::path::Path;
@@ -17,19 +18,18 @@ use super::readahead::ReadAhead;
 use super::source::{ByteSource, BytesSource, FileSource};
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result, decompress_payload};
-use crate::read_object::read_object;
+use crate::object_io::{Object, ReadRoot};
 use crate::streamer_info::{StoredInfo, StreamerRegistry, parse_stored_infos, parse_streamer_info};
-use crate::value::Value;
 
-/// Bytes fetched from the start of the file to parse its header. The TFile
+/// Bytes fetched from the start of the file to parse its header. The `TFile`
 /// header is ~100 bytes (a little more in the 64-bit form); 512 covers it with
 /// room to spare and is a single small read for a remote source.
 const HEADER_PROBE: u64 = 512;
 
-/// An open ROOT file, read through a [`ByteSource`]. The default
-/// [`open`](Self::open) reads the whole file into memory; [`open_ranged`](Self::open_ranged) and
-/// (with the `http` feature) [`open_url`](Self::open_url) read only the byte
-/// ranges each object touches, never downloading the file whole.
+/// An open ROOT file, read through a [`ByteSource`]. [`open`](Self::open) reads
+/// a local file; (with the `http` or `xrootd` feature)
+/// [`open_url`](Self::open_url) reads a remote one, fetching only the byte
+/// ranges each object touches and never downloading the file whole.
 ///
 /// The header, root directory, and key list are parsed at open (a few small
 /// ranged reads); object, page, and basket bytes are fetched on demand.
@@ -63,41 +63,27 @@ impl std::fmt::Debug for FileReader {
 }
 
 impl FileReader {
-    /// Open and parse a ROOT file from disk (read fully into memory).
-    pub fn open(path: impl AsRef<Path>) -> Result<FileReader> {
-        Self::from_bytes(std::fs::read(path)?)
+    /// Open a ROOT file on disk.
+    ///
+    /// A file up to [`WHOLE_FILE_LIMIT`](Self::WHOLE_FILE_LIMIT) is read into
+    /// memory, which is the fastest way to read many of its objects. A larger
+    /// one is read with positioned reads, fetching only the byte ranges each
+    /// object touches, so opening it costs a few small reads whatever its size.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be read or is not a ROOT file.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if std::fs::metadata(path)?.len() <= Self::WHOLE_FILE_LIMIT {
+            Self::from_bytes(std::fs::read(path)?)
+        } else {
+            Self::from_source(Box::new(FileSource::open(path)?))
+        }
     }
 
-    /// Open a local ROOT file using positioned reads, fetching only the byte
-    /// ranges each object touches instead of reading the whole file up front —
-    /// the local analog of [`open_url`](Self::open_url), useful for large files
-    /// where only some objects are read.
-    pub fn open_ranged(path: impl AsRef<Path>) -> Result<FileReader> {
-        Self::from_source(Box::new(FileSource::open(path)?))
-    }
-
-    /// Open and parse a ROOT file by memory-mapping it, avoiding a full read into
-    /// memory — useful for large files where only some objects are touched.
-    /// Requires the `mmap` feature. [`open_ranged`](Self::open_ranged) gives
-    /// the same lazy reads with no `unsafe` contract.
-    ///
-    /// # Safety
-    ///
-    /// The file must not be modified or truncated, by this process or any
-    /// other, while the returned [`FileReader`] (or anything borrowing it) is
-    /// alive. The reader's slices point straight into the mapped file, so a
-    /// change underneath them is undefined behaviour, and a truncation can
-    /// crash the process with `SIGBUS`. Only map files you control.
-    #[cfg(feature = "mmap")]
-    #[allow(unsafe_code)]
-    pub unsafe fn open_mmap(path: impl AsRef<Path>) -> Result<FileReader> {
-        let file = std::fs::File::open(path)?;
-        // SAFETY: the caller upholds the no-modification contract above. This
-        // is the only `unsafe` in the workspace (`unsafe_code` is denied
-        // everywhere else); memmap2's `map` is unavoidably `unsafe`.
-        let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        Self::from_source(Box::new(super::source::MmapSource::new(mmap)))
-    }
+    /// The largest file [`open`](Self::open) reads into memory whole: 64 MiB.
+    pub const WHOLE_FILE_LIMIT: u64 = 64 << 20;
 
     /// Open a ROOT file from a remote URL, reading only the byte ranges each
     /// object touches — never downloading the file whole, the way ROOT and
@@ -105,14 +91,14 @@ impl FileReader {
     ///
     /// - `http://` / `https://` — HTTP(S) byte-range requests (`http` feature).
     ///   The server must honor `Range` requests (`Accept-Ranges: bytes`).
-    /// - `roots://` — XRootD over TLS (`xrootd-tls` feature), which also adds
+    /// - `roots://` — `XRootD` over TLS (`xrootd-tls` feature), which also adds
     ///   token authentication with a WLCG bearer token from the environment.
-    /// - `root://` — the XRootD protocol (`xrootd` feature), with `unix` auth
+    /// - `root://` — the `XRootD` protocol (`xrootd` feature), with `unix` auth
     ///   for public/world-readable files (e.g. `root://eospublic.cern.ch`).
     ///
     /// Requires the matching feature for the URL's scheme.
     #[cfg(any(feature = "http", feature = "xrootd"))]
-    pub fn open_url(url: &str) -> Result<FileReader> {
+    pub fn open_url(url: &str) -> Result<Self> {
         #[cfg(feature = "xrootd")]
         if url.starts_with("root://") || url.starts_with("roots://") {
             return Self::from_source(Box::new(super::xrootd::XrootdSource::open(url)?));
@@ -127,13 +113,13 @@ impl FileReader {
     }
 
     /// Parse a ROOT file already held in memory.
-    pub fn from_bytes(data: Vec<u8>) -> Result<FileReader> {
+    pub fn from_bytes(data: impl Into<Bytes>) -> Result<Self> {
         Self::from_source(Box::new(BytesSource::new(data)))
     }
 
     /// Parse a ROOT file from an arbitrary [`ByteSource`]. The header, root
     /// directory, and key list are read at open; everything else is on demand.
-    pub fn from_source(source: Box<dyn ByteSource>) -> Result<FileReader> {
+    pub fn from_source(source: Box<dyn ByteSource>) -> Result<Self> {
         let size = source.len();
         let head = source.read_at(0, usize::saturating_from(HEADER_PROBE.min(size)))?;
         let header = {
@@ -141,7 +127,7 @@ impl FileReader {
             FileHeader::read(&mut r)?
         };
         let root_dir = Directory::read_root(&*source, &header)?;
-        Ok(FileReader {
+        Ok(Self {
             source,
             size,
             header,
@@ -167,10 +153,66 @@ impl FileReader {
         &self.root_dir.keys
     }
 
-    /// Look up a key by name, returning the highest cycle if several share it —
-    /// or the cycle an explicit `"name;cycle"` asks for, as ROOT's `Get` does.
-    pub fn key(&self, name: &str) -> Option<&Key> {
-        find_key(&self.root_dir.keys, name)
+    /// The key at `path`, which is `"dir/sub/name;cycle"`: the directories are
+    /// optional, and so is the cycle (the highest is taken, as ROOT's `Get`
+    /// does). Every reader in the workspace addresses an object this way.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if a directory on the way, or the key, does not exist.
+    pub fn key(&self, path: &str) -> Result<Key> {
+        // A top-level key wins, so a key whose own name holds a `/` is reachable.
+        if let Some(key) = find_key(&self.root_dir.keys, path) {
+            return Ok(key.clone());
+        }
+        let missing = || Error::NotFound {
+            what: "key",
+            name: path.to_string(),
+        };
+        let (dir, name) = path.rsplit_once('/').ok_or_else(missing)?;
+        if dir.split('/').all(str::is_empty) {
+            return find_key(&self.root_dir.keys, name)
+                .cloned()
+                .ok_or_else(missing);
+        }
+        let dir = self.subdir_cached(dir)?;
+        find_key(&dir.keys, name).cloned().ok_or_else(missing)
+    }
+
+    /// Read the object at `path` (`"dir/sub/name;cycle"`) as a `T`.
+    ///
+    /// `T` is any readable type: a histogram, a graph, a matrix, a parameter, a
+    /// collection. [`Value`](crate::Value) reads an object of any class from the file's
+    /// streamer info, with no typed model.
+    ///
+    /// ```ignore
+    /// let h: Hist1D = file.get("regions/signal/pt")?;
+    /// let v: Value = file.get("anything")?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if nothing is stored at `path`,
+    /// [`Error::WrongClass`] if it is not a `T`, and any decoding error.
+    pub fn get<T: ReadRoot>(&self, path: &str) -> Result<T> {
+        let key = self.key(path)?;
+        let payload = self.key_payload(&key)?;
+        let bytes =
+            decompress_payload(&payload, key.obj_len as usize, format_args!("key {path:?}"))?;
+        let object = Object {
+            name: &key.name,
+            class: &key.class_name,
+            bytes: &bytes,
+            key_len: Some(key.key_len as usize),
+            file: Some(self),
+        };
+        T::from_object(&object).unwrap_or_else(|| {
+            Err(Error::WrongClass {
+                name: path.to_string(),
+                found: key.class_name.clone(),
+                expected: T::CLASS.to_string(),
+            })
+        })
     }
 
     /// Navigate into a subdirectory, returning its parsed [`Directory`] (with the
@@ -236,96 +278,46 @@ impl FileReader {
         )
     }
 
-    /// Return the class name and decompressed object bytes for key `name` inside
-    /// subdirectory `subdir`.
-    pub fn object_in(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>)> {
-        let (class, object, _keylen) = self.object_in_keyed(subdir, name)?;
-        Ok((class, object))
-    }
-
-    /// Like [`object_in`](Self::object_in) but also return the key's header
-    /// length (`fKeyLen`), needed to resolve object-reference back-references in
-    /// streamed objects (e.g. `PolyHist`'s bins) read from a subdirectory.
-    pub fn object_in_keyed(&self, subdir: &str, name: &str) -> Result<(String, Vec<u8>, usize)> {
-        let dir = self.subdir_cached(subdir)?;
-        let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: format!("{}/{name}", subdir.trim_end_matches('/')),
-        })?;
-        let payload = self.key_payload(key)?;
-        let object =
-            decompress_payload(&payload, key.obj_len as usize, format_args!("key {name:?}"))?;
-        Ok((key.class_name.clone(), object, key.key_len as usize))
-    }
-
-    /// Read a top-level object of **any** class into a dynamic [`Value`] tree,
-    /// driven entirely by the file's `TStreamerInfo` — no typed model required.
-    /// This is the generic reader behind rootls / rootprint-style inspection; use
-    /// it when you do not have (or do not want) a `Hist1D`/`Graph`/… struct.
-    ///
-    /// A class the reader cannot decode comes back as [`Value::Unsupported`]
-    /// rather than an error.
-    pub fn get_value(&self, name: &str) -> Result<Value> {
-        let (class, object, keylen) = crate::object_io::object_bytes_any_keyed(self, name)?;
-        let reg = self.streamer_registry()?;
-        Ok(read_object(&reg, &class, &object, keylen))
-    }
-
-    /// Like [`get_value`](Self::get_value) but for an object in subdirectory
-    /// `subdir` (a `/`-separated path).
-    pub fn get_value_in(&self, subdir: &str, name: &str) -> Result<Value> {
-        let (class, object, keylen) = self.object_in_keyed(subdir, name)?;
-        let reg = self.streamer_registry()?;
-        Ok(read_object(&reg, &class, &object, keylen))
-    }
-
     /// The file's free-segment list (informational).
     pub fn free_segments(&self) -> Result<Vec<FreeSegment>> {
         read_free(&*self.source, &self.header)
     }
 
-    /// Parse the file's `TStreamerInfo` records (at `fSeekInfo`) into a registry
-    /// describing every class stored in the file.
-    pub fn streamer_registry(&self) -> Result<StreamerRegistry> {
+    /// The file's `TStreamerInfo` records (at `fSeekInfo`), parsed into a
+    /// registry describing every class stored in the file. They are read and
+    /// parsed once, on the first call.
+    ///
+    /// # Errors
+    ///
+    /// If the record cannot be read or parsed.
+    pub fn streamer_registry(&self) -> Result<&StreamerRegistry> {
         if let Some(reg) = self.registry.get() {
-            return Ok(reg.clone());
+            return Ok(reg);
         }
-        let reg = match self.streamer_info_decompressed()? {
+        let reg = match self.streamer_info_bytes()? {
             Some((object, keylen)) => parse_streamer_info(&object, keylen)?,
             None => StreamerRegistry::default(),
         };
-        Ok(self.registry.get_or_init(|| reg).clone())
+        Ok(self.registry.get_or_init(|| reg))
     }
 
     /// Each class's streamer info as the file stores it, element bodies included,
     /// so it can be copied into another file.
     pub(crate) fn stored_streamer_infos(&self) -> Result<Vec<StoredInfo>> {
-        let Some((object, keylen)) = self.streamer_info_decompressed()? else {
+        let Some((object, keylen)) = self.streamer_info_bytes()? else {
             return Ok(Vec::new());
         };
         parse_stored_infos(&object, keylen)
     }
 
-    /// The decompressed streamer-info object (the `TList<TStreamerInfo>` bytes at
-    /// `fSeekInfo`), or `None` if the file has none. Used to carry a file's
-    /// streamer info across a rewrite.
-    pub fn streamer_info_object(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self.streamer_info_decompressed()?.map(|(object, _)| object))
-    }
-
-    /// Fetch the `[fSeekInfo, fNbytesInfo]` record and return its decompressed
-    /// object bytes plus the wrapping key's `fKeyLen`, or `None` if the file has
-    /// no streamer info. Only that one record is read.
-    /// The file's streamer-info record: the list's object bytes and the key
-    /// length they were written under (`None` when the file has no record).
-    /// [`StreamerInfoList::parse_keyed`](crate::streamer_gen::StreamerInfoList::parse_keyed)
-    /// reads them; [`streamer_registry`](Self::streamer_registry) is the way to
-    /// the parsed descriptions.
-    pub fn streamer_info_list(&self) -> Result<Option<(Vec<u8>, usize)>> {
-        self.streamer_info_decompressed()
-    }
-
-    fn streamer_info_decompressed(&self) -> Result<Option<(Vec<u8>, usize)>> {
+    /// The file's streamer-info record as stored: the decompressed
+    /// `TList<TStreamerInfo>` bytes at `fSeekInfo` and the key length they were
+    /// written under, or `None` if the file has no record. Only that one record
+    /// is read. [`StreamerInfoList::parse_keyed`](crate::streamer_gen::StreamerInfoList::parse_keyed)
+    /// reads the bytes, and they carry a file's streamer info across a rewrite;
+    /// [`streamer_registry`](Self::streamer_registry) is the way to the parsed
+    /// descriptions. Reached as [`raw::streamer_info_bytes`](crate::raw::streamer_info_bytes).
+    pub(crate) fn streamer_info_bytes(&self) -> Result<Option<(Vec<u8>, usize)>> {
         if self.header.seek_info == 0 || self.header.nbytes_info == 0 {
             return Ok(None);
         }
@@ -343,12 +335,15 @@ impl FileReader {
 
     /// Read exactly `len` bytes at absolute `offset` from the underlying source.
     /// For a resident (in-memory / mmap) file this is a zero-copy slice; for a
-    /// ranged local or remote file it fetches just that range. Object, RNTuple
-    /// page, and TTree basket readers go through this so they touch only the
+    /// ranged local or remote file it fetches just that range. Object, `RNTuple`
+    /// page, and `TTree` basket readers go through this so they touch only the
     /// bytes they need.
     pub fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
         if self.source.batches_reads() {
-            let mut ra = self.readahead.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ra = self
+                .readahead
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(bytes) = ra.take(&*self.source, offset, len)? {
                 return Ok(bytes);
             }
@@ -357,15 +352,15 @@ impl FileReader {
     }
 
     /// Announce the ranges about to be read, in order, so a remote file fetches
-    /// them in batches (an XRootD vector read, concurrent HTTP requests) rather
-    /// than a round trip each. A no-op for a local or in-memory file. The TTree
-    /// and RNTuple readers call it before reading a branch's baskets or a
+    /// them in batches (an `XRootD` vector read, concurrent HTTP requests) rather
+    /// than a round trip each. A no-op for a local or in-memory file. The `TTree`
+    /// and `RNTuple` readers call it before reading a branch's baskets or a
     /// column's pages.
     pub fn plan_reads(&self, ranges: &[(u64, usize)]) {
         if self.source.batches_reads() {
             self.readahead
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .plan(ranges);
         }
     }
@@ -393,7 +388,7 @@ impl ByteSource for FileReader {
     }
 
     fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
-        FileReader::read_at(self, offset, len)
+        Self::read_at(self, offset, len)
     }
 
     fn batches_reads(&self) -> bool {
@@ -401,7 +396,7 @@ impl ByteSource for FileReader {
     }
 
     fn plan_reads(&self, ranges: &[(u64, usize)]) {
-        FileReader::plan_reads(self, ranges);
+        Self::plan_reads(self, ranges);
     }
 }
 

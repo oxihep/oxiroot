@@ -4,7 +4,7 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, Hist1D, ReadRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::FileReader;
 
 fn h(name: &str) -> Hist1D {
@@ -12,7 +12,7 @@ fn h(name: &str) -> Hist1D {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
     )
     .expect("open");
-    Hist1D::read_root(&f, name).expect("read")
+    f.get::<Hist1D>(name).expect("read")
 }
 
 fn close(a: f64, b: f64) -> bool {
@@ -70,7 +70,11 @@ fn kolmogorov_test_matches_root() {
 #[test]
 fn comparison_tests_reject_mismatched_binning() {
     let a = h("h");
-    let other = Hist::reg(10, 0.0, 10.0).double().to_root().named("x"); // different binning
+    let other = Hist::reg(10, 0.0, 10.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("x"); // different binning
     assert!(a.chi2_test(&other).is_err());
     assert!(a.kolmogorov_test(&other).is_err());
 }

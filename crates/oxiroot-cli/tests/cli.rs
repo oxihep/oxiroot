@@ -169,3 +169,70 @@ fn shows_and_dumps_a_tree_in_a_nested_subdirectory() {
     assert!(ok, "{out}");
     assert!(out.contains("showing 2"), "{out}");
 }
+
+/// A histogram of 3 x bins by 5 y bins (and 2 z bins), written for the test.
+fn write_histograms(name: &str) -> PathBuf {
+    use oxiroot::prelude::*;
+
+    let dir = std::env::temp_dir().join(format!("oxroot-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    let h2 = Hist::reg(3, 0.0, 3.0)
+        .reg(5, 0.0, 5.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h2");
+    let h3 = Hist::reg(3, 0.0, 3.0)
+        .reg(5, 0.0, 5.0)
+        .reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h3");
+    FileWriter::create(&path)
+        .add(&h2)
+        .add(&h3)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
+    path
+}
+
+#[test]
+fn dump_reports_each_axis_under_its_own_name() {
+    let path = write_histograms("axes.root");
+    let file = path.to_str().unwrap();
+
+    let (out, ok) = oxroot(&["dump", &format!("{file}:h2")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("3 x 5 bins"), "{out}");
+    let (out, ok) = oxroot(&["--json", "dump", &format!("{file}:h2")]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("\"bins_x\":3") && out.contains("\"bins_y\":5"),
+        "{out}"
+    );
+
+    let (out, ok) = oxroot(&["dump", &format!("{file}:h3")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("3 x 5 x 2 bins"), "{out}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn dump_fails_on_a_branch_that_does_not_exist() {
+    let (out, ok) = oxroot(&[
+        "dump",
+        &spec("tree_flat.root", "Events"),
+        "-b",
+        "no_such_branch",
+    ]);
+    assert!(
+        !ok,
+        "a mistyped branch name must not print an empty column: {out}"
+    );
+    // Asking for a real branch still works.
+    let (out, ok) = oxroot(&["dump", &spec("tree_flat.root", "Events"), "-b", "f8"]);
+    assert!(ok, "{out}");
+}

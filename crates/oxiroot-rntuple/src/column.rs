@@ -1,8 +1,8 @@
-//! RNTuple column types (the on-disk physical column encodings).
+//! `RNTuple` column types (the on-disk physical column encodings).
 
 use oxiroot_io_core::{Error, Result};
 
-/// A physical column type, per the RNTuple spec's type-code table.
+/// A physical column type, per the `RNTuple` spec's type-code table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 #[non_exhaustive]
@@ -71,7 +71,7 @@ pub enum ColumnType {
 
 impl ColumnType {
     /// Map an on-disk column-type code to a [`ColumnType`].
-    pub fn from_code(code: u16) -> Result<ColumnType> {
+    pub fn from_code(code: u16) -> Result<Self> {
         use ColumnType::*;
         Ok(match code {
             0x00 => Bit,
@@ -116,6 +116,7 @@ impl ColumnType {
     /// or `None` for variable-width types (`Switch`, truncated/quantized reals).
     /// Used to reject a header whose declared `bits_on_storage` contradicts the
     /// column type, which would otherwise mis-size pages and panic on decode.
+    #[must_use]
     pub fn storage_bits(self) -> Option<u16> {
         use ColumnType::*;
         Some(match self {
@@ -131,13 +132,11 @@ impl ColumnType {
     }
 
     /// Whether this is an index/offset column (collection lengths).
+    #[must_use]
     pub fn is_index(self) -> bool {
         matches!(
             self,
-            ColumnType::Index32
-                | ColumnType::Index64
-                | ColumnType::SplitIndex32
-                | ColumnType::SplitIndex64
+            Self::Index32 | Self::Index64 | Self::SplitIndex32 | Self::SplitIndex64
         )
     }
 }
@@ -146,7 +145,7 @@ impl TryFrom<u16> for ColumnType {
     type Error = Error;
     /// Parse an on-disk column-type code (the std-trait counterpart to
     /// [`from_code`](ColumnType::from_code), so callers can use `.try_into()`).
-    fn try_from(code: u16) -> Result<ColumnType> {
-        ColumnType::from_code(code)
+    fn try_from(code: u16) -> Result<Self> {
+        Self::from_code(code)
     }
 }

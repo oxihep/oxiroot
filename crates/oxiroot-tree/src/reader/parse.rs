@@ -2,7 +2,8 @@
 //! aliases.
 
 use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, StreamerElement, TagReader, read_named, read_object_base,
+    K_BYTE_COUNT_MASK, K_CLASS_MASK, K_NEW_CLASS_TAG, StreamerElement, TagReader, read_named,
+    read_object_base,
 };
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry};
 
@@ -47,7 +48,7 @@ pub(super) fn read_tree<'f>(
     let mut aliases = Vec::new();
     let mut index = None;
     {
-        let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
+        let mut on_object = |name: &str, rb: &mut RBuffer<'_>| -> Result<()> {
             // The TTree streamer order (after the scalar members) is fBranches,
             // fLeaves, fAliases, fIndexValues, fIndex, fTreeIndex, fFriends, ….
             // We read the three we consume (fBranches, fAliases, fFriends) and
@@ -121,7 +122,7 @@ pub(super) fn read_tree<'f>(
 /// its own streamer, so they carry no per-array framing: the major keys, the
 /// minor keys, and the entry each key names. An older version packed the two
 /// keys into one array; it is left unread rather than guessed at.
-fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
+fn read_tree_index(r: &mut RBuffer<'_>) -> Result<Option<TreeIndex>> {
     let header = r.read_version()?;
     if header.version < 2 {
         return Ok(None);
@@ -143,7 +144,7 @@ fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
         )));
     }
     let read_column =
-        |r: &mut RBuffer| -> Result<Vec<i64>> { (0..n).map(|_| r.be_i64()).collect() };
+        |r: &mut RBuffer<'_>| -> Result<Vec<i64>> { (0..n).map(|_| r.be_i64()).collect() };
     let major = read_column(r)?;
     let minor = read_column(r)?;
     let entries = read_column(r)?;
@@ -161,10 +162,7 @@ fn read_tree_index(r: &mut RBuffer) -> Result<Option<TreeIndex>> {
 /// protocol* — a byte count then a class tag, then the list's own version header
 /// (`fFriends`). A null pointer (`0`) reads as an empty list. After this returns,
 /// the next read is the first element's object header.
-fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i32)> {
-    const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
-    const K_CLASS_MASK: u32 = 0x8000_0000;
-
+fn open_tlist(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(Option<usize>, i32)> {
     let start = r.pos();
     let word = r.be_u32()?;
     if word == 0 {
@@ -200,9 +198,10 @@ fn open_tlist(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Option<usize>, i
 /// pointer (no friends) reads as an empty list. Each `TFriendElement` carries the
 /// friend's tree name (`fTreeName`), the alias (`Named::fName`), and the file it
 /// lives in (`Named::fTitle`, empty for a same-file friend).
-fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
+fn read_friends(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Friend>> {
     let (end, n) = open_tlist(r, tags)?;
-    let mut friends = Vec::with_capacity(usize::saturating_from(n.max(0)));
+    // `n` comes from the file; every entry takes at least a 4-byte header.
+    let mut friends = Vec::with_capacity(r.bounded_capacity(usize::saturating_from(n.max(0)), 4));
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TFriendElement") {
@@ -233,9 +232,10 @@ fn read_friends(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Friend>> {
 /// set with `TTree::SetAlias`). The cursor is positioned at the `fAliases` member;
 /// a null pointer (no aliases) reads as an empty list. Each entry's `fName` is the
 /// alias and `fTitle` is the expression it stands for.
-fn read_aliases(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(String, String)>> {
+fn read_aliases(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<(String, String)>> {
     let (end, n) = open_tlist(r, tags)?;
-    let mut aliases = Vec::with_capacity(usize::saturating_from(n.max(0)));
+    // `n` comes from the file; every entry takes at least a 4-byte header.
+    let mut aliases = Vec::with_capacity(r.bounded_capacity(usize::saturating_from(n.max(0)), 4));
     for _ in 0..n {
         let elem = tags.read_header(r)?;
         if elem.class_name.as_deref() == Some("TNamed") {
@@ -256,7 +256,7 @@ fn read_aliases(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<(String, St
 /// Read a `TObjArray` of `TBranch`es. Branch classes we don't yet handle are
 /// skipped via the object byte count.
 fn read_branch_array(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
     reg: &StreamerRegistry,
@@ -294,7 +294,7 @@ fn read_branch_array(
 /// Shared by [`read_branch`] and (as the `TBranch` base) [`read_branch_element`].
 /// Returns the captured members, the sub-branches, and the leaves.
 fn read_tbranch_base(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
     reg: &StreamerRegistry,
@@ -305,7 +305,7 @@ fn read_tbranch_base(
     let mut sub = Vec::new();
     let mut leaves = Vec::new();
     {
-        let mut on_object = |name: &str, rb: &mut RBuffer| -> Result<()> {
+        let mut on_object = |name: &str, rb: &mut RBuffer<'_>| -> Result<()> {
             match name {
                 "fBranches" => sub = read_branch_array(rb, tags, diag, reg)?,
                 "fLeaves" => leaves = read_leaf_array(rb, tags)?,
@@ -327,22 +327,17 @@ fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>, Vec<u64>) {
     let write_basket = usize::saturating_from(member_int(out, "fWriteBasket").max(0));
     let basket_entry = out
         .get("fBasketEntry")
-        .map(|m| m.ints().iter().copied().take(write_basket).collect())
-        .unwrap_or_default();
+        .map_or_default(|m| m.ints().iter().copied().take(write_basket).collect());
     let basket_seek = out
         .get("fBasketSeek")
-        .map(|m| m.ints().iter().map(|&s| s.max(0).cast_unsigned()).collect())
-        .unwrap_or_default();
-    let basket_bytes = out
-        .get("fBasketBytes")
-        .map(|m| {
-            m.ints()
-                .iter()
-                .take(write_basket)
-                .map(|&b| b.max(0).cast_unsigned())
-                .collect()
-        })
-        .unwrap_or_default();
+        .map_or_default(|m| m.ints().iter().map(|&s| s.max(0).cast_unsigned()).collect());
+    let basket_bytes = out.get("fBasketBytes").map_or_default(|m| {
+        m.ints()
+            .iter()
+            .take(write_basket)
+            .map(|&b| b.max(0).cast_unsigned())
+            .collect()
+    });
     (write_basket, basket_entry, basket_seek, basket_bytes)
 }
 
@@ -351,7 +346,7 @@ fn basket_locators(out: &Members) -> (usize, Vec<i64>, Vec<u64>, Vec<u64>) {
 /// several for a leaflist branch, or none (recorded in `diag`) when the branch
 /// has sub-branches or an unsupported leaf type.
 pub(super) fn read_branch(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
     reg: &StreamerRegistry,
@@ -452,7 +447,7 @@ pub(super) fn read_branch(
 ///
 /// Unsupported element types contribute nothing.
 fn read_branch_element(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
     reg: &StreamerRegistry,
@@ -565,7 +560,7 @@ fn read_branch_element(
 /// member out of every entry's object. Base classes and members of types we
 /// can't decode are skipped; if none remain, the branch is recorded in `diag`.
 fn read_branch_object(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     diag: &mut Vec<(String, String)>,
     reg: &StreamerRegistry,
@@ -639,7 +634,7 @@ fn read_branch_object(
 
 /// Read a `TObjArray` of `TLeaf`s, returning `(type, fLen)` for each supported
 /// leaf (unsupported leaves are skipped).
-fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Leaf>> {
+fn read_leaf_array(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Leaf>> {
     read_version_tobject_header(r)?;
     let size = r.be_i32()?.max(0);
     let _lower = r.be_i32()?;
@@ -661,7 +656,7 @@ fn read_leaf_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<Vec<Leaf>> {
 
 /// Read one `TLeaf*` (v1) body enough to recover its name, element type, `fLen`,
 /// and `fOffset` (its byte position within an entry, for leaflist branches).
-fn read_leaf(r: &mut RBuffer, class: &str) -> Result<Option<Leaf>> {
+fn read_leaf(r: &mut RBuffer<'_>, class: &str) -> Result<Option<Leaf>> {
     r.read_version()?; // TLeafX (v1) — the leaf subclass wrapper
     r.read_version()?; // TLeaf base (v2)
     let named = read_named(r)?; // fName, fTitle
@@ -713,7 +708,7 @@ fn parse_dims(title: &str) -> Vec<usize> {
 }
 
 /// Read a `TObjArray` and discard it (used for `fBaskets`, always empty here).
-fn read_skip_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<()> {
+fn read_skip_array(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<()> {
     read_version_tobject_header(r)?;
     let size = r.be_i32()?.max(0);
     let _lower = r.be_i32()?;
@@ -727,7 +722,7 @@ fn read_skip_array(r: &mut RBuffer, tags: &mut TagReader) -> Result<()> {
 }
 
 /// Read the `{version}` + `TObject` + name prefix common to `TObjArray`/`TList`.
-fn read_version_tobject_header(r: &mut RBuffer) -> Result<()> {
+fn read_version_tobject_header(r: &mut RBuffer<'_>) -> Result<()> {
     r.read_version()?;
     read_object_base(r)?;
     r.string()?; // fName
@@ -736,7 +731,7 @@ fn read_version_tobject_header(r: &mut RBuffer) -> Result<()> {
 
 /// Skip an inline object member, using its version-header byte count when
 /// present, else assuming a single trailing byte (e.g. `TIOFeatures`).
-pub(super) fn skip_object(r: &mut RBuffer) -> Result<()> {
+pub(super) fn skip_object(r: &mut RBuffer<'_>) -> Result<()> {
     let vh = r.read_version()?;
     match vh.end {
         Some(end) => r.seek(end)?,

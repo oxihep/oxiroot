@@ -4,11 +4,12 @@
 
 use oxiroot_hist::ToRoot;
 use oxiroot_hist::{
-    Efficiency, FileWriter, Graph, GraphFunction, GraphStack, Hist, HistStack, ObjList, ObjString,
-    Parameter, PolyHist, ReadRoot, SparseHist, WriteRoot, hist_streamer_classes,
+    Efficiency, Graph, GraphFunction, GraphStack, Hist, HistStack, PolyHist, SparseHist,
+    hist_streamer_classes,
 };
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
+use oxiroot_io_core::{FileWriter, ObjList, ObjString, Parameter, WriteRoot};
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.
 struct Point {
@@ -59,13 +60,21 @@ fn point(name: &str) -> Point {
 }
 
 fn registry(path: &std::path::Path) -> StreamerRegistry {
-    FileReader::open(path).unwrap().streamer_registry().unwrap()
+    FileReader::open(path)
+        .unwrap()
+        .streamer_registry()
+        .unwrap()
+        .clone()
 }
 
 #[test]
 fn a_foreign_class_is_described_wherever_it_is_stored() {
     let dir = std::env::temp_dir();
-    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().named("h");
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.fill(0.5);
 
     let top = dir.join("oxiroot_sc_top.root");
@@ -74,16 +83,23 @@ fn a_foreign_class_is_described_wherever_it_is_stored() {
     FileWriter::create(&top)
         .add(&h)
         .add(&point("p"))
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     FileWriter::create(&subdir)
         .add(&h)
         .dir("d", |d| d.add(&point("p")))
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     FileWriter::create(&list)
-        .add(&ObjList::list().named("l").add(&point("p")))
-        .write(Compression::None)
+        .add(
+            &ObjList::new(oxiroot_io_core::ListKind::List)
+                .named("l")
+                .add(&point("p")),
+        )
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     for path in [&top, &subdir, &list] {
@@ -105,7 +121,8 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
     FileWriter::create(&path)
         .add(&Parameter::f64("lumi", 1.5))
         .add(&ObjString::new("hello").named("s"))
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let names: Vec<String> = registry(&path)
         .class_names()
@@ -120,8 +137,10 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
 
     // The same holds for the single-object shorthand.
     let single = std::env::temp_dir().join("oxiroot_sc_param_single.root");
-    Parameter::i32("n", 3)
-        .write_root(&single, Compression::None)
+    FileWriter::create(&single)
+        .add(&Parameter::i32("n", 3))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let names = registry(&single);
     assert_eq!(names.class_names(), ["TParameter<int>"]);
@@ -133,21 +152,26 @@ fn a_collection_read_back_still_describes_its_members() {
     let first = dir.join("oxiroot_sc_list_a.root");
     FileWriter::create(&first)
         .add(
-            &ObjList::list()
+            &ObjList::new(oxiroot_io_core::ListKind::List)
                 .named("l")
                 .add(&Parameter::f32("cut", 0.5))
                 .add(&ObjString::new("x")),
         )
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     // A list read from a file keeps only its members' bytes; writing it again
     // still describes the parameter class by name.
-    let list = ObjList::read_root(&FileReader::open(&first).unwrap(), "l").unwrap();
+    let list = FileReader::open(&first)
+        .unwrap()
+        .get::<ObjList>("l")
+        .unwrap();
     let second = dir.join("oxiroot_sc_list_b.root");
     FileWriter::create(&second)
         .add(&list)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let names = registry(&second);
     assert!(names.get("TParameter<float>").is_some());
@@ -157,9 +181,13 @@ fn a_collection_read_back_still_describes_its_members() {
 /// The histogram-family objects, each holding what it can hold: labels, bins,
 /// functions, members.
 fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
-    let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("h");
+    let mut h = Hist::reg(3, 0.0, 3.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.xaxis_mut().set_label(1, "a");
-    let p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+    let p = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
     let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);
     let mut sp = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
@@ -175,7 +203,9 @@ fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
     let st = HistStack::new().named("st").add(
         Hist::reg(2, 0.0, 2.0)
             .double()
-            .to_root_as(oxiroot_hist::BinContentType::F32)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(oxiroot_hist::BinContentType::F32)
             .named("m"),
     );
     let mg = GraphStack::new().named("mg").add(g.clone());
@@ -240,7 +270,8 @@ fn a_histogram_family_object_describes_only_its_classes() {
         let path = dir.join(format!("oxiroot_sc_family_{name}.root"));
         FileWriter::create(&path)
             .add(&**object)
-            .write(Compression::None)
+            .compression(Compression::Stored)
+            .write()
             .unwrap();
         let reg = registry(&path);
         let classes = reg.class_names();
@@ -266,9 +297,13 @@ fn nothing_a_written_object_holds_goes_undescribed() {
         let path = dir.join(format!("oxiroot_sc_decode_{name}.root"));
         FileWriter::create(&path)
             .add(&*object)
-            .write(Compression::None)
+            .compression(Compression::Stored)
+            .write()
             .unwrap();
-        let value = FileReader::open(&path).unwrap().get_value(name).unwrap();
+        let value = FileReader::open(&path)
+            .unwrap()
+            .get::<oxiroot_io_core::Value>(name)
+            .unwrap();
         let text = value.to_string();
         assert!(!text.contains("has no TStreamerInfo"), "{name}: {text}");
     }

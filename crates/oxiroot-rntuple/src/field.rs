@@ -1,4 +1,4 @@
-//! A typed, per-entry view over RNTuple fields.
+//! A typed, per-entry view over `RNTuple` fields.
 //!
 //! [`FieldValues`] reconstructs a top-level field's values from its physical
 //! column(s): scalar leaves map straight from a column, `std::string` combines
@@ -66,7 +66,7 @@ pub enum FieldValues {
     /// value per record instance (a struct-of-arrays). At top level every
     /// sub-field has one element per entry; inside a [`Nested`](Self::Nested)
     /// collection they hold the flattened record instances.
-    Record(Vec<(String, FieldValues)>),
+    Record(Vec<(String, Self)>),
     /// A collection whose element is itself a collection or a record — e.g.
     /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
     /// `offsets` partition the flattened child `items`: element `k` spans
@@ -78,7 +78,7 @@ pub enum FieldValues {
         /// the enclosing level.
         offsets: Vec<u64>,
         /// The flattened child values, partitioned by `offsets`.
-        items: Box<FieldValues>,
+        items: Box<Self>,
     },
     /// A `std::variant`: each element selects one `alternative` by its 1-based
     /// `tag` (`0` = valueless) and reads it at `index`. The alternatives are
@@ -86,7 +86,7 @@ pub enum FieldValues {
     /// `alternatives[tags[e] - 1].1` at position `indices[e]`.
     Variant {
         /// The variant alternatives (name, densely-packed values), in order.
-        alternatives: Vec<(String, FieldValues)>,
+        alternatives: Vec<(String, Self)>,
         /// Per element: the 1-based active alternative (`0` = valueless).
         tags: Vec<u32>,
         /// Per element: the position within the active alternative's column.
@@ -101,7 +101,7 @@ pub enum FieldValues {
         /// Per-entry presence (length = entry count).
         present: Vec<bool>,
         /// The present values, densely packed; a scalar variant (e.g. `F32`).
-        values: Box<FieldValues>,
+        values: Box<Self>,
     },
 }
 
@@ -360,10 +360,10 @@ impl FieldValues {
     /// is returned. Structural fields ([`Record`](FieldValues::Record),
     /// [`Nested`](FieldValues::Nested), [`Variant`](FieldValues::Variant), and
     /// [`Opt`](FieldValues::Opt)) are not concatenable here.
-    pub fn append(&mut self, other: FieldValues) -> Result<()> {
+    pub fn append(&mut self, other: Self) -> Result<()> {
         use FieldValues::*;
         macro_rules! join {
-            ($a:expr_2021, $variant:ident) => {
+            ($a:expr, $variant:ident) => {
                 match other {
                     $variant(b) => {
                         $a.extend(b);
@@ -538,7 +538,7 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
     })
 }
 
-/// Present an optional / unique_ptr collection (each entry 0 or 1 elements) as a
+/// Present an optional / `unique_ptr` collection (each entry 0 or 1 elements) as a
 /// nullable [`FieldValues::Opt`]: derive per-entry presence from the cumulative
 /// `offsets` (entry `i` is present iff its count increased), keeping the
 /// densely-packed present `values`.
@@ -587,7 +587,7 @@ fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
 
 /// A `std::vector` field viewed as cumulative `offsets` over one flat
 /// [`FieldValues`] (a scalar variant), instead of `Vec<Vec<T>>`: what
-/// [`FieldRead::flat`](crate::FieldRead::flat) returns.
+/// [`FieldRead::flat`](crate::raw::FieldRead::flat) returns.
 ///
 /// `offsets` has `entries + 1` values with `offsets[0] == 0`; entry `i`'s
 /// elements are `values[offsets[i] .. offsets[i + 1]]`.
@@ -600,7 +600,7 @@ pub struct Jagged {
 }
 
 /// A Rust type a field can be read as with
-/// [`FieldRead::read`](crate::FieldRead::read): the scalar types, `String`,
+/// [`FieldRead::read`](crate::raw::FieldRead::read): the scalar types, `String`,
 /// `Vec<T>` for `std::vector<T>`, `Vec<Vec<T>>` for
 /// `std::vector<std::vector<T>>`, and `Option<T>` for `std::optional<T>`.
 pub trait FromField: Sized {

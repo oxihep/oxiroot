@@ -4,6 +4,7 @@
 use oxifit_formula::{Formula, derivative, integrate};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
+use std::ops::RangeInclusive;
 
 /// The data shared by [`Func1D`]/[`Func2D`]/[`Func3D`]: a name and title, the parsed
 /// formula, the parameter values, and the fit-result metadata ROOT stores
@@ -23,11 +24,11 @@ pub(crate) struct FuncCore {
 }
 
 impl FuncCore {
-    fn build(name: &str, source: &str) -> Result<FuncCore> {
+    fn build(name: &str, source: &str) -> Result<Self> {
         let formula = Formula::parse(source)
             .map_err(|e| Error::InvalidInput(format!("bad formula {source:?}: {e}")))?;
         let npar = formula.npar();
-        Ok(FuncCore {
+        Ok(Self {
             name: name.to_string(),
             title: source.to_string(),
             params: vec![0.0; npar],
@@ -58,11 +59,11 @@ impl FuncCore {
     }
 
     /// Parse a `Func1D` record's formula back into a function core.
-    pub(crate) fn from_record(f: GraphFunction) -> Result<FuncCore> {
+    pub(crate) fn from_record(f: GraphFunction) -> Result<Self> {
         let formula = Formula::parse(&f.formula).map_err(|e| {
             Error::Unsupported(format!("formula {:?} does not parse: {e}", f.formula))
         })?;
-        Ok(FuncCore {
+        Ok(Self {
             name: f.name,
             title: f.title,
             formula,
@@ -104,26 +105,29 @@ macro_rules! accessors {
         pub fn params(&self) -> &[f64] {
             &self.core.params
         }
-        /// Parameter `i` (or `0.0` if out of range).
+        /// Parameter `i`, or `None` if the formula has no such parameter.
         #[must_use]
-        pub fn param(&self, i: usize) -> f64 {
-            self.core.params.get(i).copied().unwrap_or(0.0)
+        pub fn param(&self, i: usize) -> Option<f64> {
+            self.core.params.get(i).copied()
         }
-        /// Set parameter `i` (ignored if out of range).
-        pub fn set_param(&mut self, i: usize, value: f64) {
-            if let Some(p) = self.core.params.get_mut(i) {
-                *p = value;
-            }
+        /// The parameter values, to change in place. Their number is fixed by
+        /// the formula.
+        pub fn params_mut(&mut self) -> &mut [f64] {
+            &mut self.core.params
         }
-        /// Set all parameter values (truncated/zero-padded to the parameter count).
-        pub fn set_params(&mut self, params: &[f64]) {
-            let n = self.core.params.len();
-            self.core.params = params
-                .iter()
-                .copied()
-                .chain(std::iter::repeat(0.0))
-                .take(n)
-                .collect();
+        /// Set every parameter value (`[0], [1], …`), as a builder.
+        ///
+        /// # Errors
+        /// [`Error::LengthMismatch`] if `params` does not hold one value per
+        /// parameter of the formula.
+        pub fn with_params(mut self, params: &[f64]) -> Result<Self> {
+            oxiroot_io_core::raw::check_len(
+                "function parameters",
+                self.core.params.len(),
+                params.len(),
+            )?;
+            self.core.params.copy_from_slice(params);
+            Ok(self)
         }
         /// The fit χ² stored on the function (`fChisquare`), `0.0` if unfitted.
         #[must_use]
@@ -148,29 +152,22 @@ pub struct Func1D {
 }
 
 impl Func1D {
-    /// Build a `Func1D` named `name` from a ROOT `formula` over `[xmin, xmax]`, with
-    /// all parameters initialised to zero.
+    /// Build a `Func1D` named `name` from a ROOT `formula` over the range `x`,
+    /// with all parameters initialised to zero.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    pub fn new(name: &str, formula: &str, xmin: f64, xmax: f64) -> Result<Func1D> {
-        Ok(Func1D {
+    pub fn new(name: &str, formula: &str, x: RangeInclusive<f64>) -> Result<Self> {
+        Ok(Self {
             core: FuncCore::build(name, formula)?,
-            xmin,
-            xmax,
+            xmin: *x.start(),
+            xmax: *x.end(),
         })
-    }
-
-    /// Set all parameter values (a builder; `[0], [1], …`).
-    #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> Func1D {
-        self.set_params(&params);
-        self
     }
 
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Func1D {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.core.name = name.into();
         self
     }
@@ -197,10 +194,10 @@ impl Func1D {
 
     accessors!();
 
-    /// The lower/upper bounds of the function's range (`fXmin`, `fXmax`).
+    /// The function's range (`fXmin..=fXmax`).
     #[must_use]
-    pub fn range(&self) -> (f64, f64) {
-        (self.xmin, self.xmax)
+    pub const fn range(&self) -> RangeInclusive<f64> {
+        self.xmin..=self.xmax
     }
 
     /// This function as the `Func1D` record a graph's `fFunctions` list holds, for
@@ -211,9 +208,7 @@ impl Func1D {
     /// ```
     /// use oxiroot_hist::Graph;
     /// use oxiroot_hist_func::Func1D;
-    /// let f = Func1D::new("line", "[0]+[1]*x", 0.0, 2.0)
-    ///     .unwrap()
-    ///     .with_params(vec![1.0, 2.0]);
+    /// let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
     /// let g = Graph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
     /// assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
     /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -229,9 +224,9 @@ impl Func1D {
     ///
     /// # Errors
     /// Returns an error if the record's formula is not a valid expression.
-    pub fn from_graph_function(function: GraphFunction) -> Result<Func1D> {
+    pub fn from_graph_function(function: GraphFunction) -> Result<Self> {
         let (xmin, xmax) = (function.xmin, function.xmax);
-        Ok(Func1D {
+        Ok(Self {
             core: FuncCore::from_record(function)?,
             xmin,
             xmax,
@@ -284,37 +279,28 @@ pub struct Func2D {
 }
 
 impl Func2D {
-    /// Build a `Func2D` from a formula in `x` and `y` over `[xmin, xmax] × [ymin, ymax]`.
+    /// Build a `Func2D` from a formula in `x` and `y` over the ranges `x` and `y`.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: &str,
         formula: &str,
-        xmin: f64,
-        xmax: f64,
-        ymin: f64,
-        ymax: f64,
-    ) -> Result<Func2D> {
-        Ok(Func2D {
+        x: RangeInclusive<f64>,
+        y: RangeInclusive<f64>,
+    ) -> Result<Self> {
+        Ok(Self {
             core: FuncCore::build(name, formula)?,
-            xmin,
-            xmax,
-            ymin,
-            ymax,
+            xmin: *x.start(),
+            xmax: *x.end(),
+            ymin: *y.start(),
+            ymax: *y.end(),
         })
     }
 
-    /// Set all parameter values (a builder).
-    #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> Func2D {
-        self.set_params(&params);
-        self
-    }
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Func2D {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.core.name = name.into();
         self
     }
@@ -347,8 +333,8 @@ impl Func2D {
 
     /// The `x` and `y` ranges (`fXmin`/`fXmax`, `fYmin`/`fYmax`).
     #[must_use]
-    pub fn range(&self) -> ((f64, f64), (f64, f64)) {
-        ((self.xmin, self.xmax), (self.ymin, self.ymax))
+    pub const fn range(&self) -> (RangeInclusive<f64>, RangeInclusive<f64>) {
+        (self.xmin..=self.xmax, self.ymin..=self.ymax)
     }
 }
 
@@ -370,37 +356,27 @@ impl Func3D {
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: &str,
         formula: &str,
-        xmin: f64,
-        xmax: f64,
-        ymin: f64,
-        ymax: f64,
-        zmin: f64,
-        zmax: f64,
-    ) -> Result<Func3D> {
-        Ok(Func3D {
+        x: RangeInclusive<f64>,
+        y: RangeInclusive<f64>,
+        z: RangeInclusive<f64>,
+    ) -> Result<Self> {
+        Ok(Self {
             core: FuncCore::build(name, formula)?,
-            xmin,
-            xmax,
-            ymin,
-            ymax,
-            zmin,
-            zmax,
+            xmin: *x.start(),
+            xmax: *x.end(),
+            ymin: *y.start(),
+            ymax: *y.end(),
+            zmin: *z.start(),
+            zmax: *z.end(),
         })
     }
 
-    /// Set all parameter values (a builder).
-    #[must_use]
-    pub fn with_params(mut self, params: Vec<f64>) -> Func3D {
-        self.set_params(&params);
-        self
-    }
     /// Set the key name this function is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Func3D {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.core.name = name.into();
         self
     }
@@ -432,11 +408,17 @@ impl Func3D {
 
     /// The `x`, `y`, and `z` ranges.
     #[must_use]
-    pub fn range(&self) -> ((f64, f64), (f64, f64), (f64, f64)) {
+    pub const fn range(
+        &self,
+    ) -> (
+        RangeInclusive<f64>,
+        RangeInclusive<f64>,
+        RangeInclusive<f64>,
+    ) {
         (
-            (self.xmin, self.xmax),
-            (self.ymin, self.ymax),
-            (self.zmin, self.zmax),
+            self.xmin..=self.xmax,
+            self.ymin..=self.ymax,
+            self.zmin..=self.zmax,
         )
     }
 }

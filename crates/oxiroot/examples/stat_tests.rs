@@ -90,14 +90,15 @@ fn main() -> Result<(), StatError> {
     let mut hist = Hist::reg(nbins, lo, hi)
         .double()
         .to_root()
+        .expect("a regular axis maps to ROOT")
         .named("control")
         .titled("control sample");
     for &v in &control {
         hist.fill(v);
     }
     let width = (hi - lo) / nbins as f64;
-    let n_in_range: f64 = (1..=nbins).map(|b| hist[b]).sum(); // in-range bins only
-    let f_obs: Vec<f64> = (1..=nbins).map(|b| hist[b]).collect();
+    let n_in_range: f64 = hist.values().iter().sum(); // in-range bins only
+    let f_obs: Vec<f64> = hist.values().to_vec();
     // Expected: the standard-normal probability mass per bin, scaled to the same
     // in-range total so the two vectors sum alike (chisquare requires that).
     let normal = stat::Normal::standard();

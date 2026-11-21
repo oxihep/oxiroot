@@ -3,7 +3,8 @@
 use std::io::Cursor;
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_rntuple::{Field, FieldValues, NtupleReader, NtupleWriter};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Field, FieldValues, NtupleWriter};
 
 /// Three clusters: entries [0, 2), [2, 5), [5, 6).
 fn file() -> FileReader {
@@ -96,8 +97,13 @@ fn a_read_field_writes_back_the_same_way() {
         .iter()
         .map(|name| n.field(name).range(1..4).to_field().unwrap())
         .collect();
-    let mut w =
-        NtupleWriter::new(Cursor::new(Vec::new()), "o.root", "ntpl", Compression::None).unwrap();
+    let mut w = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "o.root",
+        "ntpl",
+        Compression::Stored,
+    )
+    .unwrap();
     w.write_batch(&fields).unwrap();
     let out = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
     let o = NtupleReader::open(&out, "ntpl").unwrap();
@@ -203,8 +209,13 @@ fn write_batches_equals_one_batch_at_a_time() {
 
 #[test]
 fn an_empty_first_batch_writes_an_rntuple_with_no_entries() {
-    let mut w =
-        NtupleWriter::new(Cursor::new(Vec::new()), "t.root", "ntpl", Compression::None).unwrap();
+    let mut w = NtupleWriter::new(
+        Cursor::new(Vec::new()),
+        "t.root",
+        "ntpl",
+        Compression::Stored,
+    )
+    .unwrap();
     w.write_batch(&[Field::f64("x", vec![]), Field::vector_i32("v", vec![])])
         .unwrap();
     let f = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();

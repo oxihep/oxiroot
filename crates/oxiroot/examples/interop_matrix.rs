@@ -1,11 +1,11 @@
 //! Manifest-driven interop **matrix** writer — the broad cross-check that
 //! complements the lean canonical [`interop`](interop.rs) harness.
 //!
-//!   cargo run -p oxiroot --example interop_matrix -- write <dir>
+//!   cargo run -p oxiroot --example `interop_matrix` -- write <dir>
 //!
 //! Writes one small `.root` file per case (every histogram precision/dimension,
-//! Profile1D, Sumw2, variable bins, multi-object/subdirs/append, every RNTuple
-//! scalar+vector field type + multi-cluster, every TTree branch kind + scalar
+//! `Profile1D`, Sumw2, variable bins, multi-object/subdirs/append, every `RNTuple`
+//! scalar+vector field type + multi-cluster, every `TTree` branch kind + scalar
 //! width + split `std::vector<Struct>`) **plus `manifest.json`** describing each
 //! case and its expected values. The oracle readers
 //! `scripts/interop_matrix_root.cpp` (ROOT C++) and
@@ -20,9 +20,10 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::exit;
 
-use oxiroot::ntuple::{Field, NtupleWriter};
+use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader, TreeWriter};
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::{Branch, BranchValues, SplitMember, TreeWriter};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -37,18 +38,18 @@ enum J {
     Int(i64),
     Flt(f64),
     Str(String),
-    Arr(Vec<J>),
-    Obj(Vec<(&'static str, J)>),
+    Arr(Vec<Self>),
+    Obj(Vec<(&'static str, Self)>),
 }
 
 impl J {
     fn render(&self, out: &mut String) {
         match self {
-            J::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            J::Int(i) => {
+            Self::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            Self::Int(i) => {
                 let _ = write!(out, "{i}");
             }
-            J::Flt(x) => {
+            Self::Flt(x) => {
                 if x.is_finite() {
                     // `{:?}` prints the shortest string that round-trips an f64.
                     let _ = write!(out, "{x:?}");
@@ -56,8 +57,8 @@ impl J {
                     out.push_str("null");
                 }
             }
-            J::Str(s) => json_string(s, out),
-            J::Arr(v) => {
+            Self::Str(s) => json_string(s, out),
+            Self::Arr(v) => {
                 out.push('[');
                 for (i, e) in v.iter().enumerate() {
                     if i > 0 {
@@ -67,7 +68,7 @@ impl J {
                 }
                 out.push(']');
             }
-            J::Obj(m) => {
+            Self::Obj(m) => {
                 out.push('{');
                 for (i, (k, v)) in m.iter().enumerate() {
                     if i > 0 {
@@ -133,6 +134,7 @@ fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
     let mut h = Hist::reg(usize::saturating_from(nbins), xmin, xmax)
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("m");
     for (i, &c) in contents.iter().enumerate() {
@@ -147,6 +149,7 @@ fn th2_with(nx: i32, ny: i32, contents: &[Vec<f64>]) -> Hist2D {
         .reg(usize::saturating_from(ny), 0.0, f64::from(ny))
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("m");
     // ROOT cell index = ix + (nx+2)*iy, in-range ix,iy in 1..=n.
@@ -168,6 +171,7 @@ fn th3_with(n: i32, contents: &[Vec<Vec<f64>>]) -> Hist3D {
         .reg(usize::saturating_from(n), 0.0, f64::from(n))
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("m");
     let s = usize::saturating_from(n + 2);
@@ -190,27 +194,27 @@ fn hist1_case(id: &'static str, class: &str, comp: Compression, h: &Hist1D, dir:
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH1C" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I8)
-            .write_root(&path, comp),
-        "TH1S" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I16)
-            .write_root(&path, comp),
-        "TH1I" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I32)
-            .write_root(&path, comp),
-        "TH1L" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I64)
-            .write_root(&path, comp),
-        "TH1F" => h
-            .clone()
-            .with_bin_content_type(BinContentType::F32)
-            .write_root(&path, comp),
-        "TH1D" => h.write_root(&path, comp),
+        "TH1C" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I8))
+            .compression(comp)
+            .write(),
+        "TH1S" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I16))
+            .compression(comp)
+            .write(),
+        "TH1I" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I32))
+            .compression(comp)
+            .write(),
+        "TH1L" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I64))
+            .compression(comp)
+            .write(),
+        "TH1F" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::F32))
+            .compression(comp)
+            .write(),
+        "TH1D" => FileWriter::create(&path).add(h).compression(comp).write(),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -240,27 +244,27 @@ fn hist2_case(id: &'static str, class: &str, comp: Compression, h: &Hist2D, dir:
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH2C" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I8)
-            .write_root(&path, comp),
-        "TH2S" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I16)
-            .write_root(&path, comp),
-        "TH2I" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I32)
-            .write_root(&path, comp),
-        "TH2L" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I64)
-            .write_root(&path, comp),
-        "TH2F" => h
-            .clone()
-            .with_bin_content_type(BinContentType::F32)
-            .write_root(&path, comp),
-        "TH2D" => h.write_root(&path, comp),
+        "TH2C" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I8))
+            .compression(comp)
+            .write(),
+        "TH2S" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I16))
+            .compression(comp)
+            .write(),
+        "TH2I" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I32))
+            .compression(comp)
+            .write(),
+        "TH2L" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I64))
+            .compression(comp)
+            .write(),
+        "TH2F" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::F32))
+            .compression(comp)
+            .write(),
+        "TH2D" => FileWriter::create(&path).add(h).compression(comp).write(),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -304,27 +308,27 @@ fn hist3_case(id: &'static str, class: &str, comp: Compression, h: &Hist3D, dir:
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     match class {
-        "TH3C" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I8)
-            .write_root(&path, comp),
-        "TH3S" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I16)
-            .write_root(&path, comp),
-        "TH3I" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I32)
-            .write_root(&path, comp),
-        "TH3L" => h
-            .clone()
-            .with_bin_content_type(BinContentType::I64)
-            .write_root(&path, comp),
-        "TH3F" => h
-            .clone()
-            .with_bin_content_type(BinContentType::F32)
-            .write_root(&path, comp),
-        "TH3D" => h.write_root(&path, comp),
+        "TH3C" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I8))
+            .compression(comp)
+            .write(),
+        "TH3S" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I16))
+            .compression(comp)
+            .write(),
+        "TH3I" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I32))
+            .compression(comp)
+            .write(),
+        "TH3L" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::I64))
+            .compression(comp)
+            .write(),
+        "TH3F" => FileWriter::create(&path)
+            .add(&h.clone().with_bin_content_type(BinContentType::F32))
+            .compression(comp)
+            .write(),
+        "TH3D" => FileWriter::create(&path).add(h).compression(comp).write(),
         _ => unreachable!(),
     }
     .unwrap_or_else(|e| die(&format!("write {id}: {e}")));
@@ -381,7 +385,7 @@ fn hist_obj_entry(name: &str, class: &str, dim: i64, values: J, edges: J) -> J {
 
 fn comp_str(c: Compression) -> J {
     match c {
-        Compression::None => J::Str("none".into()),
+        Compression::Stored => J::Str("none".into()),
         Compression::Zstd(_) => J::Str("zstd".into()),
         Compression::Zlib(_) => J::Str("zlib".into()),
         Compression::Lz4(_) => J::Str("lz4".into()),
@@ -395,7 +399,7 @@ fn comp_str(c: Compression) -> J {
 
 fn write(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap_or_else(|e| die(&format!("mkdir {}: {e}", dir.display())));
-    let none = Compression::None;
+    let none = Compression::Stored;
     let zstd = Compression::Zstd(5);
     let mut cases: Vec<J> = Vec::new();
 
@@ -562,6 +566,7 @@ fn write(dir: &Path) {
         let mut h = Hist::var(&[0.0, 1.0, 4.0, 10.0])
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("m");
         for (i, &c) in [2.0, 1.0, 3.0].iter().enumerate() {
@@ -575,6 +580,7 @@ fn write(dir: &Path) {
             .var(&[0.0, 2.0, 5.0])
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("m");
         let stride = 4; // nx+2 = 2+2
@@ -592,6 +598,7 @@ fn write(dir: &Path) {
         let mut h = Hist::reg(3, 0.0, 3.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("m");
         h.track_sumw2();
@@ -605,6 +612,7 @@ fn write(dir: &Path) {
             .reg(2, 0.0, 2.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("m");
         h.track_sumw2();
@@ -619,6 +627,7 @@ fn write(dir: &Path) {
             .reg(2, 0.0, 2.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h")
             .titled("m");
         h.track_sumw2();
@@ -633,6 +642,7 @@ fn write(dir: &Path) {
         let mut p = Hist::reg(4, 0.0, 4.0)
             .mean()
             .to_root()
+            .unwrap()
             .named("p")
             .titled("prof");
         p.fill(0.5, 10.0);
@@ -641,7 +651,10 @@ fn write(dir: &Path) {
         p.fill(1.5, 10.0); // bin2 mean 7.5
         p.fill(2.5, 30.0); // bin3 mean 30
         let file = "m_tprofile.root".to_string();
-        p.write_root(dir.join(&file), none)
+        FileWriter::create(dir.join(&file))
+            .add(&p)
+            .compression(none)
+            .write()
             .unwrap_or_else(|e| die(&format!("tprofile: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("tprofile".into())),
@@ -669,7 +682,8 @@ fn write(dir: &Path) {
         FileWriter::create(dir.join(&file))
             .add(&ha)
             .add(&hb)
-            .write(none)
+            .compression(none)
+            .write()
             .unwrap_or_else(|e| die(&format!("multiobj: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("multiobj".into())),
@@ -712,7 +726,8 @@ fn write(dir: &Path) {
             .add(&htop)
             .dir("regionA", |d| d.add(&ha))
             .dir("regionB", |d| d.add(&hb))
-            .write(none)
+            .compression(none)
+            .write()
             .unwrap_or_else(|e| die(&format!("subdirs: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("subdirs".into())),
@@ -774,12 +789,14 @@ fn write(dir: &Path) {
         let path = dir.join(&file);
         FileWriter::create(&path)
             .add(&h1)
-            .write(none)
+            .compression(none)
+            .write()
             .unwrap_or_else(|e| die(&format!("append base: {e}")));
-        FileWriter::open(&path)
+        oxiroot::FileUpdater::open(&path)
             .unwrap_or_else(|e| die(&format!("append open: {e}")))
             .add(&h2)
-            .write(none)
+            .compression(none)
+            .write()
             .unwrap_or_else(|e| die(&format!("append: {e}")));
         cases.push(J::Obj(vec![
             ("id", J::Str("append".into())),
@@ -972,7 +989,7 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
 
 /// A `std::map<std::int32_t, double>` field. The ROOT oracle reads it with the
 /// map's dictionary compiled in (`scripts/rntuple_map_LinkDef.h`); uproot is
-/// checked in the RNTuple tests.
+/// checked in the `RNTuple` tests.
 fn rntuple_map(id: &'static str, comp: Compression, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     // Keys in order: ROOT iterates a std::map sorted by key.
@@ -1011,9 +1028,9 @@ fn rntuple_multicluster(id: &'static str, large: bool, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let path = dir.join(&file);
     let mut w = if large {
-        NtupleWriter::create_large(&path, "ntpl", Compression::None)
+        NtupleWriter::create_large(&path, "ntpl", Compression::Stored)
     } else {
-        NtupleWriter::create(&path, "ntpl", Compression::None)
+        NtupleWriter::create(&path, "ntpl", Compression::Stored)
     }
     .unwrap_or_else(|e| die(&format!("{id} create: {e}")));
     // Two batches → two clusters.
@@ -1034,7 +1051,7 @@ fn rntuple_multicluster(id: &'static str, large: bool, dir: &Path) -> J {
         ("kind", J::Str("rntuple_stream".into())),
         ("file", J::Str(file)),
         ("name", J::Str("ntpl".into())),
-        ("compression", comp_str(Compression::None)),
+        ("compression", comp_str(Compression::Stored)),
         ("n_entries", J::Int(6)),
         (
             "fields",
@@ -1207,7 +1224,7 @@ fn tree_stl_vector(id: &'static str, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let vw = vec![vec![10.0f64, 20.0], vec![], vec![30.0]];
     let branches = vec![Branch::vector_f64("vw", vw.clone())];
-    write_tree_file(dir.join(&file), "T", &branches, Compression::None)
+    write_tree_file(dir.join(&file), "T", &branches, Compression::Stored)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
     let mb = J::Arr(vec![J::Obj(vec![
         ("name", J::Str("vw".into())),
@@ -1220,7 +1237,7 @@ fn tree_stl_vector(id: &'static str, dir: &Path) -> J {
         ("kind", J::Str("tree".into())),
         ("file", J::Str(file)),
         ("name", J::Str("T".into())),
-        ("compression", comp_str(Compression::None)),
+        ("compression", comp_str(Compression::Stored)),
         ("n_entries", J::Int(3)),
         ("branches", mb),
         ("uproot_skip", J::Bool(true)),
@@ -1249,7 +1266,7 @@ fn tree_split(id: &'static str, dir: &Path, streamed: bool) -> J {
     let comp = if streamed {
         Compression::Zstd(5)
     } else {
-        Compression::None
+        Compression::Stored
     };
     let written = if streamed {
         TreeWriter::create(dir.join(&file), "T", comp).and_then(|mut w| {

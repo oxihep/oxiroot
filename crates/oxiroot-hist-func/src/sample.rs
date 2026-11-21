@@ -11,7 +11,7 @@ impl Func1D {
     #[must_use]
     pub fn get_random(&self, rng: &mut Random) -> f64 {
         const NPX: usize = 200;
-        let (xmin, xmax) = self.range();
+        let (xmin, xmax) = self.range().into_inner();
         let dx = (xmax - xmin) / NPX as f64;
         let weights: Vec<f64> = (0..NPX)
             .map(|i| self.eval(xmin + (i as f64 + 0.5) * dx).max(0.0))
@@ -28,9 +28,10 @@ mod tests {
     #[test]
     fn tf1_get_random_matches_the_function() {
         // ROOT: Func1D gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
-        let f = Func1D::new("g", "gaus", 0.0, 10.0)
+        let f = Func1D::new("g", "gaus", 0.0..=10.0)
             .unwrap()
-            .with_params(vec![1.0, 3.0, 0.8]);
+            .with_params(&[1.0, 3.0, 0.8])
+            .unwrap();
         let mut rng = Random::seed(3);
         let (mut s, mut s2) = (0.0, 0.0);
         let n = 300_000;

@@ -4,12 +4,13 @@
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{FileReader, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, bin_content_type_of, cell_count, check_cells, check_len, histogram_object,
-    histogram_object_in, read_th1_object,
+    BinContentType, bin_content_type_of, cell_count, check_cells, check_len, is_hist_class,
+    read_th1_object,
 };
 
 /// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
@@ -57,9 +58,9 @@ impl Hist1D {
     /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`.
     /// Internal primitive behind the public builder: construct histograms with
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xmin, xmax).double()`.
-    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> Hist1D {
+    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> Self {
         let cells = usize::saturating_from(nbins.max(0)) + 2;
-        Hist1D {
+        Self {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
@@ -80,13 +81,13 @@ impl Hist1D {
     /// Create an empty `TH1D` with variable bin edges (`edges` = the `nbins + 1`
     /// boundaries, ascending). Internal primitive behind the public builder:
     /// construct variable-axis histograms with [`Hist::var`](crate::Hist::var)`(edges).double()`.
-    pub(crate) fn new_variable(edges: &[f64]) -> Hist1D {
+    pub(crate) fn new_variable(edges: &[f64]) -> Self {
         let cells = edges.len() + 1; // (edges.len() - 1) bins + 2 flow
-        Hist1D {
+        Self {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
-            xaxis: Axis::variable("xaxis", edges),
+            xaxis: Axis::from_edges("xaxis", edges),
             yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             ncells: i32::saturating_from(cells),
@@ -101,11 +102,13 @@ impl Hist1D {
     }
 
     /// The histogram's name (`fName`, its key when written).
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The histogram's title (`fTitle`).
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.title
     }
@@ -168,6 +171,7 @@ impl Hist1D {
     }
 
     /// Mean of the in-range fills (`fTsumwx / fTsumw`), or 0 if empty.
+    #[must_use]
     pub fn mean(&self) -> f64 {
         if self.tsumw != 0.0 {
             self.tsumwx / self.tsumw
@@ -176,12 +180,12 @@ impl Hist1D {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist1D> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
         let (c, contents) = read_th1_object(r, bin_content_type)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
-        Ok(Hist1D {
+        Ok(Self {
             bin_content_type,
             name: c.name,
             title: c.title,
@@ -200,6 +204,7 @@ impl Hist1D {
     }
 
     /// Bin contents excluding the under/overflow bins.
+    #[must_use]
     pub fn values(&self) -> &[f64] {
         let n = self.contents.len();
         if n >= 2 {
@@ -278,7 +283,10 @@ impl Hist1D {
     /// under/overflow content is returned for `x` outside the axis range.
     #[must_use]
     pub fn at(&self, x: f64) -> f64 {
-        self.contents.get(self.find_bin(x)).copied().unwrap_or(0.0)
+        self.contents
+            .get(self.xaxis.find_bin(x))
+            .copied()
+            .unwrap_or(0.0)
     }
 
     /// The summed bin content over the coordinate range `[lo, hi]` (`hist`'s
@@ -290,12 +298,13 @@ impl Hist1D {
         if nbins == 0 {
             return 0.0;
         }
-        let a = self.find_bin(lo).clamp(1, nbins);
-        let b = self.find_bin(hi).clamp(1, nbins);
+        let a = self.xaxis.find_bin(lo).clamp(1, nbins);
+        let b = self.xaxis.find_bin(hi).clamp(1, nbins);
         self.contents[a.min(b)..=a.max(b)].iter().sum()
     }
 
     /// The x-axis label (ROOT `fXaxis.fTitle`; scikit-hep `hist`'s axis `label`).
+    #[must_use]
     pub fn x_label(&self) -> &str {
         &self.xaxis.title
     }
@@ -308,6 +317,7 @@ impl Hist1D {
     }
 
     /// The y-axis label (ROOT `fYaxis.fTitle`; e.g. `"Events / 2 GeV"`).
+    #[must_use]
     pub fn y_label(&self) -> &str {
         &self.yaxis.title
     }
@@ -320,22 +330,19 @@ impl Hist1D {
     }
 
     /// The X-axis bin edges (`nbins + 1` values).
+    #[must_use]
     pub fn edges(&self) -> Vec<f64> {
         self.xaxis.edges()
     }
 }
 
-/// Read any 1-D histogram (`TH1D/F/I/S/C/L`), detecting the bin content type
-/// from the stored class.
-pub(crate) fn read_th1(file: &FileReader, name: &str) -> Result<Hist1D> {
-    decode_th1(histogram_object(file, name, "TH1")?)
-}
+impl ReadRoot for Hist1D {
+    const CLASS: &'static str = "TH1";
 
-/// Read any 1-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th1_in(file: &FileReader, subdir: &str, name: &str) -> Result<Hist1D> {
-    decode_th1(histogram_object_in(file, subdir, name, "TH1")?)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        is_hist_class(object.class, "TH1").then(|| decode_th1(object.class, object.bytes))
+    }
 }
-
-pub(crate) fn decode_th1((class, object): (String, Vec<u8>)) -> Result<Hist1D> {
-    Hist1D::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
+pub(crate) fn decode_th1(class: &str, object: &[u8]) -> Result<Hist1D> {
+    Hist1D::read(&mut RBuffer::new(object), bin_content_type_of(class)?)
 }

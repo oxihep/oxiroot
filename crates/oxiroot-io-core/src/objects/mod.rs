@@ -9,5 +9,5 @@
 mod collection;
 mod scalars;
 
-pub use collection::{FromMember, ListKind, ObjList, ObjMap};
+pub use collection::{ListKind, ObjList, ObjMap};
 pub use scalars::{ObjString, ParamValue, Parameter};

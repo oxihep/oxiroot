@@ -1,5 +1,6 @@
 //! The header, page-list and footer envelopes, and the anchor.
 
+use oxiroot_io_core::Compression;
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
@@ -30,7 +31,7 @@ pub(super) fn record_frame(payload: &[u8]) -> Vec<u8> {
 }
 
 pub(super) fn list_frame(items: &[Vec<u8>]) -> Vec<u8> {
-    let body_len: usize = items.iter().map(|i| i.len()).sum();
+    let body_len: usize = items.iter().map(std::vec::Vec::len).sum();
     let size = i64::saturating_from(8 + 4 + body_len);
     let mut out = (-size).to_le_bytes().to_vec();
     out.extend_from_slice(&u32::saturating_from(items.len()).to_le_bytes());
@@ -146,7 +147,7 @@ pub(super) fn build_page_list(
     page_offsets: &[usize],
     disk_sizes: &[usize],
     cols: &[ColumnPlan],
-    compression: u32,
+    compression: Compression,
     header_checksum: u64,
 ) -> Result<Vec<u8>> {
     // A normal single cluster: every column starts at element 0.
@@ -172,7 +173,7 @@ pub(super) fn build_page_list_offsets(
     disk_sizes: &[usize],
     cols: &[ColumnPlan],
     element_offsets: &[i64],
-    compression: u32,
+    compression: Compression,
     header_checksum: u64,
 ) -> Result<Vec<u8>> {
     let mut p = Vec::new();
@@ -194,7 +195,7 @@ pub(super) fn build_page_list_offsets(
         body.extend_from_slice(&1u32.to_le_bytes()); // one page
         body.extend_from_slice(&page);
         body.extend_from_slice(&element_offsets[i].to_le_bytes()); // element offset
-        body.extend_from_slice(&compression.to_le_bytes()); // compression settings
+        body.extend_from_slice(&compression.setting().to_le_bytes()); // compression settings
         let size = i64::saturating_from(8 + body.len());
         let mut frame = (-size).to_le_bytes().to_vec();
         frame.extend_from_slice(&body);

@@ -35,20 +35,20 @@ pub enum LeafType {
 
 impl LeafType {
     /// Resolve a leaf class name + signedness to an element type.
-    pub(crate) fn from_leaf(class: &str, unsigned: bool) -> Option<LeafType> {
+    pub(crate) fn from_leaf(class: &str, unsigned: bool) -> Option<Self> {
         Some(match (class, unsigned) {
-            ("TLeafO", _) => LeafType::Bool,
-            ("TLeafB", false) => LeafType::I8,
-            ("TLeafB", true) => LeafType::U8,
-            ("TLeafS", false) => LeafType::I16,
-            ("TLeafS", true) => LeafType::U16,
-            ("TLeafI", false) => LeafType::I32,
-            ("TLeafI", true) => LeafType::U32,
-            ("TLeafL", false) => LeafType::I64,
-            ("TLeafL", true) => LeafType::U64,
-            ("TLeafF", _) => LeafType::F32,
-            ("TLeafD", _) => LeafType::F64,
-            ("TLeafC", _) => LeafType::Str,
+            ("TLeafO", _) => Self::Bool,
+            ("TLeafB", false) => Self::I8,
+            ("TLeafB", true) => Self::U8,
+            ("TLeafS", false) => Self::I16,
+            ("TLeafS", true) => Self::U16,
+            ("TLeafI", false) => Self::I32,
+            ("TLeafI", true) => Self::U32,
+            ("TLeafL", false) => Self::I64,
+            ("TLeafL", true) => Self::U64,
+            ("TLeafF", _) => Self::F32,
+            ("TLeafD", _) => Self::F64,
+            ("TLeafC", _) => Self::Str,
             _ => return None,
         })
     }
@@ -56,10 +56,10 @@ impl LeafType {
     /// On-disk byte width of one numeric element (1 for the string placeholder).
     pub(crate) fn size(self) -> usize {
         match self {
-            LeafType::Bool | LeafType::I8 | LeafType::U8 | LeafType::Str => 1,
-            LeafType::I16 | LeafType::U16 => 2,
-            LeafType::I32 | LeafType::U32 | LeafType::F32 => 4,
-            LeafType::I64 | LeafType::U64 | LeafType::F64 => 8,
+            Self::Bool | Self::I8 | Self::U8 | Self::Str => 1,
+            Self::I16 | Self::U16 => 2,
+            Self::I32 | Self::U32 | Self::F32 => 4,
+            Self::I64 | Self::U64 | Self::F64 => 8,
         }
     }
 }
@@ -124,13 +124,13 @@ pub enum BranchValues {
     /// `offsets` (one per entry, plus a leading `0`) partition the flattened
     /// `items`, whose own per-element values are the inner vectors. Entry `i`'s
     /// value is `items[offsets[i] .. offsets[i+1]]` — a list of inner vectors.
-    /// An RNTuple's `FieldValues::Nested` carries its offsets the same way.
+    /// An `RNTuple`'s `FieldValues::Nested` carries its offsets the same way.
     Nested {
         /// Cumulative per-entry boundaries into `items`, with a leading `0`.
         offsets: Vec<u64>,
         /// The flattened inner collections (a `Vec*` variant, one element per
         /// inner vector across all entries).
-        items: Box<BranchValues>,
+        items: Box<Self>,
     },
 }
 
@@ -139,7 +139,7 @@ pub enum BranchValues {
 ///
 /// `offsets` has `num_entries + 1` values with `offsets[0] == 0`; entry `i`'s
 /// elements are `values[offsets[i] .. offsets[i+1]]`. Built by
-/// [`BranchRead::flat`](crate::BranchRead::flat). `values` is
+/// [`BranchRead::flat`](crate::raw::BranchRead::flat). `values` is
 /// always a *scalar* variant (e.g. `F64`), never a `Vec*`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Jagged {
@@ -164,7 +164,7 @@ impl Jagged {
 }
 
 /// A Rust type a branch can be read as with
-/// [`BranchRead::read`](crate::BranchRead::read): the scalar types for scalar
+/// [`BranchRead::read`](crate::raw::BranchRead::read): the scalar types for scalar
 /// branches, `Vec<T>` for arrays and `std::vector<T>`, `String` and
 /// `Vec<String>` for strings, `Vec<Vec<T>>` for `std::vector<std::vector<T>>`.
 pub trait FromBranch: Sized {
@@ -340,7 +340,7 @@ impl BranchValues {
     /// whatever integer width it was written in. `None` for a column that is not
     /// a scalar integer.
     #[must_use]
-    pub fn as_i64_vec(&self) -> Option<Vec<i64>> {
+    pub fn to_i64_vec(&self) -> Option<Vec<i64>> {
         use BranchValues::*;
         Some(match self {
             Bool(v) => v.iter().map(|&b| i64::from(b)).collect(),
@@ -363,10 +363,10 @@ impl BranchValues {
     /// concatenating trees, as a chain does. For a
     /// [`Nested`](BranchValues::Nested) column the inner `items` are appended and
     /// the `offsets` rebased so the two entry ranges join seamlessly.
-    pub fn append(&mut self, other: BranchValues) -> Result<()> {
+    pub fn append(&mut self, other: Self) -> Result<()> {
         use BranchValues::*;
         macro_rules! join {
-            ($a:expr_2021, $variant:ident) => {
+            ($a:expr, $variant:ident) => {
                 match other {
                     $variant(b) => {
                         $a.extend(b);

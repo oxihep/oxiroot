@@ -132,14 +132,16 @@ fn main() {
     // file so it can be reused. The file lives in the temp dir and is deleted
     // before we return; nothing is left behind.
     let path = std::env::temp_dir().join("oxiroot_ex_robust_fit.root");
-    let fitted = Func1D::new("robust_line", "[0]+[1]*x", xs[0], xs[n - 1])
+    let fitted = Func1D::new("robust_line", "[0]+[1]*x", xs[0]..=xs[n - 1])
         .expect("valid formula")
-        .with_params(vec![cauchy.params[0], cauchy.params[1]]);
-    fitted
-        .write_root(&path, Compression::Zstd(5))
+        .with_params(&[cauchy.params[0], cauchy.params[1]])
+        .unwrap();
+    oxiroot::FileWriter::create(&path)
+        .add(&fitted)
+        .write()
         .expect("write TF1");
     let f = FileReader::open(&path).expect("open file");
-    let back = Func1D::read_root(&f, "robust_line").expect("read TF1");
+    let back = f.get::<Func1D>("robust_line").expect("read TF1");
     println!();
     println!(
         "wrote + read back the robust line as a TF1: y({:.1}) = {:.3}, y({:.1}) = {:.3}",

@@ -4,15 +4,15 @@
 //! cargo run -p oxiroot --example merge
 //! ```
 //!
-//! `merge_files` (and the `Merger` builder) combine several ROOT files the way
+//! A `Merger` combines several ROOT files the way
 //! ROOT's `hadd` tool does: histograms are summed bin-by-bin, and `TTree` /
-//! RNTuple entries are concatenated. The ROOT command this mirrors:
+//! `RNTuple` entries are concatenated. The ROOT command this mirrors:
 //!
 //! ```sh
 //! hadd merged.root run1.root run2.root
 //! ```
 
-use oxiroot::hadd::{Merger, merge_files};
+use oxiroot::hadd::Merger;
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
@@ -26,7 +26,7 @@ fn main() -> oxiroot::Result<()> {
     ] {
         let mut h = Hist::reg(10, 0.0, 100.0)
             .double()
-            .to_root()
+            .to_root()?
             .named("pt")
             .titled("p_{T}");
         for x in fills {
@@ -35,15 +35,13 @@ fn main() -> oxiroot::Result<()> {
         FileWriter::create(path(file))
             .add(&h)
             .add(&ObjString::new("skim v2").named("provenance"))
-            .write(Compression::Zstd(5))?;
+            .write()?;
     }
 
     // Sum the histograms; the ObjString is copied from the first file.
-    let report = merge_files(
-        path("hists.root"),
-        &[path("run1.root"), path("run2.root")],
-        Compression::Zstd(5),
-    )?;
+    let report = Merger::new()
+        .inputs([path("run1.root"), path("run2.root")])
+        .merge(path("hists.root"))?;
     println!("{report}");
 
     // --- Two tree files, entries concatenated --------------------------------
@@ -52,7 +50,7 @@ fn main() -> oxiroot::Result<()> {
         ("evt2.root", vec![80.4, 172.0, 4.18]),
     ] {
         let mut out = DatasetWriter::create(path(file), "Events", Format::Tree)?;
-        out.write(&Batch::new().column("mass", mass)?)?;
+        out.write(Batch::new().column("mass", mass)?)?;
         out.finish()?;
     }
 
