@@ -17,14 +17,13 @@ on-disk format and is intentionally out of scope.)
     uproot and `hist` do:
 
     ```rust
-    use oxiroot::hist::oxihist::{Histogram, Weight};
     use oxiroot::prelude::*;
 
     // Build and fill with oxihist, then turn it into a ROOT TH1D…
     let mut h = Hist::reg(50, 0.0, 100.0).name("pt").weight();
     h.fill_weight(42.0, 1.5);
     let th1: Hist1D = h.to_root()?;
-    FileWriter::create("pt.root").add(&h).write()?; // …or write it directly
+    FileWriter::create("pt.root").add(&th1).write()?; // …and write it
 
     // …and read a ROOT histogram back as an oxihist one.
     let back = FileReader::open("pt.root")?.get::<Hist1D>("pt")?.to_hist()?;
@@ -226,9 +225,9 @@ use oxiroot::prelude::*;
 let mut signal = pt.clone();
 let mut background = pt.clone();
 
-background *= 0.1;                 // MulAssign — scale background down
+background.scale(0.1);             // scale background down
 signal.add(&background, 1.0)?;     // stack background onto signal (a merge)
-signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
+signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
 ```
 
 ### Contents and Display
@@ -242,7 +241,7 @@ histogram implements `Display` for a one-line summary.
 ```rust
 use oxiroot::prelude::*;
 
-let bin2 = h[2];        // Index: content of cell 2
+let bin2 = h.contents()[2]; // content of cell 2
 let total = h.sum();    // RootHistogram trait: every cell, flow included
 println!("{h}");        // e.g. TH1D "pt": 100 bins [0, 100), entries=4096
 ```

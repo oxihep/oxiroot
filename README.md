@@ -533,7 +533,7 @@ FileWriter::create("fit.root")
     .compression(Compression::Stored).write()?;
 
 let f = FileReader::open("fit.root")?;
-assert_eq!(f.get::<Vector>("pars")?.elements(), &[91.2, 2.1]);
+assert_eq!(f.get::<Vector>("pars")?.as_slice(), &[91.2, 2.1]);
 let cov = f.get::<SymMatrix>("cov")?;
 assert_eq!(cov[(0, 1)], cov[(1, 0)]); // symmetric
 ```
