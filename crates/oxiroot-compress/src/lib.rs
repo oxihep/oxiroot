@@ -56,7 +56,7 @@ impl fmt::Display for CompressError {
                 )
             }
             Self::CodecUnavailable(algo) => {
-                write!(f, "no codec available for algorithm {algo:?}")
+                write!(f, "no codec available for {algo}")
             }
             Self::Codec(msg) => write!(f, "codec error: {msg}"),
         }
@@ -71,6 +71,12 @@ impl std::error::Error for CompressError {}
 /// uncompressed (no block header) and returned verbatim. Otherwise `src` is
 /// parsed as a sequence of ROOT compression blocks until `uncompressed_len`
 /// bytes have been produced.
+///
+/// # Errors
+///
+/// [`CompressError::Truncated`] if a block is cut short, [`CompressError::SizeMismatch`] if the
+/// blocks do not expand to `uncompressed_len` bytes, [`CompressError::CodecUnavailable`] for an
+/// algorithm with no decoder, and [`CompressError::Codec`] if a block does not decode.
 pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, CompressError> {
     if src.len() == uncompressed_len {
         return Ok(src.to_vec());
@@ -151,14 +157,14 @@ fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, Compre
 /// 24-bit block size.
 pub fn compress(src: &[u8], compression: Compression) -> Result<Vec<u8>, CompressError> {
     // (tag, method byte) for each encoder, matching ROOT's framing.
-    let (tag, method, level): ([u8; 2], u8, u32) = match compression {
+    let (tag, method, level): ([u8; 2], u8, u8) = match compression {
         Compression::Stored => return Ok(src.to_vec()),
         Compression::Zlib(level) => (*b"ZL", 8, level), // Z_DEFLATED
         Compression::Lzma(level) => (*b"XZ", 0, level), // an XZ stream, per R__zipLZMA
         Compression::Lz4(level) => (*b"L4", 1, level),  // version byte 1
         Compression::Zstd(level) => (*b"ZS", 1, level),
     };
-    let level = u8::try_from(level.min(99)).unwrap_or(99);
+    let level = level.min(99);
 
     let mut out = Vec::new();
     for chunk in src.chunks(MAX_CHUNK_SIZE.max(1)) {
@@ -325,7 +331,8 @@ mod tests {
 
     #[test]
     fn decompress_rejects_block_overshooting_declared_length() {
-        // A real zlib block, but its header lies that it expands to 64 MiB while
+        // A real zlib block, but its header lies that it expands to 16 MiB (the
+        // most a 24-bit size can claim) while
         // the caller only expects a few bytes. The per-block bound must reject it
         // before allocating, not decode the whole thing first.
         let original = b"small".to_vec();
@@ -335,7 +342,7 @@ mod tests {
             tag: *b"ZL",
             method: 8,
             compressed_size: u32::try_from(compressed.len()).unwrap(),
-            uncompressed_size: 64 << 20, // lie: claims 64 MiB
+            uncompressed_size: (1 << 24) - 1, // lie: claims 16 MiB
         }
         .write(&mut block);
         block.extend_from_slice(&compressed);

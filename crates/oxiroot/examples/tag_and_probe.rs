@@ -284,9 +284,9 @@ mod probes {
         }
 
         // ---- 4. A matched sample: TEfficiency, binomial vs χ² ------------------
-        let mut matched = Efficiency::new(40, 15.0, 35.0);
-        matched.name = "matched_barrel".into();
-        matched.title = "Matched probes, barrel;p_{T} [GeV];efficiency".into();
+        let mut matched = Efficiency::new(40, 15.0, 35.0)
+            .named("matched_barrel")
+            .titled("Matched probes, barrel;p_{T} [GeV];efficiency");
         let x: Vec<f64> = (0..40).map(|i| 15.25 + 0.5 * f64::from(i)).collect();
         for &c in &x {
             for _ in 0..25 {

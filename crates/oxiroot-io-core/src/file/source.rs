@@ -31,12 +31,21 @@ pub trait ByteSource: Send + Sync + std::fmt::Debug {
 
     /// Read exactly `len` bytes starting at absolute `offset`, or error if the
     /// requested range falls outside the file.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the range runs past the end of the source, and any error
+    /// reading it.
     fn read_at(&self, offset: u64, len: usize) -> Result<Bytes>;
 
     /// Read several ranges, returning their bytes in the same order. The
     /// default reads them one at a time; a remote source overrides it to fetch
     /// them in fewer round trips (an `XRootD` vector read, concurrent HTTP
     /// requests).
+    ///
+    /// # Errors
+    ///
+    /// As [`read_at`](Self::read_at), for the first range that fails.
     fn read_many(&self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
         ranges.iter().map(|&(o, l)| self.read_at(o, l)).collect()
     }
@@ -161,6 +170,10 @@ pub struct FileSource {
 
 impl FileSource {
     /// Open `path` for positioned reads, recording its length up front.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be opened or mapped.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)?;
         let len = file.metadata()?.len();

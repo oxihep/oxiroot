@@ -21,8 +21,8 @@ fn reads_root_written_th2poly() {
     let f = FileReader::open(fixture("th2poly.root")).expect("open");
     let h = f.get::<PolyHist>("hp").expect("read");
 
-    assert_eq!(h.name, "hp");
-    assert_eq!(h.title, "poly");
+    assert_eq!(h.name(), "hp");
+    assert_eq!(h.title(), "poly");
     assert_eq!(h.entries(), 2.0);
     assert_eq!(h.tsumw(), 4.0);
     assert_eq!(h.nbins(), 2);
@@ -49,7 +49,7 @@ fn reads_honeycomb_th2poly() {
     let f = FileReader::open(fixture("th2poly_honeycomb.root")).expect("open");
     let h = f.get::<PolyHist>("hc").expect("read");
 
-    assert_eq!(h.title, "honeycomb");
+    assert_eq!(h.title(), "honeycomb");
     assert_eq!(h.nbins(), 14);
     // Every bin is a hexagon (6 vertices).
     assert!(h.bins().iter().all(|b| b.x.len() == 6 && b.y.len() == 6));
@@ -94,8 +94,8 @@ fn th2poly_round_trips() {
             h.bins(),
             "{name} bins changed across round-trip"
         );
-        assert_eq!(back.name, h.name);
-        assert_eq!(back.title, h.title);
+        assert_eq!(back.name(), h.name());
+        assert_eq!(back.title(), h.title());
         assert_eq!(back.entries(), h.entries());
     }
 }
@@ -111,11 +111,11 @@ fn th2poly_build_from_scratch() {
     assert_eq!(h.add_bin_rect(0.0, 0.0, 1.0, 1.0), 1);
     assert_eq!(h.add_bin_rect(1.0, 1.0, 2.0, 2.0), 2);
     assert_eq!(h.add_bin(&[2.0, 3.0, 2.5], &[2.0, 2.0, 3.0]).unwrap(), 3); // a triangle
-    assert_eq!(h.fill(0.5, 0.5), 1);
-    assert_eq!(h.fill_weight(1.5, 1.5, 4.0), 2);
-    assert_eq!(h.fill(2.5, 2.3), 3); // inside the triangle
-    assert_eq!(h.fill(2.5, 2.3), 3);
-    assert_eq!(h.fill(10.0, 10.0), 0); // outside every bin -> overflow
+    assert_eq!(h.fill(0.5, 0.5), Some(1));
+    assert_eq!(h.fill_weight(1.5, 1.5, 4.0), Some(2));
+    assert_eq!(h.fill(2.5, 2.3), Some(3)); // inside the triangle
+    assert_eq!(h.fill(2.5, 2.3), Some(3));
+    assert_eq!(h.fill(10.0, 10.0), None); // outside every bin
 
     let out = std::env::temp_dir().join("oxiroot_th2poly_scratch.root");
     oxiroot_io_core::FileWriter::create(&out)
@@ -133,4 +133,14 @@ fn th2poly_build_from_scratch() {
     assert_eq!(back.bin(3).unwrap().content, 2.0);
     assert_eq!(back.bin(3).unwrap().x, vec![2.0, 3.0, 2.5]);
     assert_eq!(back.entries(), 5.0);
+}
+
+/// Setting the content of a bin that does not exist is an error, not a no-op.
+#[test]
+fn setting_a_missing_bin_is_an_error() {
+    let mut h = PolyHist::new(0.0, 2.0, 0.0, 2.0);
+    let bin = h.add_bin_rect(0.0, 0.0, 1.0, 1.0);
+    h.set_bin_content(bin, 3.0).unwrap();
+    assert_eq!(h.bins()[0].content, 3.0);
+    assert!(h.set_bin_content(bin + 1, 1.0).is_err());
 }

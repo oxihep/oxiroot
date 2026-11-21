@@ -89,7 +89,7 @@ fn main() -> oxiroot::Result<()> {
     // Profile1D derives PartialEq, so a full round-trip is a single comparison.
     println!(
         "read back `{}`: identical to what we wrote? {}",
-        back.name,
+        back.name(),
         back == record,
     );
     println!(

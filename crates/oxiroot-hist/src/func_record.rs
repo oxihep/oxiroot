@@ -132,22 +132,55 @@ fn read_tformula_ptr(r: &mut RBuffer<'_>) -> Result<(String, Vec<f64>)> {
     let _named = read_named(r)?;
     let params = read_vector_f64(r)?; // fClingParameters
     let _all_set = r.u8()?;
-    skip_param_map(r)?; // fParams
-    let formula = r.string()?; // fFormula ([pN] form)
+    let names = read_param_map(r)?; // fParams
+    let formula = positional(&r.string()?, &names); // fFormula
     r.seek(end)?;
     Ok((formula, params))
 }
 
-/// Skip a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`).
-fn skip_param_map(r: &mut RBuffer<'_>) -> Result<()> {
+/// Read a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`):
+/// each parameter's name and its index.
+fn read_param_map(r: &mut RBuffer<'_>) -> Result<Vec<(String, i32)>> {
     let _bc = r.be_i32()?;
     let _ver = r.be_i16()?;
-    let count = usize::saturating_from(r.be_i32()?.max(0));
+    let count = r.be_i32()?.max(0);
+    let mut names = Vec::with_capacity(r.bounded_capacity(usize::saturating_from(count), 5));
     for _ in 0..count {
-        let _key = r.string()?;
-        let _val = r.be_i32()?;
+        let name = r.string()?;
+        names.push((name, r.be_i32()?));
     }
-    Ok(())
+    Ok(names)
+}
+
+/// `formula` with each parameter named by its position, `[p0]`, `[p1]`, …
+///
+/// ROOT stores a formula with the names its parameters have: `[p0]` for a
+/// formula typed as `[0]`, but `[Constant]`, `[Mean]`, `[Sigma]` for a
+/// predefined `gaus`. `names` is the stored map from name to index. The
+/// positional form is the one this crate evaluates and writes, so a named
+/// formula has to be turned into it: written back with its names but a map of
+/// `p0`… it would give ROOT twice the parameters, all unset.
+fn positional(formula: &str, names: &[(String, i32)]) -> String {
+    let mut out = String::with_capacity(formula.len());
+    let mut rest = formula;
+    while let Some(open) = rest.find('[') {
+        let Some(len) = rest[open..].find(']') else {
+            break;
+        };
+        let name = &rest[open + 1..open + len];
+        out.push_str(&rest[..open]);
+        match names.iter().find(|(n, _)| n == name) {
+            Some((_, index)) => {
+                out.push_str("[p");
+                out.push_str(&index.to_string());
+                out.push(']');
+            }
+            None => out.push_str(&rest[open..=open + len]),
+        }
+        rest = &rest[open + len + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 // --- write ------------------------------------------------------------------
@@ -208,4 +241,35 @@ fn write_param_map(w: &mut WBuffer, n: usize) {
     }
     let len = u32::saturating_from(w.len() - start);
     w.patch_be_u32(bc, K_BYTE_COUNT_MASK | len);
+}
+
+#[cfg(test)]
+mod positional_tests {
+    use super::positional;
+
+    #[test]
+    fn named_parameters_become_positional() {
+        let names = [
+            ("Constant".to_string(), 0),
+            ("Mean".to_string(), 1),
+            ("Sigma".to_string(), 2),
+        ];
+        assert_eq!(
+            positional(
+                "[Constant]*exp(-0.5*((x-[Mean])/[Sigma])*((x-[Mean])/[Sigma]))",
+                &names
+            ),
+            "[p0]*exp(-0.5*((x-[p1])/[p2])*((x-[p1])/[p2]))"
+        );
+    }
+
+    #[test]
+    fn positional_parameters_and_unknown_names_are_kept() {
+        let names = [("p0".to_string(), 0), ("p1".to_string(), 1)];
+        assert_eq!(positional("[p0]+[p1]*x", &names), "[p0]+[p1]*x");
+        assert_eq!(positional("[q]*x+a[", &names), "[q]*x+a[");
+        // A name that is another parameter's positional form does not chain.
+        let swapped = [("p1".to_string(), 0), ("a".to_string(), 1)];
+        assert_eq!(positional("[p1]+[a]", &swapped), "[p0]+[p1]");
+    }
 }

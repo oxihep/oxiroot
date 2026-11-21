@@ -82,9 +82,9 @@ impl PolyBin {
 #[doc(alias = "TH2Poly")]
 pub struct PolyHist {
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis (the bins' overall bounding box).
     pub(crate) xaxis: Axis,
     /// Y axis (the bins' overall bounding box).
@@ -188,41 +188,45 @@ impl PolyHist {
         )
     }
 
-    /// Set a bin's content by `number` (no-op if no such bin).
-    pub fn set_bin_content(&mut self, number: i32, content: f64) {
-        if let Some(b) = self.bins.iter_mut().find(|b| b.number == number) {
-            b.content = content;
-        }
+    /// Set a bin's content by `number`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if no bin has that number.
+    pub fn set_bin_content(&mut self, number: i32, content: f64) -> Result<()> {
+        let bin = self
+            .bins
+            .iter_mut()
+            .find(|b| b.number == number)
+            .ok_or_else(|| Error::InvalidInput(format!("no bin numbered {number}")))?;
+        bin.content = content;
+        Ok(())
     }
 
     /// Fill `(x, y)` with unit weight; see [`fill_weight`](Self::fill_weight).
-    pub fn fill(&mut self, x: f64, y: f64) -> i32 {
+    pub fn fill(&mut self, x: f64, y: f64) -> Option<i32> {
         self.fill_weight(x, y, 1.0)
     }
 
     /// Fill `(x, y)` with weight `w`, adding it to the first bin that contains
     /// the point and accumulating the statistics. Returns the filled bin's
-    /// `number`, or `0` if the point lay outside every bin (overflow).
-    pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) -> i32 {
+    /// `number`, or `None` if the point lay outside every bin; the fill still
+    /// counts as an entry, as in ROOT.
+    pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) -> Option<i32> {
         self.entries += 1.0;
-        let hit = self
+        let bin = self
             .bins
-            .iter()
-            .position(|b| point_in_polygon(&b.x, &b.y, x, y));
-        match hit {
-            Some(i) => {
-                self.bins[i].content += w;
-                self.tsumw += w;
-                self.tsumw2 += w * w;
-                self.tsumwx += w * x;
-                self.tsumwx2 += w * x * x;
-                self.tsumwy += w * y;
-                self.tsumwy2 += w * y * y;
-                self.tsumwxy += w * x * y;
-                self.bins[i].number
-            }
-            None => 0,
-        }
+            .iter_mut()
+            .find(|b| point_in_polygon(&b.x, &b.y, x, y))?;
+        bin.content += w;
+        self.tsumw += w;
+        self.tsumw2 += w * w;
+        self.tsumwx += w * x;
+        self.tsumwx2 += w * x * x;
+        self.tsumwy += w * y;
+        self.tsumwy2 += w * y * y;
+        self.tsumwxy += w * x * y;
+        Some(bin.number)
     }
 
     pub(crate) fn read(r: &mut RBuffer<'_>, keylen: usize) -> Result<Self> {
@@ -230,7 +234,7 @@ impl PolyHist {
 
         let top = r.read_version()?; // PolyHist v3
         let th2 = r.read_version()?; // Hist2D v5 base
-        let core = read_th1_base(r)?; // Hist1D base (name/title/axes/stats)
+        let core = read_th1_base(r, None)?; // Hist1D base (name/title/axes/stats)
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;

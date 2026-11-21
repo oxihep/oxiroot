@@ -360,6 +360,11 @@ impl FieldValues {
     /// is returned. Structural fields ([`Record`](FieldValues::Record),
     /// [`Nested`](FieldValues::Nested), [`Variant`](FieldValues::Variant), and
     /// [`Opt`](FieldValues::Opt)) are not concatenable here.
+    ///
+    /// # Errors
+    ///
+    /// If the two do not hold the same kind of values, or hold a structural kind that cannot be
+    /// concatenated; `self` is left unchanged.
     pub fn append(&mut self, other: Self) -> Result<()> {
         use FieldValues::*;
         macro_rules! join {
@@ -609,6 +614,10 @@ pub trait FromField: Sized {
 
     /// Take the values out of `values`, or fail with
     /// [`Error::TypeMismatch`] naming `name` if they are another type.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::TypeMismatch`] if the field `name` does not hold this type.
     fn from_values(name: &str, values: FieldValues) -> Result<Vec<Self>>;
 }
 

@@ -19,8 +19,9 @@ use oxiroot_io_core::raw::{
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, objptr};
 use oxiroot_io_core::{Error, RBuffer, Result, StreamerSet, WBuffer};
 
-use crate::graph::{Graph, decode_tgraph};
-use crate::hist1d::{Hist1D, decode_th1};
+use crate::base::bin_content_type_of;
+use crate::graph::{Graph, read_tgraph};
+use crate::hist1d::Hist1D;
 use crate::threaded::Mergeable;
 use crate::write::{WriteRoot, hist_streamer_classes};
 
@@ -271,7 +272,7 @@ impl WriteRoot for HistStack {
 fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<HistStack> {
     if class != "THStack" {
         return Err(Error::WrongClass {
-            name: String::new(),
+            name: None,
             found: class.to_string(),
             expected: "THStack".to_string(),
         });
@@ -284,7 +285,14 @@ fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<HistStack
     let mut hists = Vec::with_capacity(ranges.len());
     for (member_class, range) in ranges {
         if member_class.starts_with("TH1") {
-            hists.push(decode_th1(&member_class, &object[range])?);
+            // Read in place, with the map the list was walked with.
+            let mut member = RBuffer::new(object);
+            member.seek(range.start)?;
+            hists.push(Hist1D::read(
+                &mut member,
+                bin_content_type_of(&member_class)?,
+                Some(&mut tags),
+            )?);
         }
     }
     Ok(HistStack { name, title, hists })
@@ -405,7 +413,7 @@ impl WriteRoot for GraphStack {
 fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<GraphStack> {
     if class != "TMultiGraph" {
         return Err(Error::WrongClass {
-            name: String::new(),
+            name: None,
             found: class.to_string(),
             expected: "TMultiGraph".to_string(),
         });
@@ -418,7 +426,16 @@ fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<Graph
     let mut graphs = Vec::with_capacity(ranges.len());
     for (member_class, range) in ranges {
         if member_class.starts_with("TGraph") {
-            graphs.push(decode_tgraph(&name, &member_class, &object[range], None)?);
+            // Read in place, with the map the list was walked with: the
+            // members share one buffer, and so one set of class tags.
+            let mut member = RBuffer::new(object);
+            member.seek(range.start)?;
+            graphs.push(read_tgraph(
+                &mut member,
+                &name,
+                &member_class,
+                Some(&mut tags),
+            )?);
         }
     }
     Ok(GraphStack {

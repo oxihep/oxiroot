@@ -29,10 +29,10 @@ fn a_time_axis_survives_a_file() {
         .with_bin_content_type(oxiroot_hist::BinContentType::F32)
         .named("Graph");
     frame.xaxis_mut().set_time_format(FORMAT);
-    let mut g = Graph::new(vec![0.0, 3_600.0], vec![1.0, 2.0])
+    let g = Graph::new(vec![0.0, 3_600.0], vec![1.0, 2.0])
         .unwrap()
-        .named("trend");
-    g.histogram = Some(frame);
+        .named("trend")
+        .with_histogram(frame);
 
     let out = std::env::temp_dir().join("oxiroot_time_axis.root");
     FileWriter::create(&out)
@@ -49,7 +49,7 @@ fn a_time_axis_survives_a_file() {
     assert_eq!(read, h);
 
     let read = f.get::<Graph>("trend").expect("read graph");
-    let frame = read.histogram.as_ref().expect("display frame");
+    let frame = read.histogram().expect("display frame");
     assert!(frame.xaxis().time_display);
     assert_eq!(frame.xaxis().time_format, FORMAT);
 }

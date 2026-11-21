@@ -73,6 +73,10 @@ pub struct RNTupleAnchor {
 impl RNTupleAnchor {
     /// Parse and checksum-verify the anchor from the decompressed Key object
     /// bytes (which begin with ROOT's object header).
+    ///
+    /// # Errors
+    ///
+    /// If `object` is shorter than an anchor, or is not one this crate reads.
     pub fn read(object: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(object);
         let header = r.read_version()?; // ROOT {byte-count, class version}

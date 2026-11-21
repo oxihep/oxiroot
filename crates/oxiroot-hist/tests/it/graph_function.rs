@@ -20,12 +20,12 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_root_graph_function() {
     let f = FileReader::open(fixture("graph_function.root")).expect("open");
     let g = f.get::<Graph>("gfit").expect("read gfit");
-    assert_eq!(g.title, "fitted");
+    assert_eq!(g.title(), "fitted");
     assert_eq!(g.x(), vec![0.0, 1.0, 2.0, 3.0, 4.0]);
     assert_eq!(g.y(), vec![1.0, 3.0, 5.0, 7.0, 9.0]);
 
-    assert_eq!(g.functions.len(), 1);
-    let fun = &g.functions[0];
+    assert_eq!(g.functions().len(), 1);
+    let fun = &g.functions()[0];
     assert_eq!(fun.name, "line");
     assert_eq!(fun.title, "[0]+[1]*x"); // ROOT's title is the [0]-form formula
     assert_eq!(fun.formula, "[p0]+[p1]*x"); // TFormula stores the [pN] form
@@ -41,7 +41,7 @@ fn reads_root_graph_function() {
         .unwrap()
         .get::<Graph>("g")
         .unwrap();
-    assert!(g0.functions.is_empty());
+    assert!(g0.functions().is_empty());
 }
 
 /// ROOT's graph-with-function round-trips through oxiroot byte-faithfully enough
@@ -80,9 +80,9 @@ fn graph_function_built_from_scratch() {
             4.0,
         ));
 
-    assert_eq!(g.functions.len(), 1);
-    assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
-    assert_eq!(g.functions[0].par_errors, vec![0.0, 0.0]); // defaulted, sized to params
+    assert_eq!(g.functions().len(), 1);
+    assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
+    assert_eq!(g.functions()[0].par_errors, vec![0.0, 0.0]); // defaulted, sized to params
 
     let out = std::env::temp_dir().join("oxiroot_graph_function_scratch.root");
     oxiroot_io_core::FileWriter::create(&out)
@@ -120,10 +120,10 @@ fn multiple_functions_round_trip() {
         .write()
         .expect("write");
     let back = FileReader::open(&out).unwrap().get::<Graph>("g").unwrap();
-    assert_eq!(back.functions.len(), 2);
-    assert_eq!(back.functions[0].name, "lin");
-    assert_eq!(back.functions[1].name, "sq");
-    assert_eq!(back.functions[1].formula, "[p0]*x*x");
+    assert_eq!(back.functions().len(), 2);
+    assert_eq!(back.functions()[0].name, "lin");
+    assert_eq!(back.functions()[1].name, "sq");
+    assert_eq!(back.functions()[1].formula, "[p0]*x*x");
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }

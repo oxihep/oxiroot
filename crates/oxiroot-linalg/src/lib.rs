@@ -15,6 +15,13 @@ use oxiroot_io_core::raw::{check_len, read_object_base, write_object_base};
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, basicptr, basicptr_in};
 use oxiroot_io_core::{Error, Object, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
 
+/// The ROOT class a [`Vector`] is stored as.
+const VECTOR_CLASS: &str = "TVectorT<double>";
+/// The ROOT class a [`Matrix`] is stored as.
+const MATRIX_CLASS: &str = "TMatrixT<double>";
+/// The ROOT class a [`SymMatrix`] is stored as.
+const SYM_MATRIX_CLASS: &str = "TMatrixTSym<double>";
+
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
 const MATRIX_TOL: f64 = f64::EPSILON;
@@ -124,7 +131,7 @@ impl Vector {
 
 impl WriteRoot for Vector {
     fn root_class(&self) -> String {
-        "TVectorT<double>".to_string()
+        VECTOR_CLASS.to_string()
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -146,7 +153,7 @@ impl WriteRoot for Vector {
         w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        streamer_classes("TVectorT<double>")
+        streamer_classes(VECTOR_CLASS)
     }
 }
 
@@ -199,7 +206,7 @@ impl AsRef<[f64]> for Vector {
 }
 
 impl ReadRoot for Vector {
-    const CLASS: &'static str = "TVectorT<double>";
+    const CLASS: &'static str = VECTOR_CLASS;
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
         (object.class == Self::CLASS)
@@ -209,10 +216,15 @@ impl ReadRoot for Vector {
 
 /// Decode a `TVectorT<double>` object body (as stored under a key) into a
 /// [`Vector`]. `class` is checked; `object` is the decompressed payload.
+///
+/// # Errors
+///
+/// [`Error::WrongClass`] if `class` is not the vector class, and a format error if `object` is
+/// truncated or malformed.
 pub fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<Vector> {
-    if class != "TVectorT<double>" {
+    if class != VECTOR_CLASS {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TVectorD".to_string(),
         });
@@ -248,7 +260,7 @@ impl Matrix {
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `elements.len() != nrows * ncols`, and
-    /// [`Error::Format`] if the matrix has more rows, columns or elements than
+    /// [`Error::InvalidInput`] if the matrix has more rows, columns or elements than
     /// ROOT can store (`i32::MAX`).
     pub fn new(nrows: usize, ncols: usize, elements: impl Into<Vec<f64>>) -> Result<Self> {
         let elements = elements.into();
@@ -303,7 +315,7 @@ impl Matrix {
 
 impl WriteRoot for Matrix {
     fn root_class(&self) -> String {
-        "TMatrixT<double>".to_string()
+        MATRIX_CLASS.to_string()
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -323,12 +335,12 @@ impl WriteRoot for Matrix {
         w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        streamer_classes("TMatrixT<double>")
+        streamer_classes(MATRIX_CLASS)
     }
 }
 
 impl ReadRoot for Matrix {
-    const CLASS: &'static str = "TMatrixT<double>";
+    const CLASS: &'static str = MATRIX_CLASS;
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
         (object.class == Self::CLASS)
@@ -337,10 +349,15 @@ impl ReadRoot for Matrix {
 }
 
 /// Decode a `TMatrixT<double>` object body into a [`Matrix`].
+///
+/// # Errors
+///
+/// [`Error::WrongClass`] if `class` is not the matrix class, and a format error if `object` is
+/// truncated or malformed.
 pub fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<Matrix> {
-    if class != "TMatrixT<double>" {
+    if class != MATRIX_CLASS {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TMatrixD".to_string(),
         });
@@ -383,7 +400,7 @@ impl SymMatrix {
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `elements.len() != n * n`, and
-    /// [`Error::Format`] if the matrix has more rows or elements than ROOT can
+    /// [`Error::InvalidInput`] if the matrix has more rows or elements than ROOT can
     /// store (`i32::MAX`).
     pub fn new(n: usize, elements: impl Into<Vec<f64>>) -> Result<Self> {
         let mut elements = elements.into();
@@ -437,7 +454,7 @@ impl SymMatrix {
 
 impl WriteRoot for SymMatrix {
     fn root_class(&self) -> String {
-        "TMatrixTSym<double>".to_string()
+        SYM_MATRIX_CLASS.to_string()
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -459,12 +476,12 @@ impl WriteRoot for SymMatrix {
         w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        streamer_classes("TMatrixTSym<double>")
+        streamer_classes(SYM_MATRIX_CLASS)
     }
 }
 
 impl ReadRoot for SymMatrix {
-    const CLASS: &'static str = "TMatrixTSym<double>";
+    const CLASS: &'static str = SYM_MATRIX_CLASS;
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
         (object.class == Self::CLASS)
@@ -474,10 +491,15 @@ impl ReadRoot for SymMatrix {
 
 /// Decode a `TMatrixTSym<double>` object body (upper triangle on disk) into a
 /// full [`SymMatrix`].
+///
+/// # Errors
+///
+/// [`Error::WrongClass`] if `class` is not the symmetric-matrix class, and a format error if
+/// `object` is truncated or malformed.
 pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<SymMatrix> {
-    if class != "TMatrixTSym<double>" {
+    if class != SYM_MATRIX_CLASS {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TMatrixDSym".to_string(),
         });
@@ -543,8 +565,8 @@ pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
         ],
     };
     match class {
-        "TVectorT<double>" => vec![ClassDef {
-            name: "TVectorT<double>".into(),
+        VECTOR_CLASS => vec![ClassDef {
+            name: VECTOR_CLASS.into(),
             version: 4,
             checksum: 1_779_256_495,
             elements: vec![
@@ -554,10 +576,10 @@ pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
                 basicptr("fElements", 48, 8, "double*", "fNrows"),
             ],
         }],
-        "TMatrixT<double>" => vec![
+        MATRIX_CLASS => vec![
             matrix_base(),
             ClassDef {
-                name: "TMatrixT<double>".into(),
+                name: MATRIX_CLASS.into(),
                 version: 4,
                 checksum: 135_074_716,
                 elements: vec![
@@ -578,7 +600,7 @@ pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
         // ROOT emits no `TMatrixTSym<double>` streamer — its custom Streamer
         // writes the base then the triangle, and uproot models it natively — so
         // only the shared base is needed.
-        "TMatrixTSym<double>" | "TMatrixTBase<double>" => vec![matrix_base()],
+        SYM_MATRIX_CLASS | "TMatrixTBase<double>" => vec![matrix_base()],
         _ => Vec::new(),
     }
 }
@@ -648,7 +670,7 @@ mod tests {
             .unwrap()
             .named("s");
         assert_eq!(s.as_slice(), &[1.0, 0.5, 0.5, 2.0]);
-        let back = decode_tmatrixdsym("s", "TMatrixTSym<double>", &s.to_root_bytes()).unwrap();
+        let back = decode_tmatrixdsym("s", SYM_MATRIX_CLASS, &s.to_root_bytes()).unwrap();
         assert_eq!(back, s);
     }
 
@@ -693,14 +715,14 @@ mod tests {
         // a smaller n that still does not fit in memory.
         let body = sym_body(i32::MAX, i32::MAX, &[0; 16]);
         assert!(matches!(
-            decode_tmatrixdsym("s", "TMatrixTSym<double>", &body),
+            decode_tmatrixdsym("s", SYM_MATRIX_CLASS, &body),
             Err(Error::UnexpectedEof { .. })
         ));
     }
 
     #[test]
     fn a_malformed_symmetric_header_is_an_error() {
-        let class = "TMatrixTSym<double>";
+        let class = SYM_MATRIX_CLASS;
         assert!(matches!(
             decode_tmatrixdsym("s", class, &sym_body(2, 3, &[0; 48])),
             Err(Error::Format(_))

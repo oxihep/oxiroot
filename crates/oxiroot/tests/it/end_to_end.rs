@@ -46,8 +46,9 @@ fn writes_and_reads_a_mixed_object_file() {
         .with_params(&[2.0, 1.5])
         .unwrap();
 
-    let mut g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
-    g.name = "g".into();
+    let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])
+        .unwrap()
+        .named("g");
 
     FileWriter::create(tmp("mixed"))
         .add(&h.to_root().unwrap())

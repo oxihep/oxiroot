@@ -73,7 +73,7 @@ pub use file::{
     SubdirWriter,
 };
 
-pub use object_io::{Object, ReadRoot, StreamerSet, WriteInto, WriteRoot};
+pub use object_io::{KeyCheck, Object, ReadRoot, StreamerSet, Within, WriteInto, WriteRoot};
 pub use objects::{ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter};
 pub use read_object::read_object;
 
@@ -90,7 +90,7 @@ pub mod raw {
     pub use crate::file::{
         BIG_FILE_VERSION, ContainerWriter, DATIME, Datime, DirId, Directory, FILE_VERSION,
         FileHeader, Form, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Uuid, compress_if_smaller,
-        find_key, read_free, split_cycle,
+        find_key, read_free, split_cycle, write_atomic,
     };
     pub use crate::object::{
         K_CLASS_MASK, K_NEW_CLASS_TAG, ObjectRef, PointerHeader, RecordHeader, TagReader,

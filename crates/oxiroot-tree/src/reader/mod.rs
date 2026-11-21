@@ -98,11 +98,11 @@ impl TreeIndex {
         &self.major_name
     }
 
-    /// The branch giving the minor key (`fMinorName`), empty when the index has
-    /// only a major key.
+    /// The branch giving the minor key (`fMinorName`), or `None` when the
+    /// index has only a major key.
     #[must_use]
-    pub fn minor_name(&self) -> &str {
-        &self.minor_name
+    pub fn minor_name(&self) -> Option<&str> {
+        (!self.minor_name.is_empty()).then_some(&self.minor_name)
     }
 
     /// How many keys the index holds.
@@ -155,11 +155,11 @@ impl Friend {
         &self.tree_name
     }
 
-    /// The file holding the friend, or `""` when it is in the same file as the
-    /// main tree.
+    /// The file holding the friend, or `None` when it is in the same file as
+    /// the main tree.
     #[must_use]
-    pub fn file_name(&self) -> &str {
-        &self.file_name
+    pub fn file_name(&self) -> Option<&str> {
+        (!self.file_name.is_empty()).then_some(&self.file_name)
     }
 
     /// The alias the friend is referred to by.
@@ -269,6 +269,11 @@ struct Leaf {
 impl<'f> TreeReader<'f> {
     /// Open the `TTree` at `path` in `file`: `"events"`, or
     /// `"dir/sub/events;cycle"` for one in a subdirectory or at a given cycle.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if `path` names no key, [`Error::WrongClass`] if the key is not a
+    /// `TTree`, and any error reading the tree's metadata.
     pub fn open(file: &'f FileReader, path: &str) -> Result<Self> {
         Self::open_from_key(file, &file.key(path)?)
     }
@@ -279,7 +284,7 @@ impl<'f> TreeReader<'f> {
         // one extra header plus a trailing `Int_t fNvar`); read them as trees too.
         if !matches!(key.class_name.as_str(), "TTree" | "TNtuple" | "TNtupleD") {
             return Err(Error::WrongClass {
-                name: key.name.clone(),
+                name: Some(key.name.clone()),
                 found: key.class_name.clone(),
                 expected: "TTree".to_string(),
             });
@@ -377,6 +382,11 @@ impl<'f> TreeReader<'f> {
     /// # let _ = aligned;
     /// # Ok(()) }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `friend` has no index, and any error reading the branches the
+    /// index names.
     pub fn join_by_index(&self, friend: &TreeReader<'_>) -> Result<Vec<Option<u64>>> {
         let index = friend.index().ok_or_else(|| {
             Error::InvalidInput(format!(
@@ -386,8 +396,8 @@ impl<'f> TreeReader<'f> {
         })?;
         let major = self.index_column(index.major_name())?;
         let minor = match index.minor_name() {
-            "" => vec![0; major.len()],
-            name => self.index_column(name)?,
+            None => vec![0; major.len()],
+            Some(name) => self.index_column(name)?,
         };
         Ok(major
             .iter()
@@ -576,6 +586,10 @@ impl<'f> TreeReader<'f> {
     /// The entry numbers at which `name`'s baskets start, followed by the
     /// entry count: basket `i` holds entries `[b[i], b[i + 1])`. Reading a
     /// window that starts and ends on these decompresses no basket twice.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if the tree has no branch `name`.
     pub fn basket_boundaries(&self, name: &str) -> Result<Vec<u64>> {
         let branch = self.require_branch(name)?;
         let mut bounds: Vec<u64> = if branch.basket_entry.len() == branch.n_baskets {
@@ -669,12 +683,12 @@ impl<'f> TreeReader<'f> {
     fn read_flat(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<Jagged> {
         let branch = self.require_branch(name)?;
         if branch.leaf_type == LeafType::Str {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::Unsupported(format!(
                 "branch {name:?} is a string branch, which has no flat form; use values()"
             )));
         }
         if branch.object_member.is_some() || branch.nested_elem.is_some() {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::Unsupported(format!(
                 "branch {name:?} has no flat form; use values()"
             )));
         }
@@ -770,6 +784,11 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     /// array or `std::vector<float>`, `String` for a string. Asking for another
     /// type than the branch holds is an [`Error::TypeMismatch`]; nothing is
     /// converted.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if there is no such branch, [`Error::TypeMismatch`] if it does not
+    /// hold `T`, and any error reading its baskets.
     pub fn read<T: FromBranch>(self) -> Result<Vec<T>> {
         let name = self.name;
         T::from_values(name, self.values()?)
@@ -777,6 +796,10 @@ impl<'a, 'f> BranchRead<'a, 'f> {
 
     /// The values as the [`BranchValues`] enum, for code that does not know the
     /// branch's type in advance.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if there is no such branch, and any error reading its baskets.
     pub fn values(self) -> Result<BranchValues> {
         self.tree.read_values(self.name, self.range, self.decode)
     }
@@ -784,6 +807,11 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     /// The values flat: one buffer of every element plus per-entry offsets —
     /// no allocation per entry. Scalar, fixed-array, variable-array and
     /// `std::vector<T>` branches; not strings or nested vectors.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unsupported`] for a branch that has no flat form (read it with
+    /// [`values`](Self::values)), and any error reading its baskets.
     pub fn flat(self) -> Result<Jagged> {
         self.tree.read_flat(self.name, self.range, self.decode)
     }

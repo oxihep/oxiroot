@@ -29,6 +29,10 @@ pub struct ObjectBase {
 /// Read a `TObject` base: a 2-byte version, `fUniqueID`, `fBits`, and a 2-byte
 /// process-id reference iff `kIsReferenced` is set. Leaves the cursor just past
 /// the `TObject` data.
+///
+/// # Errors
+///
+/// [`Error::UnexpectedEof`](crate::Error::UnexpectedEof) if the buffer ends first.
 pub fn read_object_base(r: &mut RBuffer<'_>) -> Result<ObjectBase> {
     let vh = r.read_version()?; // version only, no byte count
     let unique_id = r.be_u32()?;
@@ -56,6 +60,11 @@ pub struct Named {
 
 /// Read a `Named` base (`TObject` + `fName` + `fTitle`), then seek to the end
 /// of the `Named` record as given by its byte count.
+///
+/// # Errors
+///
+/// [`Error::UnexpectedEof`](crate::Error::UnexpectedEof) if the buffer ends first, and [`Error::InvalidUtf8`](crate::Error::InvalidUtf8) if the name or
+/// title is not UTF-8.
 pub fn read_named(r: &mut RBuffer<'_>) -> Result<Named> {
     let vh = r.read_version()?;
     let _obj = read_object_base(r)?;
@@ -70,6 +79,10 @@ pub fn read_named(r: &mut RBuffer<'_>) -> Result<Named> {
 /// Read a versioned object's header and seek straight to its end, skipping the
 /// payload entirely. Returns the version. Errors if the object had no byte
 /// count (and therefore no known end to skip to).
+///
+/// # Errors
+///
+/// If the buffer ends first, or the object has no byte count to skip by.
 pub fn skip_versioned(r: &mut RBuffer<'_>) -> Result<u16> {
     let vh = r.read_version()?;
     match vh.end {

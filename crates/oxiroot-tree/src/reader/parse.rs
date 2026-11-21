@@ -642,8 +642,8 @@ fn read_leaf_array(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Leaf
     let mut leaves = Vec::new();
     for _ in 0..size {
         let header = tags.read_header(r)?;
-        if let Some(class) = header.class_name.clone()
-            && let Some(leaf) = read_leaf(r, &class)?
+        if let Some(class) = header.class_name.as_deref()
+            && let Some(leaf) = read_leaf(r, class)?
         {
             leaves.push(leaf);
         }

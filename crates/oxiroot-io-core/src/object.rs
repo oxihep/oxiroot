@@ -22,6 +22,7 @@ pub const K_CLASS_MASK: u32 = 0x8000_0000;
 const K_MAP_OFFSET: i64 = 2;
 
 /// The outcome of reading an object's `{byte-count, class-tag}` header.
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct RecordHeader {
     /// The resolved class name, or `None` for a null/parent slot.
@@ -200,10 +201,18 @@ impl TagReader {
             })
         } else {
             let refpos = i64::from(tag & !K_CLASS_MASK);
-            let classname =
-                self.refs.get(&refpos).cloned().ok_or_else(|| {
-                    Error::Format(format!("unknown class-tag reference {refpos}"))
-                })?;
+            let classname = match self.refs.get(&refpos) {
+                Some(name) => name.clone(),
+                // Not seen by this reader: the class was named inside an object
+                // it skipped over. The reference says where; read it there.
+                None => {
+                    let name = self.class_declared_at(r, refpos).ok_or_else(|| {
+                        Error::Format(format!("unknown class-tag reference {refpos}"))
+                    })?;
+                    self.refs.insert(refpos, name.clone());
+                    name
+                }
+            };
             self.map_object(beg, &classname, r.pos());
             Ok(RecordHeader {
                 class_name: Some(classname),
@@ -211,6 +220,24 @@ impl TagReader {
                 back_ref: None,
             })
         }
+    }
+
+    /// The class a `kNewClassTag` declares at the buffer position the
+    /// reference `refpos` names, if there is one there. Leaves the cursor where
+    /// it was.
+    fn class_declared_at(&self, r: &mut RBuffer<'_>, refpos: i64) -> Option<String> {
+        let tag_at = usize::try_from(refpos - K_MAP_OFFSET - self.keylen).ok()?;
+        let here = r.pos();
+        let name = (|| {
+            r.seek(tag_at).ok()?;
+            (r.be_u32().ok()? == K_NEW_CLASS_TAG).then_some(())?;
+            let name = read_cstring(r).ok()?;
+            // A class name, not whatever bytes happened to follow a matching word.
+            (!name.is_empty() && name.bytes().all(|b| b.is_ascii_graphic() || b == b' '))
+                .then_some(name)
+        })();
+        r.seek(here).ok()?;
+        name
     }
 
     /// Record an object that starts at `beg` (the offset of its header) and whose
@@ -225,15 +252,6 @@ impl TagReader {
                 pos,
             },
         );
-    }
-}
-
-impl std::fmt::Debug for RecordHeader {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RecordHeader")
-            .field("class_name", &self.class_name)
-            .field("end", &self.end)
-            .finish_non_exhaustive()
     }
 }
 

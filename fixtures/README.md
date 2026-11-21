@@ -44,6 +44,9 @@ c++ $(root-config --cflags) scripts/gen_root_fixtures.cpp $(root-config --libs) 
 | `tprofile_uncompressed.root` | a `TProfile` `p`, 4 bins | C++ ROOT |
 | `persist_objs.root` | a `TObjString` `label` + `TParameter<double/int/Long64_t>` `lumi`/`nevents`/`bignum` (`scripts/gen_persist_objs.cpp`) | C++ ROOT |
 | `collections.root` | a `THStack` `hs` (2×`TH1F`) + `TMultiGraph` `mg` (2×`TGraph`) (`scripts/gen_collections.cpp`) | C++ ROOT |
+| `multigraph_functions.root` | a `TMultiGraph` `mg` of 2×`TGraph`, each with a `TF1` in `fFunctions`: the second `TF1` is named by a class back-reference into the first graph (`scripts/gen_multigraph_functions.cpp`) | C++ ROOT |
+| `list_functions.root` | a `TList` `graphs` of 2×`TGraph`, each with a `TF1` in `fFunctions`: the second graph names `TF1` and `TList` by class back-references into the first (`scripts/gen_list_functions.cpp`) | C++ ROOT |
+| `hist_functions.root` | a `TH1F` `h` with two `TF1`s in `fFunctions` (a line, and a `gaus`, which ROOT stores with named parameters) and a `THStack` `hs` of 2×`TH1F` with one each (`scripts/gen_hist_functions.cpp`) | C++ ROOT |
 | `linalg.root` | a `TVectorD` `v`, `TMatrixD` `m` (2×3), `TMatrixDSym` `s` (3×3) (`scripts/gen_linalg.cpp`) | C++ ROOT |
 | `objlist.root` | a `TList` `mylist` (TH1F + TObjString + TParameter) + `TObjArray` `myarr` (2×TH1F) (`scripts/gen_objlist.cpp`) | C++ ROOT |
 | `tmap.root` | a `TMap` `meta` (string keys → TObjString / TParameter / TH1F) (`scripts/gen_tmap.cpp`) | C++ ROOT (uproot has no TMap model) |

@@ -94,7 +94,7 @@ fn read_named_object(
         "TList" | "THashList" | "TObjArray" | "TClonesArray" | "TMap" | "TOrdCollection"
         | "TSortedList" => read_collection(reg, class, r, tags, depth),
         // TArray{C,S,I,L,F,D}: `{Int_t n}{n elements}`, no version header.
-        _ if tarray_elem(class).is_some() => read_tarray(class, r),
+        _ if let Some(base) = tarray_elem(class) => read_tarray(base, r),
         // Read the version first: the object is decoded with the description of
         // its own class version.
         _ => match r
@@ -199,8 +199,7 @@ fn read_base(
         }
         // A `TArrayX` base (e.g. `TH1D : TArrayD` holds the bin contents): it
         // streams as `{Int_t fN}{fN elements}` with no version header.
-        _ if tarray_elem(class).is_some() => {
-            let base = tarray_elem(class).expect("checked");
+        _ if let Some(base) = tarray_elem(class) => {
             let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
             let mut items = Vec::with_capacity(n);
             for _ in 0..n {
@@ -319,8 +318,7 @@ fn read_ref_object(
         // everywhere else it appears (a `PolyHist`'s `fBins` points at the bins
         // its `fCells` grid holds in full), so the object is already in the tree
         // — repeating it here would blow a file up by whatever it is shared by.
-        (None, end) if header.back_ref.is_some() => {
-            let target = header.back_ref.expect("checked");
+        (None, end) if let Some(target) = header.back_ref => {
             if let Some(e) = end {
                 r.seek(e)?;
             }
@@ -388,9 +386,9 @@ fn read_collection(
     })
 }
 
-/// Read a `TArray{C,S,I,L,F,D}` member: `{Int_t n}{n elements}`, no version header.
-fn read_tarray(class: &str, r: &mut RBuffer<'_>) -> Result<Value> {
-    let base = tarray_elem(class).expect("caller checked");
+/// Read a `TArray{C,S,I,L,F,D}` member whose elements have the basic streamer
+/// type `base`: `{Int_t n}{n elements}`, no version header.
+fn read_tarray(base: i32, r: &mut RBuffer<'_>) -> Result<Value> {
     let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
     let mut items = Vec::with_capacity(n);
     for _ in 0..n {
@@ -776,9 +774,9 @@ fn read_stl_element(
         // back-reference to an object already read).
         return read_ref_object(reg, r, tags, depth + 1).ok();
     }
-    if tarray_elem(t).is_some() {
+    if let Some(base) = tarray_elem(t) {
         // A `TArrayX` element streams as `{Int_t n}{n elements}`, no header.
-        return read_tarray(t, r).ok();
+        return read_tarray(base, r).ok();
     }
     match template_parts(t) {
         Some(("pair", args)) if args.len() == 2 => {

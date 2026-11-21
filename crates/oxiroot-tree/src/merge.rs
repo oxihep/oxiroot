@@ -23,6 +23,10 @@ impl BranchRead<'_, '_> {
     /// [`TreeWriter`](crate::raw::TreeWriter): the round trip of a skim. Layouts
     /// this crate reads but cannot write (split objects, leaflists) are an
     /// [`Error::Unsupported`].
+    ///
+    /// # Errors
+    ///
+    /// Any error reading the branch, and [`Error::Unsupported`] as described above.
     pub fn to_branch(self) -> Result<Branch> {
         let name = self.name();
         let meta = self

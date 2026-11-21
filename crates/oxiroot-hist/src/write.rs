@@ -64,7 +64,7 @@ fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<ClassDef<'
 /// `Hist1D`/`Hist2D`/`Hist3D` serialize with the bin content type carried by their `class_name`;
 /// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
 macro_rules! impl_write_root_hist {
-    ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident) => {
+    ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident, $functions:expr) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
                 self.class_name()
@@ -88,7 +88,14 @@ macro_rules! impl_write_root_hist {
                 w.into_vec()
             }
             fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-                let mut classes = hist_streamer_classes(&[&self.class_name()]);
+                let class = self.class_name();
+                // Attached functions are `TF1`s in the `fFunctions` list.
+                let has_functions: fn(&$ty) -> bool = $functions;
+                let function_class = has_functions(self).then_some("TF1");
+                let names: Vec<&str> = std::iter::once(class.as_str())
+                    .chain(function_class)
+                    .collect();
+                let mut classes = hist_streamer_classes(&names);
                 classes.extend(label_classes([&self.xaxis, &self.yaxis, &self.zaxis]));
                 classes
             }
@@ -96,13 +103,34 @@ macro_rules! impl_write_root_hist {
     };
 }
 impl_write_root_hist!(
-    Hist1D, write_th1d, write_th1f, write_th1i, write_th1s, write_th1c, write_th1l
+    Hist1D,
+    write_th1d,
+    write_th1f,
+    write_th1i,
+    write_th1s,
+    write_th1c,
+    write_th1l,
+    |h| !h.functions.is_empty()
 );
 impl_write_root_hist!(
-    Hist2D, write_th2d, write_th2f, write_th2i, write_th2s, write_th2c, write_th2l
+    Hist2D,
+    write_th2d,
+    write_th2f,
+    write_th2i,
+    write_th2s,
+    write_th2c,
+    write_th2l,
+    |_| false
 );
 impl_write_root_hist!(
-    Hist3D, write_th3d, write_th3f, write_th3i, write_th3s, write_th3c, write_th3l
+    Hist3D,
+    write_th3d,
+    write_th3f,
+    write_th3i,
+    write_th3s,
+    write_th3c,
+    write_th3l,
+    |_| false
 );
 
 /// A fixed-class writable type (profiles, efficiency, sparse, poly):
@@ -268,8 +296,20 @@ fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, version: u16, write_array: ArrayWr
     let outer = w.begin_object(version); // Hist2D{D,F,C,S,I}=4, TH2L=0
     let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumw2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &h.zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumw2,
+        &[],
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
     w.be_f64(h.tsumwy);
@@ -310,8 +350,20 @@ fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, version: u16, write_array: ArrayWr
     let outer = w.begin_object(version); // Hist3D{D,F,C,S,I}=4, TH3L=0
     let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumw2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &h.zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumw2,
+        &[],
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
@@ -376,8 +428,20 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
     let tp = w.begin_object(7); // Profile1D version 7
     let th1d = w.begin_object(3); // TH1D version 3
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &yaxis, &zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumy2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &yaxis,
+        &zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumy2,
+        &[],
     );
     write_tarrayd(w, &h.sums); // TH1D TArrayD base: per-bin sum of w*y
     w.end_object(th1d);
@@ -410,8 +474,20 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
     let th2d = w.begin_object(4); // TH2D version 4
     let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumz2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumz2,
+        &[],
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
     w.be_f64(h.tsumwy);
@@ -446,8 +522,20 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
     let th3d = w.begin_object(4); // TH3D version 4
     let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumt2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &h.zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumt2,
+        &[],
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
@@ -520,7 +608,7 @@ pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &Efficiency) {
     w.be_f64(h.conf_level);
     w.bytes(&EFF_FUNCTIONS_EMPTY);
     write_th1d_ptr(w, &h.passed); // fPassedHistogram
-    w.be_i32(h.statistic_option);
+    w.be_i32(h.statistic_option.code());
     write_th1d_ptr(w, &h.total); // fTotalHistogram
     w.be_f64(h.weight);
     w.end_object(te);
@@ -646,6 +734,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
         h.tsumw2,
         h.tsumwx,
         h.tsumwx2,
+        &[],
         &[],
     );
     w.be_f64(1.0); // fScalefactor
@@ -786,17 +875,22 @@ fn write_tgraph_base(
 /// Write a non-empty `fFunctions` `TList`, each element a `Func1D` object pointer
 /// followed by its (empty) option `TString`.
 fn write_functions(w: &mut WBuffer, functions: &[GraphFunction]) {
-    write_object_ptr(w, "TList", |w| {
-        let tl = w.begin_object(5); // TList version 5
-        write_object_base(w, 0); // ROOT writes 0 bits for an embedded fFunctions list
-        w.string(""); // fName
-        w.be_i32(i32::saturating_from(functions.len())); // fSize
-        for f in functions {
-            write_object_ptr(w, "TF1", |w| f.write_tf1_body(w, 1, 100));
-            w.string(""); // per-element option string
-        }
-        w.end_object(tl);
-    });
+    // ROOT writes 0 bits for a graph's embedded fFunctions list.
+    write_object_ptr(w, "TList", |w| write_function_list(w, 0, functions));
+}
+
+/// Write a `TList` of functions as it stands (no class tag in front): each
+/// element a `TF1` object pointer followed by its (empty) option `TString`.
+fn write_function_list(w: &mut WBuffer, bits: u32, functions: &[GraphFunction]) {
+    let tl = w.begin_object(5); // TList version 5
+    write_object_base(w, bits);
+    w.string(""); // fName
+    w.be_i32(i32::saturating_from(functions.len())); // fSize
+    for f in functions {
+        write_object_ptr(w, "TF1", |w| f.write_tf1_body(w, 1, 100));
+        w.string(""); // per-element option string
+    }
+    w.end_object(tl);
 }
 
 /// Serialize a `PolyHist` object to a fresh byte vector.
@@ -982,7 +1076,7 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &MultiErrorGraph) {
     let obj = w.begin_object(1); // MultiErrorGraph version 1
     write_tgraph_base(w, &g.name, &g.title, &g.x[..n], &g.y[..n], None, &[]);
     w.be_i32(i32::saturating_from(layers)); // fNYErrors
-    w.be_i32(g.sum_errors_mode); // fSumErrorsMode
+    w.be_i32(g.sum_errors_mode.code()); // fSumErrorsMode
     write_basic_array(w, &g.ex_low, n); // fExL
     write_basic_array(w, &g.ex_high, n); // fExH
     write_vector_tarrayd(w, &g.ey_low, n); // fEyL
@@ -1021,8 +1115,20 @@ impl WriteRoot for MultiErrorGraph {
 
 fn write_th1_base(w: &mut WBuffer, h: &Hist1D) {
     write_th1_core(
-        w, &h.name, &h.title, &h.xaxis, &h.yaxis, &h.zaxis, h.ncells, h.entries, h.tsumw, h.tsumw2,
-        h.tsumwx, h.tsumwx2, &h.sumw2,
+        w,
+        &h.name,
+        &h.title,
+        &h.xaxis,
+        &h.yaxis,
+        &h.zaxis,
+        h.ncells,
+        h.entries,
+        h.tsumw,
+        h.tsumw2,
+        h.tsumwx,
+        h.tsumwx2,
+        &h.sumw2,
+        &h.functions,
     );
 }
 
@@ -1044,6 +1150,7 @@ fn write_th1_core(
     tsumwx: f64,
     tsumwx2: f64,
     fsumw2: &[f64],
+    functions: &[GraphFunction],
 ) {
     let th1 = w.begin_object(8); // Hist1D version 8
 
@@ -1069,7 +1176,11 @@ fn write_th1_core(
     write_tarrayd(w, &[]); // fContour
     write_tarrayd(w, fsumw2); // fSumw2 (per-bin sum of squared weights)
     w.string(""); // fOption
-    write_empty_tlist(w); // fFunctions
+    if functions.is_empty() {
+        write_empty_tlist(w); // fFunctions
+    } else {
+        write_function_list(w, TLIST_BITS, functions);
+    }
     w.be_i32(0); // fBufferSize
     w.u8(0); // fBuffer (null pointer-to-array marker)
     w.be_i32(0); // fBinStatErrOpt

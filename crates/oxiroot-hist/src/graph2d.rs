@@ -20,9 +20,9 @@ use crate::graph::read_basic_array;
 #[doc(alias = "TGraph2D")]
 pub struct Graph2D {
     /// Graph name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Graph title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// Point x coordinates (`fX`).
     pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
@@ -64,7 +64,7 @@ impl Graph2D {
 fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<Graph2D> {
     if class != "TGraph2D" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TGraph2D".to_string(),
         });

@@ -29,11 +29,16 @@ pub struct EntryList {
 
 impl EntryList {
     /// Open the `EntryList` named `name` in `file`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if `name` names no key, [`Error::WrongClass`] if the key is not a
+    /// `TEntryList`, and any error reading it.
     pub fn open(file: &FileReader, name: &str) -> Result<Self> {
         let key = file.key(name)?;
         if key.class_name != "TEntryList" {
             return Err(Error::WrongClass {
-                name: name.to_string(),
+                name: Some(name.to_string()),
                 found: key.class_name.clone(),
                 expected: "TEntryList".to_string(),
             });

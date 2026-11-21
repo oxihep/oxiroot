@@ -22,8 +22,8 @@ fn check_h1(file: &str) {
     let f = FileReader::open(fixture(file)).expect("open fixture");
     let h = f.get::<Hist1D>("h1").expect("read TH1D");
 
-    assert_eq!(h.name, "h1");
-    assert_eq!(h.title, "");
+    assert_eq!(h.name(), "h1");
+    assert_eq!(h.title(), "");
 
     // Axis: 17 uniform bins over [-4, 4].
     assert_eq!(h.xaxis().nbins(), 17);

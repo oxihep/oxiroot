@@ -145,6 +145,10 @@ impl Axis {
     /// Class versions 6 to 10 are read (ROOT 3.02 onwards): version 7 added
     /// `fLabels`, version 8 `fBits2`, and version 10 `fModLabs`. Earlier versions
     /// used a hand-written streamer and are an error.
+    ///
+    /// # Errors
+    ///
+    /// If the buffer ends first, or the axis's edges do not match its bin count.
     pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let vh = r.read_version()?; // Axis (e.g. version 10)
         if vh.version < 6 {
@@ -249,16 +253,23 @@ impl Axis {
     }
 
     /// Set the alphanumeric label for bin `bin` (1-based), growing the label
-    /// vector to `nbins` as needed. A no-op for an out-of-range bin.
-    pub fn set_label(&mut self, bin: usize, label: &str) {
+    /// vector to `nbins` as needed.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if the axis has no bin `bin`.
+    pub fn set_label(&mut self, bin: usize, label: &str) -> Result<()> {
         let n = usize::saturating_from(self.nbins.max(0));
         if bin < 1 || bin > n {
-            return;
+            return Err(Error::InvalidInput(format!(
+                "no bin {bin} to label on an axis of {n} bins (bins are numbered from 1)"
+            )));
         }
         if self.labels.len() < n {
             self.labels.resize(n, String::new());
         }
         self.labels[bin - 1] = label.to_string();
+        Ok(())
     }
 
     /// The `nbins + 1` bin edges, low to high (uniform when `xbins` is empty).
@@ -291,33 +302,32 @@ impl Axis {
         self.xmin + (self.xmax - self.xmin) / n as f64 * i
     }
 
-    /// Low edge of bin `bin` (1-based; bin 1 starts at `xmin`). Out-of-range bins
-    /// clamp to the nearest edge.
-    #[must_use]
-    pub fn bin_low_edge(&self, bin: usize) -> f64 {
-        self.edge(bin.saturating_sub(1))
+    /// The low and high edges of bin `bin` (1-based), or `None` if the axis
+    /// has no such bin (the flow bins have no edges).
+    fn bin_edges(&self, bin: usize) -> Option<(f64, f64)> {
+        let n = usize::saturating_from(self.nbins.max(0));
+        (1..=n)
+            .contains(&bin)
+            .then(|| (self.edge(bin - 1), self.edge(bin)))
     }
 
-    /// Width of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    /// Low edge of bin `bin` (1-based; bin 1 starts at `xmin`), or `None` if
+    /// the axis has no such bin.
     #[must_use]
-    pub fn bin_width(&self, bin: usize) -> f64 {
-        let n = usize::saturating_from(self.nbins.max(0));
-        if (1..=n).contains(&bin) {
-            self.edge(bin) - self.edge(bin - 1)
-        } else {
-            0.0
-        }
+    pub fn bin_low_edge(&self, bin: usize) -> Option<f64> {
+        self.bin_edges(bin).map(|(lo, _)| lo)
     }
 
-    /// Center of bin `bin` (1-based). `0.0` for an out-of-range bin index.
+    /// Width of bin `bin` (1-based), or `None` if the axis has no such bin.
     #[must_use]
-    pub fn bin_center(&self, bin: usize) -> f64 {
-        let n = usize::saturating_from(self.nbins.max(0));
-        if (1..=n).contains(&bin) {
-            0.5 * (self.edge(bin - 1) + self.edge(bin))
-        } else {
-            0.0
-        }
+    pub fn bin_width(&self, bin: usize) -> Option<f64> {
+        self.bin_edges(bin).map(|(lo, hi)| hi - lo)
+    }
+
+    /// Center of bin `bin` (1-based), or `None` if the axis has no such bin.
+    #[must_use]
+    pub fn bin_center(&self, bin: usize) -> Option<f64> {
+        self.bin_edges(bin).map(|(lo, hi)| 0.5 * (lo + hi))
     }
 }
 

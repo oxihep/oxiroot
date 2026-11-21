@@ -193,7 +193,7 @@ use oxiroot::FileReader;
 let f = FileReader::open("graph_function.root")?;
 let g = f.get::<Graph>("gfit")?;
 
-for fun in &g.functions {
+for fun in g.functions() {
     // `formula` is in ROOT's `[pN]` form; `params` are the current values.
     println!("{}: {} {:?}", fun.name, fun.formula, fun.params);
 }
@@ -212,7 +212,7 @@ let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 
-assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
+assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
 FileWriter::create("graph_function.root").add(&g).compression(Compression::Stored).write()?;
 ```
 

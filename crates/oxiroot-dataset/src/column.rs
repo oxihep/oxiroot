@@ -260,28 +260,53 @@ impl Column {
     }
 
     /// Entries `[start, end)` as a new column (clamped to the column).
+    ///
+    /// Never panics, whatever the column holds: a column built by hand whose
+    /// offsets do not match its values (which writing it would reject) is
+    /// sliced as far as its values go.
     #[must_use]
     pub fn slice(&self, start: usize, end: usize) -> Self {
+        /// The offsets of entries `start..end`, rebased to start at 0, and the
+        /// range of the child they cover, clamped to the child's `len`.
+        fn window(
+            offsets: &[u64],
+            start: usize,
+            end: usize,
+            len: usize,
+        ) -> (Vec<u64>, usize, usize) {
+            let window = offsets.get(start..=end).unwrap_or(&[]);
+            let base = window.first().copied().unwrap_or(0);
+            let top = window.last().copied().unwrap_or(base);
+            let lo = to_usize(base).min(len);
+            let hi = to_usize(top).clamp(lo, len);
+            let rebased = if window.is_empty() {
+                vec![0]
+            } else {
+                window.iter().map(|&o| o.saturating_sub(base)).collect()
+            };
+            (rebased, lo, hi)
+        }
+
         let end = end.min(self.len());
         let start = start.min(end);
         map_scalar!(self, v => v[start..end].to_vec(), other => match other {
             Self::String { offsets, bytes } => {
-                let (lo, hi) = (to_usize(offsets[start]), to_usize(offsets[end]));
+                let (offsets, lo, hi) = window(offsets, start, end, bytes.len());
                 Self::String {
-                    offsets: offsets[start..=end].iter().map(|&o| o - offsets[start]).collect(),
+                    offsets,
                     bytes: bytes[lo..hi].to_vec(),
                 }
             }
             Self::List { offsets, values } => {
-                let (lo, hi) = (to_usize(offsets[start]), to_usize(offsets[end]));
+                let (offsets, lo, hi) = window(offsets, start, end, values.len());
                 Self::List {
-                    offsets: offsets[start..=end].iter().map(|&o| o - offsets[start]).collect(),
+                    offsets,
                     values: Box::new(values.slice(lo, hi)),
                 }
             }
             Self::Array { len, values } => Self::Array {
                 len: *len,
-                values: Box::new(values.slice(start * len, end * len)),
+                values: Box::new(values.slice(start.saturating_mul(*len), end.saturating_mul(*len))),
             },
             Self::Optional { valid, values } => {
                 let lo = valid[..start].iter().filter(|&&v| v).count();
@@ -646,5 +671,59 @@ impl<'a> Strings<'a> {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a str> + 'a {
         let s = *self;
         (0..s.len()).map(move |i| s.get(i))
+    }
+}
+
+#[cfg(test)]
+mod slice_tests {
+    use super::Column;
+
+    #[test]
+    fn slicing_a_list_rebases_its_offsets() {
+        let list = Column::List {
+            offsets: vec![0, 2, 2, 5],
+            values: Box::new(Column::I32(vec![1, 2, 3, 4, 5])),
+        };
+        assert_eq!(
+            list.slice(1, 3),
+            Column::List {
+                offsets: vec![0, 0, 3],
+                values: Box::new(Column::I32(vec![3, 4, 5])),
+            }
+        );
+    }
+
+    /// Columns no writer would accept: slicing them must still not panic.
+    #[test]
+    fn slicing_an_inconsistent_column_does_not_panic() {
+        let no_offsets = Column::String {
+            offsets: vec![],
+            bytes: b"abc".to_vec(),
+        };
+        assert_eq!(no_offsets.slice(0, 4).len(), 0);
+
+        let past_the_values = Column::List {
+            offsets: vec![0, 2, 9],
+            values: Box::new(Column::I32(vec![1, 2, 3])),
+        };
+        assert_eq!(past_the_values.slice(0, 2).len(), 2);
+
+        let decreasing = Column::String {
+            offsets: vec![3, 1, 2],
+            bytes: b"abc".to_vec(),
+        };
+        assert_eq!(decreasing.slice(0, 2).len(), 2);
+
+        let short_child = Column::Optional {
+            valid: vec![true, true, true],
+            values: Box::new(Column::F64(vec![1.0])),
+        };
+        assert_eq!(short_child.slice(1, 3).len(), 2);
+
+        let huge_array = Column::Array {
+            len: usize::MAX,
+            values: Box::new(Column::U8(vec![1, 2])),
+        };
+        assert_eq!(huge_array.slice(0, 1).len(), 0);
     }
 }

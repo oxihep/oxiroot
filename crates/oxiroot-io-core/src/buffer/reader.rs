@@ -34,6 +34,9 @@ pub struct RBuffer<'a> {
 
 macro_rules! num_reader {
     ($(#[$doc:meta])* $name:ident, $ty:ty, $from:ident, $n:literal) => {
+        /// # Errors
+        ///
+        /// [`Error::UnexpectedEof`] if the buffer ends first.
         $(#[$doc])*
         pub fn $name(&mut self) -> Result<$ty> {
             Ok(<$ty>::$from(self.array::<$n>()?))
@@ -93,6 +96,10 @@ impl<'a> RBuffer<'a> {
     }
 
     /// Move the cursor to an absolute offset.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if `pos` is past the end of the buffer.
     pub fn seek(&mut self, pos: usize) -> Result<()> {
         if pos > self.data.len() {
             return Err(Error::UnexpectedEof {
@@ -105,11 +112,19 @@ impl<'a> RBuffer<'a> {
     }
 
     /// Advance the cursor by `n` bytes.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if fewer than `n` bytes remain.
     pub fn skip(&mut self, n: usize) -> Result<()> {
         self.take(n).map(|_| ())
     }
 
     /// Borrow the next `n` bytes and advance the cursor.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if fewer than `n` bytes remain.
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         self.take(n)
     }
@@ -136,11 +151,19 @@ impl<'a> RBuffer<'a> {
     }
 
     /// Read a single byte.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends first.
     pub fn u8(&mut self) -> Result<u8> {
         Ok(self.array::<1>()?[0])
     }
 
     /// Read a single signed byte.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends first.
     pub fn i8(&mut self) -> Result<i8> {
         Ok(self.array::<1>()?[0].cast_signed())
     }
@@ -261,6 +284,11 @@ impl<'a> RBuffer<'a> {
 
     /// Read a ROOT-encoded string: a 1-byte length, or `0xFF` followed by a
     /// big-endian `u32` length, then that many UTF-8 bytes.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends inside the string, and
+    /// [`Error::InvalidUtf8`] if its bytes are not UTF-8.
     pub fn string(&mut self) -> Result<String> {
         let n = self.u8()? as usize;
         let n = if n == 255 { self.be_u32()? as usize } else { n };
@@ -274,6 +302,10 @@ impl<'a> RBuffer<'a> {
     /// and 16-bit version follow ROOT's convention; otherwise the leading two
     /// bytes are the version and no byte count is present (the cursor is left
     /// just past the version).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends first.
     pub fn read_version(&mut self) -> Result<VersionHeader> {
         let start = self.pos;
         let word = self.be_u32()?;
@@ -312,6 +344,11 @@ impl<'a> RBuffer<'a> {
     /// Verify the cursor sits exactly at the end implied by a [`VersionHeader`].
     ///
     /// A no-op when the header carried no byte count.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ByteCountMismatch`] if the cursor is not where the header's byte count says the
+    /// object ends.
     pub fn check_byte_count(&self, vh: &VersionHeader) -> Result<()> {
         if let Some(end) = vh.end
             && self.pos != end

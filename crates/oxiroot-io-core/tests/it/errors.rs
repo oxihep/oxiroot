@@ -57,7 +57,7 @@ fn a_key_holding_another_class_is_the_wrong_class() {
     assert_eq!(
         err,
         Error::WrongClass {
-            name: "l".into(),
+            name: Some("l".into()),
             found: "TList".into(),
             expected: "TObjString".into()
         }
@@ -145,7 +145,7 @@ fn typed_errors_display_what_went_wrong() {
         ),
         (
             Error::WrongClass {
-                name: String::new(),
+                name: None,
                 found: "TList".into(),
                 expected: "TMap".into(),
             },

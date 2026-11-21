@@ -83,7 +83,7 @@ impl WriteRoot for ObjString {
 pub(crate) fn decode_tobjstring(name: &str, class: &str, object: &[u8]) -> Result<ObjString> {
     if class != "TObjString" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TObjString".to_string(),
         });
@@ -189,7 +189,9 @@ impl Parameter {
     /// Add `other`'s value to this one, as ROOT's `Parameter<T>::Merge` and
     /// `hadd` do. The name stays as it is.
     ///
-    /// Returns [`Error::InvalidInput`] and makes no change if the two hold
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] and makes no change if the two hold
     /// different types (a `Parameter<int>` and a `Parameter<double>`, say).
     pub fn add(&mut self, other: &Self) -> Result<()> {
         self.value = match (self.value, other.value) {
@@ -246,7 +248,7 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
         .strip_prefix("TParameter<")
         .and_then(|s| s.strip_suffix('>'))
         .ok_or_else(|| Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TParameter".to_string(),
         })?;

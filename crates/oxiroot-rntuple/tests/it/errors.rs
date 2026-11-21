@@ -49,7 +49,7 @@ fn a_key_that_is_not_an_rntuple_is_the_wrong_class() {
     assert_eq!(
         err,
         Error::WrongClass {
-            name: "s".into(),
+            name: Some("s".into()),
             found: "TObjString".into(),
             expected: "ROOT::RNTuple".into()
         }

@@ -18,8 +18,8 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_root_written_graph2d() {
     let f = FileReader::open(fixture("graph2d.root")).expect("open");
     let g = f.get::<Graph2D>("g2d").expect("read g2d");
-    assert_eq!(g.name, "g2d");
-    assert_eq!(g.title, "surface fixture");
+    assert_eq!(g.name(), "g2d");
+    assert_eq!(g.title(), "surface fixture");
     assert_eq!(g.x(), vec![1.0, 2.0, 3.0, 4.0]);
     assert_eq!(g.y(), vec![10.0, 20.0, 30.0, 40.0]);
     assert_eq!(g.z(), vec![100.0, 200.0, 300.0, 400.0]);

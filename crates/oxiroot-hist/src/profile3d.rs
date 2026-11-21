@@ -21,9 +21,9 @@ use crate::profile1d::ErrorMode;
 #[doc(alias = "TProfile3D")]
 pub struct Profile3D {
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
     /// Y axis.
@@ -179,7 +179,7 @@ impl Profile3D {
         let _th3d = r.read_version()?; // TH3D wrapper
         let th3 = r.read_version()?; // Hist3D wrapper
 
-        let c = read_th1_base(r)?;
+        let c = read_th1_base(r, None)?;
         skip_versioned(r)?; // TAtt3D base (empty)
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;

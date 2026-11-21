@@ -3,7 +3,9 @@
 //! Streamed layout: `TH1x{ Hist1D{ … }, TArray }`. The `Hist1D` base is shared via
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
+use crate::graph::GraphFunction;
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Object, ReadRoot};
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -21,9 +23,9 @@ pub struct Hist1D {
     /// typed value rather than a free-form string.
     pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
     /// Y axis (degenerate for 1-D).
@@ -50,6 +52,8 @@ pub struct Hist1D {
     /// does not track errors. When present, a bin's error is
     /// `sqrt(sumw2[bin])`.
     pub(crate) sumw2: Vec<f64>,
+    /// The functions attached to the histogram (`fFunctions`).
+    pub(crate) functions: Vec<GraphFunction>,
 }
 
 impl Hist1D {
@@ -73,19 +77,8 @@ impl Hist1D {
             tsumwx2: 0.0,
             contents: vec![0.0; cells],
             sumw2: Vec::new(),
+            functions: Vec::new(),
         }
-    }
-
-    /// The histogram's name (`fName`, its key when written).
-    #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The histogram's title (`fTitle`).
-    #[must_use]
-    pub fn title(&self) -> &str {
-        &self.title
     }
 
     /// Fill the histogram with `x` (weight 1).
@@ -107,8 +100,14 @@ impl Hist1D {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
-        let (c, contents) = read_th1_object(r, bin_content_type)?;
+    /// Read a `TH1` at the cursor. `tags` is the class-tag map of the buffer,
+    /// needed to read the attached functions; see [`read_th1_base`].
+    pub(crate) fn read(
+        r: &mut RBuffer<'_>,
+        bin_content_type: BinContentType,
+        tags: Option<&mut TagReader>,
+    ) -> Result<Self> {
+        let (c, contents) = read_th1_object(r, bin_content_type, tags)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
         check_cells("TH1 contents", contents.len(), cells, false)?;
         check_cells("TH1 fSumw2", c.sumw2.len(), cells, true)?;
@@ -127,7 +126,23 @@ impl Hist1D {
             tsumwx2: c.tsumwx2,
             contents,
             sumw2: c.sumw2,
+            functions: c.functions,
         })
+    }
+
+    /// The functions attached to the histogram (`fFunctions`): the curve a fit
+    /// left with it, as ROOT's `TH1::Fit` does.
+    #[must_use]
+    pub fn functions(&self) -> &[GraphFunction] {
+        &self.functions
+    }
+
+    /// Attach a function, stored with the histogram as a `TF1` and drawn over
+    /// it by ROOT. Chainable; call it again to attach several.
+    #[must_use]
+    pub fn with_function(mut self, function: GraphFunction) -> Self {
+        self.functions.push(function);
+        self
     }
 
     /// Bin contents excluding the under/overflow bins.
@@ -178,9 +193,26 @@ impl ReadRoot for Hist1D {
     const CLASS: &'static str = "TH1";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, "TH1").then(|| decode_th1(object.class, object.bytes))
+        is_hist_class(object.class, "TH1").then(|| {
+            let bin_content_type = bin_content_type_of(object.class)?;
+            match object.within {
+                // A member of a collection: read where it lies, so that the
+                // classes its functions name are found.
+                Some(within) => {
+                    let mut r = RBuffer::new(within.buffer);
+                    r.seek(within.start)?;
+                    let mut tags = TagReader::new(within.key_len);
+                    Self::read(&mut r, bin_content_type, Some(&mut tags))
+                }
+                None => {
+                    let mut tags = object.key_len.map(TagReader::new);
+                    Self::read(
+                        &mut RBuffer::new(object.bytes),
+                        bin_content_type,
+                        tags.as_mut(),
+                    )
+                }
+            }
+        })
     }
-}
-pub(crate) fn decode_th1(class: &str, object: &[u8]) -> Result<Hist1D> {
-    Hist1D::read(&mut RBuffer::new(object), bin_content_type_of(class)?)
 }

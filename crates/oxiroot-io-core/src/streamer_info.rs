@@ -104,6 +104,10 @@ impl StreamerRegistry {
 
 /// Parse the `TList<TStreamerInfo>` object bytes (already decompressed).
 /// `keylen` is the streamer-info key's header length (`fKeyLen`).
+///
+/// # Errors
+///
+/// If `object` is not a well-formed `TList` of `TStreamerInfo`.
 pub fn parse_streamer_info(object: &[u8], keylen: usize) -> Result<StreamerRegistry> {
     let infos = parse_list(object, keylen)?
         .into_iter()

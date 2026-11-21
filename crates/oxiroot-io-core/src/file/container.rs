@@ -202,6 +202,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Start a new file in `sink`, writing the header and the top directory.
     /// `file_name` is the name recorded for the top directory. `big` selects the
     /// 64-bit form, needed once the file may exceed [`KSTART_BIG_FILE`] bytes.
+    ///
+    /// # Errors
+    ///
+    /// If the file's header cannot be written to `sink`.
     pub fn new(mut sink: W, file_name: &str, compression: Compression, form: Form) -> Result<Self> {
         check_key_strings(TOP_DIR_CLASS, file_name, "")?;
         let mut w = WBuffer::new();
@@ -295,6 +299,11 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// record to have been reserved at its 64-bit size, as ROOT and oxiroot
     /// do; a file that reserved only the small size is an error. A file that is
     /// already big must be continued with `big`.
+    ///
+    /// # Errors
+    ///
+    /// If the existing file cannot be read from `sink`, or is not a ROOT file this writer can
+    /// continue.
     pub fn append(
         mut sink: W,
         file: &FileReader,
@@ -390,6 +399,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
 
     /// The offset of directory `dir`'s own key (`fSeekDir`), which records placed
     /// for that directory point back to.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `dir` does not belong to this file.
     pub fn dir_offset(&self, dir: DirId) -> Result<u64> {
         self.dirs
             .get(dir.0)
@@ -407,6 +420,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Write `bytes` at the end of the file and return their offset. The bytes
     /// belong to no directory: something else has to point at them (an `RNTuple`
     /// anchor, a `TTree`'s basket list).
+    ///
+    /// # Errors
+    ///
+    /// If writing to the sink fails.
     pub fn place_blob(&mut self, bytes: &[u8]) -> Result<u64> {
         let seek = self.pos;
         self.put(bytes)?;
@@ -419,6 +436,11 @@ impl<W: Write + Seek> ContainerWriter<W> {
     ///
     /// A key whose name is already in `dir` gets the next cycle, so the new
     /// object is the one readers see.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `dir` is closed or not of this file, or a name does not fit a
+    /// key; any error writing to the sink.
     pub fn place_key(
         &mut self,
         dir: DirId,
@@ -433,6 +455,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
 
     /// Like [`place_key`](Self::place_key), but always store `object`
     /// uncompressed.
+    ///
+    /// # Errors
+    ///
+    /// As [`place_key`](Self::place_key).
     pub fn place_key_uncompressed(
         &mut self,
         dir: DirId,
@@ -454,6 +480,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// used: the file's own entries are kept, and only the `extra` classes they
     /// lack are added after them. Nothing is written when none are missing, or
     /// when the existing record cannot be read.
+    ///
+    /// # Errors
+    ///
+    /// If the record is too large for a key, or writing to the sink fails.
     pub fn place_streamer_info(&mut self, list: &[u8], extra: &[ClassDef<'_>]) -> Result<()> {
         match &self.existing_info {
             Some(ExistingInfo::Readable {
@@ -530,6 +560,11 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Create a subdirectory `name` inside `parent` and return it. Its keys are
     /// listed when it is closed with [`close_dir`](Self::close_dir), or by
     /// [`finish`](Self::finish).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `parent` is closed or not of this file, or `name` does not
+    /// fit a key; any error writing to the sink.
     pub fn mkdir(&mut self, parent: DirId, name: &str) -> Result<DirId> {
         self.check_open(parent)?;
         check_key_strings(SUBDIR_CLASS, name, name)?;
@@ -583,6 +618,11 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// Write subdirectory `dir`'s key list and point its record at it. The
     /// directory takes no more keys afterwards. The top directory is closed by
     /// [`finish`](Self::finish).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `dir` is the top directory, already closed, or not of this
+    /// file; any error writing to the sink.
     pub fn close_dir(&mut self, dir: DirId) -> Result<()> {
         if dir == DirId::TOP {
             return Err(Error::InvalidInput(
@@ -598,6 +638,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     ///
     /// A small file that grew past [`KSTART_BIG_FILE`] bytes cannot address its
     /// own records: that is [`Error::FileTooLarge`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FileTooLarge`] as described above, and any error writing to the sink.
     pub fn finish(self) -> Result<W> {
         self.finish_checked(true)
     }
@@ -669,6 +713,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     /// went. The records they name stay where they are — the file does not
     /// shrink — but the directory no longer lists them, so nothing reads them:
     /// ROOT's `TFile::Delete`, without its free-list bookkeeping.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `dir` is closed or not of this file.
     pub fn drop_keys(&mut self, dir: DirId, mut keep: impl FnMut(&Key) -> bool) -> Result<usize> {
         self.check_open(dir)?;
         let keys = &mut self.dirs[dir.0].keys;
@@ -678,6 +726,10 @@ impl<W: Write + Seek> ContainerWriter<W> {
     }
 
     /// The keys directory `dir` currently lists.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if `dir` does not belong to this file.
     pub fn keys(&self, dir: DirId) -> Result<&[Key]> {
         self.dirs
             .get(dir.0)
@@ -865,6 +917,10 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
     /// larger than `big_threshold` bytes (or [`KSTART_BIG_FILE`], whichever is
     /// smaller), once more for the big form. Pass [`KSTART_BIG_FILE`] to switch
     /// where ROOT does, or 0 to always write the big form.
+    ///
+    /// # Errors
+    ///
+    /// Any error `layout` returns, and any error finishing the file.
     pub fn build(
         file_name: &str,
         compression: Compression,
@@ -888,6 +944,11 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
     /// Like [`build`](Self::build), but continue the file whose bytes are
     /// `existing` (see [`append`](ContainerWriter::append)). A file that is
     /// already big stays big.
+    ///
+    /// # Errors
+    ///
+    /// If `existing` is not a ROOT file this writer can continue; any error `layout` returns,
+    /// and any error finishing the file.
     pub fn build_append(
         existing: &[u8],
         file_name: &str,

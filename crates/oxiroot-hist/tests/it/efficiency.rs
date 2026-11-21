@@ -32,17 +32,17 @@ fn reads_root_written_tefficiency() {
     let f = FileReader::open(fixture("tefficiency.root")).expect("open");
     assert_eq!(f.key("eff").unwrap().class_name, "TEfficiency");
     let e = f.get::<Efficiency>("eff").expect("read");
-    assert_eq!(e.efficiency(1), 0.5);
-    assert_eq!(e.efficiency(2), 1.0);
-    assert_eq!(e.efficiency(3), 0.0);
-    assert_eq!(e.efficiency(4), 1.0);
+    assert_eq!(e.efficiency(1), Some(0.5));
+    assert_eq!(e.efficiency(2), Some(1.0));
+    assert_eq!(e.efficiency(3), Some(0.0));
+    assert_eq!(e.efficiency(4), Some(1.0));
     assert!((e.conf_level - 0.682689492137086).abs() < 1e-12);
 }
 
 #[test]
 fn tefficiency_round_trips() {
     let e = sample();
-    assert_eq!(e.efficiency(1), 0.5);
+    assert_eq!(e.efficiency(1), Some(0.5));
     let out = PathBuf::from("/tmp/oxiroot_tefficiency.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&e)
@@ -51,4 +51,15 @@ fn tefficiency_round_trips() {
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
     assert_eq!(f.get::<Efficiency>("eff").unwrap(), e, "round-trips");
+}
+
+/// A bin nobody filled has no efficiency, and neither has a bin that does not
+/// exist; a bin with trials and no pass has efficiency zero.
+#[test]
+fn a_bin_without_trials_has_no_efficiency() {
+    let mut e = Efficiency::new(2, 0.0, 2.0);
+    e.fill(false, 0.5);
+    assert_eq!(e.efficiency(1), Some(0.0));
+    assert_eq!(e.efficiency(2), None);
+    assert_eq!(e.efficiency(99), None);
 }

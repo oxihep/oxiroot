@@ -28,8 +28,8 @@ cast_sign_loss = "warn"
 cast_possible_wrap = "warn"
 cast_lossless = "warn"
 # A curated part of `clippy::pedantic`: the lints this code base holds to.
-# `missing_errors_doc` is not among them yet (about 130 functions to document).
 use_self = "warn"
+missing_errors_doc = "warn"
 must_use_candidate = "warn"
 doc_markdown = "warn"
 missing_panics_doc = "warn"

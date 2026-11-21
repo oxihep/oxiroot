@@ -26,7 +26,7 @@ fn an_index_reads_back_with_its_keys() {
 
     let index = friend.index().expect("the friend carries an index");
     assert_eq!(index.major_name(), "run");
-    assert_eq!(index.minor_name(), "event");
+    assert_eq!(index.minor_name(), Some("event"));
     assert_eq!(index.len(), 6);
 
     // The keys come back sorted, each naming the entry that holds it.

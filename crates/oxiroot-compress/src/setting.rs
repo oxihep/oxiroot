@@ -11,21 +11,22 @@ use crate::Algorithm;
 /// four algorithms. Levels run from 1 to 9 in ROOT; a level above 99 is treated
 /// as 99, since it would otherwise spill into the algorithm digit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compression {
     /// Store uncompressed.
     Stored,
     /// Zstandard (ROOT's default algorithm, at level 5). The pure-Rust encoder
     /// has four levels: ROOT's 1 to 3 select the first three, and 4 and above
     /// the fourth, which compresses about as well as C zstd's level 5.
-    Zstd(u32),
+    Zstd(u8),
     /// zlib / DEFLATE (ROOT's classic default, at level 1). The level tunes the
     /// encoder.
-    Zlib(u32),
+    Zlib(u8),
     /// LZ4. The pure-Rust encoder is fast-only, so the level is recorded but does
     /// not change the ratio.
-    Lz4(u32),
+    Lz4(u8),
     /// LZMA, as an XZ stream. The level selects the XZ preset.
-    Lzma(u32),
+    Lzma(u8),
 }
 
 /// What every writer in the workspace uses unless told otherwise: Zstandard at
@@ -44,7 +45,8 @@ impl TryFrom<u32> for Compression {
     type Error = u32;
 
     fn try_from(setting: u32) -> Result<Self, u32> {
-        let level = setting % 100;
+        // Below 100, so it fits.
+        let level = (setting % 100) as u8;
         Ok(match setting / 100 {
             0 => Self::Stored,
             1 => Self::Zlib(level),
@@ -67,7 +69,7 @@ impl Compression {
             Self::Lz4(level) => (4, level),
             Self::Zstd(level) => (5, level),
         };
-        algorithm * 100 + if level > 99 { 99 } else { level }
+        algorithm * 100 + if level > 99 { 99 } else { level as u32 }
     }
 
     /// The block algorithm this setting encodes with, or `None` for
@@ -80,6 +82,17 @@ impl Compression {
             Self::Zlib(_) => Some(Algorithm::Zlib),
             Self::Lz4(_) => Some(Algorithm::Lz4),
             Self::Lzma(_) => Some(Algorithm::Lzma),
+        }
+    }
+
+    /// The level, or `None` for [`Compression::Stored`].
+    #[must_use]
+    pub const fn level(self) -> Option<u8> {
+        match self {
+            Self::Stored => None,
+            Self::Zstd(level) | Self::Zlib(level) | Self::Lz4(level) | Self::Lzma(level) => {
+                Some(level)
+            }
         }
     }
 
@@ -116,6 +129,6 @@ mod tests {
     #[test]
     fn an_out_of_range_level_keeps_its_algorithm() {
         assert_eq!(Compression::Zlib(250).setting(), 199);
-        assert_eq!(Compression::Zstd(u32::MAX).setting(), 599);
+        assert_eq!(Compression::Zstd(u8::MAX).setting(), 599);
     }
 }

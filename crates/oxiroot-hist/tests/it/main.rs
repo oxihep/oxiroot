@@ -9,6 +9,7 @@ mod fit;
 mod graph;
 mod graph2d;
 mod graph_function;
+mod hist_functions;
 mod labels;
 mod length_mismatch;
 mod linalg;

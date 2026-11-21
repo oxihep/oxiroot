@@ -9,6 +9,45 @@ change the API.
 
 ### Changed
 
+- **Breaking: no value stands in for "nothing".** `Axis::bin_center`,
+  `bin_width` and `bin_low_edge` return `Option` (`None` for a bin the axis
+  does not have, where they returned `0.0` or clamped);
+  `Efficiency::efficiency` returns `Option` (`None` for a bin without
+  trials); `PolyHist::fill` and `fill_weight` return `Option` (`None`
+  outside every bin, where they returned `0`); `SparseHist::tsumw2` returns
+  `Option` (`None` where ROOT stores `-1`); `TreeIndex::minor_name` and
+  `Friend::file_name` return `Option<&str>` where they returned `""`.
+  `Axis::set_label` and `PolyHist::set_bin_content` return a `Result` and
+  report a bin that does not exist; they did nothing before.
+- **Breaking: `Error::WrongClass::name` and `Error::Decompress::context` are
+  `Option<String>`**, `None` where they were empty.
+- **Breaking: `Efficiency::statistic_option` is a `StatisticOption` and
+  `MultiErrorGraph::sum_errors_mode` a `SumErrorsMode`**, in place of
+  ROOT's integer codes. A file with a code ROOT does not define is an error.
+- **Breaking: the `name` and `title` fields of the histogram, profile,
+  graph, efficiency, sparse and poly records are private.** Read them with
+  `name()` / `title()` and set them with `named()` / `titled()`, on every
+  type. `Graph`'s `histogram` and `functions` fields are private too:
+  `histogram()`, `functions()`, `with_histogram`, `with_function`. A frame
+  set through the field skipped the `TH1F` coercion `with_histogram` does.
+- **Breaking: `TreeReader`'s `flat()` returns `Error::Unsupported`** for a
+  branch without a flat form (a string or nested branch), as the RNTuple
+  reader does; it returned `InvalidInput`.
+- **Breaking: a compression level is a `u8`** (`Compression::Zstd(5)` is
+  unchanged; a `u32` variable needs a conversion), and `Compression` is
+  `#[non_exhaustive]`. `Compression::level()` gives the level.
+- Every public function that returns a `Result` documents its errors
+  (`clippy::missing_errors_doc` is on for the workspace).
+- A list or map read from a file is named after its key, also when ROOT
+  stored it with a name of its own.
+- `hadd` writes a merged tree or RNTuple file to a temporary file and
+  renames it, as every other writer does, so a failed merge no longer
+  leaves a cut-short output.
+- An LZMA level above 9 selects the strongest XZ preset; it was passed
+  through to the encoder.
+- `oxroot dump` prints a value below `1e-4` in scientific notation; it
+  printed `0`. `oxroot stat` names an unknown compression setting.
+- `Algorithm` implements `Hash` and `Display`.
 - **Breaking: `Hist1D`, `Hist2D`, `Hist3D` and the `Profile*` types are I/O
   records.** A histogram is oxihist's `Histogram`: build it with `Hist`, fill
   and analyse it, and call `to_root()?` to store it; read one with
@@ -52,6 +91,58 @@ change the API.
   they survive a round trip exactly. A ROOT histogram that has entries but
   empty sums (`fTsumw == 0`, as after `SetBinContent`) reads without fill
   statistics, and its mean is computed from the bins, as ROOT does.
+
+### Fixed
+
+- **A function on the second or later graph of a ROOT `TMultiGraph` was
+  dropped.** ROOT names `TF1` in full once per buffer and by a
+  back-reference afterwards, and each member graph was decoded on its own,
+  where a reference into an earlier member could not be followed. The
+  members are now read in place with one class map, and so are the members
+  of a `TList`, `TObjArray` or `TMap`.
+- **A `TList`, `TObjArray` or `TMap` read from a ROOT file and written back
+  could crash ROOT.** Its members were re-encoded one by one, which left
+  the class references inside them pointing at positions in the file they
+  came from: a list of two histograms was enough. A collection read from a
+  file is now written back with the bytes it was read from, and members
+  added since are appended. Those bytes are only valid under a key with
+  the same header, so writing the collection under another name, or inside
+  another collection, is an `InvalidInput` error instead of a corrupt file;
+  decode its members and build a new one for that. `FileUpdater::compact`
+  checks the same for every object it copies.
+- **A function with named parameters, read and written back, evaluated to
+  0 in ROOT.** ROOT stores a predefined formula such as `gaus` as
+  `[Constant]*exp(…[Mean]…[Sigma]…)`; it was written back with those names
+  but a parameter map of `p0`, `p1`, `p2`, which gave ROOT six parameters,
+  none set. The formula is now read into the positional form (`[p0]`…),
+  which is also the form this crate can evaluate. This affected a `Func1D`,
+  and a function attached to a graph. The parameter names themselves are
+  not kept: ROOT shows `p0`, `p1`, ….
+- A `Dataset` read reported any error from the flat read of a tree branch
+  as "not flat" and read the branch a second time the slow way; only
+  `Unsupported` falls back now, and a read error is returned.
+- An RNTuple read reported every failure to fetch a page or envelope as
+  "runs past end of file"; a failed read (a dropped connection, say) is now
+  returned as it is.
+- `Column::slice` panicked on a column built by hand whose offsets did not
+  match its values; it now slices as far as the values go.
+- A `THnSparse` whose dimension count disagrees with its axes is a format
+  error.
+- Matrix constructors document the error they return (`InvalidInput`).
+
+### Added
+
+- **A `Hist1D` keeps the functions stored with it** (`fFunctions`, where
+  ROOT's `TH1::Fit` leaves the fitted curve): `functions()` reads them and
+  `with_function` attaches one. They were dropped on read, so a histogram
+  read and written back lost its fit. ROOT draws them over the histogram.
+  Functions that are not formula `TF1`s are still skipped.
+- `BinContentType::from_code`, the inverse of `code`.
+- `WriteRoot::key_check` and `KeyCheck`, for an object whose bytes are tied
+  to the key it was read from; `Object::member_in` and `Object::within`, so
+  that a decoder can read a collection member where it lies; `Object::title`.
+- A `TagReader` resolves a class reference it has not seen declared by
+  reading the declaration the reference points at.
 
 ## [0.9.0] — 2026-11-20
 

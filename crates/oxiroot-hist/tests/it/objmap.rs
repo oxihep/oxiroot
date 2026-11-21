@@ -78,3 +78,39 @@ fn round_trips_map_through_oxiroot() {
     assert_eq!(m.values::<Hist1D>().unwrap().len(), 1);
     let _ = std::fs::remove_file(&out);
 }
+
+/// A map read from a file is written back as it was read (its entries refer to
+/// each other's class tags by position), and takes new entries after them.
+#[test]
+fn a_root_map_is_written_back_as_read_and_takes_new_entries() {
+    use oxiroot_io_core::WriteRoot;
+
+    let f = fixture();
+    let map = f.get::<ObjMap>("meta").unwrap();
+    let bytes = FileWriter::create("unused.root")
+        .add(&map)
+        .to_bytes()
+        .unwrap();
+    let back = FileReader::from_bytes(bytes).unwrap();
+    assert_eq!(
+        back.key("meta").unwrap().key_len,
+        f.key("meta").unwrap().key_len
+    );
+    assert_eq!(
+        back.get::<ObjMap>("meta").unwrap().to_root_bytes(),
+        map.to_root_bytes()
+    );
+
+    let more = map.insert("tag", &ObjString::new("v7"));
+    let bytes = FileWriter::create("unused.root")
+        .add(&more)
+        .to_bytes()
+        .unwrap();
+    let back = FileReader::from_bytes(bytes)
+        .unwrap()
+        .get::<ObjMap>("meta")
+        .unwrap();
+    assert_eq!(back.string_keys(), ["version", "lumi", "hist", "tag"]);
+    assert_eq!(back.get::<ObjString>("tag").unwrap().unwrap().value(), "v7");
+    assert!(back.get::<Hist1D>("hist").unwrap().is_ok());
+}

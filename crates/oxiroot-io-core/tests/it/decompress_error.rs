@@ -19,7 +19,7 @@ fn an_unknown_codec_is_a_matchable_error() {
         Error::Decompress {
             context,
             source: CompressError::CodecUnavailable(Algorithm::OldRoot),
-        } => assert_eq!(context, "key \"h\""),
+        } => assert_eq!(context.as_deref(), Some("key \"h\"")),
         other => panic!("expected an unavailable-codec error, got {other:?}"),
     }
     assert!(

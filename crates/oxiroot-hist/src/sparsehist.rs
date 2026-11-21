@@ -31,9 +31,9 @@ pub struct SparseBin {
 #[doc(alias = "THnSparse")]
 pub struct SparseHist {
     /// Name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// One axis per dimension (`fAxes`).
     pub(crate) axes: Vec<Axis>,
     /// Number of entries (`fEntries`).
@@ -201,6 +201,12 @@ impl SparseHist {
         let named = read_named(r)?;
         let ndim = usize::saturating_from(r.be_i32()?);
         let axes = read_axis_array(r)?;
+        if axes.len() != ndim {
+            return Err(Error::Format(format!(
+                "THnSparse of {ndim} dimensions with {} axes",
+                axes.len()
+            )));
+        }
         let entries = r.be_f64()?;
         let tsumw = r.be_f64()?;
         let tsumw2 = r.be_f64()?;
@@ -212,7 +218,7 @@ impl SparseHist {
 
         let _chunk_size = r.be_i32()?;
         let _filled_bins = r.be_i64()?;
-        let bins = read_bin_content(r, ndim)?;
+        let bins = read_bin_content(r)?;
 
         if let Some(end) = tt.end {
             r.seek(end)?;
@@ -279,7 +285,7 @@ fn read_axis_array(r: &mut RBuffer<'_>) -> Result<Vec<Axis>> {
 
 /// Read `fBinContent`: a `TObjArray` of `THnSparseArrayChunk`. Returns each
 /// filled bin as `(compact coordinate, content)`.
-fn read_bin_content(r: &mut RBuffer<'_>, _ndim: usize) -> Result<Vec<(u64, f64)>> {
+fn read_bin_content(r: &mut RBuffer<'_>) -> Result<Vec<(u64, f64)>> {
     let nchunks = read_objarray_len(r)?;
     let mut out = Vec::new();
     for _ in 0..nchunks {

@@ -17,7 +17,7 @@ fn reads_th2d_uncompressed() {
     let f = FileReader::open(fixture("th2d_uncompressed.root")).expect("open fixture");
     let h = f.get::<Hist2D>("h2").expect("read TH2D");
 
-    assert_eq!(h.name, "h2");
+    assert_eq!(h.name(), "h2");
     assert_eq!(h.nx(), 3);
     assert_eq!(h.ny(), 2);
     assert_eq!(h.ncells(), 20); // (3+2) * (2+2)

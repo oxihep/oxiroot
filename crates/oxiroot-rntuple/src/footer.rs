@@ -40,6 +40,10 @@ pub struct Footer {
 
 impl Footer {
     /// Parse the footer from its envelope payload.
+    ///
+    /// # Errors
+    ///
+    /// If `payload` is not a well-formed footer envelope.
     pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(payload);
 

@@ -133,16 +133,16 @@ pub fn leaf_type_name(t: LeafType) -> &'static str {
 
 /// Decode ROOT's `fCompress` (`algorithm * 100 + level`) into a label.
 pub fn compression_label(compress: u32) -> String {
-    let (alg, level) = (compress / 100, compress % 100);
-    let name = match alg {
-        0 => return "none".to_string(),
-        1 => "zlib",
-        2 => "lzma",
-        4 => "lz4",
-        5 => "zstd",
-        _ => "unknown",
-    };
-    format!("{name} (level {level})")
+    use oxiroot::Compression;
+    match Compression::try_from(compress) {
+        Ok(Compression::Stored) => "none".to_string(),
+        Ok(Compression::Zlib(level)) => format!("zlib (level {level})"),
+        Ok(Compression::Lzma(level)) => format!("lzma (level {level})"),
+        Ok(Compression::Lz4(level)) => format!("lz4 (level {level})"),
+        Ok(Compression::Zstd(level)) => format!("zstd (level {level})"),
+        // `Compression` can grow an algorithm this label does not name yet.
+        Ok(_) | Err(_) => format!("unknown (setting {compress})"),
+    }
 }
 
 /// Format a ROOT file-version integer (`62400`) as `6.24/00`.
@@ -221,5 +221,20 @@ fn pad(s: &str, width: usize, right: bool) -> String {
         format!("{fill}{s}")
     } else {
         format!("{s}{fill}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compression_label;
+
+    #[test]
+    fn compression_label_names_the_algorithm_and_level() {
+        assert_eq!(compression_label(0), "none");
+        assert_eq!(compression_label(101), "zlib (level 1)");
+        assert_eq!(compression_label(505), "zstd (level 5)");
+        assert_eq!(compression_label(404), "lz4 (level 4)");
+        assert_eq!(compression_label(207), "lzma (level 7)");
+        assert_eq!(compression_label(905), "unknown (setting 905)");
     }
 }

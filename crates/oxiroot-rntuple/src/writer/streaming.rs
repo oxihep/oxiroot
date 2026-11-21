@@ -79,6 +79,7 @@ struct HeaderState {
 /// `std::string`, and `std::vector<T>` — writing each batch's collection/string
 /// index offsets relative to its own cluster, as the format requires.
 #[doc(alias = "RNTupleWriter")]
+#[must_use = "nothing is readable until `finish()` writes the file's directory"]
 pub struct NtupleWriter<W: Write + Seek> {
     file: ContainerWriter<W>,
     ntuple_name: String,
@@ -94,6 +95,10 @@ pub struct NtupleWriter<W: Write + Seek> {
 impl NtupleWriter<std::fs::File> {
     /// Create a streaming `RNTuple` file at `path` (32-bit container; supports up
     /// to 2 GiB — [`finish`](NtupleWriter::finish) errors if that is exceeded).
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be created, or its header cannot be written.
     pub fn create(
         path: impl AsRef<Path>,
         ntuple_name: &str,
@@ -106,6 +111,10 @@ impl NtupleWriter<std::fs::File> {
     /// container form so the file may exceed 2 GiB. Use this when the streamed
     /// dataset is expected to be large; small files are still valid, just stored
     /// in the wider form.
+    ///
+    /// # Errors
+    ///
+    /// As [`create`](Self::create).
     pub fn create_large(
         path: impl AsRef<Path>,
         ntuple_name: &str,
@@ -136,6 +145,10 @@ impl<W: Write + Seek> NtupleWriter<W> {
     /// directory are written immediately, with pointers to patch at the end).
     /// Small (32-bit) container — see [`new_large`](NtupleWriter::new_large) for
     /// the >2 GiB form.
+    ///
+    /// # Errors
+    ///
+    /// If the file's header cannot be written to `sink`.
     pub fn new(
         sink: W,
         file_name: &str,
@@ -147,6 +160,10 @@ impl<W: Write + Seek> NtupleWriter<W> {
 
     /// Like [`new`](NtupleWriter::new), but writes the 64-bit ("big") container
     /// form so the streamed file may exceed 2 GiB.
+    ///
+    /// # Errors
+    ///
+    /// As [`new`](Self::new).
     pub fn new_large(
         sink: W,
         file_name: &str,
@@ -181,6 +198,12 @@ impl<W: Write + Seek> NtupleWriter<W> {
 
     /// Append one cluster holding the entries in `fields`. All batches must share
     /// the same field schema; the first batch fixes it and writes the header.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::SchemaChanged`] if the fields differ from the first batch's,
+    /// [`Error::InvalidInput`] for a batch the format cannot hold as declared, and any
+    /// error writing to the sink.
     pub fn write_batch(&mut self, fields: &[Field]) -> Result<()> {
         self.write_chunks(&[fields])
     }
@@ -188,6 +211,10 @@ impl<W: Write + Seek> NtupleWriter<W> {
     /// Append several clusters at once, one per batch, in order. With the
     /// `rayon` feature every batch is encoded and its pages compressed in
     /// parallel before they are written.
+    ///
+    /// # Errors
+    ///
+    /// As [`write_batch`](Self::write_batch), for the first batch that fails.
     pub fn write_batches(&mut self, batches: &[Vec<Field>]) -> Result<()> {
         let slices: Vec<&[Field]> = batches.iter().map(Vec::as_slice).collect();
         self.write_chunks(&slices)
@@ -300,6 +327,11 @@ impl<W: Write + Seek> NtupleWriter<W> {
 
     /// Finish the file: write the page list (all clusters), footer, anchor key,
     /// and key list, then patch the header pointers. Returns the sink.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if no batch was written, [`Error::FileTooLarge`] if a small
+    /// file grew past what it can address, and any error writing to the sink.
     pub fn finish(mut self) -> Result<W> {
         let header = self.header.take().ok_or_else(|| {
             Error::InvalidInput("NtupleWriter finished with no batches written".into())

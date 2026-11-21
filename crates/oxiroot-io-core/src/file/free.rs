@@ -29,6 +29,10 @@ pub struct FreeSegment {
 /// Read the file's free-segment list. Returns an empty list when there is none.
 /// Fetches only the `[fSeekFree, fNbytesFree]` record, so it stays lazy over a
 /// remote source.
+///
+/// # Errors
+///
+/// If the record cannot be read from `source`, or is not a well-formed free list.
 pub fn read_free(source: &dyn ByteSource, header: &FileHeader) -> Result<Vec<FreeSegment>> {
     if header.seek_free == 0 || header.nfree == 0 {
         return Ok(Vec::new());

@@ -939,10 +939,12 @@ impl SparseHist {
         self.tsumw
     }
 
-    /// Σw² over the fills.
+    /// Σw² over the fills, or `None` when the histogram does not track its
+    /// statistics (ROOT stores `-1` for that, and writes it for a new
+    /// `THnSparse`).
     #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
+    pub fn tsumw2(&self) -> Option<f64> {
+        (self.tsumw2 >= 0.0).then_some(self.tsumw2)
     }
 
     /// The `tsumwx` moment sum.

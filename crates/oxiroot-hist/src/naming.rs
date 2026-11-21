@@ -1,4 +1,5 @@
-//! Fluent `named()` / `titled()` setters shared by every named ROOT object.
+//! `name()` / `title()` and the fluent `named()` / `titled()` setters shared by
+//! every named ROOT object.
 //!
 //! A histogram (or graph, profile, …) is just data — a binning and its contents.
 //! Unlike ROOT, oxiroot never forces a name at construction and keeps no global
@@ -15,8 +16,20 @@ use crate::{
 macro_rules! impl_named {
     ($($t:ty),+ $(,)?) => {$(
         impl $t {
+            #[doc = "The object's name (ROOT's `fName`): the key it is written under."]
+            #[must_use]
+            pub fn name(&self) -> &str {
+                &self.name
+            }
+
+            #[doc = "The object's title (ROOT's `fTitle`)."]
+            #[must_use]
+            pub fn title(&self) -> &str {
+                &self.title
+            }
+
             #[doc = "Set the object's name — the key it is written under in a ROOT"]
-            #[doc = "file. Chainable: `Hist1D::new(100, 0.0, 1.0).named(\"pt\")`."]
+            #[doc = "file. Chainable: `graph.named(\"g\").titled(\"data\")`."]
             #[must_use]
             pub fn named(mut self, name: impl Into<String>) -> Self {
                 self.name = name.into();

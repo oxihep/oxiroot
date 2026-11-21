@@ -110,6 +110,10 @@ pub struct Header {
 impl Header {
     /// Parse the header from the envelope payload (after the 8-byte type/length
     /// word, before the checksum).
+    ///
+    /// # Errors
+    ///
+    /// If `payload` is not a well-formed header envelope.
     pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(payload);
 

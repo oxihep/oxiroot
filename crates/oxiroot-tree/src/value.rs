@@ -173,6 +173,10 @@ pub trait FromBranch: Sized {
 
     /// Take the values out of `values`, or fail with
     /// [`Error::TypeMismatch`] naming `name` if they are another type.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::TypeMismatch`] if the branch `name` does not hold this type.
     fn from_values(name: &str, values: BranchValues) -> Result<Vec<Self>>;
 }
 
@@ -363,6 +367,10 @@ impl BranchValues {
     /// concatenating trees, as a chain does. For a
     /// [`Nested`](BranchValues::Nested) column the inner `items` are appended and
     /// the `offsets` rebased so the two entry ranges join seamlessly.
+    ///
+    /// # Errors
+    ///
+    /// If the two do not hold the same kind of values; `self` is left unchanged.
     pub fn append(&mut self, other: Self) -> Result<()> {
         use BranchValues::*;
         macro_rules! join {

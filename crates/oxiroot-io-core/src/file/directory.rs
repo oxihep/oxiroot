@@ -49,6 +49,10 @@ impl Directory {
     /// Read a directory record at absolute `offset` from `source`, loading its
     /// key list. Only the directory record and its key-list record are fetched —
     /// two small ranges — so this stays lazy over a remote source.
+    ///
+    /// # Errors
+    ///
+    /// If the record cannot be read from `source`, or is not a well-formed directory.
     pub fn read(source: &dyn ByteSource, offset: u64) -> Result<Self> {
         // The directory record's fixed header is at most `DIR_RECORD_MAX` bytes;
         // fetch that window (clamped to the file) and parse it standalone.
@@ -87,6 +91,10 @@ impl Directory {
     }
 
     /// Read the root directory of a file (located at `begin + nbytes_name`).
+    ///
+    /// # Errors
+    ///
+    /// If the record cannot be read from `source`, or is not a well-formed directory.
     pub fn read_root(source: &dyn ByteSource, header: &FileHeader) -> Result<Self> {
         Self::read(source, header.begin + u64::from(header.nbytes_name))
     }
