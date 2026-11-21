@@ -1896,12 +1896,13 @@ dependencies = [
 
 [[package]]
 name = "oxihist"
-version = "0.13.1"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.13.1#52712c8c6d432b54a3d18b1727c99378d3ffbd40"
+version = "0.14.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.14.0#59071e5a589c9f9a333ce4132b9e1f94d088c03f"
 dependencies = [
  "foldhash 0.2.0",
  "oxifit",
  "oxiplot",
+ "oxistats",
  "rayon",
  "thread_local",
 ]

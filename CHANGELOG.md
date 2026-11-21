@@ -7,6 +7,29 @@ change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- **oxihist 0.14.0**: its histograms keep the statistics of their fills
+  (the number of fills, `Σw`, `Σw²`, `Σw·x`, `Σw·x²` and the cross terms; a
+  profile's sums of the sampled value) and gain `multiply`, `divide`,
+  `chi2_test`, `kolmogorov_test`, `smooth`, `interpolate`, `slice`,
+  `profile`, `maximum`, `minimum` and `effective_entries`. See its
+  changelog; `mean` and `std_dev` of a filled histogram are now those of the
+  values filled, and a fill is slower (figures in
+  `docs/reference/performance.md`).
+- **`to_root()` writes the fills' own statistics.** `fEntries` is the
+  number of fills and `fTsumw*` their sums, so ROOT's `GetEntries`,
+  `GetMean` and `GetRMS` on a written file match a histogram filled in
+  ROOT. Before, `fEntries` was the sum of the bin values and the sums were
+  estimated from the bin centers; a histogram without fill statistics
+  (built with `from_bins`, or changed bin by bin) is still written that
+  way.
+- **`to_hist()` restores them.** The oxihist histogram read from a ROOT
+  one has the file's `fEntries` and `fTsumw*` as its fill statistics, so
+  they survive a round trip exactly. A ROOT histogram that has entries but
+  empty sums (`fTsumw == 0`, as after `SetBinContent`) reads without fill
+  statistics, and its mean is computed from the bins, as ROOT does.
+
 ## [0.9.0] — 2026-11-20
 
 Zstd at C speed in safe Rust (zrip), lists of structs in a `TTree`, a
