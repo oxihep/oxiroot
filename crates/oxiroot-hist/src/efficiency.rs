@@ -13,22 +13,90 @@ use oxiroot_io_core::{Object, ReadRoot};
 use crate::base::BinContentType;
 use crate::hist1d::Hist1D;
 
+/// How a [`Efficiency`]'s confidence interval is computed (ROOT's
+/// `TEfficiency::EStatOption`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum StatisticOption {
+    /// `kFCP` (0): Clopper–Pearson, the exact frequentist interval (the default).
+    #[default]
+    ClopperPearson,
+    /// `kFNormal` (1): the normal approximation.
+    Normal,
+    /// `kFWilson` (2): the Wilson interval.
+    Wilson,
+    /// `kFAC` (3): the Agresti–Coull interval.
+    AgrestiCoull,
+    /// `kFFC` (4): the Feldman–Cousins interval.
+    FeldmanCousins,
+    /// `kBJeffrey` (5): Bayesian with the Jeffreys prior.
+    Jeffrey,
+    /// `kBUniform` (6): Bayesian with a uniform prior.
+    Uniform,
+    /// `kBBayesian` (7): Bayesian with the prior set by `beta_alpha` and `beta_beta`.
+    Bayesian,
+    /// `kMidP` (8): the mid-P Lancaster interval.
+    MidP,
+}
+
+impl StatisticOption {
+    /// The value a ROOT `fStatisticOption` code names.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Format`](oxiroot_io_core::Error::Format) for any other code.
+    pub fn from_code(code: i32) -> Result<Self> {
+        Ok(match code {
+            0 => Self::ClopperPearson,
+            1 => Self::Normal,
+            2 => Self::Wilson,
+            3 => Self::AgrestiCoull,
+            4 => Self::FeldmanCousins,
+            5 => Self::Jeffrey,
+            6 => Self::Uniform,
+            7 => Self::Bayesian,
+            8 => Self::MidP,
+            other => {
+                return Err(oxiroot_io_core::Error::Format(format!(
+                    "unknown efficiency statistic option {other}"
+                )));
+            }
+        })
+    }
+
+    /// The ROOT `fStatisticOption` code written to disk.
+    #[must_use]
+    pub const fn code(self) -> i32 {
+        match self {
+            Self::ClopperPearson => 0,
+            Self::Normal => 1,
+            Self::Wilson => 2,
+            Self::AgrestiCoull => 3,
+            Self::FeldmanCousins => 4,
+            Self::Jeffrey => 5,
+            Self::Uniform => 6,
+            Self::Bayesian => 7,
+            Self::MidP => 8,
+        }
+    }
+}
+
 /// An efficiency plot (ROOT `TEfficiency`).
 #[derive(Debug, Clone, PartialEq)]
 #[doc(alias = "TEfficiency")]
 pub struct Efficiency {
     /// Name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// Numerator histogram — passed trials per bin (`fPassedHistogram`, a `TH1D`).
     pub(crate) passed: Hist1D,
     /// Denominator histogram — total trials per bin (`fTotalHistogram`, a `TH1D`).
     pub(crate) total: Hist1D,
     /// Confidence level for the interval (`fConfLevel`).
     pub conf_level: f64,
-    /// Statistic option (`fStatisticOption`; 0 = Clopper–Pearson, ROOT's default).
-    pub statistic_option: i32,
+    /// How the confidence interval is computed (`fStatisticOption`).
+    pub statistic_option: StatisticOption,
     /// Weight for combining efficiencies (`fWeight`).
     pub weight: f64,
     /// Bayesian prior α (`fBeta_alpha`).
@@ -53,7 +121,7 @@ impl Efficiency {
             passed,
             total,
             conf_level: Self::DEFAULT_CONF_LEVEL,
-            statistic_option: 0,
+            statistic_option: StatisticOption::default(),
             weight: 1.0,
             beta_alpha: 1.0,
             beta_beta: 1.0,
@@ -69,16 +137,14 @@ impl Efficiency {
         }
     }
 
-    /// Efficiency in bin `bin` (1-based): `passed / total`, or `0` when the bin
-    /// has no trials.
+    /// Efficiency in bin `bin` (1-based; `0` and `nbins + 1` are the flow
+    /// bins): `passed / total`. `None` when the bin has no trials, or does not
+    /// exist.
     #[must_use]
-    pub fn efficiency(&self, bin: usize) -> f64 {
-        let t = self.total.contents.get(bin).copied().unwrap_or(0.0);
-        if t != 0.0 {
-            self.passed.contents.get(bin).copied().unwrap_or(0.0) / t
-        } else {
-            0.0
-        }
+    pub fn efficiency(&self, bin: usize) -> Option<f64> {
+        let total = *self.total.contents.get(bin)?;
+        let passed = *self.passed.contents.get(bin)?;
+        (total != 0.0).then(|| passed / total)
     }
 
     pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
@@ -94,7 +160,7 @@ impl Efficiency {
         let conf_level = r.be_f64()?;
         skip_byte_counted(r)?; // fFunctions (TList*)
         let passed = read_embedded_th1d(r)?; // fPassedHistogram
-        let statistic_option = r.be_i32()?;
+        let statistic_option = StatisticOption::from_code(r.be_i32()?)?;
         let total = read_embedded_th1d(r)?; // fTotalHistogram
         let weight = r.be_f64()?;
 
@@ -130,7 +196,7 @@ fn read_embedded_th1d(r: &mut RBuffer<'_>) -> Result<Hist1D> {
             "a TEfficiency histogram pointer is null".into(),
         ));
     }
-    Hist1D::read(r, BinContentType::F64)
+    Hist1D::read(r, BinContentType::F64, None)
 }
 
 impl ReadRoot for Efficiency {

@@ -20,9 +20,9 @@ use crate::profile1d::ErrorMode;
 #[doc(alias = "TProfile2D")]
 pub struct Profile2D {
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
     /// Y axis.
@@ -141,7 +141,7 @@ impl Profile2D {
         }
         let th2 = r.read_version()?; // Hist2D wrapper (Hist1D base + Hist2D members)
 
-        let c = read_th1_base(r)?;
+        let c = read_th1_base(r, None)?;
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;

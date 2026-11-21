@@ -37,6 +37,11 @@ pub struct NtupleReader<'f> {
 impl<'f> NtupleReader<'f> {
     /// Open the `RNTuple` at `path` in `file`: `"events"`, or
     /// `"dir/sub/events;cycle"` for one in a subdirectory or at a given cycle.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if `path` names no key, [`Error::WrongClass`] if the key is not an
+    /// `RNTuple`, and any error reading its header and footer.
     pub fn open(file: &'f FileReader, path: &str) -> Result<Self> {
         Self::open_from_key(file, &file.key(path)?)
     }
@@ -45,7 +50,7 @@ impl<'f> NtupleReader<'f> {
     fn open_from_key(file: &'f FileReader, key: &oxiroot_io_core::raw::Key) -> Result<Self> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::WrongClass {
-                name: key.name.clone(),
+                name: Some(key.name.clone()),
                 found: key.class_name.clone(),
                 expected: ANCHOR_CLASS.to_string(),
             });
@@ -167,6 +172,10 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// Decode physical column `column_index` across all clusters.
+    ///
+    /// # Errors
+    ///
+    /// If `column_index` names no column, or its pages cannot be read or decoded.
     pub fn read_column(&self, column_index: usize) -> Result<ColumnValues> {
         self.column_values(self.file, column_index)
     }
@@ -779,7 +788,14 @@ const MAX_ELEMENTS_PER_ENTRY: u64 = 1 << 16;
 fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let win = file
         .read_at(seek, usize::saturating_from(nbytes))
-        .map_err(|_| Error::Format(format!("{what} blob at {seek} runs past end of file")))?;
+        .map_err(|e| match e {
+            // The descriptor points outside the file: a format error. Anything
+            // else (a failed read, a dropped connection) is reported as it is.
+            Error::UnexpectedEof { .. } => {
+                Error::Format(format!("{what} blob at {seek} runs past end of file"))
+            }
+            other => other,
+        })?;
     decompress_payload(&win, usize::saturating_from(len), what)
 }
 
@@ -825,6 +841,11 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     /// `std::vector<float>`, `String` for a `std::string`, `Option<T>` for a
     /// `std::optional<T>`. Asking for another type than the field holds is an
     /// [`Error::TypeMismatch`]; nothing is converted.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if there is no such field, [`Error::TypeMismatch`] if it does not
+    /// hold `T`, and any error reading its pages.
     pub fn read<T: FromField>(self) -> Result<Vec<T>> {
         let name = self.name;
         T::from_values(name, self.values()?)
@@ -832,6 +853,10 @@ impl<'a, 'f> FieldRead<'a, 'f> {
 
     /// The values as the [`FieldValues`] enum, for code that does not know the
     /// field's type in advance.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if there is no such field, and any error reading its pages.
     pub fn values(self) -> Result<FieldValues> {
         let reader = self.reader();
         match self.range {
@@ -844,6 +869,11 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     /// per-entry offsets, decoded straight from the field's two columns with
     /// no allocation per entry. Only for `std::vector` of a scalar type; other
     /// fields are an [`Error::Unsupported`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unsupported`] for a field that is not a `std::vector` of a scalar, and any
+    /// error reading its pages.
     pub fn flat(self) -> Result<Jagged> {
         let r = self.range.clone().unwrap_or(0..u64::MAX);
         self.reader()

@@ -61,11 +61,11 @@ pub use collections::{GraphStack, HistStack};
 pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points};
 pub use graph::{Graph, GraphErrors, GraphFunction};
 pub use graph2d::Graph2D;
-pub use multierrorgraph::MultiErrorGraph;
+pub use multierrorgraph::{MultiErrorGraph, SumErrorsMode};
 // The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
 // resolving.
 pub use convert::ToRoot;
-pub use efficiency::Efficiency;
+pub use efficiency::{Efficiency, StatisticOption};
 pub use hist1d::Hist1D;
 pub use hist2d::Hist2D;
 pub use hist3d::Hist3D;

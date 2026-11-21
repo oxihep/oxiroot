@@ -162,6 +162,7 @@ struct StreamCol {
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 #[doc(alias = "TTreeWriter")]
+#[must_use = "nothing is readable until `finish()` writes the file's directory"]
 pub struct TreeWriter<W: Write + Seek> {
     file: ContainerWriter<W>,
     tree_name: String,
@@ -177,6 +178,10 @@ impl TreeWriter<std::fs::File> {
     /// the file is the small (32-bit) container, so the total must stay under
     /// 2 GiB ([`finish`](TreeWriter::finish) errors otherwise). For a file that
     /// may exceed 2 GiB, use [`create_large`](TreeWriter::create_large).
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be created, or its header cannot be written.
     pub fn create(
         path: impl AsRef<Path>,
         tree_name: &str,
@@ -189,6 +194,10 @@ impl TreeWriter<std::fs::File> {
     /// container form so the tree may exceed 2 GiB. Use this when the streamed
     /// dataset is expected to be large; small files are still valid, just stored
     /// in the wider form (as ROOT does past `kStartBigFile`).
+    ///
+    /// # Errors
+    ///
+    /// As [`create`](Self::create).
     pub fn create_large(
         path: impl AsRef<Path>,
         tree_name: &str,
@@ -220,6 +229,10 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// pointers patched at the end); `file_name` is the name stored in the
     /// directory record. See [`new_large`](TreeWriter::new_large) for the
     /// >2 GiB form.
+    ///
+    /// # Errors
+    ///
+    /// If the file's header cannot be written to `sink`.
     pub fn new(
         sink: W,
         file_name: &str,
@@ -231,6 +244,10 @@ impl<W: Write + Seek> TreeWriter<W> {
 
     /// Like [`new`](TreeWriter::new), but writes the 64-bit ("big") container
     /// form so the streamed file may exceed 2 GiB.
+    ///
+    /// # Errors
+    ///
+    /// As [`new`](Self::new).
     pub fn new_large(
         sink: W,
         file_name: &str,
@@ -269,6 +286,12 @@ impl<W: Write + Seek> TreeWriter<W> {
 
     /// Append one batch of entries (one basket per branch). The first batch fixes
     /// the schema; later batches must match it. An empty batch is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::SchemaChanged`] if the branches differ from the first batch's,
+    /// [`Error::InvalidInput`] for a batch the format cannot hold as declared, and any
+    /// error writing to the sink.
     pub fn write_batch(&mut self, branches: &[Branch]) -> Result<()> {
         self.write_chunks(&[branches])
     }
@@ -277,6 +300,10 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// batch. With the `rayon` feature every basket of every batch is
     /// serialized and compressed in parallel before they are written, so a
     /// cluster cut into many baskets costs about one basket's time per core.
+    ///
+    /// # Errors
+    ///
+    /// As [`write_batch`](Self::write_batch), for the first batch that fails.
     pub fn write_batches(&mut self, batches: &[Vec<Branch>]) -> Result<()> {
         let slices: Vec<&[Branch]> = batches.iter().map(Vec::as_slice).collect();
         self.write_chunks(&slices)
@@ -472,6 +499,11 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// Finish the file: write the `TTree` object, streamer info, and key list,
     /// then patch the header pointers. Returns the sink. Errors if no batch was
     /// written or the file exceeds the 2 GiB small-format limit.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if no batch was written, [`Error::FileTooLarge`] if a small
+    /// file grew past what it can address, and any error writing to the sink.
     pub fn finish(mut self) -> Result<W> {
         if self.schema.is_none() {
             return Err(Error::InvalidInput(

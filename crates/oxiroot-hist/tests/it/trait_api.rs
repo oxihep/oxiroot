@@ -42,7 +42,7 @@ fn write_root_then_read_root_round_trips() {
     let f = FileReader::open(&path).expect("open");
     let back = f.get::<Hist1D>("h").expect("read_root");
     assert_eq!(back.values(), h.values());
-    assert_eq!(back.name, "h");
+    assert_eq!(back.name(), "h");
     assert_eq!(back.class_name(), "TH1D");
 }
 

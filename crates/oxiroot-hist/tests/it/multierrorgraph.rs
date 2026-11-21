@@ -18,8 +18,8 @@ fn fixture(name: &str) -> PathBuf {
 fn reads_root_written_graphmultierrors() {
     let f = FileReader::open(fixture("graphmultierrors.root")).expect("open");
     let g = f.get::<MultiErrorGraph>("gme").expect("read gme");
-    assert_eq!(g.name, "gme");
-    assert_eq!(g.title, "multi");
+    assert_eq!(g.name(), "gme");
+    assert_eq!(g.title(), "multi");
     assert_eq!(g.x(), vec![1.0, 2.0, 3.0]);
     assert_eq!(g.y(), vec![10.0, 20.0, 30.0]);
     assert_eq!(g.ex_low(), vec![0.1, 0.1, 0.1]);
@@ -96,4 +96,20 @@ fn empty_graphmultierrors_round_trip() {
         .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
+}
+
+/// The summation modes map to and from ROOT's codes; an unknown code is an
+/// error.
+#[test]
+fn summation_modes_round_trip_their_codes() {
+    use oxiroot_hist::SumErrorsMode;
+
+    for code in 0..=2 {
+        assert_eq!(SumErrorsMode::from_code(code).unwrap().code(), code);
+    }
+    assert_eq!(
+        SumErrorsMode::from_code(1).unwrap(),
+        SumErrorsMode::SquareSum
+    );
+    assert!(SumErrorsMode::from_code(3).is_err());
 }

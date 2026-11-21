@@ -16,6 +16,7 @@
 
 use crate::cast::SaturatingFrom;
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer, WBuffer};
 use crate::error::Result;
@@ -433,7 +434,7 @@ pub(crate) fn collect_stored(
     infos: &[StoredInfo],
     class: &str,
     version: Option<i32>,
-    seen: &mut Vec<(String, i32)>,
+    seen: &mut HashSet<(String, i32)>,
     out: &mut Vec<ClassDef<'static>>,
 ) {
     let named = |s: &&StoredInfo| s.info.class_name == class;
@@ -446,10 +447,9 @@ pub(crate) fn collect_stored(
         return;
     };
     let key = (entry.info.class_name.clone(), entry.info.class_version);
-    if seen.contains(&key) {
+    if !seen.insert(key) {
         return;
     }
-    seen.push(key);
     for element in &entry.info.elements {
         if element.element_class == "TStreamerBase" {
             collect_stored(infos, &element.name, element.base_version, seen, out);
@@ -515,7 +515,7 @@ impl StreamerInfoList {
     /// out.
     #[must_use]
     pub fn classes_for(&self, classes: &[&str]) -> Vec<ClassDef<'static>> {
-        let mut seen = Vec::new();
+        let mut seen = HashSet::new();
         let mut out = Vec::new();
         for class in classes {
             collect_stored(&self.infos, class, None, &mut seen, &mut out);

@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use oxiroot_io_core::{Compression, Error, FileReader, Result};
+use oxiroot_io_core::{Compression, FileReader, Result};
 
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
@@ -171,7 +171,7 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
                     None => acc = Some(h),
                     // Through `Mergeable` (or the named merge), so a type that
                     // cannot be merged cannot be routed here.
-                    Some(a) => $merge(a, &h).map_err(|e| with_key(name, e))?,
+                    Some(a) => $merge(a, &h).map_err(|e| e.context(format_args!("{name:?}")))?,
                 }
             }
             match (unreadable, acc) {
@@ -232,15 +232,4 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
         other => Built::Skipped(format!("class {other:?} is not mergeable by oxiroot")),
     };
     Ok(built)
-}
-
-/// Name the key a binning mismatch came from, so a failed merge says which
-/// object was incompatible.
-fn with_key(name: &str, e: Error) -> Error {
-    match e {
-        Error::BinningMismatch { detail } => Error::BinningMismatch {
-            detail: format!("{name:?}: {detail}"),
-        },
-        other => other,
-    }
 }

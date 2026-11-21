@@ -225,7 +225,7 @@ mod merges {
         a.merge(&b).unwrap();
         assert_eq!(a.x(), vec![1.0, 3.0, 4.0]);
         assert_eq!(a.y(), vec![2.0, 5.0, 6.0]);
-        assert_eq!(a.functions.len(), 1, "the attached function is kept");
+        assert_eq!(a.functions().len(), 1, "the attached function is kept");
 
         // Different error bars change nothing.
         let plain = Graph::new(vec![9.0], vec![9.0]).unwrap();

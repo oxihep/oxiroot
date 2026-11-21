@@ -24,9 +24,9 @@ pub struct Hist3D {
     /// [`class_name`](Hist3D::class_name).
     pub(crate) bin_content_type: BinContentType,
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
     /// Y axis.
@@ -77,7 +77,7 @@ impl Hist3D {
         }
         let th3 = r.read_version()?; // Hist3D wrapper
 
-        let c = read_th1_base(r)?;
+        let c = read_th1_base(r, None)?;
         skip_versioned(r)?; // TAtt3D base (empty)
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;

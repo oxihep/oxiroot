@@ -73,9 +73,9 @@ impl ErrorMode {
 #[doc(alias = "TProfile")]
 pub struct Profile1D {
     /// Histogram name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Histogram title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
     /// Total cells, including flow (`fNcells = nbins + 2`).
@@ -119,7 +119,7 @@ impl Profile1D {
         }
 
         // The TH1D base: its own wrapper, the Hist1D base, and the TArrayD sums.
-        let (core, sums) = read_th1_object(r, BinContentType::F64)?;
+        let (core, sums) = read_th1_object(r, BinContentType::F64, None)?;
 
         let bin_entries = read_tarray(r, BinContentType::F64)?;
         let error_mode = ErrorMode::from_code(r.be_i32()?)?;

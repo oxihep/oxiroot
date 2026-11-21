@@ -19,7 +19,7 @@ fn reads_th1f() {
         .get::<Hist1D>("h1f")
         .expect("TH1F");
     assert_eq!(h.class_name(), "TH1F");
-    assert_eq!(h.name, "h1f");
+    assert_eq!(h.name(), "h1f");
     assert_eq!(h.xaxis().nbins(), 5);
     assert_eq!(h.values(), [1.5, 3.0, 4.5, 6.0, 7.5]);
     assert_eq!(h.edges(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
@@ -66,7 +66,7 @@ fn reads_tprofile() {
     let p = open("tprofile_uncompressed.root")
         .get::<Profile1D>("p")
         .expect("TProfile");
-    assert_eq!(p.name, "p");
+    assert_eq!(p.name(), "p");
     assert_eq!(p.xaxis().nbins(), 4);
     assert_eq!(p.edges(), vec![0.0, 1.0, 2.0, 3.0, 4.0]);
     // Per-bin entry counts (with flow): [under, 2, 2, 1, 0, over].

@@ -97,6 +97,11 @@ impl FileReader {
     ///   for public/world-readable files (e.g. `root://eospublic.cern.ch`).
     ///
     /// Requires the matching feature for the URL's scheme.
+    ///
+    /// # Errors
+    ///
+    /// If the URL's scheme is not supported by this build, the server cannot be reached, or
+    /// what it serves is not a ROOT file.
     #[cfg(any(feature = "http", feature = "xrootd"))]
     pub fn open_url(url: &str) -> Result<Self> {
         #[cfg(feature = "xrootd")]
@@ -113,12 +118,21 @@ impl FileReader {
     }
 
     /// Parse a ROOT file already held in memory.
+    ///
+    /// # Errors
+    ///
+    /// If the bytes are not a ROOT file: a bad magic, or a header or top directory that cannot
+    /// be read.
     pub fn from_bytes(data: impl Into<Bytes>) -> Result<Self> {
         Self::from_source(Box::new(BytesSource::new(data)))
     }
 
     /// Parse a ROOT file from an arbitrary [`ByteSource`]. The header, root
     /// directory, and key list are read at open; everything else is on demand.
+    ///
+    /// # Errors
+    ///
+    /// If the source cannot be read, or what it holds is not a ROOT file.
     pub fn from_source(source: Box<dyn ByteSource>) -> Result<Self> {
         let size = source.len();
         let head = source.read_at(0, usize::saturating_from(HEADER_PROBE.min(size)))?;
@@ -205,10 +219,12 @@ impl FileReader {
             bytes: &bytes,
             key_len: Some(key.key_len as usize),
             file: Some(self),
+            title: &key.title,
+            within: None,
         };
         T::from_object(&object).unwrap_or_else(|| {
             Err(Error::WrongClass {
-                name: path.to_string(),
+                name: Some(path.to_string()),
                 found: key.class_name.clone(),
                 expected: T::CLASS.to_string(),
             })
@@ -223,6 +239,11 @@ impl FileReader {
     /// Accepts both `TDirectory` (the in-memory class oxiroot writes) and
     /// `TDirectoryFile` (the class official ROOT C++ records on disk), so
     /// subdirectories of ROOT-written files are navigable.
+    ///
+    /// # Errors
+    ///
+    /// If a component of `path` is not a subdirectory, or a directory record cannot be
+    /// read.
     pub fn subdir(&self, path: &str) -> Result<Directory> {
         Ok((*self.subdir_cached(path)?).clone())
     }
@@ -279,6 +300,10 @@ impl FileReader {
     }
 
     /// The file's free-segment list (informational).
+    ///
+    /// # Errors
+    ///
+    /// If the free list cannot be read or is malformed.
     pub fn free_segments(&self) -> Result<Vec<FreeSegment>> {
         read_free(&*self.source, &self.header)
     }
@@ -338,6 +363,11 @@ impl FileReader {
     /// ranged local or remote file it fetches just that range. Object, `RNTuple`
     /// page, and `TTree` basket readers go through this so they touch only the
     /// bytes they need.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the range runs past the end of the file, and any error
+    /// reading the source.
     pub fn read_at(&self, offset: u64, len: usize) -> Result<Bytes> {
         if self.source.batches_reads() {
             let mut ra = self
@@ -368,6 +398,10 @@ impl FileReader {
     /// Fetch a key's (possibly compressed) object payload — the `fNbytes −
     /// fKeyLen` bytes after its header. Bounds-checked against the file size;
     /// errors (never panics) on a malformed key.
+    ///
+    /// # Errors
+    ///
+    /// If the key points outside the file, or the source cannot be read.
     pub fn key_payload(&self, key: &Key) -> Result<Bytes> {
         let start = key.payload_start(usize::saturating_from(self.size))? as u64;
         let len = key

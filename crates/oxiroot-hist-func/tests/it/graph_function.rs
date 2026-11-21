@@ -47,8 +47,8 @@ fn attached_function_evaluates_after_a_file_round_trip() {
         .unwrap();
 
     let back = FileReader::open(&path).unwrap().get::<Graph>("g").unwrap();
-    assert_eq!(back.functions.len(), 1);
-    let h = Func1D::from_graph_function(back.functions[0].clone()).unwrap();
+    assert_eq!(back.functions().len(), 1);
+    let h = Func1D::from_graph_function(back.functions()[0].clone()).unwrap();
     for x in [-1.0, 0.0, 1.5, 2.25, 5.0] {
         assert_eq!(h.eval(x), f.eval(x), "x = {x}");
     }

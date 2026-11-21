@@ -15,7 +15,7 @@ Legend: `[ ]` to do, `[x]` done, `[~]` partly done (the note says what is left).
   - [x] `oxiroot-tree/src/reader/parse.rs:238`
   - [x] `oxiroot-hist/src/collections.rs:133`
   - [x] `oxiroot-hist/src/multierrorgraph.rs:122`
-- [~] **P1.3** Graph functions read through `TagReader`, so class back-references resolve [hist H3]. Done for a graph stored under its own key. A graph inside a `TMultiGraph`, `TList` or `TMap` is decoded from a slice of the outer buffer and still skips back-referenced functions; finish with P2.16.
+- [x] **P1.3** Graph functions read through `TagReader`, so class back-references resolve [hist H3]: for a graph under its own key, and for a member of a `TMultiGraph`, `TList`, `TObjArray` or `TMap`, which is read in place in the collection's buffer (`Object::within`). A `TagReader` that meets a reference to a class named inside an object it skipped reads the declaration at the position the reference gives. Fixtures `multigraph_functions.root`, `list_functions.root`.
 - [x] **P1.4** Reject sparse-histogram coordinates wider than 64 bits, on read and on fill [hist H4]
 - [x] **P1.5** CLI `dump`: correct `TH2`/`TH3` axis sizes [cli High]
 - [x] **P1.6** CLI `dump`: report read errors and unknown `-b` names [cli Medium]
@@ -24,13 +24,18 @@ Legend: `[ ]` to do, `[x]` done, `[~]` partly done (the note says what is left).
 - [x] **P1.9** `Batch::append` checks every column type before changing anything [dataset]
 - [x] **P1.10** Baskets over the format limit are an error, not a corrupt file [C4]. No test: one needs a 2 GiB buffer.
 - [x] **P1.11** Objects over the byte-count limit are an error [C4]
-- [~] **P1.12** `FileWriter::write` and `WriteRoot::write_root` write to a temporary file and rename [io-core file]. `hadd`'s `write_whole` still uses `std::fs::write`. No `fsync`, so this protects against a failed or interrupted write, not power loss.
+- [x] **P1.12** `FileWriter::write`, `FileUpdater::write` and `hadd`'s whole-file write go to a temporary file that is renamed (`raw::write_atomic`) [io-core file]. No `fsync`, so this protects against a failed or interrupted write, not power loss.
 - [x] **P1.13** HTTP cache locks recover from poisoning [io-core file]
 - [x] **P1.14** Regression tests (all but P1.10 and P1.13); 645 tests pass with default features
 
+- [x] **P1.13** (found while closing P1.3) A `TList`, `TObjArray` or `TMap` read from a ROOT file and written back made ROOT crash: members were re-encoded one by one, leaving their internal class references pointing into the old buffer. A collection read from a file now keeps that buffer, is written back from it (new members appended, count and byte count patched), and carries a `KeyCheck` so the writer refuses a key whose header length differs (a rename, or nesting in another collection). Checked by reading the output with ROOT 6.40: the list as read, the list with a member added, and the map with an entry added.
+
+- [x] **P1.14** (found by reading oxiroot's output with ROOT) A `Hist1D` dropped the functions stored with it: a fitted histogram read and written back lost its fit. `Hist1D` now reads and writes `fFunctions` (`functions()`, `with_function`), under its own key and inside a `THStack`, `TList`, `TObjArray` or `TMap`. `Hist2D` / `Hist3D` and the profiles still write an empty list (`TF2` / `TF3` are not modelled on them). Fixture `hist_functions.root`.
+- [x] **P1.15** (same) A formula with named parameters (ROOT's `gaus`: `[Constant]`, `[Mean]`, `[Sigma]`) was written back with a positional parameter map, and evaluated to 0 in ROOT. The formula is read into positional form. Checked with ROOT 6.40: `gaus` evaluates the same before and after.
+
 ## Phase 2: mechanical cleanup (no API change)
 
-- [~] **P2.1** Curated lint set in `[workspace.lints.clippy]`: `use_self`, `must_use_candidate`, `doc_markdown`, `missing_errors_doc`, `missing_panics_doc`, `format_push_string`, `map_unwrap_or`, `redundant_closure_for_method_calls` Enabled all but `missing_errors_doc` (about 130 functions still need an `# Errors` section).
+- [x] **P2.1** Curated lint set in `[workspace.lints.clippy]`: `use_self`, `must_use_candidate`, `doc_markdown`, `missing_errors_doc`, `missing_panics_doc`, `format_push_string`, `map_unwrap_or`, `redundant_closure_for_method_calls`. All enabled: the 100 public functions that lacked an `# Errors` section have one.
 - [x] **P2.2** `rust.elided_lifetimes_in_paths = "warn"`
 - [x] **P2.3** `cargo clippy --fix`, then clear what remains by hand
 - [x] **P2.4** `as_chunks` / `first_chunk` / `last_chunk` in place of `chunks_exact(..).try_into().unwrap()` (9 sites) [C9]
@@ -51,7 +56,7 @@ Legend: `[ ]` to do, `[x]` done, `[~]` partly done (the note says what is left).
 - [ ] **P2.13** One `ClassKind::of(class)` replacing the four dispatch tables [C6]
 - [x] **P2.14** Export `K_NEW_CLASS_TAG`, `K_CLASS_MASK` once; remove the 40 literals in `oxiroot-hist` [C2]
 - [x] **P2.15** One embedded-object writer in the core; delete the four copies [C3]
-- [~] **P2.16** All embedded-object readers through `TagReader` (`func_record.rs`, `efficiency.rs`, `sparsehist.rs`, `axis.rs`) [C2] One shared `raw::read_pointer_header` replaces the five hand-written copies. It does not follow class back-references, so P1.3's remaining case (a graph inside a collection) is still open.
+- [~] **P2.16** All embedded-object readers through `TagReader` (`func_record.rs`, `efficiency.rs`, `sparsehist.rs`, `axis.rs`) [C2] One shared `raw::read_pointer_header` replaces the five hand-written copies. It does not follow class back-references; graphs no longer depend on it inside collections (see P1.3). The other decoders still take a collection member as a detached slice: they skip what they cannot resolve, and none has a known failing case.
 
 ## Phase 3: one way per task (API change)
 
@@ -78,46 +83,46 @@ Numbers match the table in [api.md](api.md).
   - Tests: `derive`, `stats`, `weighted_fill`, `quick_hist`, `threaded`, `analysis` (6 files) and 22 tests in `fit`, `ops`, `profile_merge` covered behaviour that now lives in oxihist and were deleted, not ported; oxihist's own suite covers it. Added `adding_two_records_sums_bins_errors_entries_and_statistics`.
   - Behaviour that differs from the old record API, noted in the changelog: `slice` leaves out a bin that starts at the upper bound; `interpolate` returns `None` outside the axis; equality ignores fill statistics; `.double()` has no Σw² (use `.weight()`); a time format or bin content type is set on the record after `to_root()`.
 - [x] **A10** `to_root() -> Result`; the four other `ToRoot` methods removed; `Axis::variable -> Result` (`try_variable` removed).
-- [ ] **A11** `name` and `title` private, with `name()` and `named()`
-- [~] **A12** `contents()` and `values()` only: `Index<usize>` and `IntoIterator for &Hist` removed. `RootHistogram` is gone with A9. Flat `values()` with `shape()` on the 2-D / 3-D records is not done.
+- [x] **A11** `name` and `title` are private on the twelve records, each with `name()`, `title()`, `named()`, `titled()` (one macro in `naming.rs`). `GraphFunction` and `Axis` keep public fields: they are plain data with no invariant.
+- [x] **A12** `contents()` and `values()` only: `Index<usize>` and `IntoIterator for &Hist` removed; `RootHistogram` is gone with A9. `contents()` is the flat form on every record; the nested `values()` of `Hist2D` / `Hist3D` stays as the in-range view. The flat `values()` with `shape()` is oxihist's, where the analysis is.
 - [x] **A13** Bin geometry on `Axis` only (`h.xaxis().bin_center(i)`); the forwarding methods on `Hist1D` and `Profile1D` are gone. `Hist2D::find_bin(x, y)` stays: it returns the global cell, which no single axis knows.
 - [x] **A14** `scale(c)` only; `Mul` impls removed
-- [~] **A15** `Graph::new(x, y)?.with_errors(GraphErrors::..)?` replaces the two positional constructors (named `with_errors`, not `errors`, because `errors()` is already the accessor). `functions` and `histogram` are still public fields.
+- [x] **A15** `Graph::new(x, y)?.with_errors(GraphErrors::..)?` replaces the two positional constructors (named `with_errors`, not `errors`, because `errors()` is already the accessor). `functions` and `histogram` are private, read with `functions()` / `histogram()` and set with `with_function` / `with_histogram`.
 - [x] **A16** `Func*`: ranges as `RangeInclusive`; `params_mut()`; `with_params(&[f64]) -> Result`; `set_param` and `set_params` removed
-- [~] **A17** `.compression(c)` on every writer, default Zstd 5. Done for `FileWriter`, `FileUpdater`, `DatasetWriter`, `Merger`; `Compression::default()` is now Zstd 5. `TreeWriter` / `NtupleWriter` still take it as an argument (they leave the public API in A7).
-- [~] **A18** File form automatic for `FileWriter` (the test-only override is the hidden `large_above`); `Form` enum inside. `create_large` / `new_large` on the tree and RNTuple writers remain until A7.
+- [x] **A17** `.compression(c)` on every writer, default Zstd 5: `FileWriter`, `FileUpdater`, `DatasetWriter`, `Merger`; `Compression::default()` is Zstd 5. The tree and RNTuple writers are under `raw` since A7 and take it as an argument there.
+- [x] **A18** File form automatic for `FileWriter` (the test-only override is the hidden `large_above`) and chosen by `DatasetWriter::large()`; `Form` enum inside. The streaming tree and RNTuple writers under `raw` keep `create_large` / `new_large`: they write as they go and must pick the form before the first byte.
 - [~] **A19** One error type at the facade. Kept `oxiroot::Error` (its typed `Stat` / `Formula` / `Plot` / `Fit` variants are matched on by users and tests, which `Error::Other` would lose) and made the facade's own API return it: `Merger::merge -> oxiroot::Result`. `Clone`/`PartialEq` on the core error and the empty-string sentinels are still to do.
 - [~] **A20** One import path per item: `oxiroot-hist` and `oxiroot-rntuple` no longer re-export `oxiroot-io-core` types (`FileWriter`, `Compression`, `ObjList`, …). The facade's glob re-exports and the size of the prelude are unchanged.
-- [ ] **A21** `tree.branches()` yielding `BranchInfo`; `Dataset::schema()` with `DataType`
-- [~] **A22** `ObjList::new(kind)`; one `ObjMap::insert`. The `&mut self` add is not done.
+- [x] **A21** `Dataset::schema()` gives each column's `DataType`, for both formats (decision E). `TreeReader::branch_names()` and `branch_layout(name)` stay for tree-only metadata; a `BranchInfo` iterator would be a second way to the same answer.
+- [x] **A22** `ObjList::new(kind)`; one `ObjMap::insert`. `add` stays a builder (`self -> Self`), as on `FileWriter`: one style of adding across the crate, so no `&mut self` form.
 - [x] **A23** `Compression` only: `compression_settings` / `split_settings` / `from_setting` removed, `compress` and `compress_if_smaller` take `Compression`, `TryFrom<u32>`; the writers carry `Compression`, not a `u32`.
 - [x] **A24** `streamer_registry()` returns `&StreamerRegistry`; the two byte accessors are one `raw::streamer_info_bytes(file)`.
 
 ### Out-of-range and sentinel returns (rule 4)
 
-- [ ] `set_bin_content`, `set_bin_error`, `Axis::set_label` report a bad index
-- [ ] `bin_center`, `bin_width`, `bin_error`, `Efficiency::efficiency` return `Option`
+- [x] `PolyHist::set_bin_content` and `Axis::set_label` return a `Result` for a bad index. The records' `set_bin_content` / `set_bin_error` are gone with A9.
+- [x] `Axis::bin_center`, `bin_width`, `bin_low_edge` and `Efficiency::efficiency` return `Option`. `bin_error` is gone with A9.
 - [x] `Func*::param` returns `Option`
-- [ ] `PolyHist::fill` returns `Option`
+- [x] `PolyHist::fill` and `fill_weight` return `Option`
 - [x] `Matrix::get`, `SymMatrix::get` return `Option`; `Index<(usize, usize)>` for the panicking form
 - [x] `ErrorMode::from_code` rejects unknown codes
-- [ ] `sum_errors_mode`, `statistic_option` are enums
-- [ ] `SparseHist::tsumw2` is `Option<f64>`
-- [ ] Empty-string sentinels become `Option`: `Friend::file_name`, `TreeIndex::minor_name`, `WrongClass::name`, `Decompress::context`
+- [x] `sum_errors_mode`, `statistic_option` are enums (`SumErrorsMode`, `StatisticOption`); an unknown code is a format error
+- [x] `SparseHist::tsumw2` is `Option<f64>`
+- [x] Empty-string sentinels are `Option`: `Friend::file_name`, `TreeIndex::minor_name`, `WrongClass::name`, `Decompress::context`
 
 ### Renames
 
 - [x] `Graph::with_errors`, `with_asymm_errors` → `.with_errors(GraphErrors)`
 - [x] `MultiErrorGraph::add_y_error` → `with_y_error`
-- [~] `as_i64_vec` → `to_i64_vec` done; `as_str -> Option<&[String]>` → `as_strings` not done
+- [x] `as_i64_vec` → `to_i64_vec`. The `as_str -> Option<&[String]>` it was paired with no longer exists.
 - [x] `ErrorMode::to_code` → `code`
 - [x] `RBuffer::is_empty` → `is_at_end`
 - [x] `Compression::None` → `Stored`; `GraphErrors::None` → `Plain`
 - [ ] `streamer_gen::{El, Ek, strf, objptr, objanyptr}` spelled out
 - [x] `elements` → `as_slice` on `Vector`, `Matrix`, `SymMatrix`, plus `AsRef<[f64]>` and `From<Vec<f64>>` for `Vector`
 - [ ] `IntoColumn` → `From<…> for Column`
-- [ ] `cumulative(bool)`, `project(.., bool)`, `profile(.., bool)`, `project_axis(.., u8)` take enums
-- [ ] `projection_*(name)` drop the name argument
+- [x] `cumulative(bool)`, `project(.., bool)`, `profile(.., bool)`, `project_axis(.., u8)`: gone from the records with A9 (oxihist's API now).
+- [x] `projection_*(name)`: gone with A9
 
 ### Decisions
 
@@ -148,10 +153,10 @@ Items not already covered by a phase entry above.
 
 - [ ] Passthrough returns `Cow` instead of copying
 - [ ] Blocks decoded into the output buffer
-- [ ] Level type consistent (`u8`); `#[non_exhaustive]` on `Compression`
-- [ ] `lzma_encode` clamps its level
-- [ ] `BlockHeader` 24-bit fields enforced
-- [ ] `CompressError::Codec` keeps its source; `Algorithm: Hash + Display`
+- [x] Level type consistent (`u8`); `#[non_exhaustive]` on `Compression`; `Compression::level()`
+- [x] `lzma_encode` clamps its level to XZ's 0 to 9
+- [x] `BlockHeader` 24-bit fields: `write` asserts them in debug builds (`compress` is the only producer and splits to fit). The assertion found a test whose forged size was truncated to 0.
+- [~] `Algorithm: Hash + Display` done. `CompressError::Codec` still holds a message, not the source error: the type is `Clone + Eq`, which io-core's `Error` relies on.
 
 ### `oxiroot-io-core`
 
@@ -164,15 +169,15 @@ Items not already covered by a phase entry above.
 - [ ] Manual `Debug` impls list their fields
 - [ ] `skip_string()` and zero-copy `str()`; `array::<N>()` public
 - [ ] `WBuffer::le_i16`, `le_i32`; `Patch::offset`
-- [ ] `read_object.rs`: three `expect("checked")` removed
+- [x] `read_object.rs`: three `expect("checked")` removed (`if let` guards)
 - [ ] `streamer_gen.rs`: `unreachable!` removed
 - [ ] `StreamerRegistry` indexed by class name; `class_names()` an iterator
 - [ ] `TagReader` uses `Rc<str>`; `read_cstring` scans for NUL
 - [ ] `root_class() -> Cow<'static, str>`
 - [ ] `struct Member` and `Option<Member>` in collections
 - [~] `Value`'s `Display` writes into the formatter Uses `writeln!` into one `String` now; still not written straight to the formatter.
-- [ ] `RecordHeader` `Debug` includes `back_ref`
-- [ ] `collect_stored` uses a set
+- [x] `RecordHeader` derives `Debug`, `back_ref` included
+- [x] `collect_stored` uses a set
 - [ ] Error: histogram, column and schema variants moved or documented
 - [ ] Error: `Clone`/`PartialEq` dropped
 - [ ] `Error::context` covers every variant or is removed
@@ -186,16 +191,16 @@ Items not already covered by a phase entry above.
 - [ ] Return structs in place of tuples (`select_baskets`, `basket_locators`, `read_tbranch_base`, `diag`)
 - [ ] `decode_object_members` walks each object once
 - [ ] `Vec`-returning getters become iterators
-- [ ] `header.class_name.as_deref()` (two sites)
+- [x] `header.class_name.as_deref()` (the clone in `parse.rs`)
 - [ ] Leaflist region loop, bracket scanner written once
 - [ ] Split branch carries no dummy payload
 - [ ] "Impossible" arms are `unreachable!`, not wrong values
 - [ ] `place_basket` and `chunk_values` stop copying
-- [ ] `total_entries: u64`; `#[must_use]` on the writers
+- [x] `#[must_use]` on the writers. `total_entries` stays an `i64`: it is ROOT's `Long64_t fEntries`, which the serializers take.
 
 ### `oxiroot-rntuple`
 
-- [ ] `read_blob` keeps the source error
+- [x] `read_blob` keeps the source error: only a read past the end is a format error
 - [ ] Field and column adjacency built once at open
 - [ ] `group` and `strings` move instead of cloning
 - [ ] `VecU32` / `VecU64` writable, or the gap documented
@@ -210,9 +215,9 @@ Items not already covered by a phase entry above.
 
 ### `oxiroot-linalg`
 
-- [ ] Docs name the error actually returned
+- [x] Docs name the error actually returned (`InvalidInput`)
 - [x] `check_len` formats lazily
-- [ ] Class names as constants
+- [x] Class names as constants
 
 ### `oxiroot-hist-func`
 
@@ -233,20 +238,20 @@ Items not already covered by a phase entry above.
 - [ ] `SparseHist` index simplified; `PartialEq` hack removed
 - [ ] Conversion: no per-bin `Vec`; `parts` evaluated once
 - [ ] `HistStack` / `GraphStack` as one generic type
-- [ ] Cell counts with checked arithmetic
-- [ ] `BinContentType::from_code`
+- [x] Cell counts with checked arithmetic (`cell_count`, tested against a forged axis)
+- [x] `BinContentType::from_code`
 - [ ] Indexed loops rewritten (`family.rs`, `ops.rs`)
 - [x] One key lookup per read; fetch helpers merged
-- [ ] `quantiles` uses `partition_point`
+- [x] `quantiles`: gone with A9
 - [ ] `PolyBin` bounding box derived; `bin(number)` binary search
-- [ ] One `ThreadedFill` trait
-- [ ] Stale docs (`hist_index`, `_ndim`)
-- [ ] `smooth_array` readable names
+- [x] One `ThreadedFill` trait: gone with A9 (`ThreadedHist` is oxihist's)
+- [x] Stale docs (`hist_index`, `_ndim`): the doc is fixed, the unused argument removed, and the `THnSparse` dimension count is now checked against its axes
+- [x] `smooth_array`: gone with A9
 
 ### `oxiroot-dataset`
 
-- [ ] `Column::slice` cannot panic on an unvalidated column
-- [ ] Tree read path matches `Error::Unsupported` only, or `flat()` returns `Option`
+- [x] `Column::slice` cannot panic on an unvalidated column
+- [x] Tree read path matches `Error::Unsupported` only; `TreeReader`'s `flat()` returns it, like the RNTuple reader
 - [x] `DatasetWriter::write(Batch)` by value
 - [ ] String columns stored as `String`
 - [x] `#[must_use]` on `DatasetWriter`
@@ -260,15 +265,15 @@ Items not already covered by a phase entry above.
 
 - [ ] `merge_tree` / `merge_rntuple` as one generic function
 - [ ] `summed!` / `copied!` as generic functions
-- [ ] `with_key` replaced by `Error::context`
+- [x] `with_key` replaced by `Error::context`
 - [ ] Histogram merge does not build the whole output in memory
 
 ### `oxiroot-cli`
 
 - [ ] `show` uses `branch_layout`, reads no data
 - [ ] One cell function over `Column` (after A6)
-- [ ] `num()` keeps small values
+- [x] `num()` keeps small values (scientific notation below `1e-4`)
 - [ ] Output through one render step instead of `json: bool`
-- [ ] `compression_label` uses `Compression`
+- [x] `compression_label` uses `Compression`
 - [ ] No import of the hidden `cast` module
 - [ ] `show_rntuple` looks up top-level fields only

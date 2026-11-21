@@ -71,6 +71,10 @@ pub enum ColumnType {
 
 impl ColumnType {
     /// Map an on-disk column-type code to a [`ColumnType`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unsupported`] for a code that names no column type this crate reads.
     pub fn from_code(code: u16) -> Result<Self> {
         use ColumnType::*;
         Ok(match code {

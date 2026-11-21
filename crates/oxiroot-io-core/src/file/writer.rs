@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::Compression;
 use crate::error::{Error, Result, decompress_payload};
-use crate::object_io::{ObjectRecord, StreamerSet, WriteInto, WriteRoot};
+use crate::object_io::{KeyCheck, ObjectRecord, StreamerSet, WriteInto, WriteRoot};
 use crate::streamer_gen::StreamerInfoList;
 
 use super::container::{ContainerWriter, DirId, KSTART_BIG_FILE};
@@ -39,9 +39,12 @@ impl Entry {
 
     fn place(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
         match self {
-            Self::Object(r) => file
-                .place_key(dir, &r.class_name, &r.name, &r.title, &r.object)
-                .map(drop),
+            Self::Object(r) => {
+                let key_len = Key::header_len(&r.class_name, &r.name, &r.title, file.is_big());
+                r.key_check.check(&r.class_name, &r.name, key_len)?;
+                file.place_key(dir, &r.class_name, &r.name, &r.title, &r.object)
+                    .map(drop)
+            }
             Self::Records(o) => o.write_into(file, dir),
         }
     }
@@ -104,6 +107,7 @@ impl<T: WriteRoot + ?Sized> Storable for &T {
                 name: self.root_name().to_string(),
                 title: self.root_title().to_string(),
                 object: self.to_root_bytes(),
+                key_check: self.key_check(),
             }),
             streamers,
         }
@@ -566,7 +570,11 @@ impl FileUpdater {
 /// file beside it, which then takes its name. An existing file — the one an
 /// update is rewriting — is replaced in one step, so a failure part-way
 /// leaves it as it was instead of cut short.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+///
+/// # Errors
+///
+/// If the temporary file cannot be written or renamed.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     // Replace the file a symbolic link names, not the link.
@@ -643,6 +651,8 @@ impl CopiedDir {
                 name: key.name.clone(),
                 title: key.title.clone(),
                 object,
+                // Copied as it is: valid under a key of the same header length.
+                key_check: KeyCheck::HeaderLen(key.key_len as usize),
             });
         }
         Ok(Self {
@@ -666,6 +676,11 @@ impl CopiedDir {
     /// Write these objects into directory `dir`, then the directories below it.
     fn place(&self, c: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
         for object in &self.objects {
+            let key_len =
+                Key::header_len(&object.class_name, &object.name, &object.title, c.is_big());
+            object
+                .key_check
+                .check(&object.class_name, &object.name, key_len)?;
             c.place_key(
                 dir,
                 &object.class_name,

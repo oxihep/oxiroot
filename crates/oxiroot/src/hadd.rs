@@ -294,7 +294,7 @@ fn write_whole(
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
     let bytes = ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, layout)?;
-    std::fs::write(output, bytes)?;
+    oxiroot_io_core::raw::write_atomic(output, &bytes)?;
     Ok(())
 }
 

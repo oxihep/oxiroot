@@ -218,7 +218,7 @@ fn read_tf2_body(r: &mut RBuffer<'_>) -> Result<(GraphFunction, f64, f64)> {
 fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<Func1D> {
     if class != "TF1" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TF1".to_string(),
         });
@@ -230,7 +230,7 @@ fn decode_tf1(name: &str, class: &str, object: &[u8]) -> Result<Func1D> {
 fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<Func2D> {
     if class != "TF2" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TF2".to_string(),
         });
@@ -250,7 +250,7 @@ fn decode_tf2(name: &str, class: &str, object: &[u8]) -> Result<Func2D> {
 fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<Func3D> {
     if class != "TF3" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TF3".to_string(),
         });

@@ -82,7 +82,7 @@ impl<'f> Dataset<'f> {
             c if c == ANCHOR_CLASS => Source::Ntuple(ntuple()?),
             other => {
                 return Err(Error::WrongClass {
-                    name: name.to_string(),
+                    name: Some(name.to_string()),
                     found: other.to_string(),
                     expected: format!("TTree or {ANCHOR_CLASS}"),
                 });
@@ -469,14 +469,17 @@ fn tree_column(
                 len,
                 values: Box::new(branch_column(j.values)?),
             }),
-            Err(_) => array_of(branch_column(branch().values()?)?, len, name),
+            // Only "no flat form" falls back: a read error is the caller's.
+            Err(Error::Unsupported(_)) => array_of(branch_column(branch().values()?)?, len, name),
+            Err(e) => Err(e),
         },
         BranchLayout::List | BranchLayout::CArray if !is_str => match branch().flat() {
             Ok(j) => Ok(Column::List {
                 offsets: j.offsets,
                 values: Box::new(branch_column(j.values)?),
             }),
-            Err(_) => branch_column(branch().values()?),
+            Err(Error::Unsupported(_)) => branch_column(branch().values()?),
+            Err(e) => Err(e),
         },
         _ => branch_column(branch().values()?),
     }

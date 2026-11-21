@@ -21,7 +21,7 @@ fn reads_root_written_graphs() {
 
     let g = f.get::<Graph>("g").expect("read g");
     assert_eq!(g.class_name(), "TGraph");
-    assert_eq!(g.title, "plain");
+    assert_eq!(g.title(), "plain");
     assert_eq!(g.x(), vec![1.0, 2.0, 3.0, 4.0]);
     assert_eq!(g.y(), vec![10.0, 20.0, 30.0, 40.0]);
     assert_eq!(*g.errors(), GraphErrors::Plain);
@@ -95,7 +95,7 @@ fn graphs_build_from_scratch() {
         .titled("asym");
 
     for g in [&plain, &sym, &asym] {
-        let out = std::env::temp_dir().join(format!("oxiroot_graph_scratch_{}.root", g.name));
+        let out = std::env::temp_dir().join(format!("oxiroot_graph_scratch_{}.root", g.name()));
         oxiroot_io_core::FileWriter::create(&out)
             .add(g)
             .compression(Compression::Zstd(3))
@@ -103,7 +103,7 @@ fn graphs_build_from_scratch() {
             .expect("write");
         let back = FileReader::open(&out)
             .unwrap()
-            .get::<Graph>(&g.name)
+            .get::<Graph>(g.name())
             .unwrap();
         assert_eq!(back, *g);
     }
@@ -134,7 +134,7 @@ fn empty_graphs_round_trip() {
     for g in [&plain, &sym] {
         assert_eq!(g.len(), 0);
         assert!(g.is_empty());
-        let out = std::env::temp_dir().join(format!("oxiroot_graph_empty_{}.root", g.name));
+        let out = std::env::temp_dir().join(format!("oxiroot_graph_empty_{}.root", g.name()));
         oxiroot_io_core::FileWriter::create(&out)
             .add(g)
             .compression(Compression::Stored)
@@ -142,7 +142,7 @@ fn empty_graphs_round_trip() {
             .expect("write");
         let back = FileReader::open(&out)
             .unwrap()
-            .get::<Graph>(&g.name)
+            .get::<Graph>(g.name())
             .unwrap();
         assert_eq!(back, *g);
     }
@@ -155,7 +155,7 @@ fn reads_root_graph_histogram() {
     let f = FileReader::open(fixture("graph_hist.root")).expect("open");
     let g = f.get::<Graph>("g").expect("read g");
     let h = g
-        .histogram
+        .histogram()
         .expect("graph carries an fHistogram display frame");
     assert_eq!(h.class_name(), "TH1F"); // ROOT's fHistogram is a TH1F
     assert_eq!(h.xaxis().nbins(), 100); // ROOT's default frame binning
@@ -164,7 +164,7 @@ fn reads_root_graph_histogram() {
         .unwrap()
         .get::<Graph>("g")
         .unwrap();
-    assert!(g0.histogram.is_none());
+    assert!(g0.histogram().is_none());
 }
 
 /// A user-attached display frame round-trips (and is persisted as a `TH1F`).
@@ -187,7 +187,7 @@ fn graph_histogram_round_trips() {
         .named("g")
         .titled("framed")
         .with_histogram(frame);
-    assert!(g.histogram.is_some());
+    assert!(g.histogram().is_some());
 
     let out = std::env::temp_dir().join("oxiroot_graph_hist_rt.root");
     oxiroot_io_core::FileWriter::create(&out)
@@ -197,6 +197,6 @@ fn graph_histogram_round_trips() {
         .expect("write");
     let back = FileReader::open(&out).unwrap().get::<Graph>("g").unwrap();
     assert_eq!(back, g); // exact round-trip, including the TH1F frame
-    assert_eq!(back.histogram.unwrap().xaxis().nbins(), 20);
+    assert_eq!(back.histogram().unwrap().xaxis().nbins(), 20);
     let _ = std::fs::remove_file(&out);
 }

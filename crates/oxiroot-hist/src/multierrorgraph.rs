@@ -20,15 +20,59 @@ use oxiroot_io_core::{Object, ReadRoot};
 use crate::base::check_len;
 use crate::graph::read_basic_array;
 
+/// How a [`MultiErrorGraph`]'s y-error layers combine into one error (ROOT's
+/// `TGraphMultiErrors::ESummationModes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum SumErrorsMode {
+    /// `kOnlyFirst` (0): only the first layer (the default).
+    #[default]
+    OnlyFirst,
+    /// `kSquareSum` (1): the layers added in quadrature.
+    SquareSum,
+    /// `kAbsSum` (2): the layers added linearly.
+    AbsSum,
+}
+
+impl SumErrorsMode {
+    /// The value a ROOT `fSumErrorsMode` code names.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Format`](oxiroot_io_core::Error::Format) for any other code.
+    pub fn from_code(code: i32) -> Result<Self> {
+        Ok(match code {
+            0 => Self::OnlyFirst,
+            1 => Self::SquareSum,
+            2 => Self::AbsSum,
+            other => {
+                return Err(oxiroot_io_core::Error::Format(format!(
+                    "unknown error summation mode {other}"
+                )));
+            }
+        })
+    }
+
+    /// The ROOT `fSumErrorsMode` code written to disk.
+    #[must_use]
+    pub const fn code(self) -> i32 {
+        match self {
+            Self::OnlyFirst => 0,
+            Self::SquareSum => 1,
+            Self::AbsSum => 2,
+        }
+    }
+}
+
 /// An (x, y) graph with asymmetric x errors and one or more layers of asymmetric
 /// y errors (ROOT `TGraphMultiErrors`).
 #[derive(Debug, Clone, PartialEq)]
 #[doc(alias = "TGraphMultiErrors")]
 pub struct MultiErrorGraph {
     /// Graph name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Graph title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// Point x coordinates (`fX`).
     pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
@@ -41,9 +85,8 @@ pub struct MultiErrorGraph {
     pub(crate) ey_low: Vec<Vec<f64>>,
     /// High y errors, one `Vec` per error layer (`fEyH`).
     pub(crate) ey_high: Vec<Vec<f64>>,
-    /// How the y-error layers combine when summed (`fSumErrorsMode`; 0 =
-    /// `kOnlyFirst`, 1 = `kSquareSum`, 2 = `kSum`).
-    pub sum_errors_mode: i32,
+    /// How the y-error layers combine when summed (`fSumErrorsMode`).
+    pub sum_errors_mode: SumErrorsMode,
 }
 
 impl MultiErrorGraph {
@@ -76,7 +119,7 @@ impl MultiErrorGraph {
             ex_high,
             ey_low: vec![ey_low],
             ey_high: vec![ey_high],
-            sum_errors_mode: 0,
+            sum_errors_mode: SumErrorsMode::default(),
         })
     }
 
@@ -132,7 +175,7 @@ fn read_vector_tarrayd(r: &mut RBuffer<'_>) -> Result<Vec<Vec<f64>>> {
 fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<MultiErrorGraph> {
     if class != "TGraphMultiErrors" {
         return Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: class.to_string(),
             expected: "TGraphMultiErrors".to_string(),
         });
@@ -151,7 +194,7 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<Mu
         r.seek(end)?; // skip the Graph base trailer (fFunctions/fHistogram/…)
     }
     let _n_y_errors = r.be_i32()?;
-    let sum_errors_mode = r.be_i32()?;
+    let sum_errors_mode = SumErrorsMode::from_code(r.be_i32()?)?;
     let ex_low = read_basic_array(&mut r, npoints)?;
     let ex_high = read_basic_array(&mut r, npoints)?;
     let ey_low = read_vector_tarrayd(&mut r)?;

@@ -78,3 +78,66 @@ fn round_trips_map_through_oxiroot() {
     assert_eq!(m.values::<Hist1D>().unwrap().len(), 1);
     let _ = std::fs::remove_file(&out);
 }
+
+/// A map read from a file is written back as it was read (its entries refer to
+/// each other's class tags by position), and takes new entries after them.
+#[test]
+fn a_root_map_is_written_back_as_read_and_takes_new_entries() {
+    use oxiroot_io_core::WriteRoot;
+
+    let f = fixture();
+    let map = f.get::<ObjMap>("meta").unwrap();
+    let bytes = FileWriter::create("unused.root")
+        .add(&map)
+        .to_bytes()
+        .unwrap();
+    let back = FileReader::from_bytes(bytes).unwrap();
+    assert_eq!(
+        back.key("meta").unwrap().key_len,
+        f.key("meta").unwrap().key_len
+    );
+    assert_eq!(
+        back.get::<ObjMap>("meta").unwrap().to_root_bytes(),
+        map.to_root_bytes()
+    );
+
+    let more = map.insert("tag", &ObjString::new("v7"));
+    let bytes = FileWriter::create("unused.root")
+        .add(&more)
+        .to_bytes()
+        .unwrap();
+    let back = FileReader::from_bytes(bytes)
+        .unwrap()
+        .get::<ObjMap>("meta")
+        .unwrap();
+    assert_eq!(back.string_keys(), ["version", "lumi", "hist", "tag"]);
+    assert_eq!(back.get::<ObjString>("tag").unwrap().unwrap().value(), "v7");
+    assert!(back.get::<Hist1D>("hist").unwrap().is_ok());
+}
+
+/// A map read from a file cannot be renamed, and cannot be a value of another
+/// map: both are refused when the file is written.
+#[test]
+fn a_root_map_refuses_a_key_its_references_do_not_fit() {
+    let map = fixture().get::<ObjMap>("meta").unwrap();
+
+    let err = FileWriter::create("unused.root")
+        .add(&map.clone().named("elsewhere"))
+        .to_bytes()
+        .unwrap_err();
+    assert!(err.to_string().contains("cannot be renamed"), "{err}");
+
+    let outer = ObjMap::new().named("outer").insert("inner", &map);
+    let err = FileWriter::create("unused.root")
+        .add(&outer)
+        .to_bytes()
+        .unwrap_err();
+    assert!(err.to_string().contains("under its own key"), "{err}");
+
+    // A key of another header length is refused too.
+    use oxiroot_io_core::KeyCheck;
+    assert!(KeyCheck::Any.check("TMap", "m", 40).is_ok());
+    assert!(KeyCheck::HeaderLen(40).check("TMap", "m", 40).is_ok());
+    let err = KeyCheck::HeaderLen(40).check("TMap", "m", 48).unwrap_err();
+    assert!(err.to_string().contains("40-byte header"), "{err}");
+}

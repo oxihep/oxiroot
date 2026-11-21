@@ -26,7 +26,7 @@ fn reads_persisted_friend_list() {
     assert_eq!(fr.tree_name(), "tf");
     assert_eq!(fr.alias(), "tf");
     // AddFriend with no explicit file name ⇒ same-file friend (empty file name).
-    assert_eq!(fr.file_name(), "");
+    assert_eq!(fr.file_name(), None);
     assert!(fr.is_same_file());
 }
 

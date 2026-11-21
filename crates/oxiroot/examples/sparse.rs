@@ -63,7 +63,7 @@ fn main() -> oxiroot::Result<()> {
     let dense_cells: i64 = hs.axes().iter().map(|ax| i64::from(ax.nbins())).product();
     let filled = hs.bins().len();
     let occupancy = 100.0 * filled as f64 / dense_cells as f64;
-    println!("THnSparse `{}`: \"{}\"", hs.name, hs.title);
+    println!("THnSparse `{}`: \"{}\"", hs.name(), hs.title());
     println!("  dimensions       : {}", hs.ndim());
     for ax in hs.axes() {
         println!(

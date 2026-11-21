@@ -4,6 +4,8 @@
 //! so we read the members we need and seek to `Hist1D`'s end. `TArray*` bin
 //! contents are streamed inline — just a count and the values, no header.
 
+use crate::graph::GraphFunction;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::raw::{VersionHeader, read_named, skip_versioned};
 use oxiroot_io_core::{Error, RBuffer, Result};
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
@@ -50,6 +52,21 @@ impl BinContentType {
         }
     }
 
+    /// The type a class-name suffix character names, the inverse of
+    /// [`code`](Self::code); `None` for any other character.
+    #[must_use]
+    pub fn from_code(code: char) -> Option<Self> {
+        Some(match code {
+            'D' => Self::F64,
+            'F' => Self::F32,
+            'I' => Self::I32,
+            'S' => Self::I16,
+            'C' => Self::I8,
+            'L' => Self::I64,
+            _ => return None,
+        })
+    }
+
     /// The full ROOT class name for a histogram whose class starts with `dim`
     /// (`"TH1"`, `"TH2"`, `"TH3"`) with this bin content type, e.g.
     /// `BinContentType::F32.class_name("TH1") == "TH1F"`.
@@ -66,17 +83,11 @@ impl BinContentType {
 /// (`TH1D`/`TH2F`/`TH1I`/…). `Profile1D` and similar are handled by their own
 /// readers.
 pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
-    match class.chars().last() {
-        Some('D') => Ok(BinContentType::F64),
-        Some('F') => Ok(BinContentType::F32),
-        Some('I') => Ok(BinContentType::I32),
-        Some('S') => Ok(BinContentType::I16),
-        Some('C') => Ok(BinContentType::I8),
-        Some('L') => Ok(BinContentType::I64),
-        _ => Err(Error::Unsupported(format!(
-            "unsupported histogram type: {class}"
-        ))),
-    }
+    class
+        .chars()
+        .last()
+        .and_then(BinContentType::from_code)
+        .ok_or_else(|| Error::Unsupported(format!("unsupported histogram type: {class}")))
 }
 
 /// The members shared by every `Hist1D`-derived histogram.
@@ -107,6 +118,9 @@ pub struct HistBase {
     /// Per-bin sum of squared weights (`fSumw2`); empty for an unweighted
     /// histogram, but used by `Profile1D` to store the per-bin sum of `y^2`.
     pub sumw2: Vec<f64>,
+    /// The `TF1`s in the histogram's function list (`fFunctions`), such as the
+    /// curve `TH1::Fit` leaves there. Empty when read without a class-tag map.
+    pub functions: Vec<GraphFunction>,
 }
 
 /// An object written by a ROOT release older than this crate can read: `class`
@@ -174,7 +188,10 @@ pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
 
 /// Read a `Hist1D` base object (its header, the `Named`/`TAtt*` bases, and the
 /// members up to the core statistics), then seek to the `Hist1D` record's end.
-pub(crate) fn read_th1_base(r: &mut RBuffer<'_>) -> Result<HistBase> {
+///
+/// `tags` is the class-tag map of the buffer `r` reads, which names the
+/// classes in the function list. Without one the functions are not read.
+pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -> Result<HistBase> {
     let th1 = r.read_version()?;
     // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
     // fContour as floats; every later version reads the same up to fSumw2.
@@ -204,6 +221,17 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>) -> Result<HistBase> {
     let _contour = read_tarray(r, BinContentType::F64)?; // fContour
     let sumw2 = read_tarray(r, BinContentType::F64)?; // fSumw2
 
+    // fOption, then fFunctions. A list this crate cannot follow (an older
+    // layout, a function that is not a formula) costs the functions, not the
+    // histogram: the record's byte count says where it ends either way.
+    let functions = match tags {
+        Some(tags) => r
+            .string()
+            .and_then(|_option| crate::graph::read_function_list(r, tags))
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
     let end = th1
         .end
         .ok_or_else(|| Error::Format("TH1 record has no byte count".into()))?;
@@ -222,6 +250,7 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>) -> Result<HistBase> {
         tsumwx,
         tsumwx2,
         sumw2,
+        functions,
     })
 }
 
@@ -283,9 +312,10 @@ pub(crate) fn read_tarray(
 pub(crate) fn read_th1_object(
     r: &mut RBuffer<'_>,
     bin_content_type: BinContentType,
+    tags: Option<&mut TagReader>,
 ) -> Result<(HistBase, Vec<f64>)> {
     let wrapper = r.read_version()?;
-    let core = read_th1_base(r)?;
+    let core = read_th1_base(r, tags)?;
     let contents = read_tarray(r, bin_content_type)?;
     if let Some(end) = wrapper.end {
         r.seek(end)?;

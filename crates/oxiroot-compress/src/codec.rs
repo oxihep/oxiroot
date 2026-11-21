@@ -179,7 +179,8 @@ pub(crate) fn zstd_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressErr
 /// `level` is ROOT's 1..=9, mapped straight onto the XZ preset (also 0..=9), so
 /// the ratio actually tracks the requested level.
 pub(crate) fn lzma_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressError> {
-    let options = lzma_rust2::XzOptions::with_preset(u32::from(level));
+    // XZ has presets 0 to 9; a higher ROOT level means "the strongest".
+    let options = lzma_rust2::XzOptions::with_preset(u32::from(level.min(9)));
     let mut writer = lzma_rust2::XzWriter::new(Vec::new(), options)
         .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
     writer

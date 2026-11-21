@@ -338,12 +338,16 @@ format has and oxihist does not:
 - the stored fields, read-only: `contents()` (every cell, flow included),
   `values()`, `sumw2()`, `entries()`, `tsumw()`, `tsumwx()`…, and the axes
   (`xaxis()`/`yaxis()`/`zaxis()`, an [`Axis`](../api/oxiroot/index.html) with
-  `edges()`, `find_bin(x)` and the 1-based `bin_center`/`bin_width`);
+  `edges()`, `find_bin(x)` and the 1-based `bin_center`/`bin_width`, `None`
+  for a bin the axis does not have);
 - the on-disk bin type and class name (below);
 - axis metadata: [bin labels](#labelled-alphanumeric-axes) and
   [time formats](#time-axes), through `xaxis_mut()`;
 - `add(&other, c)`, the bin-by-bin merge `hadd` performs on records without
   converting them;
+- on a `Hist1D`, the functions stored with it (`functions()`, `with_function`):
+  the curve ROOT's `TH1::Fit` leaves with a histogram, kept through a read and
+  a write and drawn over the histogram by ROOT;
 - `Display` on `Hist1D`/`Hist2D`/`Hist3D`, a one-line summary such as
   `TH1D "pt": 100 bins [0, 100), entries=4096`.
 
@@ -398,9 +402,9 @@ through ROOT files in both directions.
 use oxiroot::prelude::*;
 
 let mut h = Hist::reg(3, 0.0, 3.0).double().named("by_region").to_root()?;
-h.xaxis_mut().set_label(1, "barrel");
-h.xaxis_mut().set_label(2, "endcap");
-h.xaxis_mut().set_label(3, "forward");
+h.xaxis_mut().set_label(1, "barrel")?;
+h.xaxis_mut().set_label(2, "endcap")?;
+h.xaxis_mut().set_label(3, "forward")?;
 
 assert_eq!(h.xaxis().bin_label(2), Some("endcap"));
 assert_eq!(h.xaxis().find_label("forward"), Some(3));
@@ -432,8 +436,9 @@ assert!(h.xaxis().time_display);
 ROOT and uproot read the axis back as a time axis, and so does oxiroot.
 `clear_time_format` turns it back into a numeric axis.
 
-A graph's axes live on its display frame (`graph.histogram`), which is where
-ROOT keeps them too, so a time axis on a graph is set on that frame.
+A graph's axes live on its display frame (`graph.histogram()`), which is where
+ROOT keeps them too, so a time axis on a graph is set on the frame before it
+is attached with `with_histogram`.
 
 When [plotting](plotting.md), the axis is picked up on its own: the tick labels
 are drawn as dates and clock times, and the ticks step in seconds, minutes,

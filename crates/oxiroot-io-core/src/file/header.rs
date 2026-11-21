@@ -63,6 +63,11 @@ impl FileHeader {
     }
 
     /// Parse a header from the start of `r`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::BadMagic`] if the bytes do not start with `root`, and [`Error::UnexpectedEof`]
+    /// if the header is cut short.
     pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let magic_slice = r.bytes(4)?;
         let mut magic = [0u8; 4];

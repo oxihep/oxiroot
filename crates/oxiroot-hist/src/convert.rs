@@ -124,7 +124,7 @@ fn root_axis(a: &oxihist::Axis, name: &str) -> Result<Axis> {
         let n = labels.len().max(1);
         let mut ax = Axis::new(name, root_count(n)?, 0.0, n as f64);
         for (i, l) in labels.iter().enumerate() {
-            ax.set_label(i + 1, l);
+            ax.set_label(i + 1, l)?;
         }
         Ok(ax)
     };
@@ -199,8 +199,8 @@ fn root_cell(idx: &[isize], sizes: &[usize], nbins: &[usize]) -> usize {
     cell
 }
 
-/// The oxihist bin index of every ROOT cell, or `None` for a cell the oxihist
-/// axes do not have (a labelled axis's underflow).
+/// The oxihist bin index of ROOT cell `cell`, for axes of `nbins` bins: ROOT's
+/// cell 0 is the underflow, which oxihist numbers `-1`.
 fn hist_index<const D: usize>(cell: usize, nbins: &[usize; D]) -> [isize; D] {
     let mut c = cell;
     std::array::from_fn(|k| {

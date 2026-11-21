@@ -720,6 +720,25 @@ fn num(x: f64) -> String {
     if x.fract() == 0.0 && x.abs() < 1e15 {
         return (x as i64).to_string();
     }
+    // Six decimals would print a small value as 0 and pad a huge one.
+    if x.abs() < 1e-4 || x.abs() >= 1e15 {
+        return format!("{x:e}");
+    }
     let s = format!("{x:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::num;
+
+    #[test]
+    fn num_keeps_values_six_decimals_would_lose() {
+        assert_eq!(num(0.0), "0");
+        assert_eq!(num(42.0), "42");
+        assert_eq!(num(1.5), "1.5");
+        assert_eq!(num(0.000_123), "0.000123");
+        assert_eq!(num(2.5e-9), "2.5e-9");
+        assert_eq!(num(1.25e20), "1.25e20");
+    }
 }

@@ -183,15 +183,14 @@ fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
         .to_root()
         .unwrap()
         .named("h");
-    h.xaxis_mut().set_label(1, "a");
+    h.xaxis_mut().set_label(1, "a").unwrap();
     let p = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
     let mut e = Efficiency::new(2, 0.0, 2.0).named("e");
     e.fill(true, 0.5);
     let mut sp = SparseHist::new(&[(4, 0.0, 4.0)]).named("sp");
     sp.fill(&[1.5]).unwrap();
-    let mut poly = PolyHist::new(0.0, 2.0, 0.0, 2.0);
+    let mut poly = PolyHist::new(0.0, 2.0, 0.0, 2.0).named("poly");
     poly.add_bin_rect(0.0, 0.0, 1.0, 1.0);
-    poly.name = "poly".into();
     let line = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 3.0);
     let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])
         .unwrap()

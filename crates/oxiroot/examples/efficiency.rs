@@ -71,7 +71,7 @@ fn main() -> oxiroot::Result<()> {
         if bin % 2 == 1 {
             println!(
                 "  {bin:>3}   {center:>7.1}    {passed:>6.0}/{total:<6.0}   {:>6.3}   {:>6.3}",
-                eff.efficiency(bin),
+                eff.efficiency(bin).unwrap_or(f64::NAN),
                 logistic(center),
             );
         }
@@ -86,7 +86,7 @@ fn main() -> oxiroot::Result<()> {
     let n = eff.total().contents()[mid_bin];
     let center = pt_lo + (mid_bin as f64 - 0.5) * stride;
     let (lo, hi) = oxiroot::stat::clopper_pearson(k, n, eff.conf_level);
-    let e = eff.efficiency(mid_bin);
+    let e = eff.efficiency(mid_bin).expect("the middle bin has trials");
     println!("\nBin {mid_bin} (pT ~ {center:.1} GeV, straddles x50): {k:.0}/{n:.0} passed",);
     println!(
         "  efficiency = {e:.4}  +{:.4} -{:.4}   (Clopper-Pearson {:.1}% CL: [{lo:.4}, {hi:.4}])",
@@ -106,10 +106,10 @@ fn main() -> oxiroot::Result<()> {
     let back = file.get::<Efficiency>("trig_turnon")?;
     println!(
         "read back `{}`: {} total trials, mid-bin eff = {:.4} (matches: {})",
-        back.name,
+        back.name(),
         back.total().contents().iter().sum::<f64>(),
-        back.efficiency(mid_bin),
-        (back.efficiency(mid_bin) - e).abs() < 1e-12,
+        back.efficiency(mid_bin).unwrap_or(f64::NAN),
+        back.efficiency(mid_bin) == Some(e),
     );
 
     let _ = std::fs::remove_file(&path);

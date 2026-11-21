@@ -610,11 +610,20 @@ impl XrootdSource {
     /// with the `xrootd-tls` feature), log in, authenticate, and open the file
     /// for reading. A bearer token and grid CAs are found from the environment
     /// (see `XrootdOptions`).
+    ///
+    /// # Errors
+    ///
+    /// If the URL is not a `root://` URL, the server cannot be reached or refuses the login, or
+    /// the file cannot be opened.
     pub fn open(url: &str) -> Result<Self> {
         Self::connect(url, &XrootdOptions::default())
     }
 
     /// [`open`](Self::open) with an explicit bearer token or CA directory.
+    ///
+    /// # Errors
+    ///
+    /// As [`open`](Self::open).
     #[cfg(feature = "xrootd-tls")]
     pub fn open_with(url: &str, opts: &XrootdOptions) -> Result<Self> {
         Self::connect(url, opts)

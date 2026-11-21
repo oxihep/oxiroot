@@ -259,7 +259,7 @@ let friend = TreeReader::open(&file, "fr")?;
 
 // What the friend's index is on, and how many keys it holds.
 let index = friend.index().expect("the friend was built with BuildIndex");
-println!("{} + {}: {} keys", index.major_name(), index.minor_name(), index.len());
+println!("{} + {:?}: {} keys", index.major_name(), index.minor_name(), index.len());
 
 // For each entry of `main`, the friend entry with the same key.
 let rows = main.join_by_index(&friend)?;

@@ -59,6 +59,10 @@ macro_rules! impl_hist_family {
             /// `c == 1`). Returns [`Error::BinningMismatch`] and makes no change if
             /// the binnings differ. Errors are tracked if either side tracks them
             /// (or `c != 1`).
+            ///
+            /// # Errors
+            ///
+            /// [`Error::BinningMismatch`] if the binnings differ; `self` is left unchanged.
             pub fn add(&mut self, other: &$ty, c: f64) -> Result<()> {
                 if !($(self.$axis.same_binning(&other.$axis))&&+)
                     || self.contents.len() != other.contents.len()

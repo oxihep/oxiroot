@@ -21,6 +21,11 @@ impl FieldRead<'_, '_> {
     /// round trip of a skim. Types the writer cannot encode (records, nested
     /// collections, variants, optionals, `std::vector` of unsigned integers)
     /// are an [`Error::Unsupported`].
+    ///
+    /// # Errors
+    ///
+    /// Any error reading the field, and [`Error::Unsupported`] for a field this crate reads but
+    /// cannot write.
     pub fn to_field(self) -> Result<Field> {
         let name = self.name();
         build_field(name, self.values()?)

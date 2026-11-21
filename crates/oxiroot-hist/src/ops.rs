@@ -70,6 +70,10 @@ macro_rules! impl_profile_add {
             /// sums, entries and moments by `|c|`; and `Σw²` by `c²`. Returns
             /// [`Error::BinningMismatch`], leaving `self` unchanged, if the binnings
             /// or per-cell array lengths differ.
+            ///
+            /// # Errors
+            ///
+            /// [`Error::BinningMismatch`] if the binnings differ; `self` is left unchanged.
             pub fn add(&mut self, other: &$ty, c: f64) -> Result<()> {
                 let ncells = self.sums.len();
                 let compatible = $(self.$axis.same_binning(&other.$axis))&&+
@@ -197,7 +201,9 @@ impl Efficiency {
     /// ROOT's `Efficiency::Add` and `hadd` do. The confidence level, statistic
     /// option and weight stay as they are.
     ///
-    /// Returns [`Error::BinningMismatch`] and makes no change if the binnings
+    /// # Errors
+    ///
+    /// [`Error::BinningMismatch`] and makes no change if the binnings
     /// differ.
     pub fn add(&mut self, other: &Self) -> Result<()> {
         // Both first, so a mismatch leaves the efficiency untouched.
@@ -216,7 +222,9 @@ impl PolyHist {
     /// entry count and the statistics sums, as ROOT's `PolyHist::Add` and `hadd`
     /// do.
     ///
-    /// Returns [`Error::BinningMismatch`] and makes no change unless the two
+    /// # Errors
+    ///
+    /// [`Error::BinningMismatch`] and makes no change unless the two
     /// hold the same bins, in the same order.
     pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.bins.len() == other.bins.len()
@@ -249,7 +257,9 @@ impl SparseHist {
     /// the entry count and the statistics sums, as ROOT's `SparseHist::Add` and
     /// `hadd` do.
     ///
-    /// Returns [`Error::BinningMismatch`] and makes no change if the axes
+    /// # Errors
+    ///
+    /// [`Error::BinningMismatch`] and makes no change if the axes
     /// differ.
     pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.axes.len() == other.axes.len()
@@ -289,7 +299,9 @@ impl Graph {
     /// graph's points keep their order and `other`'s follow, with their errors.
     /// The attached functions and the display frame stay as they are.
     ///
-    /// Returns [`Error::InvalidInput`] and makes no change if the two carry
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] and makes no change if the two carry
     /// different kinds of error bars (a `Graph` and a `TGraphErrors`, say).
     pub fn append(&mut self, other: &Self) -> Result<()> {
         match (&mut self.errors, &other.errors) {

@@ -94,13 +94,9 @@ fn main() -> oxiroot::Result<()> {
     println!("{}", "-".repeat(40));
     for (i, (label, comp)) in codecs.iter().enumerate() {
         // The level lives inside the Compression value; None has no level.
-        let level = match comp {
-            Compression::Stored => "-".to_string(),
-            Compression::Zstd(l)
-            | Compression::Zlib(l)
-            | Compression::Lz4(l)
-            | Compression::Lzma(l) => l.to_string(),
-        };
+        let level = comp
+            .level()
+            .map_or_else(|| "-".to_string(), |l| l.to_string());
         let ratio = sizes[i] as f64 / baseline;
         println!("{label:<10} {level:>5} {:>10} {ratio:>12.3}", sizes[i]);
     }

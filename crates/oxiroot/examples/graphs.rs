@@ -33,7 +33,7 @@ fn main() -> oxiroot::Result<()> {
     // symmetric -> "TGraphErrors", asymmetric (below) -> "TGraphAsymmErrors".
     println!(
         "xsec: {} ({} points), class {}",
-        xsec.title,
+        xsec.title(),
         xsec.len(),
         xsec.class_name(),
     );
@@ -113,7 +113,7 @@ fn main() -> oxiroot::Result<()> {
     // --- Read one graph back and print its points (file.get::<Graph>).
     let f = FileReader::open(&path)?;
     let back = f.get::<Graph>("xsec")?;
-    println!("read back `{}` ({} points):", back.name, back.len());
+    println!("read back `{}` ({} points):", back.name(), back.len());
     // The error arrays live in the `errors` enum; pull the y errors out for the
     // symmetric variant we wrote (they are empty for a plain Graph).
     let ey: &[f64] = match &back.errors() {
@@ -137,7 +137,7 @@ fn main() -> oxiroot::Result<()> {
         mg.graphs().len(),
         mg.graphs()
             .iter()
-            .map(|g| g.name.as_str())
+            .map(Graph::name)
             .collect::<Vec<_>>()
             .join(", "),
     );

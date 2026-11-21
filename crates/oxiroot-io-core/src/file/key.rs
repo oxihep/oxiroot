@@ -84,6 +84,10 @@ pub struct Key {
 impl Key {
     /// Read a key header from `r`, leaving the cursor just past the header
     /// (exactly `key_len` bytes from where it started).
+    ///
+    /// # Errors
+    ///
+    /// If the buffer ends inside the key, or a string in it is not UTF-8.
     pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let start = r.pos();
         let nbytes = r.be_i32()?;
@@ -177,6 +181,10 @@ impl Key {
     /// `usize` — for a malformed key whose offset wraps or points past the
     /// buffer. Use this (not [`payload_range`](Key::payload_range)`.start`) to
     /// locate a key's body on any untrusted file.
+    ///
+    /// # Errors
+    ///
+    /// A format error if the offset wraps or lies past `data_len`.
     pub fn payload_start(&self, data_len: usize) -> Result<usize> {
         usize::saturating_from(self.seek_key)
             .checked_add(self.key_len as usize)
@@ -193,6 +201,10 @@ impl Key {
     /// bounds-checked. Returns an error — never panics — for a malformed key
     /// whose `fSeekKey`/`fKeyLen`/`fNbytes` point outside the buffer or whose
     /// `fKeyLen` exceeds its byte count. Use this on any untrusted file.
+    ///
+    /// # Errors
+    ///
+    /// A format error if the key's offsets or lengths do not fit `data`.
     pub fn payload<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
         let start = self.payload_start(data.len())?;
         let len = self

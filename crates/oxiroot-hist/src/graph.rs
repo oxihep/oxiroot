@@ -145,9 +145,9 @@ fn normalize_formula(s: &str) -> String {
 #[doc(alias = "TGraph", alias = "TGraphErrors", alias = "TGraphAsymmErrors")]
 pub struct Graph {
     /// Graph name (`fName`).
-    pub name: String,
+    pub(crate) name: String,
     /// Graph title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// Point x coordinates (`fX`).
     pub(crate) x: Vec<f64>,
     /// Point y coordinates (`fY`).
@@ -158,12 +158,12 @@ pub struct Graph {
     /// builds when a graph is drawn. `None` (the default) writes a null pointer,
     /// matching a freshly-created ROOT graph; set one with
     /// [`with_histogram`](Graph::with_histogram) to persist axis ranges/titles.
-    pub histogram: Option<Hist1D>,
+    pub(crate) histogram: Option<Hist1D>,
     /// Functions attached to the graph (`fFunctions`) — typically the `Func1D`s
     /// produced by fitting it. Empty (the default) writes an empty list, matching
     /// a freshly-created ROOT graph; attach one with
     /// [`with_function`](Graph::with_function).
-    pub functions: Vec<GraphFunction>,
+    pub(crate) functions: Vec<GraphFunction>,
 }
 
 impl Graph {
@@ -220,6 +220,20 @@ impl Graph {
         }
         self.errors = errors;
         Ok(self)
+    }
+
+    /// The display frame (`fHistogram`), if the graph has one: the axes ROOT
+    /// draws the graph in.
+    #[must_use]
+    pub fn histogram(&self) -> Option<&Hist1D> {
+        self.histogram.as_ref()
+    }
+
+    /// The functions attached to the graph (`fFunctions`), such as a fitted
+    /// curve.
+    #[must_use]
+    pub fn functions(&self) -> &[GraphFunction] {
+        &self.functions
     }
 
     /// Attach a display frame (`fHistogram`) — the axis-frame ROOT would build on
@@ -313,7 +327,19 @@ fn read_functions(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Graph
         }
         return Ok(Vec::new());
     };
-    let _ver = r.read_version()?; // TList v5
+    let functions = read_function_list(r, tags)?;
+    r.seek(end)?; // skip any remaining TList payload
+    Ok(functions)
+}
+
+/// Read a streamed `TList` of functions at the cursor (its version header
+/// first): the `TF1` elements, skipping any other class. This is the body of a
+/// graph's `fFunctions` pointer, and a histogram's `fFunctions` as it stands.
+pub(crate) fn read_function_list(
+    r: &mut RBuffer<'_>,
+    tags: &mut TagReader,
+) -> Result<Vec<GraphFunction>> {
+    let list = r.read_version()?; // TList v5
     let _obj = read_object_base(r)?; // TObject base
     let _name = r.string()?; // fName (empty)
     let nfns = usize::saturating_from(r.be_i32()?.max(0));
@@ -329,7 +355,9 @@ fn read_functions(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Graph
         // Each element carries an option TString trailer in the TList.
         let _opt = r.string()?;
     }
-    r.seek(end)?; // skip any remaining TList payload
+    if let Some(end) = list.end {
+        r.seek(end)?;
+    }
     Ok(functions)
 }
 
@@ -370,7 +398,7 @@ fn read_opt_th1(r: &mut RBuffer<'_>) -> Result<Option<Hist1D>> {
         Some(class) => bin_content_type_of(class)?,
         None => BinContentType::F32,
     };
-    Ok(Some(Hist1D::read(r, bin_content_type)?))
+    Ok(Some(Hist1D::read(r, bin_content_type, None)?))
 }
 
 /// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)
@@ -391,7 +419,17 @@ impl ReadRoot for Graph {
             object.class,
             "TGraph" | "TGraphErrors" | "TGraphAsymmErrors"
         )
-        .then(|| decode_tgraph(object.name, object.class, object.bytes, object.key_len))
+        .then(|| match object.within {
+            // A member of a collection: read where it lies, so that a class
+            // named in an earlier member is found.
+            Some(within) => {
+                let mut r = RBuffer::new(within.buffer);
+                r.seek(within.start)?;
+                let mut tags = TagReader::new(within.key_len);
+                read_tgraph(&mut r, object.name, object.class, Some(&mut tags))
+            }
+            None => decode_tgraph(object.name, object.class, object.bytes, object.key_len),
+        })
     }
 }
 
@@ -406,25 +444,38 @@ pub(crate) fn decode_tgraph(
 ) -> Result<Graph> {
     let mut r = RBuffer::new(object);
     let mut tags = keylen.map(TagReader::new);
+    read_tgraph(&mut r, name, class, tags.as_mut())
+}
+
+/// Read a graph of class `class` at the cursor. `tags` is the class-tag map of
+/// the buffer `r` reads: the one of the key, or the one a collection is
+/// reading its members with, so that a class named in an earlier member is
+/// known in a later one.
+pub(crate) fn read_tgraph(
+    r: &mut RBuffer<'_>,
+    name: &str,
+    class: &str,
+    mut tags: Option<&mut TagReader>,
+) -> Result<Graph> {
     match class {
-        "TGraph" => read_tgraph_base(&mut r, tags.as_mut()),
+        "TGraph" => read_tgraph_base(r, tags),
         "TGraphErrors" => {
             let _wrapper = r.read_version()?; // TGraphErrors v3
-            let mut g = read_tgraph_base(&mut r, tags.as_mut())?;
+            let mut g = read_tgraph_base(r, tags.as_deref_mut())?;
             let n = g.len();
-            let ex = read_basic_array(&mut r, n)?;
-            let ey = read_basic_array(&mut r, n)?;
+            let ex = read_basic_array(r, n)?;
+            let ey = read_basic_array(r, n)?;
             g.errors = GraphErrors::Symmetric { ex, ey };
             Ok(g)
         }
         "TGraphAsymmErrors" => {
             let _wrapper = r.read_version()?; // TGraphAsymmErrors v3
-            let mut g = read_tgraph_base(&mut r, tags.as_mut())?;
+            let mut g = read_tgraph_base(r, tags)?;
             let n = g.len();
-            let ex_low = read_basic_array(&mut r, n)?;
-            let ex_high = read_basic_array(&mut r, n)?;
-            let ey_low = read_basic_array(&mut r, n)?;
-            let ey_high = read_basic_array(&mut r, n)?;
+            let ex_low = read_basic_array(r, n)?;
+            let ex_high = read_basic_array(r, n)?;
+            let ey_low = read_basic_array(r, n)?;
+            let ey_high = read_basic_array(r, n)?;
             g.errors = GraphErrors::Asymmetric {
                 ex_low,
                 ex_high,
@@ -434,7 +485,7 @@ pub(crate) fn decode_tgraph(
             Ok(g)
         }
         other => Err(Error::WrongClass {
-            name: name.to_string(),
+            name: Some(name.to_string()),
             found: other.to_string(),
             expected: "TGraph, TGraphErrors or TGraphAsymmErrors".to_string(),
         }),

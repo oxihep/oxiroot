@@ -52,8 +52,9 @@ pub enum Error {
     /// A key holds a different class than the one asked for: reading a `TH2F` as
     /// a `Hist1D`, say.
     WrongClass {
-        /// The key's name (its path, in a subdirectory); empty if unknown.
-        name: String,
+        /// The key's name (its path, in a subdirectory); `None` for an object
+        /// that has no key of its own, such as a member of a collection.
+        name: Option<String>,
         /// The class the key holds.
         found: String,
         /// The class, or classes, that were asked for.
@@ -105,8 +106,8 @@ pub enum Error {
     /// A stored payload could not be decompressed. `source` says why; a codec
     /// this build cannot decode is [`CompressError::CodecUnavailable`].
     Decompress {
-        /// What was being read (e.g. `key "h"`, `RNTuple page`); may be empty.
-        context: String,
+        /// What was being read (e.g. `key "h"`, `RNTuple page`), when known.
+        context: Option<String>,
         /// The codec's error.
         source: CompressError,
     },
@@ -233,12 +234,12 @@ impl fmt::Display for Error {
                 expected,
             } => write!(f, "column {name:?} holds {found}, not {expected}"),
             Self::WrongClass {
-                name,
+                name: None,
                 found,
                 expected,
-            } if name.is_empty() => write!(f, "the object is a {found}, not a {expected}"),
+            } => write!(f, "the object is a {found}, not a {expected}"),
             Self::WrongClass {
-                name,
+                name: Some(name),
                 found,
                 expected,
             } => write!(f, "key {name:?} is a {found}, not a {expected}"),
@@ -257,12 +258,14 @@ impl fmt::Display for Error {
                 "{what} checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
             ),
             Self::Unsupported(s) | Self::InvalidInput(s) => f.write_str(s),
-            Self::Decompress { context, source } if context.is_empty() => {
-                write!(f, "decompression failed: {source}")
-            }
-            Self::Decompress { context, source } => {
-                write!(f, "decompressing {context}: {source}")
-            }
+            Self::Decompress {
+                context: None,
+                source,
+            } => write!(f, "decompression failed: {source}"),
+            Self::Decompress {
+                context: Some(context),
+                source,
+            } => write!(f, "decompressing {context}: {source}"),
             Self::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
             Self::LengthMismatch {
                 what,
@@ -319,7 +322,7 @@ impl std::error::Error for Error {
 impl From<CompressError> for Error {
     fn from(source: CompressError) -> Self {
         Self::Decompress {
-            context: String::new(),
+            context: None,
             source,
         }
     }
@@ -327,9 +330,13 @@ impl From<CompressError> for Error {
 
 /// Decompress a stored payload into `len` bytes (see
 /// [`oxiroot_compress::decompress`]), naming `what` was read if it fails.
+///
+/// # Errors
+///
+/// [`Error::Decompress`], naming `what`, if the payload does not decompress to `len` bytes.
 pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -> Result<Vec<u8>> {
     oxiroot_compress::decompress(payload, len).map_err(|source| Error::Decompress {
-        context: what.to_string(),
+        context: Some(what.to_string()),
         source,
     })
 }
@@ -338,6 +345,10 @@ pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -
 /// [`Error::LengthMismatch`] naming `what` is wrong: so a constructor or a fill
 /// never silently cuts an input short or pads it. `what` is formatted only for
 /// the error.
+///
+/// # Errors
+///
+/// [`Error::LengthMismatch`] if `found` is not `expected`.
 pub fn check_len(what: impl fmt::Display, expected: usize, found: usize) -> Result<()> {
     if found == expected {
         Ok(())

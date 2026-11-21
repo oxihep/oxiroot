@@ -62,9 +62,9 @@ fn writes_and_round_trips_labels() {
         .unwrap()
         .named("cuts")
         .titled("selection");
-    h.xaxis_mut().set_label(1, "trigger");
-    h.xaxis_mut().set_label(2, "vertex");
-    h.xaxis_mut().set_label(3, "isolation");
+    h.xaxis_mut().set_label(1, "trigger").unwrap();
+    h.xaxis_mut().set_label(2, "vertex").unwrap();
+    h.xaxis_mut().set_label(3, "isolation").unwrap();
     let out = std::env::temp_dir().join("oxiroot_labels_scratch.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h)
@@ -77,4 +77,19 @@ fn writes_and_round_trips_labels() {
         .unwrap();
     assert_eq!(r.xaxis().labels, ["trigger", "vertex", "isolation"]);
     assert_eq!(r.xaxis().bin_label(2), Some("vertex"));
+}
+
+/// A label for a bin the axis does not have is an error, and so is asking for
+/// that bin's geometry.
+#[test]
+fn a_bin_the_axis_does_not_have_is_reported() {
+    let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().unwrap();
+    assert!(h.xaxis_mut().set_label(0, "underflow").is_err());
+    assert!(h.xaxis_mut().set_label(4, "overflow").is_err());
+    assert!(h.xaxis().labels.is_empty());
+    assert_eq!(h.xaxis().bin_center(2), Some(1.5));
+    assert_eq!(h.xaxis().bin_width(2), Some(1.0));
+    assert_eq!(h.xaxis().bin_low_edge(2), Some(1.0));
+    assert_eq!(h.xaxis().bin_center(0), None);
+    assert_eq!(h.xaxis().bin_width(4), None);
 }

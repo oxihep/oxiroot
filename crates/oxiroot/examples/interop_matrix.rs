@@ -386,6 +386,7 @@ fn comp_str(c: Compression) -> J {
         Compression::Zlib(_) => J::Str("zlib".into()),
         Compression::Lz4(_) => J::Str("lz4".into()),
         Compression::Lzma(_) => J::Str("lzma".into()),
+        _ => J::Str("unknown".into()),
     }
 }
 
@@ -669,10 +670,8 @@ fn write(dir: &Path) {
         let ha = th1_with(2, 0.0, 2.0, &[1.0, 2.0]);
         let hb = th2_with(2, 2, &[vec![3.0, 4.0], vec![5.0, 6.0]]);
         // Multi-object writer renames keys; set names.
-        let mut ha = ha;
-        ha.name = "ha".into();
-        let mut hb = hb;
-        hb.name = "hb".into();
+        let ha = ha.named("ha");
+        let hb = hb.named("hb");
         let file = "m_multiobj.root".to_string();
         FileWriter::create(dir.join(&file))
             .add(&ha)
@@ -710,12 +709,9 @@ fn write(dir: &Path) {
 
     // --- Subdirectories (FileWriter with dir). -----------
     {
-        let mut htop = th1_with(1, 0.0, 1.0, &[7.0]);
-        htop.name = "htop".into();
-        let mut ha = th1_with(2, 0.0, 2.0, &[2.0, 3.0]);
-        ha.name = "h".into();
-        let mut hb = th1_with(1, 0.0, 1.0, &[4.0]);
-        hb.name = "h".into();
+        let htop = th1_with(1, 0.0, 1.0, &[7.0]).named("htop");
+        let ha = th1_with(2, 0.0, 2.0, &[2.0, 3.0]).named("h");
+        let hb = th1_with(1, 0.0, 1.0, &[4.0]).named("h");
         let file = "m_subdirs.root".to_string();
         FileWriter::create(dir.join(&file))
             .add(&htop)
@@ -776,10 +772,8 @@ fn write(dir: &Path) {
 
     // --- Append / update mode. ---
     {
-        let mut h1 = th1_with(1, 0.0, 1.0, &[1.0]);
-        h1.name = "h1".into();
-        let mut h2 = th1_with(2, 0.0, 2.0, &[2.0, 3.0]);
-        h2.name = "h2".into();
+        let h1 = th1_with(1, 0.0, 1.0, &[1.0]).named("h1");
+        let h2 = th1_with(2, 0.0, 2.0, &[2.0, 3.0]).named("h2");
         let file = "m_append.root".to_string();
         let path = dir.join(&file);
         FileWriter::create(&path)

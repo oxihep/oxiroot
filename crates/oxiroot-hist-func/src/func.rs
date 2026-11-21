@@ -210,7 +210,7 @@ impl Func1D {
     /// use oxiroot_hist_func::Func1D;
     /// let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
     /// let g = Graph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
-    /// assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
+    /// assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
     /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
     #[must_use]

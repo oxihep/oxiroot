@@ -510,7 +510,7 @@ FileWriter::create("plots.root").add(&stack).add(&graphs).compression(Compressio
 
 let f = FileReader::open("plots.root")?;
 assert_eq!(f.get::<HistStack>("hs")?.hists().len(), 2);
-assert_eq!(f.get::<GraphStack>("mg")?.graphs()[0].name, "obs");
+assert_eq!(f.get::<GraphStack>("mg")?.graphs()[0].name(), "obs");
 ```
 
 ### Linear algebra (`oxiroot::linalg`)

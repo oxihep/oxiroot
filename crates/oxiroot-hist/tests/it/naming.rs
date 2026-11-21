@@ -19,12 +19,12 @@ fn filled(name: &str) -> Hist1D {
 fn histograms_are_anonymous_until_named() {
     // No name forced at construction.
     let h = Hist::reg(10, 0.0, 1.0).double().to_root().unwrap();
-    assert_eq!(h.name, "");
-    assert_eq!(h.title, "");
+    assert_eq!(h.name(), "");
+    assert_eq!(h.title(), "");
     // `named`/`titled` are chainable and set the fields.
     let h = h.named("pt").titled("p_{T}");
-    assert_eq!(h.name, "pt");
-    assert_eq!(h.title, "p_{T}");
+    assert_eq!(h.name(), "pt");
+    assert_eq!(h.title(), "p_{T}");
 }
 
 #[test]

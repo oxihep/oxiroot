@@ -112,7 +112,7 @@ let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
     .named("g")
     .with_function(f.to_graph_function());
-let attached = Func1D::from_graph_function(g.functions[0].clone())?;
+let attached = Func1D::from_graph_function(g.functions()[0].clone())?;
 assert_eq!(attached.eval(1.5), f.eval(1.5));
 # Ok::<(), oxiroot::Error>(())
 ```

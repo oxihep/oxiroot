@@ -36,6 +36,26 @@ pub struct Object<'a> {
     pub key_len: Option<usize>,
     /// The file the object was read from, when it came from a key.
     pub file: Option<&'a FileReader>,
+    /// The title of the key the object was read from. Empty for a collection
+    /// member.
+    pub title: &'a str,
+    /// Where a collection member sits in the buffer of the key that holds the
+    /// collection. A member's class back-references point into that buffer, so
+    /// a decoder that follows them reads the member there, not from `bytes`.
+    pub within: Option<Within<'a>>,
+}
+
+/// A collection member's place in the streamed object it was read from.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct Within<'a> {
+    /// The whole streamed object the key holds.
+    pub buffer: &'a [u8],
+    /// The offset of the member's body in `buffer`.
+    pub start: usize,
+    /// The header length of the key (`fKeyLen`), for a
+    /// [`TagReader`](crate::raw::TagReader) over `buffer`.
+    pub key_len: usize,
 }
 
 impl<'a> Object<'a> {
@@ -48,6 +68,29 @@ impl<'a> Object<'a> {
             bytes,
             key_len: None,
             file: None,
+            title: "",
+            within: None,
+        }
+    }
+
+    /// A member of a collection read from a key: its class, and the range of
+    /// its streamed body in the key's `buffer`, whose header is `key_len`
+    /// bytes. Unlike [`member`](Self::member), the member can be decoded with
+    /// its class back-references resolved.
+    #[must_use]
+    pub fn member_in(
+        class: &'a str,
+        buffer: &'a [u8],
+        range: std::ops::Range<usize>,
+        key_len: usize,
+    ) -> Self {
+        Self {
+            within: Some(Within {
+                buffer,
+                start: range.start,
+                key_len,
+            }),
+            ..Self::member(class, buffer.get(range).unwrap_or(&[]))
         }
     }
 }
@@ -96,6 +139,56 @@ pub trait WriteRoot {
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         Vec::new()
     }
+
+    /// What [`to_root_bytes`](Self::to_root_bytes) requires of the key it is
+    /// stored under. The default is nothing, which is right for every object
+    /// that is serialized from its fields.
+    fn key_check(&self) -> KeyCheck {
+        KeyCheck::Any
+    }
+}
+
+/// What an object's bytes require of the key they are stored under.
+///
+/// ROOT refers to a class it has already named in a buffer by position, and
+/// counts positions from the start of the key. Bytes copied as they were read
+/// keep those references, so they are only valid under a key whose header has
+/// the length of the one they came from.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum KeyCheck {
+    /// Any key will do.
+    #[default]
+    Any,
+    /// The key's header must be this many bytes (`fKeyLen`).
+    HeaderLen(usize),
+    /// The object cannot be stored; the message says why and what to do.
+    Unwritable(String),
+}
+
+impl KeyCheck {
+    /// Check a key of class `class`, named `name`, whose header is `key_len`
+    /// bytes.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`](crate::Error::InvalidInput) if the key does not
+    /// meet the requirement.
+    pub fn check(&self, class: &str, name: &str, key_len: usize) -> crate::Result<()> {
+        match self {
+            Self::Any => Ok(()),
+            Self::HeaderLen(n) if *n == key_len => Ok(()),
+            Self::HeaderLen(n) => Err(crate::Error::InvalidInput(format!(
+                "{class} {name:?} was read from a key with a {n}-byte header and cannot be \
+                 stored under one of {key_len} bytes: the class references inside it count \
+                 from the key. Keep the name and title it was read with, or build a new \
+                 object from its decoded members"
+            ))),
+            Self::Unwritable(why) => Err(crate::Error::InvalidInput(format!(
+                "{class} {name:?} cannot be stored: {why}"
+            ))),
+        }
+    }
 }
 
 /// An object stored as several records rather than under a single key: data
@@ -111,6 +204,10 @@ pub trait WriteInto {
     /// Write the object's records at the end of `file`, with its key in `dir`.
     /// This may run more than once for one file: the builder lays a file out
     /// again when it has to switch to the 64-bit form.
+    ///
+    /// # Errors
+    ///
+    /// If the object cannot be stored: a name that does not fit a key, or a failed write.
     fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()>;
     /// The `TStreamerInfo` entries the object's classes need; see
     /// [`WriteRoot::streamer_classes`].
@@ -185,6 +282,8 @@ pub struct ObjectRecord {
     pub title: String,
     /// Streamed object bytes.
     pub object: Vec<u8>,
+    /// What `object` requires of its key; see [`WriteRoot::key_check`].
+    pub key_check: KeyCheck,
 }
 
 /// The on-disk record for any writable object — its class, name, title, and
@@ -196,6 +295,7 @@ pub fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
         name: object.root_name().to_string(),
         title: object.root_title().to_string(),
         object: object.to_root_bytes(),
+        key_check: object.key_check(),
     }
 }
 
@@ -205,6 +305,11 @@ pub fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
 /// The header length is what the object-reference map
 /// ([`crate::object::TagReader`]) needs to resolve the class back-references
 /// inside a collection.
+///
+/// # Errors
+///
+/// [`Error::NotFound`](crate::Error::NotFound) if `path` names no key, and any error reading or decompressing its
+/// payload.
 pub fn object_bytes(file: &FileReader, path: &str) -> Result<(String, Vec<u8>, usize)> {
     let key = file.key(path)?;
     let payload = file.key_payload(&key)?;

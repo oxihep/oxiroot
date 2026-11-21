@@ -20,7 +20,7 @@ pub const HDR_SIZE: usize = 9;
 pub const MAX_CHUNK_SIZE: usize = 0xFF_FFFF;
 
 /// A ROOT compression algorithm, identified by the 2-character block tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Algorithm {
     /// zlib / DEFLATE (`b"ZL"`).
@@ -35,6 +35,21 @@ pub enum Algorithm {
     Zstd,
     /// Unrecognized tag.
     Unknown([u8; 2]),
+}
+
+impl std::fmt::Display for Algorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Zlib => f.write_str("zlib"),
+            Self::Lzma => f.write_str("LZMA"),
+            Self::OldRoot => f.write_str("the legacy ROOT algorithm"),
+            Self::Lz4 => f.write_str("LZ4"),
+            Self::Zstd => f.write_str("Zstandard"),
+            Self::Unknown(tag) => {
+                write!(f, "unknown algorithm {:?}", tag.escape_ascii().to_string())
+            }
+        }
+    }
 }
 
 impl Algorithm {
@@ -101,6 +116,10 @@ impl BlockHeader {
     }
 
     /// Parse a header from the first [`HDR_SIZE`] bytes of `buf`.
+    ///
+    /// # Errors
+    ///
+    /// [`CompressError::Truncated`] if `buf` is shorter than [`HDR_SIZE`].
     pub fn parse(buf: &[u8]) -> Result<Self, CompressError> {
         if buf.len() < HDR_SIZE {
             return Err(CompressError::Truncated {
@@ -116,7 +135,8 @@ impl BlockHeader {
         })
     }
 
-    /// Append the 9-byte header to `out`.
+    /// Append the 9-byte header to `out`. The two sizes are stored in 24 bits
+    /// each: [`compress`](crate::compress) splits its input so that they fit.
     pub fn write(&self, out: &mut Vec<u8>) {
         out.push(self.tag[0]);
         out.push(self.tag[1]);
@@ -131,6 +151,10 @@ fn u24_le(b: &[u8]) -> u32 {
 }
 
 fn put_u24_le(out: &mut Vec<u8>, v: u32) {
+    debug_assert!(
+        v <= 0x00FF_FFFF,
+        "a block size is 24 bits; {v} does not fit"
+    );
     out.push((v & 0xFF) as u8);
     out.push(((v >> 8) & 0xFF) as u8);
     out.push(((v >> 16) & 0xFF) as u8);
@@ -139,6 +163,19 @@ fn put_u24_le(out: &mut Vec<u8>, v: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn algorithms_are_named_for_messages() {
+        assert_eq!(Algorithm::Zlib.to_string(), "zlib");
+        assert_eq!(Algorithm::Lzma.to_string(), "LZMA");
+        assert_eq!(Algorithm::Lz4.to_string(), "LZ4");
+        assert_eq!(Algorithm::Zstd.to_string(), "Zstandard");
+        assert_eq!(Algorithm::OldRoot.to_string(), "the legacy ROOT algorithm");
+        assert_eq!(
+            Algorithm::Unknown(*b"Q?").to_string(),
+            "unknown algorithm \"Q?\""
+        );
+    }
 
     #[test]
     fn algorithm_tag_round_trips() {
