@@ -90,37 +90,20 @@ impl Hist1D {
 
     /// Fill the histogram with `x` (weight 1).
     pub(crate) fn fill(&mut self, x: f64) {
-        self.fill_weight(x, 1.0);
-    }
-
-    /// Fill the histogram with `x` and weight `w`, updating bin contents,
-    /// entry count, and the running statistics (ROOT `Fill` semantics: every
-    /// fill increments `fEntries`; the moment sums accumulate for in-range
-    /// fills only).
-    ///
-    /// The first fill with `w != 1` turns on per-bin error tracking, as ROOT's
-    /// `Fill` does, so weighted errors are right without an explicit
-    /// [`sumw2`](Self::sumw2) call.
-    pub(crate) fn fill_weight(&mut self, x: f64, w: f64) {
-        // Before the contents change: `sumw2` seeds from them, and every earlier
-        // fill had unit weight (otherwise tracking would already be on).
-        if w != 1.0 && self.sumw2.is_empty() {
-            self.sumw2 = self.contents.iter().map(|c| c.abs()).collect();
-        }
         let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
-            *c += w;
+            *c += 1.0;
         }
         if let Some(s) = self.sumw2.get_mut(bin) {
-            *s += w * w;
+            *s += 1.0;
         }
         self.entries += 1.0;
         if (1..=nbins).contains(&bin) {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
+            self.tsumw += 1.0;
+            self.tsumw2 += 1.0;
+            self.tsumwx += x;
+            self.tsumwx2 += x * x;
         }
     }
 

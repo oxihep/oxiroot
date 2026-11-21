@@ -1999,7 +1999,6 @@ dependencies = [
  "oxiplot",
  "oxiroot-io-core",
  "oxiroot-linalg",
- "oxistats",
 ]
 
 [[package]]

@@ -12,7 +12,6 @@ description = "Classic ROOT histograms, profiles and graphs (TH1/TH2/TH3/TProfil
 
 [dependencies]
 oxiroot-io-core = { workspace = true }
-oxistats = { workspace = true }
 oxihist = { workspace = true }
 oxifit = { workspace = true, optional = true }
 oxiplot = { workspace = true, optional = true }
