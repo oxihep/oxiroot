@@ -183,8 +183,8 @@ impl<'f> Dataset<'f> {
         }
     }
 
-    /// The `RNTuple` reader underneath, for what only an `RNTuple` has (records,
-    /// variants, the raw columns).
+    /// The `RNTuple` reader underneath, for what only an `RNTuple` has (the
+    /// schema, the clusters, the raw columns).
     #[must_use]
     pub fn as_ntuple(&self) -> Option<&NtupleReader<'f>> {
         match &self.source {
@@ -200,8 +200,7 @@ impl<'f> Dataset<'f> {
     ///
     /// # Errors
     ///
-    /// A column a [`Batch`] cannot hold (an `RNTuple` variant, a tree branch of
-    /// an unsupported class), or a read error.
+    /// A read error.
     pub fn schema(&self) -> Result<Schema> {
         if let Source::Chain(parts) = &self.source {
             return parts[0].schema();
@@ -228,9 +227,7 @@ impl<'f> Dataset<'f> {
     ///
     /// # Errors
     ///
-    /// A column that does not exist, or one of a shape a [`Batch`] cannot
-    /// hold (an `RNTuple` record or variant); read those through
-    /// [`as_ntuple`](Self::as_ntuple).
+    /// A column that does not exist, or a read error.
     pub fn read<I, S>(&self, columns: I) -> Result<Batch>
     where
         I: IntoIterator<Item = S>,

@@ -10,24 +10,26 @@ user classes.
     same way for an RNTuple and a `TTree`: records, maps and sets,
     reduced-precision reals, optionals and bitsets included, chosen with a
     schema. This page covers the format's own layer underneath,
-    `oxiroot::ntuple::raw` (`Field`, `NtupleWriter`, `FieldValues`): what a
-    merger or an inspector works with, and the one field type a batch does not
-    hold, `std::variant`, along with schema extension. The header and footer
+    `oxiroot::ntuple::raw` (`Field`, `NtupleWriter`): what a merger or an
+    inspector works with, along with schema extension. The header and footer
     (`NtupleReader`) are reached from a dataset with `as_ntuple()`.
 
 ## Writing fields
 
-An RNTuple is a set of named `Field`s. The `Field::*` constructors build the
-common column types directly from `Vec`s; the type name and physical column
+An RNTuple is a set of named `Field`s. A field is a
+[`Column`](datasets.md), the same flat column a dataset's batch holds, and
+how it is stored. `Field::new(name, data)` takes anything that becomes a
+column and stores it as its shape says; the type name and the physical column
 encoding are derived for you.
 
 ```rust
-use oxiroot::ntuple::{NtupleReader};
-use oxiroot::ntuple::raw::{Column, Field, FieldValues, NtupleWriter};
+use oxiroot::data::{Column, DataType};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, NtupleWriter};
 
 let fields = vec![
-    Field::f64("mass", vec![91.2, 125.0]),
-    Field::i32("charge", vec![0, -1]),
+    Field::new("mass", vec![91.2, 125.0]),
+    Field::new("charge", vec![0, -1]),
 ];
 
 let mut w = NtupleWriter::create("data.root", "events", Compression::Stored)?;
@@ -43,79 +45,81 @@ w.finish()?;
     cluster is capped at `u32::MAX` entries: split a larger dataset across
     several `write_batch` calls.
 
-### Scalar field constructors
+### What a column is stored as
 
-| Constructor | Element type | On-disk type |
+| Data | Column | On-disk type |
 | --- | --- | --- |
-| `Field::bool` | `bool` | `bool` |
-| `Field::i8` / `Field::u8` | `i8` / `u8` | `std::int8_t` / `std::uint8_t` |
-| `Field::i16` / `Field::u16` | `i16` / `u16` | `std::int16_t` / `std::uint16_t` |
-| `Field::i32` / `Field::u32` | `i32` / `u32` | `std::int32_t` / `std::uint32_t` |
-| `Field::i64` / `Field::u64` | `i64` / `u64` | `std::int64_t` / `std::uint64_t` |
-| `Field::f32` / `Field::f64` | `f32` / `f64` | `float` / `double` |
-| `Field::string` | `String` | `std::string` |
+| `Vec<bool>`, `Vec<i8>` … `Vec<u64>`, `Vec<f32>`, `Vec<f64>` | scalar | `bool`, `std::int8_t` … `std::uint64_t`, `float`, `double` |
+| `Vec<String>`, `Vec<&str>` | string | `std::string` |
+| `Vec<Vec<T>>` | list | `std::vector<T>` |
+| `Vec<Vec<Vec<T>>>` | list of lists | `std::vector<std::vector<T>>` |
+| `Vec<[T; N]>` | array | `std::array<T, N>` |
+| `Vec<Option<T>>` | optional | `std::optional<T>` |
+| `Column::Struct` with members `_0`, `_1`, … | struct | `std::pair` / `std::tuple` |
+| `Column::Struct` with named members | struct | a user class |
+| `Column::variant` | union | `std::variant` |
 
 ```rust
 let fields = vec![
-    Field::bool("trigger", vec![true, false, true]),
-    Field::u16("nhits", vec![3, 0, 12]),
-    Field::string("label", vec!["mu".into(), "e".into(), "jet".into()]),
+    Field::new("trigger", vec![true, false, true]),
+    Field::new("nhits", vec![3_u16, 0, 12]),
+    Field::new("label", vec!["mu", "e", "jet"]),
+    Field::new("vertex", vec![[0.0, 0.1, 0.2]; 3]),
+    Field::new("charge", vec![Some(1_i32), None, Some(-1)]),
 ];
 ```
 
-### Reduced-precision reals
+The element type is the data's: `vec![1.0, 2.0]` is a `double` field, and
+`vec![1.0_f32, 2.0]` a `float` one.
 
-A `float` field can be stored in less space by trading precision. Each maps to a
-distinct RNTuple real column.
+### Choosing the storage
 
-| Constructor | Column | Notes |
+Some shapes have more than one storage. `.stored_as(data_type)` picks one; the
+type must have the data's shape, or the field is refused when it is written.
+
+| `DataType` | Data | Stored as |
 | --- | --- | --- |
-| `Field::half(name, values)` | `Real16` | half precision (binary16), ~3 decimal digits |
-| `Field::truncated(name, values, bits)` | `Real32Trunc` | mantissa truncated to `bits` total bits (`10..=31`) |
-| `Field::quantized(name, values, min, max, bits)` | `Real32Quant` | linear quantization into `bits`-wide ints over `[min, max]` |
+| `Half` | `f32` | `Real16`: half precision (binary16), about 3 decimal digits |
+| `Truncated { bits }` | `f32` | `Real32Trunc`: mantissa cut to `bits` bits in all (`10..=31`) |
+| `Quantized { bits, min, max }` | `f32` | `Real32Quant`: `bits`-wide integers across `[min, max]` |
+| `Set(item)` | a list | `std::set<T>` |
+| `Map(key, value)` | a list of `{_0, _1}` structs | `std::map<K, V>` |
+| `UniquePtr(item)` | an optional | `std::unique_ptr<T>` |
+| `Atomic(item)` | the bare value | `std::atomic<T>` |
+| `Bitset(n)` | an array of `n` `bool`s | `std::bitset<N>` |
 
 ```rust
 let pts = vec![5.5_f32, 12.25, 88.0];
 let fields = vec![
-    Field::half("pt_half", pts.clone()),
-    Field::truncated("pt_trunc", pts.clone(), 16),
-    Field::quantized("pt_quant", pts, 0.0, 100.0, 12),
+    Field::new("pt_half", pts.clone()).stored_as(DataType::Half),
+    Field::new("pt_trunc", pts.clone()).stored_as(DataType::Truncated { bits: 16 }),
+    Field::new("pt_quant", pts).stored_as(DataType::Quantized {
+        bits: 12,
+        min: 0.0,
+        max: 100.0,
+    }),
+    Field::new("ids", vec![vec![1_i32, 2], vec![], vec![7]])
+        .stored_as(DataType::Set(Box::new(DataType::I32))),
 ];
 ```
 
 !!! warning
-    `quantized` assumes every value lies within `[min, max]`; values are clamped
-    into the range before being encoded.
+    A quantized value outside `[min, max]` is clamped into the range before it
+    is encoded.
 
 ### Collections
 
-`std::vector<T>` fields take one inner `Vec<T>` per entry:
-
-| Constructor | C++ type |
-| --- | --- |
-| `Field::vector_bool` | `std::vector<bool>` |
-| `Field::vector_i8` / `vector_u8` / `vector_i16` / `vector_u16` | `std::vector<intN_t>` |
-| `Field::vector_i32` / `vector_i64` | `std::vector<int32_t>` / `<int64_t>` |
-| `Field::vector_f32` / `vector_f64` | `std::vector<float>` / `<double>` |
-| `Field::vector_string` | `std::vector<std::string>` |
-
-Doubly-nested vectors take `Vec<Vec<Vec<T>>>` (outer = entries):
-
-| Constructor | C++ type |
-| --- | --- |
-| `Field::vector_vector_bool` | `std::vector<std::vector<bool>>` |
-| `Field::vector_vector_i32` / `vector_vector_i64` | `std::vector<std::vector<int32_t>>` / `<int64_t>` |
-| `Field::vector_vector_f32` / `vector_vector_f64` | `std::vector<std::vector<float>>` / `<double>` |
-| `Field::vector_vector_string` | `std::vector<std::vector<std::string>>` |
+A `std::vector<T>` field takes one inner `Vec<T>` per entry, and a
+doubly-nested one a `Vec<Vec<Vec<T>>>` (outer = entries):
 
 ```rust
 // Per-entry lists of tags, and per-entry hit patterns.
-let tags = Field::vector_string("tags", vec![
+let tags = Field::new("tags", vec![
     vec![],
-    vec!["mu".into(), "iso".into()],
+    vec!["mu".to_string(), "iso".into()],
     vec!["jet".into()],
 ]);
-let hits = Field::vector_vector_i32("hits", vec![
+let hits = Field::new("hits", vec![
     vec![],
     vec![vec![1, 2]],
     vec![vec![3], vec![4, 5]],
@@ -124,24 +128,25 @@ let hits = Field::vector_vector_i32("hits", vec![
 
 ### Records, nested collections, and variants
 
-For shapes the `Field::*` helpers do not cover, build a `Column` directly and
-wrap it with `Field::new(name, column)`.
+A column is flat however deep its type nests, so any shape can be built
+directly.
 
-`Column::Record` is a struct-of-arrays: named sub-fields, each with one value per
-record instance. A two-field record serializes as `std::pair`, more as
-`std::tuple`. `Column::Nested` is a collection whose element is itself a
-collection or a record — its cumulative `offsets` partition the flattened child
-column: entry `i` spans `items[offsets[i]..offsets[i + 1]]`, so `offsets` leads
-with a `0` and holds one value more than there are entries, the same convention
-as a tree's jagged `offsets`. Together they express `std::vector<MyStruct>`:
+`Column::Struct` is a struct of arrays: named members, each with one value per
+record. A struct whose members are named `_0`, `_1`, … is a `std::pair` or
+`std::tuple`; any other names make a user class, named after the field unless
+`.class_name` says otherwise. `Column::List` is a collection: its cumulative
+`offsets` cut the child `values` into entries, entry `i` spanning
+`values[offsets[i]..offsets[i + 1]]`, so `offsets` leads with a `0` and holds
+one value more than there are entries. Together they express
+`std::vector<MyStruct>`:
 
 ```rust
 // std::vector<std::pair<int32_t, double>>: a vector of records.
 let clusters = Field::new(
     "clusters",
-    Column::Nested {
+    Column::List {
         offsets: vec![0, 0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
-        items: Box::new(Column::Record(vec![
+        values: Box::new(Column::Struct(vec![
             ("_0".into(), Column::I32(vec![10, 20, 21])),
             ("_1".into(), Column::F64(vec![1.5, 2.5, 3.5])),
         ])),
@@ -149,25 +154,22 @@ let clusters = Field::new(
 );
 ```
 
-A `std::variant` field is built with `Field::variant(name, alternatives, tags)`.
-The `alternatives` hold each alternative's densely-packed active values; `tags`
-selects the 1-based active alternative per entry (`0` means valueless). Each
-alternative must hold exactly as many values as there are entries selecting it.
+A `std::variant` is a union column, built with
+`Column::variant(alternatives, tags)`. The `alternatives` each hold the values
+of the entries that chose them, in entry order; `tags` says which alternative
+each entry holds, counted from 1 (`0` means it holds nothing). An alternative
+must hold as many values as there are entries choosing it.
 
 ```rust
 // std::variant<int32_t, double>: entry 0 -> int, entry 1 -> double, entry 2 -> int.
-let v = Field::variant(
+let v = Field::new(
     "payload",
-    vec![Column::I32(vec![7, 9]), Column::F64(vec![2.5])],
-    vec![1, 2, 1],
+    Column::variant(
+        vec![Column::I32(vec![7, 9]), Column::F64(vec![2.5])],
+        vec![1, 2, 1],
+    ),
 );
 ```
-
-!!! tip
-    The full set of `Column` variants — `Bool`, all integer widths, `F32`/`F64`,
-    `Str`, the `Vec*` collections, `HalfF32` / `TruncF32` / `QuantF32`, `Record`,
-    `Nested`, and `Variant` — is enumerated in the
-    [API reference](../api/oxiroot/index.html).
 
 ## Streaming writes
 
@@ -182,7 +184,7 @@ let mut w = NtupleWriter::create("big.root", "events", Compression::Zstd(5))?;
 for chunk in 0..3 {
     let base = chunk * 1000;
     let mass: Vec<f64> = (base..base + 1000).map(|i| i as f64).collect();
-    w.write_batch(&[Field::f64("mass", mass)])?;
+    w.write_batch(&[Field::new("mass", mass)])?;
 }
 
 let entries: u64 = w.entries();
@@ -216,9 +218,8 @@ Read a top-level field with `field(name)`, optionally narrowed with
 | Call | Returns |
 | --- | --- |
 | `.read::<T>()` | `Vec<T>`: `f64`, `String`, `Vec<f32>` for a `std::vector<float>`, `Option<i32>` for a `std::optional<int32_t>`. Another type than the field holds is an `Error::TypeMismatch`. |
-| `.values()` | The `FieldValues` enum, for every shape (below). |
-| `.flat()` | A `Jagged` (offsets + one flat column) for a `std::vector` of a scalar type, with no allocation per entry. |
-| `.to_field()` | A writable `Field` of the same name and type, for an `NtupleWriter`. |
+| `.values()` | A `Column`, for every shape (below). It is stored flat, as the pages are: nothing is allocated per entry. |
+| `.to_field()` | A writable `Field` of the same name, stored the way the file stores it, for an `NtupleWriter`. |
 
 ```rust
 let file = FileReader::open("data.root")?;
@@ -230,47 +231,49 @@ println!("clusters start at {:?}", ntpl.cluster_boundaries());
 
 let mass: Vec<f64> = ntpl.field("mass").range(0..1000).read()?;
 match ntpl.field("mass").values()? {
-    FieldValues::F64(values) => println!("{} masses", values.len()),
-    other => println!("unexpected shape: {other:?}"),
+    Column::F64(values) => println!("{} masses", values.len()),
+    other => println!("unexpected shape: {}", other.type_name()),
 }
 ```
 
-### What `values()` reconstructs
+### What `values()` returns
 
-`values()` walks the field tree and reconstructs per-entry values for every
-supported shape:
+`values()` walks the field tree and returns the field as a column of its
+shape:
 
-| Shape | `FieldValues` variant |
+| Field | `Column` |
 | --- | --- |
 | scalar leaf | `Bool`, `I8`/`U8`/…/`I64`/`U64`, `F32`, `F64` |
-| `std::string` | `Str(Vec<String>)` |
-| `std::vector<T>` | `VecBool`, `VecI32`, `VecF64`, `VecStr`, … |
-| `std::vector<std::vector<T>>` and deeper | `Nested { offsets, items }` |
-| record / struct (incl. user classes) | `Record(Vec<(String, FieldValues)>)` |
-| `std::vector<MyStruct>` | `Nested` wrapping a `Record` |
-| `std::variant` | `Variant { alternatives, tags, indices }` |
-| `std::array<T, N>` / `std::bitset<N>` | grouped `N` per entry (a `Vec*` variant) |
+| `std::string` | `String { offsets, text }` |
+| `std::vector<T>`, `std::set<T>` | `List { offsets, values }` |
+| `std::vector<std::vector<T>>` and deeper | a `List` of `List`s |
+| record / struct (incl. user classes) | `Struct(Vec<(String, Column)>)` |
+| `std::vector<MyStruct>`, `std::map<K, V>` | a `List` of `Struct`s |
+| `std::optional<T>`, `std::unique_ptr<T>` | `Optional { valid, values }` |
+| `std::variant` | `Union { tags, indices, alternatives }` |
+| `std::array<T, N>` / `std::bitset<N>` | `Array { len, values }` |
 
-`FieldValues::len` gives the element count at a level (entries, for a top-level
-field), and `is_empty` reports an empty level.
+`Column::len` gives the number of entries, and `Header::stored_type` how a
+field is stored where that is more than its shape says (a half-precision
+float, a set).
 
 !!! note
-    `Record` is a struct-of-arrays: each named sub-field holds one value per
-    record instance. Inside a `Nested` collection the sub-fields hold the
-    *flattened* record instances, partitioned by the collection's `offsets`.
+    A `Struct` is a struct of arrays: each named member holds one value per
+    record. Inside a `List` the members hold the records of every entry back
+    to back, cut into entries by the list's `offsets`.
 
 ### Reading nested values
 
-For a `std::vector<MyStruct>` (a `Nested` wrapping a `Record`), the `offsets`
-slice the flattened sub-field arrays into per-entry groups:
+For a `std::vector<MyStruct>` (a list of structs), the `offsets` cut the
+members' values into per-entry groups:
 
 ```rust
-if let FieldValues::Nested { offsets, items } = ntpl.field("clusters").values()? {
-    if let FieldValues::Record(fields) = *items {
-        // `fields` is [("_0", I32([...])), ("_1", F64([...]))] — flattened.
+if let Column::List { offsets, values } = ntpl.field("clusters").values()? {
+    if let Column::Struct(members) = *values {
+        // `members` is [("_0", I32([...])), ("_1", F64([...]))], flat.
         // entry k spans offsets[k]..offsets[k + 1], and offsets[0] is 0.
         let entries = offsets.len() - 1;
-        println!("{entries} entries, {} record instances", fields[0].1.len());
+        println!("{entries} entries, {} records", members[0].1.len());
     }
 }
 ```

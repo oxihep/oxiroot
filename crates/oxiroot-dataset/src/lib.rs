@@ -73,7 +73,7 @@
 //!
 //! The formats' own types (`oxiroot_tree::raw`, `oxiroot_rntuple::raw`) are
 //! underneath, for a tool that works at the level of one format and for what
-//! a batch does not hold: a `std::variant`, schema extension, split objects.
+//! a batch does not hold: schema extension, leaflists, split objects.
 //! A tree's friends and index, and an `RNTuple`'s header and footer, are
 //! reached through [`Dataset::as_tree`] and [`Dataset::as_ntuple`].
 

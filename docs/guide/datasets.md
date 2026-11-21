@@ -118,9 +118,10 @@ out.finish()?;
 Remote files work the same: over `root://` or HTTP a batch's baskets are
 fetched together (see [Reading and writing](reading-writing.md)).
 
-RNTuple records read as `Column::Struct`; a `std::variant` has no batch column,
-so read it through `as_ntuple()` and `oxiroot::ntuple::raw`. `as_tree()` likewise reaches the `TTree` reader underneath for
-friends, indices and split objects.
+RNTuple records read as `Column::Struct` and a `std::variant` as
+`Column::Union`. `as_ntuple()` reaches the `NtupleReader` underneath, for the
+schema and schema extension, and `as_tree()` the `TreeReader`, for friends,
+indices and split objects.
 
 ## Writing
 
@@ -254,4 +255,4 @@ the matching versions.
 The low-level readers and writers cover what only one format has:
 
 - [TTree](ttree.md): leaflists, split single objects, friends and indices.
-- [RNTuple](rntuple.md): variants and schema extension.
+- [RNTuple](rntuple.md): the field layer and schema extension.

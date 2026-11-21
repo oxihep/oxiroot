@@ -37,13 +37,10 @@ pub(crate) fn scalar(values: ColumnValues) -> Result<Column> {
     })
 }
 
-/// The offsets a [`Column`] carries, from on-disk ones: the file holds one
-/// cumulative end per element, a column those after a leading `0`. They must
-/// not decrease and must end at `len`, the number of values they cut.
-fn offsets_over(what: &str, ends: Vec<u64>, len: usize) -> Result<Vec<u64>> {
-    let mut offsets = Vec::with_capacity(ends.len() + 1);
-    offsets.push(0);
-    offsets.extend(ends);
+/// Check the `offsets` read for a string or a collection (a leading `0`, then
+/// one cumulative end per element): they must not decrease and must end at
+/// `len`, the number of values they cut.
+fn offsets_over(what: &str, offsets: Vec<u64>, len: usize) -> Result<Vec<u64>> {
     let ordered = offsets.windows(2).all(|w| w[0] <= w[1]);
     if !ordered || offsets.last().copied() != Some(len as u64) {
         return Err(Error::Format(format!(
@@ -53,10 +50,10 @@ fn offsets_over(what: &str, ends: Vec<u64>, len: usize) -> Result<Vec<u64>> {
     Ok(offsets)
 }
 
-/// `std::string` values from cumulative end offsets and the char bytes.
-pub(crate) fn strings(ends: Vec<u64>, bytes: Vec<u8>) -> Result<Column> {
+/// `std::string` values from their offsets and the char bytes.
+pub(crate) fn strings(offsets: Vec<u64>, bytes: Vec<u8>) -> Result<Column> {
     let text = String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)?;
-    let offsets = offsets_over("string", ends, text.len())?;
+    let offsets = offsets_over("string", offsets, text.len())?;
     if offsets
         .iter()
         .any(|&o| !text.is_char_boundary(usize::saturating_from(o)))
@@ -66,9 +63,9 @@ pub(crate) fn strings(ends: Vec<u64>, bytes: Vec<u8>) -> Result<Column> {
     Ok(Column::String { offsets, text })
 }
 
-/// A collection: its child `values`, cut into entries at the cumulative `ends`.
-pub(crate) fn collect(ends: Vec<u64>, values: Column) -> Result<Column> {
-    let offsets = offsets_over("collection", ends, values.len())?;
+/// A collection: its child `values`, cut into entries at `offsets`.
+pub(crate) fn collect(offsets: Vec<u64>, values: Column) -> Result<Column> {
+    let offsets = offsets_over("collection", offsets, values.len())?;
     Ok(Column::List {
         offsets,
         values: Box::new(values),

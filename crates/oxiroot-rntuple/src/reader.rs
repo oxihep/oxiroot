@@ -425,7 +425,7 @@ impl<'f> NtupleReader<'f> {
                     .ok_or_else(|| {
                         Error::Format(format!("string field {:?} has no char column", fld.name))
                     })?;
-                let offsets = self.read_offsets(file, index_ci, false)?;
+                let offsets = self.read_offsets(file, index_ci)?;
                 let bytes = match self.column_values(file, char_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
@@ -454,7 +454,7 @@ impl<'f> NtupleReader<'f> {
                         fld.name
                     ))
                 })?;
-                let offsets = self.read_offsets(file, index_ci, false)?;
+                let offsets = self.read_offsets(file, index_ci)?;
                 let child = *self.child_fields(field_idx).first().ok_or_else(|| {
                     Error::Format(format!(
                         "collection field {:?} has no element field",
@@ -465,7 +465,7 @@ impl<'f> NtupleReader<'f> {
                 // `std::optional<T>` / `std::unique_ptr<T>` use the collection
                 // shape (0 or 1 element per entry) but read back as a nullable.
                 if is_late_field(&fld.type_name) {
-                    return field::optional(&offsets, items);
+                    return field::optional(&offsets[1..], items);
                 }
                 field::collect(offsets, items)
             }
@@ -496,7 +496,7 @@ impl<'f> NtupleReader<'f> {
                     .ok_or_else(|| {
                         Error::Format(format!("streamer field {:?} has no byte column", fld.name))
                     })?;
-                let offsets = self.read_offsets(file, index_ci, false)?;
+                let offsets = self.read_offsets(file, index_ci)?;
                 let bytes = match self.column_values(file, byte_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
@@ -513,7 +513,7 @@ impl<'f> NtupleReader<'f> {
                         class: fld.type_name.clone(),
                     }
                 })?;
-                crate::streamer::decode(info, &offsets, &bytes)
+                crate::streamer::decode(info, &offsets[1..], &bytes)
             }
             StructRole::Variant => {
                 // The variant field carries one Switch column of (index, tag);
@@ -581,12 +581,10 @@ impl<'f> NtupleReader<'f> {
     /// The decoded count is one offset per element of the *enclosing* level —
     /// the entry count for a top-level collection, but the parent-element count
     /// for a nested one — so it is validated by the caller, not here.
-    fn read_offsets(
-        &self,
-        file: &FileReader,
-        column_index: usize,
-        from_zero: bool,
-    ) -> Result<Vec<u64>> {
+    ///
+    /// The result leads with a `0`, as a [`Column`]'s offsets do: one value
+    /// more than the level has elements.
+    fn read_offsets(&self, file: &FileReader, column_index: usize) -> Result<Vec<u64>> {
         let descriptor = self
             .header
             .columns
@@ -630,10 +628,8 @@ impl<'f> NtupleReader<'f> {
             .map(decode)
             .collect::<Result<_>>()?;
         let total: usize = clusters.iter().map(Vec::len).sum();
-        let mut out = Vec::with_capacity(total + usize::from(from_zero));
-        if from_zero {
-            out.push(0);
-        }
+        let mut out = Vec::with_capacity(total + 1);
+        out.push(0);
         let mut base = 0u64;
         for local in clusters {
             let cluster_total = local.last().copied().unwrap_or(0);
