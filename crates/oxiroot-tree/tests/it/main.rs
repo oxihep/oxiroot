@@ -2,7 +2,6 @@
 //! suite links once. Each module is one topic.
 
 mod chain;
-mod concat;
 mod errors;
 mod introspect;
 mod malformed;

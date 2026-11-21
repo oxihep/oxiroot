@@ -32,10 +32,6 @@ pub struct Hist1D {
     pub(crate) yaxis: Axis,
     /// Z axis (degenerate for 1-D).
     pub(crate) zaxis: Axis,
-    /// Total cells, including under/overflow (`fNcells = nbins + 2`). Read it
-    /// through [`ncells`](Hist1D::ncells); `pub(crate)` so it cannot drift from
-    /// `contents` via outside mutation.
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -69,7 +65,6 @@ impl Hist1D {
             xaxis: Axis::new("xaxis", nbins, xmin, xmax),
             yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells: i32::saturating_from(cells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -118,7 +113,6 @@ impl Hist1D {
             xaxis: c.xaxis,
             yaxis: c.yaxis,
             zaxis: c.zaxis,
-            ncells: c.ncells,
             entries: c.entries,
             tsumw: c.tsumw,
             tsumw2: c.tsumw2,
@@ -193,7 +187,7 @@ impl ReadRoot for Hist1D {
     const CLASS: &'static str = "TH1";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, "TH1").then(|| {
+        is_hist_class(object.class, 1).then(|| {
             let bin_content_type = bin_content_type_of(object.class)?;
             match object.within {
                 // A member of a collection: read where it lies, so that the

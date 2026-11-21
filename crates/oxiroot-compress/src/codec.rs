@@ -21,17 +21,17 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Decode a single Zstd-compressed block payload (a standard Zstd frame),
-/// producing at most `uncompressed_size` bytes (the block header's declared
+/// Decode a single Zstd-compressed block payload (a standard Zstd frame) onto
+/// the end of `out`, producing at most `uncompressed_size` bytes (the block header's declared
 /// size, at most 16 MiB): a frame that would expand further fails with
 /// [`CompressError::SizeMismatch`] before it is decoded whole.
-pub(crate) fn zstd_decode(
+pub(crate) fn zstd_decode_into(
     payload: &[u8],
     uncompressed_size: usize,
-) -> Result<Vec<u8>, CompressError> {
-    let mut out = Vec::with_capacity(uncompressed_size.min(crate::MAX_CHUNK_SIZE));
+    out: &mut Vec<u8>,
+) -> Result<(), CompressError> {
     ZSTD_DECODER
-        .with_borrow_mut(|d| d.decompress_into_with_limit(payload, &mut out, uncompressed_size))
+        .with_borrow_mut(|d| d.decompress_into_with_limit(payload, out, uncompressed_size))
         .map_err(|e| match e {
             zrip::DecompressError::OutputTooSmall => CompressError::SizeMismatch {
                 expected: uncompressed_size,
@@ -39,7 +39,7 @@ pub(crate) fn zstd_decode(
             },
             e => CompressError::Codec(format!("zstd: {e}")),
         })?;
-    Ok(out)
+    Ok(())
 }
 
 /// Decode a single zlib-compressed block payload (a standard zlib stream),

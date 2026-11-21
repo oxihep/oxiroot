@@ -33,9 +33,6 @@ pub struct Hist3D {
     pub(crate) yaxis: Axis,
     /// Z axis.
     pub(crate) zaxis: Axis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
-    /// [`ncells`](Hist3D::ncells); `pub(crate)` so it cannot drift from `contents`.
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -104,7 +101,6 @@ impl Hist3D {
             xaxis: c.xaxis,
             yaxis: c.yaxis,
             zaxis: c.zaxis,
-            ncells: c.ncells,
             entries: c.entries,
             tsumw: c.tsumw,
             tsumw2: c.tsumw2,
@@ -183,7 +179,6 @@ impl Hist3D {
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", nz, zlo, zhi),
-            ncells,
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -206,7 +201,7 @@ impl ReadRoot for Hist3D {
     const CLASS: &'static str = "TH3";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, "TH3").then(|| decode_th3(object.class, object.bytes))
+        is_hist_class(object.class, 3).then(|| decode_th3(object.class, object.bytes))
     }
 }
 pub(crate) fn decode_th3(class: &str, object: &[u8]) -> Result<Hist3D> {

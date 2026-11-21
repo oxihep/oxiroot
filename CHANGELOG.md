@@ -118,6 +118,38 @@ change the API.
   which is also the form this crate can evaluate. This affected a `Func1D`,
   and a function attached to a graph. The parameter names themselves are
   not kept: ROOT shows `p0`, `p1`, ….
+- **`hadd` merges every tree and `RNTuple` a `Dataset` can read.** It copied
+  branches and fields through the low-level writers, which refused an
+  `RNTuple` with a struct, a nested vector, an optional or a
+  `std::vector` of unsigned integers, and a tree with split objects. It
+  now reads and writes through `Dataset` and `DatasetWriter`, one cluster
+  at a time, keeping each column's stored type. Of the 35 single-dataset
+  fixtures, 34 merge and read back equal to a chained read of the inputs;
+  the one that does not holds a `std::variant`. Many small inputs become
+  clusters of a useful size (one per input before). A tree's counted array
+  whose counter is not a branch named `n<array>` is written as a
+  `std::vector`. On four 2-million-entry inputs the tree merge takes the
+  same time and its output is 5.6% larger (smaller baskets); the `RNTuple`
+  merge is 15% faster at the same size.
+- **Breaking: `raw::append_trees` and `raw::append_ntuples` are removed.**
+  `hadd` was their one user and no longer needs them; `Merger` is the way
+  to concatenate, and it handles more. `to_branch` and `to_field` stay.
+- A tree or `RNTuple` merge that fails part-way leaves no output: it is
+  written beside the output and renamed when complete.
+- A histogram record writes the number of cells its arrays hold; it wrote
+  back the `fNcells` it had read, which a file could have wrong.
+- A key of a class such as `TH1K` read as a `Hist1D` is a `WrongClass`
+  error; it was `Unsupported`.
+- **A `DatasetWriter` whose file could not be started panicked on the next
+  write.** The first failure was returned, but the writer was left in a
+  state the next call did not expect. Every later `write` and `finish` now
+  returns an error.
+- A `TTree` whose description lacks `fEntries` is a format error; it read
+  as a tree of no entries.
+- `oxroot show` reads a tree's branch types from its metadata; it decoded
+  the first entry of every branch to tell a scalar from a list. It also
+  takes an `RNTuple` field's type from the top-level field of that name,
+  not from the first field so named.
 - A `Dataset` read reported any error from the flat read of a tree branch
   as "not flat" and read the branch a second time the slow way; only
   `Unsupported` falls back now, and a read error is returned.
@@ -132,6 +164,9 @@ change the API.
 
 ### Added
 
+- `ClassKind`, what a ROOT class name says about how its objects are
+  stored (`Tree`, `Ntuple`, `Directory`, `Hist(dim)`, `Other`): the one
+  table the readers, the merger and the CLI now share.
 - **A `Hist1D` keeps the functions stored with it** (`fFunctions`, where
   ROOT's `TH1::Fit` leaves the fitted curve): `functions()` reads them and
   `with_function` attaches one. They were dropped on read, so a histogram

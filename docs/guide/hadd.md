@@ -96,9 +96,15 @@ partial file. To merge such a fileset, merge the pieces separately.
 ## Memory
 
 Inputs are opened with positioned reads, so only the objects and data a merge
-touches are read. A tree or RNTuple is streamed to the output one input at a
-time: each input becomes one batch of baskets (or one RNTuple cluster), so memory
-holds a single input's entries rather than the whole merged dataset. When the
+touches are read. A tree or RNTuple is copied one cluster at a time, through the
+same [`Dataset`](datasets.md) reader and writer as any other read and write, so
+memory holds a cluster rather than an input, and many small inputs are gathered
+into clusters of a useful size. Every column type a `Batch` can hold is merged
+and stored as the first input stores it: structs, nested vectors, optionals,
+sets and maps, half-precision and quantized floats. Two things change: a
+`std::variant` field cannot be merged, and a tree's counted array whose counter
+is not a branch named `n<array>` (a member of a split object, say) is written
+as a `std::vector`. When the
 inputs add up to more than 1 GB, or the output turns out not to fit the 32-bit
 container form, the output is written in ROOT's 64-bit form. The output path must
 not be one of the inputs.

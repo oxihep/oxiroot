@@ -846,9 +846,10 @@ ax2.save("heatmap.svg")?;
   RNTuple entries concatenated**. Other supported objects (graphs, efficiencies,
   functions, strings, matrices, …) are copied from the first file; unknown
   classes are **skipped and listed in the report**, never silently dropped.
-- Each concatenated branch keeps its original kind (scalar, `x[N]`, jagged `x[n]`,
-  `std::vector<T>`, string). The streaming `oxiroot_tree::raw::append_trees` and
-  `oxiroot_rntuple::raw::append_ntuples` do the per-format work.
+- Each concatenated column keeps its stored type (scalar, `x[N]`, jagged `x[n]`,
+  `std::vector<T>`, string, struct, optional, set, map, …): a tree or RNTuple is
+  copied one cluster at a time through `Dataset` and `DatasetWriter`, the same
+  reader and writer as every other read and write.
 - `.compression(c)` chooses the output compression (Zstd 5 by default), and
   `merge` returns a `MergeReport` whose `kind` says what was summed, copied and
   skipped, or how many entries were written, with a one-line `Display`.

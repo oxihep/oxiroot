@@ -7,7 +7,7 @@ use oxiroot_io_core::raw::{
 };
 use oxiroot_io_core::{Error, FileReader, RBuffer, Result, StreamerRegistry};
 
-use super::members::{Members, member_int, member_str, walk_members};
+use super::members::{Members, member_int, member_str, required_int, walk_members};
 use super::types::{
     member_leaf_type, parse_nested_vector_elem, parse_vector_elem, streamer_type_to_leaf,
 };
@@ -105,7 +105,7 @@ pub(super) fn read_tree<'f>(
     Ok(TreeReader {
         file,
         name: member_str(&out, "fName"),
-        entries: u64::saturating_from(member_int(&out, "fEntries")),
+        entries: u64::saturating_from(required_int(&out, "fEntries", "TTree")?),
         branches,
         unsupported,
         streamer_classes: Vec::new(),

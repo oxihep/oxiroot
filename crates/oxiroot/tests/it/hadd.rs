@@ -245,8 +245,10 @@ fn a_tree_merge_streams_one_batch_per_input() {
     );
 }
 
+/// Small inputs are gathered into clusters of a useful size, not written
+/// as one tiny cluster each.
 #[test]
-fn an_rntuple_merge_streams_one_cluster_per_input() {
+fn an_rntuple_merge_gathers_small_inputs_into_one_cluster() {
     let inputs: Vec<_> = (0..3)
         .map(|k| {
             let path = tmp(&format!("stream_rn_{k}"));
@@ -274,7 +276,7 @@ fn an_rntuple_merge_streams_one_cluster_per_input() {
 
     let fo = FileReader::open(&out).unwrap();
     let nt = NtupleReader::open(&fo, "ntpl").unwrap();
-    assert_eq!(nt.footer().cluster_groups[0].num_clusters, 3);
+    assert_eq!(nt.footer().cluster_groups[0].num_clusters, 1);
     assert_eq!(
         nt.field("id").values().unwrap(),
         FieldValues::I64(vec![0, 100, 1, 101, 2, 102])
@@ -329,4 +331,138 @@ fn the_output_cannot_be_an_input() {
     // The input is untouched.
     let f = FileReader::open(&path).unwrap();
     assert_eq!(TreeReader::open(&f, "T").unwrap().entries(), 1);
+}
+
+/// Every column type a `Batch` holds is merged: the merged dataset reads back
+/// equal to the inputs read as a chain, with the same columns. These fixtures
+/// hold what the low-level writers refuse (structs, nested vectors, optionals,
+/// unsigned vectors, sets and maps, split objects in a tree).
+#[test]
+fn a_merge_keeps_every_column_a_batch_can_hold() {
+    let fixture = |name: &str| {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures")
+            .join(name)
+    };
+    let read_all = |d: &Dataset<'_>| {
+        let columns: Vec<String> = d.columns().into_iter().map(str::to_string).collect();
+        (columns.clone(), d.read(&columns).unwrap())
+    };
+    for (file, name) in [
+        ("rntuple_coltypes_zstd.root", "ntpl"),
+        ("rntuple_nested_zstd.root", "ntpl"),
+        ("rntuple_stl_zstd.root", "ntpl"),
+        ("rntuple_map_zstd.root", "ntpl"),
+        ("rntuple_set_zstd.root", "ntpl"),
+        ("rntuple_user_uncompressed.root", "ntpl"),
+        ("rntuple_realprec_zstd.root", "ntpl"),
+        ("tree_split.root", "T"),
+        ("tree_nested.root", "T"),
+        ("tree_clones.root", "T"),
+        ("tree_vecvec.root", "T"),
+        ("tree_arrays.root", "T"),
+    ] {
+        let input = fixture(file);
+        let out = tmp(&format!("every_column_{file}"));
+        Merger::new().inputs([&input, &input]).merge(&out).unwrap();
+
+        let (a, b) = (
+            FileReader::open(&input).unwrap(),
+            FileReader::open(&input).unwrap(),
+        );
+        let chain = Dataset::chain([
+            Dataset::open(&a, name).unwrap(),
+            Dataset::open(&b, name).unwrap(),
+        ])
+        .unwrap();
+        let merged_file = FileReader::open(&out).unwrap();
+        let merged = Dataset::open(&merged_file, name).unwrap();
+        assert_eq!(read_all(&merged), read_all(&chain), "{file}");
+        std::fs::remove_file(out).unwrap();
+    }
+}
+
+/// A `std::variant` field is the one thing a batch cannot hold: the merge
+/// says so and writes nothing.
+#[test]
+fn a_merge_refuses_a_variant_field() {
+    let input = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/rntuple_variant_uncompressed.root");
+    let out = tmp("variant_out");
+    let err = Merger::new()
+        .inputs([&input, &input])
+        .merge(&out)
+        .unwrap_err();
+    assert!(err.to_string().contains("variant"), "{err}");
+    assert!(!out.exists());
+}
+
+/// Inputs that do not hold the first input's columns, or hold one of them as
+/// another type, are refused: nothing is merged across a changed schema.
+#[test]
+fn a_merge_refuses_inputs_whose_columns_differ() {
+    let write = |tag: &str, format: Format, batch: Batch| {
+        let path = tmp(tag);
+        let mut w = DatasetWriter::create(&path, "events", format).unwrap();
+        w.write(batch).unwrap();
+        w.finish().unwrap();
+        path
+    };
+    for format in [Format::Tree, Format::Ntuple] {
+        let tag = |what: &str| format!("differ_{format:?}_{what}");
+        let base = write(
+            &tag("base"),
+            format,
+            Batch::new()
+                .column("x", vec![1.0_f64, 2.0])
+                .unwrap()
+                .column("n", vec![1_i32, 2])
+                .unwrap(),
+        );
+        let missing = write(
+            &tag("missing"),
+            format,
+            Batch::new().column("x", vec![3.0_f64]).unwrap(),
+        );
+        let retyped = write(
+            &tag("retyped"),
+            format,
+            Batch::new()
+                .column("x", vec![3.0_f32])
+                .unwrap()
+                .column("n", vec![3_i32])
+                .unwrap(),
+        );
+        let out = tmp(&tag("out"));
+        let _ = std::fs::remove_file(&out);
+
+        let err = Merger::new()
+            .inputs([&base, &missing])
+            .merge(&out)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("\"n\""),
+            "{format:?} missing: {err}"
+        );
+
+        let err = Merger::new()
+            .inputs([&base, &retyped])
+            .merge(&out)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("\"x\""),
+            "{format:?} retyped: {err}"
+        );
+
+        // A failed merge leaves no output, and nothing beside it.
+        assert!(!out.exists());
+        let leftovers = std::fs::read_dir(out.parent().unwrap())
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            // Other tests merge into this directory at the same time.
+            .filter(|name| name.contains("differ_") && name.ends_with(".partial"))
+            .count();
+        assert_eq!(leftovers, 0);
+    }
 }

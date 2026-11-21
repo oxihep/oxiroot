@@ -27,8 +27,6 @@ pub struct Profile2D {
     pub(crate) xaxis: Axis,
     /// Y axis.
     pub(crate) yaxis: Axis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`).
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -77,7 +75,6 @@ impl Profile2D {
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
-            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -186,7 +183,6 @@ impl Profile2D {
             title: c.title,
             xaxis: c.xaxis,
             yaxis: c.yaxis,
-            ncells: c.ncells,
             entries: c.entries,
             tsumw: c.tsumw,
             tsumw2: c.tsumw2,

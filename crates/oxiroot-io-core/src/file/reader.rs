@@ -16,6 +16,7 @@ use super::header::FileHeader;
 use super::key::Key;
 use super::readahead::ReadAhead;
 use super::source::{ByteSource, BytesSource, FileSource};
+use crate::ClassKind;
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result, decompress_payload};
 use crate::object_io::{Object, ReadRoot};
@@ -286,9 +287,7 @@ impl FileReader {
         let keys = parent.map_or(self.root_dir.keys.as_slice(), |d| d.keys.as_slice());
         let key = keys
             .iter()
-            .find(|k| {
-                k.name == name && (k.class_name == "TDirectory" || k.class_name == "TDirectoryFile")
-            })
+            .find(|k| k.name == name && ClassKind::of(&k.class_name) == ClassKind::Directory)
             .ok_or_else(|| Error::NotFound {
                 what: "subdirectory",
                 name: name.to_string(),

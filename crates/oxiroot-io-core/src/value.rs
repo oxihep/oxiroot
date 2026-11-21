@@ -206,48 +206,57 @@ impl Value {
         }
     }
 
-    /// Render this value as an indented tree (rootprint-style). `indent` is the
-    /// current depth; `label` is the member name prefix (`None` at the root).
-    fn render_into(&self, out: &mut String, indent: usize, label: Option<&str>) -> fmt::Result {
-        use fmt::Write as _;
-
-        const PAD: &str = "  ";
-        let pad = PAD.repeat(indent);
-        let name = label.map_or(String::new(), |l| format!("{l}: "));
+    /// Render this value as an indented tree (rootprint-style), one line per
+    /// value and no newline after the last. `indent` is the current depth;
+    /// `label` is the member name prefix (`None` at the root); `first` is
+    /// whether no line has been written yet.
+    fn render_into(
+        &self,
+        out: &mut impl fmt::Write,
+        indent: usize,
+        label: Option<&str>,
+        first: &mut bool,
+    ) -> fmt::Result {
+        // Each line starts with the newline that ends the one before it, so
+        // the text needs no trimming and goes straight to the formatter.
+        if !std::mem::take(first) {
+            out.write_char('\n')?;
+        }
+        for _ in 0..indent {
+            out.write_str("  ")?;
+        }
+        if let Some(label) = label {
+            write!(out, "{label}: ")?;
+        }
         match self {
             Self::Object { class, members } => {
-                writeln!(out, "{pad}{name}{class}")?;
+                out.write_str(class)?;
                 for (member, value) in members {
-                    value.render_into(out, indent + 1, Some(member))?;
+                    value.render_into(out, indent + 1, Some(member), first)?;
                 }
             }
             Self::Array(items) => {
+                write!(out, "[{}]", items.len())?;
                 if items.iter().all(Self::is_scalar) {
                     // A short scalar array prints inline; a long one is truncated.
-                    let shown: Vec<String> =
-                        items.iter().take(20).map(Self::render_scalar).collect();
-                    let more = if items.len() > 20 { ", …" } else { "" };
-                    writeln!(
-                        out,
-                        "{pad}{name}[{}] {}{}",
-                        items.len(),
-                        shown.join(", "),
-                        more
-                    )?;
+                    for (i, item) in items.iter().take(20).enumerate() {
+                        out.write_str(if i == 0 { " " } else { ", " })?;
+                        out.write_str(&item.render_scalar())?;
+                    }
+                    if items.len() > 20 {
+                        out.write_str(", …")?;
+                    }
                 } else {
-                    writeln!(out, "{pad}{name}[{}]", items.len())?;
                     for item in items {
-                        item.render_into(out, indent + 1, None)?;
+                        item.render_into(out, indent + 1, None, first)?;
                     }
                 }
             }
-            Self::Ref { class } => {
-                writeln!(out, "{pad}{name}<{class} written above>")?;
-            }
+            Self::Ref { class } => write!(out, "<{class} written above>")?,
             Self::Unsupported { class, reason } => {
-                writeln!(out, "{pad}{name}<unsupported {class}: {reason}>")?;
+                write!(out, "<unsupported {class}: {reason}>")?;
             }
-            scalar => writeln!(out, "{pad}{name}{}", scalar.render_scalar())?,
+            scalar => out.write_str(&scalar.render_scalar())?,
         }
         Ok(())
     }
@@ -256,8 +265,77 @@ impl Value {
 impl fmt::Display for Value {
     /// Render as an indented tree.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut out = String::new();
-        self.render_into(&mut out, 0, None)?;
-        f.write_str(out.trim_end())
+        self.render_into(f, 0, None, &mut true)
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::Value;
+
+    fn object(class: &str, members: Vec<(&str, Value)>) -> Value {
+        Value::Object {
+            class: class.to_string(),
+            members: members
+                .into_iter()
+                .map(|(n, v)| (n.to_string(), v))
+                .collect(),
+        }
+    }
+
+    /// One line per value, members indented under their object, a scalar
+    /// array inline, no space after an empty array's count, and no newline
+    /// after the last line.
+    #[test]
+    fn a_value_renders_as_an_indented_tree() {
+        let value = object(
+            "TThing",
+            vec![
+                ("fName", Value::Str("x".to_string())),
+                ("fN", Value::I32(3)),
+                (
+                    "fData",
+                    Value::Array(vec![Value::F64(1.5), Value::F64(2.0)]),
+                ),
+                (
+                    "fParts",
+                    Value::Array(vec![
+                        object("TPart", vec![("fId", Value::U8(7))]),
+                        Value::Ref {
+                            class: "TPart".to_string(),
+                        },
+                    ]),
+                ),
+                (
+                    "fOdd",
+                    Value::Unsupported {
+                        class: "TOdd".to_string(),
+                        reason: "no streamer".to_string(),
+                    },
+                ),
+                ("fEmpty", Value::Array(vec![])),
+            ],
+        );
+        let expected = "\
+TThing
+  fName: \"x\"
+  fN: 3
+  fData: [2] 1.5, 2
+  fParts: [2]
+    TPart
+      fId: 7
+    <TPart written above>
+  fOdd: <unsupported TOdd: no streamer>
+  fEmpty: [0]";
+        assert_eq!(value.to_string(), expected);
+    }
+
+    #[test]
+    fn a_long_scalar_array_is_cut_at_twenty() {
+        let long = Value::Array((0..25).map(Value::I32).collect());
+        let text = long.to_string();
+        assert!(text.starts_with("[25] 0, 1, 2"), "{text}");
+        assert!(text.ends_with("18, 19, …"), "{text}");
+        assert_eq!(Value::I64(-4).to_string(), "-4");
     }
 }

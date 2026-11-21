@@ -522,18 +522,18 @@ pub(crate) fn leading_zero(offsets: Vec<u64>) -> Vec<u64> {
 pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValues> {
     use FieldValues::*;
     Ok(match items {
-        Bool(v) => VecBool(group(&offsets, &v)?),
-        I8(v) => VecI8(group(&offsets, &v)?),
-        U8(v) => VecU8(group(&offsets, &v)?),
-        I16(v) => VecI16(group(&offsets, &v)?),
-        U16(v) => VecU16(group(&offsets, &v)?),
-        I32(v) => VecI32(group(&offsets, &v)?),
-        I64(v) => VecI64(group(&offsets, &v)?),
-        U32(v) => VecU32(group(&offsets, &v)?),
-        U64(v) => VecU64(group(&offsets, &v)?),
-        F32(v) => VecF32(group(&offsets, &v)?),
-        F64(v) => VecF64(group(&offsets, &v)?),
-        Str(v) => VecStr(group(&offsets, &v)?),
+        Bool(v) => VecBool(group(&offsets, v)?),
+        I8(v) => VecI8(group(&offsets, v)?),
+        U8(v) => VecU8(group(&offsets, v)?),
+        I16(v) => VecI16(group(&offsets, v)?),
+        U16(v) => VecU16(group(&offsets, v)?),
+        I32(v) => VecI32(group(&offsets, v)?),
+        I64(v) => VecI64(group(&offsets, v)?),
+        U32(v) => VecU32(group(&offsets, v)?),
+        U64(v) => VecU64(group(&offsets, v)?),
+        F32(v) => VecF32(group(&offsets, v)?),
+        F64(v) => VecF64(group(&offsets, v)?),
+        Str(v) => VecStr(group(&offsets, v)?),
         // The flat variants above hold their elements grouped, so only this one
         // exposes offsets — in the public form, with a leading `0`.
         other => Nested {
@@ -576,15 +576,19 @@ pub(crate) fn chunk(items: FieldValues, n: usize) -> Result<FieldValues> {
     collect(offsets, items)
 }
 
-fn group<T: Clone>(offsets: &[u64], data: &[T]) -> Result<Vec<Vec<T>>> {
+/// Split `data` into one `Vec` per entry at the cumulative `offsets`, moving
+/// the values (a `std::vector<std::string>` field keeps its strings).
+fn group<T>(offsets: &[u64], data: Vec<T>) -> Result<Vec<Vec<T>>> {
+    let mut rest = data.into_iter();
     let mut start = 0usize;
     let mut out = Vec::with_capacity(offsets.len());
     for &end in offsets {
         let end = usize::saturating_from(end);
-        let slice = data
-            .get(start..end)
+        let n = end
+            .checked_sub(start)
+            .filter(|&n| n <= rest.len())
             .ok_or_else(|| Error::Format("collection offset out of range".into()))?;
-        out.push(slice.to_vec());
+        out.push(rest.by_ref().take(n).collect());
         start = end;
     }
     Ok(out)

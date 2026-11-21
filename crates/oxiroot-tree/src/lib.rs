@@ -29,7 +29,6 @@ pub use value::LeafType;
 /// or an `RNTuple` alike. These are what it is built on, for tools that work
 /// at the level of the format (a merger, an inspector).
 pub mod raw {
-    pub use crate::merge::append_trees;
     pub use crate::reader::BranchRead;
     pub use crate::value::{BranchValues, FromBranch, Jagged};
     pub use crate::writer::raw::*;

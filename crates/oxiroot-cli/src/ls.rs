@@ -1,5 +1,6 @@
 //! `oxroot ls` — list the objects (keys) in a file.
 
+use oxiroot::file::ClassKind;
 use std::collections::{HashMap, HashSet};
 
 use clap::Args as ClapArgs;
@@ -148,7 +149,7 @@ fn collect(
         });
         if recursive
             && depth < MAX_DEPTH
-            && matches!(key.class_name.as_str(), "TDirectory" | "TDirectoryFile")
+            && ClassKind::of(&key.class_name) == ClassKind::Directory
             && let Ok(sub) = file.subdir(&full)
         {
             collect(

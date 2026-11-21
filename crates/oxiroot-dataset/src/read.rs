@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, FileReader, Result};
+use oxiroot_io_core::{ClassKind, Error, FileReader, Result};
 use oxiroot_rntuple::raw::FieldValues;
 use oxiroot_rntuple::{ANCHOR_CLASS, ColumnType, Header, NtupleReader};
 use oxiroot_tree::raw::BranchValues;
@@ -77,13 +77,13 @@ impl<'f> Dataset<'f> {
         tree: impl FnOnce() -> Result<TreeReader<'f>>,
         ntuple: impl FnOnce() -> Result<NtupleReader<'f>>,
     ) -> Result<Self> {
-        let source = match class {
-            "TTree" | "TNtuple" | "TNtupleD" => Source::Tree(tree()?),
-            c if c == ANCHOR_CLASS => Source::Ntuple(ntuple()?),
-            other => {
+        let source = match ClassKind::of(class) {
+            ClassKind::Tree => Source::Tree(tree()?),
+            ClassKind::Ntuple => Source::Ntuple(ntuple()?),
+            _ => {
                 return Err(Error::WrongClass {
                     name: Some(name.to_string()),
-                    found: other.to_string(),
+                    found: class.to_string(),
                     expected: format!("TTree or {ANCHOR_CLASS}"),
                 });
             }

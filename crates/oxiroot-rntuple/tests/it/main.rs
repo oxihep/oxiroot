@@ -2,7 +2,6 @@
 //! suite links once. Each module is one topic.
 
 mod assoc;
-mod concat;
 mod errors;
 mod length_checks;
 mod malformed;

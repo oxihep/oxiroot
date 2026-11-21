@@ -27,16 +27,8 @@ fn poke_rntuple(f: &FileReader) {
             // The cluster-bounded prefix read shares the decode path; exercise it
             // (including the cluster-slicing / view) on the malformed bytes too.
             let _ = ntpl.field(&name).range(0..2).values();
-        }
-        // Run the (possibly corrupt) ntuple through the `hadd`-style merge —
-        // exercises field concatenation + rebuild on malformed input.
-        if let Ok(mut w) = oxiroot_rntuple::raw::NtupleWriter::new(
-            std::io::Cursor::new(Vec::new()),
-            "m.root",
-            "ntpl",
-            oxiroot_io_core::Compression::Stored,
-        ) {
-            let _ = oxiroot_rntuple::raw::append_ntuples(&mut w, &[&ntpl]);
+            // And the read → write round trip of the field.
+            let _ = ntpl.field(&name).to_field();
         }
     }
 }

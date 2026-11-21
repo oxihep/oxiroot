@@ -72,7 +72,10 @@ fn map_chunks<T: Send>(
 /// ```
 #[must_use = "a DatasetWriter writes its last entries, and the file's directory, in `finish`"]
 pub struct DatasetWriter<W: Write + Seek = File> {
-    sink: Sink<W>,
+    /// The sink and the file name, until the first cluster is written.
+    pending: Option<(W, String)>,
+    /// The file's writer, from the first cluster on.
+    opened: Option<Opened<W>>,
     name: String,
     format: Format,
     compression: Compression,
@@ -87,16 +90,10 @@ pub struct DatasetWriter<W: Write + Seek = File> {
     entries: u64,
 }
 
-enum Sink<W: Write + Seek> {
-    /// Not opened yet: options can still change.
-    Pending {
-        sink: W,
-        file_name: String,
-    },
+/// The file once its first cluster is written: the options are fixed.
+enum Opened<W: Write + Seek> {
     Tree(TreeWriter<W>),
     Ntuple(NtupleWriter<W>),
-    /// Taken while being opened.
-    Gone,
 }
 
 impl DatasetWriter<File> {
@@ -123,10 +120,8 @@ impl<W: Write + Seek> DatasetWriter<W> {
     /// recorded in the file's header.
     pub fn new(sink: W, file_name: &str, name: &str, format: Format) -> Self {
         Self {
-            sink: Sink::Pending {
-                sink,
-                file_name: file_name.to_string(),
-            },
+            pending: Some((sink, file_name.to_string())),
+            opened: None,
             name: name.to_string(),
             format,
             compression: Compression::default(),
@@ -241,38 +236,53 @@ impl<W: Write + Seek> DatasetWriter<W> {
     /// chunk, or an `RNTuple` cluster per chunk. Small chunks keep window reads
     /// cheap and let reads and writes run on every core.
     fn flush_batch(&mut self, batch: &Batch) -> Result<()> {
-        self.open()?;
         let chunks = chunk_ranges(batch);
         let schema = self.schema.clone().unwrap_or_else(|| batch.schema());
         let convert_tree =
             |r: &std::ops::Range<usize>| tree_branches(&batch.slice(r.clone()), &schema);
         let convert_ntuple =
             |r: &std::ops::Range<usize>| Ok(ntuple_fields(batch.slice(r.clone()), &schema));
-        match &mut self.sink {
-            Sink::Tree(w) => w.write_batches(&map_chunks(&chunks, convert_tree)?),
-            Sink::Ntuple(w) => w.write_batches(&map_chunks(&chunks, convert_ntuple)?),
-            Sink::Pending { .. } | Sink::Gone => unreachable!("opened above"),
+        match self.open()? {
+            Opened::Tree(w) => w.write_batches(&map_chunks(&chunks, convert_tree)?),
+            Opened::Ntuple(w) => w.write_batches(&map_chunks(&chunks, convert_ntuple)?),
         }
     }
 
-    fn open(&mut self) -> Result<()> {
-        if !matches!(self.sink, Sink::Pending { .. }) {
-            return Ok(());
-        }
-        let Sink::Pending { sink, file_name } = std::mem::replace(&mut self.sink, Sink::Gone)
-        else {
-            unreachable!("checked above")
-        };
-        let (c, name) = (self.compression, self.name.as_str());
-        self.sink = match (self.format, self.large) {
-            (Format::Tree, false) => Sink::Tree(TreeWriter::new(sink, &file_name, name, c)?),
-            (Format::Tree, true) => Sink::Tree(TreeWriter::new_large(sink, &file_name, name, c)?),
-            (Format::Ntuple, false) => Sink::Ntuple(NtupleWriter::new(sink, &file_name, name, c)?),
-            (Format::Ntuple, true) => {
-                Sink::Ntuple(NtupleWriter::new_large(sink, &file_name, name, c)?)
+    /// The file's writer, started on first use.
+    ///
+    /// # Errors
+    ///
+    /// If the file's header cannot be written. The sink is gone with the
+    /// attempt, so every later call fails too.
+    fn open(&mut self) -> Result<&mut Opened<W>> {
+        match &mut self.opened {
+            Some(opened) => Ok(opened),
+            slot @ None => {
+                let (sink, file_name) = self.pending.take().ok_or_else(|| {
+                    Error::InvalidInput(format!(
+                        "dataset {:?}: the file could not be started, so nothing more can be \
+                         written to it",
+                        self.name
+                    ))
+                })?;
+                let (c, name) = (self.compression, self.name.as_str());
+                let opened = match (self.format, self.large) {
+                    (Format::Tree, false) => {
+                        Opened::Tree(TreeWriter::new(sink, &file_name, name, c)?)
+                    }
+                    (Format::Tree, true) => {
+                        Opened::Tree(TreeWriter::new_large(sink, &file_name, name, c)?)
+                    }
+                    (Format::Ntuple, false) => {
+                        Opened::Ntuple(NtupleWriter::new(sink, &file_name, name, c)?)
+                    }
+                    (Format::Ntuple, true) => {
+                        Opened::Ntuple(NtupleWriter::new_large(sink, &file_name, name, c)?)
+                    }
+                };
+                Ok(slot.insert(opened))
             }
-        };
-        Ok(())
+        }
     }
 
     /// Write what is buffered and close the file. Returns the sink. A writer
@@ -285,19 +295,19 @@ impl<W: Write + Seek> DatasetWriter<W> {
     pub fn finish(mut self) -> Result<W> {
         self.flush()?;
         // Columns but no entries: write the schema alone.
-        if let (Sink::Pending { .. }, Some(empty)) = (&self.sink, self.empty.take()) {
-            self.open()?;
+        if self.opened.is_none()
+            && let Some(empty) = self.empty.take()
+        {
             let schema = self.schema.clone().unwrap_or_else(|| empty.schema());
-            match &mut self.sink {
-                Sink::Tree(w) => w.write_batch(&tree_branches(&empty, &schema)?)?,
-                Sink::Ntuple(w) => w.write_batch(&ntuple_fields(empty, &schema))?,
-                Sink::Pending { .. } | Sink::Gone => unreachable!("opened above"),
+            match self.open()? {
+                Opened::Tree(w) => w.write_batch(&tree_branches(&empty, &schema)?)?,
+                Opened::Ntuple(w) => w.write_batch(&ntuple_fields(empty, &schema))?,
             }
         }
-        match self.sink {
-            Sink::Tree(w) => w.finish(),
-            Sink::Ntuple(w) => w.finish(),
-            Sink::Pending { .. } | Sink::Gone => Err(Error::InvalidInput(format!(
+        match self.opened {
+            Some(Opened::Tree(w)) => w.finish(),
+            Some(Opened::Ntuple(w)) => w.finish(),
+            None => Err(Error::InvalidInput(format!(
                 "dataset {:?}: no entries were written",
                 self.name
             ))),
@@ -825,4 +835,43 @@ fn class_name(name: &str) -> String {
         out.insert(0, '_');
     }
     out
+}
+
+#[cfg(test)]
+mod failed_start_tests {
+    use std::io::{Seek, SeekFrom, Write};
+
+    use super::{Batch, DatasetWriter, Format};
+
+    /// A sink that refuses every write.
+    struct Broken;
+
+    impl Write for Broken {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("disk on fire"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Seek for Broken {
+        fn seek(&mut self, _: SeekFrom) -> std::io::Result<u64> {
+            Ok(0)
+        }
+    }
+
+    /// When the file cannot be started, the write fails, and so does every
+    /// later one: an error each time, never a panic.
+    #[test]
+    fn a_file_that_cannot_be_started_keeps_failing() {
+        for format in [Format::Tree, Format::Ntuple] {
+            let batch = || Batch::new().column("x", vec![1.0_f64, 2.0]).unwrap();
+            let mut out = DatasetWriter::new(Broken, "f.root", "events", format).cluster_bytes(1);
+            assert!(out.write(batch()).is_err());
+            let err = out.write(batch()).unwrap_err();
+            assert!(err.to_string().contains("could not be started"), "{err}");
+            assert!(out.finish().is_err());
+        }
+    }
 }

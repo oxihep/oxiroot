@@ -64,7 +64,7 @@ fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<ClassDef<'
 /// `Hist1D`/`Hist2D`/`Hist3D` serialize with the bin content type carried by their `class_name`;
 /// the macro picks the right `write_th{1,2,3}{d,f,i,s,c,l}` for the suffix.
 macro_rules! impl_write_root_hist {
-    ($ty:ty, $d:ident, $f:ident, $i:ident, $s:ident, $c:ident, $l:ident, $functions:expr) => {
+    ($ty:ty, $write:ident, $functions:expr) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
                 self.class_name()
@@ -77,14 +77,7 @@ macro_rules! impl_write_root_hist {
             }
             fn to_root_bytes(&self) -> Vec<u8> {
                 let mut w = WBuffer::new();
-                match self.bin_content_type {
-                    BinContentType::F64 => $d(&mut w, self),
-                    BinContentType::F32 => $f(&mut w, self),
-                    BinContentType::I32 => $i(&mut w, self),
-                    BinContentType::I16 => $s(&mut w, self),
-                    BinContentType::I8 => $c(&mut w, self),
-                    BinContentType::I64 => $l(&mut w, self),
-                }
+                $write(&mut w, self, self.bin_content_type);
                 w.into_vec()
             }
             fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
@@ -102,36 +95,9 @@ macro_rules! impl_write_root_hist {
         }
     };
 }
-impl_write_root_hist!(
-    Hist1D,
-    write_th1d,
-    write_th1f,
-    write_th1i,
-    write_th1s,
-    write_th1c,
-    write_th1l,
-    |h| !h.functions.is_empty()
-);
-impl_write_root_hist!(
-    Hist2D,
-    write_th2d,
-    write_th2f,
-    write_th2i,
-    write_th2s,
-    write_th2c,
-    write_th2l,
-    |_| false
-);
-impl_write_root_hist!(
-    Hist3D,
-    write_th3d,
-    write_th3f,
-    write_th3i,
-    write_th3s,
-    write_th3c,
-    write_th3l,
-    |_| false
-);
+impl_write_root_hist!(Hist1D, write_th1_obj, |h| !h.functions.is_empty());
+impl_write_root_hist!(Hist2D, write_th2_obj, |_| false);
+impl_write_root_hist!(Hist3D, write_th3_obj, |_| false);
 
 /// A fixed-class writable type (profiles, efficiency, sparse, poly):
 /// `root_class` is a constant and `to_root_bytes` delegates to its serializer.
@@ -240,16 +206,18 @@ const HIST_BITS: u32 = 0x0300_0008;
 const AXIS_BITS: u32 = 0x0300_0000;
 const TLIST_BITS: u32 = 0x0301_0000;
 
-/// How a histogram's data `TArray` base is serialized — one of `write_tarray{c,
-/// s,i,l,f,d}`, picking the bin content type (`TArray{C,S,I,L64,F,D}`). Everything
-/// else in the object is identical across bin content types, so a `TH*X` reuses the `TH*D`
-/// layout (only the outer class version differs: 0 for the Long64 `L` types).
-type ArrayWriter = fn(&mut WBuffer, &[f64]);
-
-/// Serialize a `Hist1D{D,F,C,S,I,L}` object (with its byte-count/version header)
-/// into `w`, byte-for-byte as ROOT writes it. `version` is the class version
-/// (3 for C/S/I/F/D, 0 for L) and `write_array` picks the bin content type.
-fn write_th1_obj(w: &mut WBuffer, h: &Hist1D, version: u16, write_array: ArrayWriter) {
+/// Serialize a `TH1{D,F,C,S,I,L}` object (with its byte-count/version header)
+/// into `w`, byte-for-byte as ROOT writes it. `contents` is the type of its
+/// data `TArray` base (`TArray{D,F,C,S,I,L64}`). Everything else in the object
+/// is the same for every bin content type; only the outer class version
+/// differs.
+pub(crate) fn write_th1_obj(w: &mut WBuffer, h: &Hist1D, contents: BinContentType) {
+    // The class version: 0 for the `Long64_t` classes, which came later.
+    let version = if contents == BinContentType::I64 {
+        0
+    } else {
+        3
+    };
     // The fields are private, so these hold; a broken one would write a file
     // ROOT (and this crate's reader) rejects.
     debug_assert_eq!(
@@ -263,25 +231,20 @@ fn write_th1_obj(w: &mut WBuffer, h: &Hist1D, version: u16, write_array: ArrayWr
     );
     let outer = w.begin_object(version);
     write_th1_base(w, h);
-    write_array(w, &h.contents); // TArray{…} base: bin contents, inline
+    write_tarray(w, &h.contents, contents); // TArray{…} base: bin contents, inline
     w.end_object(outer);
-}
-
-/// Serialize a `TH1D` object (including its leading byte-count/version header)
-/// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th1d(w: &mut WBuffer, h: &Hist1D) {
-    write_th1_obj(w, h, 3, write_tarrayd);
-}
-
-/// Serialize a `TH1F` object (the float-precision `Hist1D`) into `w`.
-pub(crate) fn write_th1f(w: &mut WBuffer, h: &Hist1D) {
-    write_th1_obj(w, h, 3, write_tarrayf);
 }
 
 /// Serialize a `TH2D`/`TH2F` object (with its byte-count/version header) into
 /// `w`, byte-for-byte as ROOT writes it. Layout: `Hist2D{D,F}{ Hist2D{ Hist1D{…},
 /// fScalefactor, fTsumwy, fTsumwy2, fTsumwxy }, TArray{D,F} }`.
-fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, version: u16, write_array: ArrayWriter) {
+pub(crate) fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, contents: BinContentType) {
+    // The class version: 0 for the `Long64_t` classes, which came later.
+    let version = if contents == BinContentType::I64 {
+        0
+    } else {
+        4
+    };
     // The fields are private, so these hold; a broken one would write a file
     // ROOT (and this crate's reader) rejects.
     debug_assert_eq!(
@@ -297,45 +260,42 @@ fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, version: u16, write_array: ArrayWr
     let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &h.zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumw2,
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &h.zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumw2,
+            functions: &[],
+        },
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
     w.be_f64(h.tsumwy);
     w.be_f64(h.tsumwy2);
     w.be_f64(h.tsumwxy);
     w.end_object(th2);
-    write_array(w, &h.contents); // TArray{D,F} base: bin contents, inline
+    write_tarray(w, &h.contents, contents); // TArray{D,F} base: bin contents, inline
     w.end_object(outer);
-}
-
-/// Serialize a `TH2D` object (including its leading byte-count/version header)
-/// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th2d(w: &mut WBuffer, h: &Hist2D) {
-    write_th2_obj(w, h, 4, write_tarrayd);
-}
-
-/// Serialize a `TH2F` object (the float-precision `Hist2D`) into `w`.
-pub(crate) fn write_th2f(w: &mut WBuffer, h: &Hist2D) {
-    write_th2_obj(w, h, 4, write_tarrayf);
 }
 
 /// Serialize a `TH3D`/`TH3F` object (with its byte-count/version header) into
 /// `w`, byte-for-byte as ROOT writes it. Layout: `Hist3D{D,F}{ Hist3D{ Hist1D{…}, TAtt3D,
 /// fTsumwy, fTsumwy2, fTsumwxy, fTsumwz, fTsumwz2, fTsumwxz, fTsumwyz },
 /// TArray{D,F} }`.
-fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, version: u16, write_array: ArrayWriter) {
+pub(crate) fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, contents: BinContentType) {
+    // The class version: 0 for the `Long64_t` classes, which came later.
+    let version = if contents == BinContentType::I64 {
+        0
+    } else {
+        4
+    };
     // The fields are private, so these hold; a broken one would write a file
     // ROOT (and this crate's reader) rejects.
     debug_assert_eq!(
@@ -351,19 +311,21 @@ fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, version: u16, write_array: ArrayWr
     let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &h.zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumw2,
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &h.zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumw2,
+            functions: &[],
+        },
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
@@ -375,47 +337,9 @@ fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, version: u16, write_array: ArrayWr
     w.be_f64(h.tsumwxz);
     w.be_f64(h.tsumwyz);
     w.end_object(th3);
-    write_array(w, &h.contents); // TArray{D,F} base: bin contents, inline
+    write_tarray(w, &h.contents, contents); // TArray{D,F} base: bin contents, inline
     w.end_object(outer);
 }
-
-/// Serialize a `TH3D` object (including its leading byte-count/version header)
-/// into `w`, byte-for-byte as ROOT writes it.
-pub(crate) fn write_th3d(w: &mut WBuffer, h: &Hist3D) {
-    write_th3_obj(w, h, 4, write_tarrayd);
-}
-
-/// Serialize a `TH3F` object (the float-precision `Hist3D`) into `w`.
-pub(crate) fn write_th3f(w: &mut WBuffer, h: &Hist3D) {
-    write_th3_obj(w, h, 4, write_tarrayf);
-}
-
-/// Generate the `write_*`/`*_to_bytes`/`write_*_file` trio for one integer
-/// bin content type (`TH1C`/`TH2S`/`TH3I`/`TH1L`/…). The object layout is
-/// identical to the same-dimension `TH*D`/`TH*F` apart from the class version
-/// `$ver` (3/4 for C/S/I, 0 for the Long64 `L`) and the data `TArray` (`$array`).
-/// The in-memory `f64` bin contents are narrowed to the integer type.
-macro_rules! int_hist {
-    ($write:ident, $class:literal, $htype:ty, $obj:ident, $ver:literal, $array:ident) => {
-        #[doc = concat!("Serialize a `", $class, "` object (with its byte-count/version header) into `w`.")]
-        pub(crate) fn $write(w: &mut WBuffer, h: &$htype) {
-            $obj(w, h, $ver, $array);
-        }
-    };
-}
-
-int_hist!(write_th1c, "TH1C", Hist1D, write_th1_obj, 3, write_tarrayc);
-int_hist!(write_th1s, "TH1S", Hist1D, write_th1_obj, 3, write_tarrays);
-int_hist!(write_th1i, "TH1I", Hist1D, write_th1_obj, 3, write_tarrayi);
-int_hist!(write_th1l, "TH1L", Hist1D, write_th1_obj, 0, write_tarrayl);
-int_hist!(write_th2c, "TH2C", Hist2D, write_th2_obj, 4, write_tarrayc);
-int_hist!(write_th2s, "TH2S", Hist2D, write_th2_obj, 4, write_tarrays);
-int_hist!(write_th2i, "TH2I", Hist2D, write_th2_obj, 4, write_tarrayi);
-int_hist!(write_th2l, "TH2L", Hist2D, write_th2_obj, 0, write_tarrayl);
-int_hist!(write_th3c, "TH3C", Hist3D, write_th3_obj, 4, write_tarrayc);
-int_hist!(write_th3s, "TH3S", Hist3D, write_th3_obj, 4, write_tarrays);
-int_hist!(write_th3i, "TH3I", Hist3D, write_th3_obj, 4, write_tarrayi);
-int_hist!(write_th3l, "TH3L", Hist3D, write_th3_obj, 0, write_tarrayl);
 
 /// Serialize a `Profile1D` object (including its leading byte-count/version
 /// header) into `w`. Layout: `Profile1D{ TH1D{ Hist1D{…, fSumw2=Σwy²}, TArrayD=Σwy },
@@ -429,19 +353,21 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
     let th1d = w.begin_object(3); // TH1D version 3
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &yaxis,
-        &zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumy2,
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &yaxis,
+            zaxis: &zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumy2,
+            functions: &[],
+        },
     );
     write_tarrayd(w, &h.sums); // TH1D TArrayD base: per-bin sum of w*y
     w.end_object(th1d);
@@ -475,19 +401,21 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
     let th2 = w.begin_object(5); // Hist2D version 5
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumz2,
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumz2,
+            functions: &[],
+        },
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
     w.be_f64(h.tsumwy);
@@ -523,19 +451,21 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
     let th3 = w.begin_object(6); // Hist3D version 6
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &h.zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumt2,
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &h.zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumt2,
+            functions: &[],
+        },
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
@@ -583,13 +513,13 @@ const EFF_FUNCTIONS_EMPTY: [u8; 21] = [
 /// {TH1D object}`. ROOT shares the class via a back-reference for the second
 /// histogram; a fresh `kNewClassTag` for both is read identically.
 fn write_th1d_ptr(w: &mut WBuffer, h: &Hist1D) {
-    write_object_ptr(w, "TH1D", |w| write_th1d(w, h));
+    write_object_ptr(w, "TH1D", |w| write_th1_obj(w, h, BinContentType::F64));
 }
 
 /// Write an embedded `TH1F*` object pointer (a graph's `fHistogram` display
 /// frame): `{byte count}{kNewClassTag}{"TH1F"}{TH1F object}`.
 fn write_th1f_ptr(w: &mut WBuffer, h: &Hist1D) {
-    write_object_ptr(w, "TH1F", |w| write_th1f(w, h));
+    write_object_ptr(w, "TH1F", |w| write_th1_obj(w, h, BinContentType::F32));
 }
 
 /// Serialize an `Efficiency` object (with its byte-count/version header) into `w`.
@@ -723,19 +653,21 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
     let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &zaxis,
-        i32::saturating_from(n + 9),
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &[],
-        &[],
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &zaxis,
+            ncells: i32::saturating_from(n + 9),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &[],
+            functions: &[],
+        },
     );
     w.be_f64(1.0); // fScalefactor
     w.be_f64(h.tsumwy);
@@ -1116,42 +1048,64 @@ impl WriteRoot for MultiErrorGraph {
 fn write_th1_base(w: &mut WBuffer, h: &Hist1D) {
     write_th1_core(
         w,
-        &h.name,
-        &h.title,
-        &h.xaxis,
-        &h.yaxis,
-        &h.zaxis,
-        h.ncells,
-        h.entries,
-        h.tsumw,
-        h.tsumw2,
-        h.tsumwx,
-        h.tsumwx2,
-        &h.sumw2,
-        &h.functions,
+        &Th1Core {
+            name: &h.name,
+            title: &h.title,
+            xaxis: &h.xaxis,
+            yaxis: &h.yaxis,
+            zaxis: &h.zaxis,
+            ncells: h.ncells(),
+            entries: h.entries,
+            tsumw: h.tsumw,
+            tsumw2: h.tsumw2,
+            tsumwx: h.tsumwx,
+            tsumwx2: h.tsumwx2,
+            sumw2: &h.sumw2,
+            functions: &h.functions,
+        },
     );
 }
 
-/// Write the shared `Hist1D` base object (version 8) used by every histogram
-/// class. The dimension-specific stat sums (y/z) and the data `TArray` are
-/// written by the caller after this returns.
-#[allow(clippy::too_many_arguments)]
-fn write_th1_core(
-    w: &mut WBuffer,
-    name: &str,
-    title: &str,
-    xaxis: &Axis,
-    yaxis: &Axis,
-    zaxis: &Axis,
+/// What the `TH1` base of a histogram class holds, whichever class it is.
+#[derive(Clone, Copy)]
+struct Th1Core<'a> {
+    name: &'a str,
+    title: &'a str,
+    xaxis: &'a Axis,
+    yaxis: &'a Axis,
+    zaxis: &'a Axis,
+    /// `fNcells`: every cell, flow included.
     ncells: i32,
     entries: f64,
     tsumw: f64,
     tsumw2: f64,
     tsumwx: f64,
     tsumwx2: f64,
-    fsumw2: &[f64],
-    functions: &[GraphFunction],
-) {
+    /// `fSumw2`: per-cell Σw², or what a profile keeps there.
+    sumw2: &'a [f64],
+    /// `fFunctions`: the functions stored with the histogram.
+    functions: &'a [GraphFunction],
+}
+
+/// Write the shared `Hist1D` base object (version 8) used by every histogram
+/// class. The dimension-specific stat sums (y/z) and the data `TArray` are
+/// written by the caller after this returns.
+fn write_th1_core(w: &mut WBuffer, core: &Th1Core<'_>) {
+    let Th1Core {
+        name,
+        title,
+        xaxis,
+        yaxis,
+        zaxis,
+        ncells,
+        entries,
+        tsumw,
+        tsumw2,
+        tsumwx,
+        tsumwx2,
+        sumw2: fsumw2,
+        functions,
+    } = *core;
     let th1 = w.begin_object(8); // Hist1D version 8
 
     write_named(w, HIST_BITS, name, title);
@@ -1290,69 +1244,26 @@ fn write_empty_tlist(w: &mut WBuffer) {
 
 /// Write a `TArrayD` base inline (a count followed by that many doubles).
 fn write_tarrayd(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(i32::saturating_from(data.len()));
-    for &d in data {
-        w.be_f64(d);
-    }
+    write_tarray(w, data, BinContentType::F64);
 }
 
-/// Write a `TArrayF` base inline (a count followed by that many floats). The
-/// in-memory bin contents are `f64`; a `TH*F` narrows them to `f32`, as ROOT does.
+/// Write a `TArray{D,F,I,S,C,L64}` base inline: a count, then that many
+/// values of the type `contents` names. The bin contents are `f64` in memory;
+/// a `TH*F`, `TH*I`, … narrows them to its own type, as ROOT does.
 #[allow(
     clippy::cast_possible_truncation,
-    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
+    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1C, TH1L): the narrowing is the format, as in ROOT"
 )]
-fn write_tarrayf(w: &mut WBuffer, data: &[f64]) {
+fn write_tarray(w: &mut WBuffer, data: &[f64], contents: BinContentType) {
     w.be_i32(i32::saturating_from(data.len()));
     for &d in data {
-        w.be_f32(d as f32);
-    }
-}
-
-/// Write a `TArrayC` base inline (`Char_t`/`i8` bin contents; `TH*C`).
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "contents stored in the class type (TH1C): the narrowing is the format, as in ROOT"
-)]
-fn write_tarrayc(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(i32::saturating_from(data.len()));
-    for &d in data {
-        w.u8((d as i8).cast_unsigned());
-    }
-}
-
-/// Write a `TArrayS` base inline (`Short_t`/`i16` bin contents; `TH*S`).
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
-)]
-fn write_tarrays(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(i32::saturating_from(data.len()));
-    for &d in data {
-        w.be_i16(d as i16);
-    }
-}
-
-/// Write a `TArrayI` base inline (`Int_t`/`i32` bin contents; `TH*I`).
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
-)]
-fn write_tarrayi(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(i32::saturating_from(data.len()));
-    for &d in data {
-        w.be_i32(d as i32);
-    }
-}
-
-/// Write a `TArrayL64` base inline (`Long64_t`/`i64` bin contents; `TH*L`).
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "contents stored in the class type (TH1F, TH1S, TH1I, TH1L): the narrowing is the format, as in ROOT"
-)]
-fn write_tarrayl(w: &mut WBuffer, data: &[f64]) {
-    w.be_i32(i32::saturating_from(data.len()));
-    for &d in data {
-        w.be_i64(d as i64);
+        match contents {
+            BinContentType::F64 => w.be_f64(d),
+            BinContentType::F32 => w.be_f32(d as f32),
+            BinContentType::I32 => w.be_i32(d as i32),
+            BinContentType::I16 => w.be_i16(d as i16),
+            BinContentType::I8 => w.u8((d as i8).cast_unsigned()),
+            BinContentType::I64 => w.be_i64(d as i64),
+        }
     }
 }
