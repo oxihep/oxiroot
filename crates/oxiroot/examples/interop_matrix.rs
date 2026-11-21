@@ -24,7 +24,7 @@ use oxiroot::hist::BinContentType;
 use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues, SplitMember, TreeWriter};
+use oxiroot::tree::raw::{Branch, Column, SplitMember, TreeWriter};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -1075,17 +1075,17 @@ fn tree_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
     let bf32 = vec![0.5f32, 1.5, 2.5];
     let bf64 = vec![0.25f64, 1.25, 2.25];
     let branches = vec![
-        Branch::bool("bb", bb.clone()),
-        Branch::i8("bi8", bi8.clone()),
-        Branch::u8("bu8", bu8.clone()),
-        Branch::i16("bi16", bi16.clone()),
-        Branch::u16("bu16", bu16.clone()),
-        Branch::i32("bi32", bi32.clone()),
-        Branch::u32("bu32", bu32.clone()),
-        Branch::i64("bi64", bi64.clone()),
-        Branch::u64("bu64", bu64.clone()),
-        Branch::f32("bf32", bf32.clone()),
-        Branch::f64("bf64", bf64.clone()),
+        Branch::new("bb", bb.clone()),
+        Branch::new("bi8", bi8.clone()),
+        Branch::new("bu8", bu8.clone()),
+        Branch::new("bi16", bi16.clone()),
+        Branch::new("bu16", bu16.clone()),
+        Branch::new("bi32", bi32.clone()),
+        Branch::new("bu32", bu32.clone()),
+        Branch::new("bi64", bi64.clone()),
+        Branch::new("bu64", bu64.clone()),
+        Branch::new("bf32", bf32.clone()),
+        Branch::new("bf64", bf64.clone()),
     ];
     write_tree_file(dir.join(&file), "T", &branches, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1164,9 +1164,9 @@ fn tree_arrays(id: &'static str, comp: Compression, dir: &Path) -> J {
     let jy = vec![vec![1.0f64], vec![2.0, 3.0], vec![]];
     let bs = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
     let branches = vec![
-        Branch::array_f64("fx", fx.clone()),
-        Branch::jagged_f64("jy", jy.clone()),
-        Branch::string("bs", bs.clone()),
+        Branch::new("fx", fx.clone() /*ARRAY_FIXME f64*/),
+        Branch::new("jy", jy.clone()).counted(),
+        Branch::new("bs", bs.clone()),
     ];
     write_tree_file(dir.join(&file), "T", &branches, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1210,7 +1210,7 @@ fn tree_arrays(id: &'static str, comp: Compression, dir: &Path) -> J {
 fn tree_stl_vector(id: &'static str, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let vw = vec![vec![10.0f64, 20.0], vec![], vec![30.0]];
-    let branches = vec![Branch::vector_f64("vw", vw.clone())];
+    let branches = vec![Branch::new("vw", vw.clone())];
     write_tree_file(dir.join(&file), "T", &branches, Compression::Stored)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
     let mb = J::Arr(vec![J::Obj(vec![
@@ -1344,7 +1344,7 @@ fn read_big(path: &Path) {
         .values()
         .unwrap_or_else(|e| die(&format!("read n: {e}")))
     {
-        BranchValues::I32(v) => {
+        Column::I32(v) => {
             if v.len() as u64 != n {
                 die(&format!("big: read {} values for {n} entries", v.len()));
             }

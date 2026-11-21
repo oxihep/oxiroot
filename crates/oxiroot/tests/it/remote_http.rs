@@ -215,7 +215,7 @@ fn a_branch_of_many_baskets_reads_over_http() {
     write_tree_file_baskets(
         &path,
         "events",
-        &[Branch::f64("x", x)],
+        &[Branch::new("x", x)],
         Compression::Zstd(5),
         100,
     )

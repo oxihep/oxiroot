@@ -22,8 +22,8 @@ mod serialize;
 mod streaming;
 
 use baskets::{BasketRec, write_branch_baskets};
-pub use branch::{Branch, SplitMember};
-use branch::{check_split_members, split_class};
+pub use branch::Branch;
+use branch::split_class;
 use serialize::build_tree_object;
 pub use streaming::TreeWriter;
 
@@ -39,12 +39,6 @@ const K_MAP_OFFSET: u32 = 2;
 /// back to it the way ROOT does.
 type LeafRefs = HashMap<String, u32>;
 
-/// A write [`Branch`] is only ever built through the typed constructors, none of
-/// which produce a [`BranchValues::Nested`] (a read-only doubly-nested
-/// collection), so the writer's value matches never see one.
-const NESTED_NOT_WRITABLE: &str =
-    "a vector<string> or vector<vector<T>> write Branch is always a std::vector branch";
-
 /// Reject branches whose entry counts differ from the first branch's: the tree
 /// has one entry count, so the others would be cut or read past.
 fn check_entry_counts(branches: &[Branch]) -> Result<()> {
@@ -59,24 +53,14 @@ fn check_entry_counts(branches: &[Branch]) -> Result<()> {
     }
 }
 
-/// Reject branches the writer cannot lay out: branches with different entry
-/// counts, a fixed-array branch with rows of differing length, and a split
-/// branch whose members disagree.
+/// Reject branches the writer cannot lay out: a column a tree cannot hold,
+/// one whose offsets and values disagree, branches with different entry
+/// counts, and a split branch whose members disagree.
 fn check_branches(branches: &[Branch]) -> Result<()> {
-    check_entry_counts(branches)?;
     for b in branches {
-        if !b.jagged() && !b.stl_vector() && b.is_jagged() {
-            return Err(Error::InvalidInput(format!(
-                "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_* for \
-                 variable-length arrays (Branch::array_* requires every row to have the same length)",
-                b.name
-            )));
-        }
-        if let Some(spec) = b.split() {
-            check_split_members(&b.name, spec)?;
-        }
+        b.check()?;
     }
-    Ok(())
+    check_entry_counts(branches)
 }
 
 /// The `TStreamerInfo` entries a tree with these branches needs: the canonical
@@ -183,7 +167,7 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::BranchValues;
+    use oxiroot_io_core::Column;
     use oxiroot_io_core::Compression;
     use oxiroot_io_core::raw::KSTART_BIG_FILE;
 
@@ -210,11 +194,11 @@ mod tests {
 
     fn branches() -> Vec<Branch> {
         vec![
-            Branch::i32("x", vec![1, 2, 3, 4]),
-            Branch::jagged_f32("v", vec![vec![1.0], vec![], vec![2.0, 3.0], vec![4.0]]),
-            Branch::string(
+            Branch::new("x", vec![1, 2, 3, 4]),
+            Branch::new("v", vec![vec![1.0_f32], vec![], vec![2.0, 3.0], vec![4.0]]).counted(),
+            Branch::new(
                 "s",
-                vec!["a".into(), "bb".into(), String::new(), "d".into()],
+                vec!["a".to_string(), "bb".into(), String::new(), "d".into()],
             ),
         ]
     }
@@ -261,24 +245,28 @@ mod tests {
         // The streamed file sees the largest values only in its second batch.
         let first = || {
             vec![
-                Branch::i32("x", vec![3, 7]),
-                Branch::jagged_f32("v", vec![vec![1.0], vec![]]),
-                Branch::string("s", vec!["a".into(), "bbb".into()]),
+                Branch::new("x", vec![3, 7]),
+                Branch::new("v", vec![vec![1.0_f32], vec![]]).counted(),
+                Branch::new("s", vec!["a".to_string(), "bbb".into()]),
             ]
         };
         let second = || {
             vec![
-                Branch::i32("x", vec![9, 1]),
-                Branch::jagged_f32("v", vec![vec![2.0, 3.0, 4.0], vec![5.0]]),
-                Branch::string("s", vec!["cc".into(), "dddd".into()]),
+                Branch::new("x", vec![9, 1]),
+                Branch::new("v", vec![vec![2.0_f32, 3.0, 4.0], vec![5.0]]).counted(),
+                Branch::new("s", vec!["cc".to_string(), "dddd".into()]),
             ]
         };
         let all = vec![
-            Branch::i32("x", vec![3, 7, 9, 1]),
-            Branch::jagged_f32("v", vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0]]),
-            Branch::string(
+            Branch::new("x", vec![3, 7, 9, 1]),
+            Branch::new(
+                "v",
+                vec![vec![1.0_f32], vec![], vec![2.0, 3.0, 4.0], vec![5.0]],
+            )
+            .counted(),
+            Branch::new(
                 "s",
-                vec!["a".into(), "bbb".into(), "cc".into(), "dddd".into()],
+                vec!["a".to_string(), "bbb".into(), "cc".into(), "dddd".into()],
             ),
         ];
         let expected: Vec<(String, bool, i64)> = [
@@ -312,8 +300,8 @@ mod tests {
         // big output for the same single batch.
         let scalars = || {
             vec![
-                Branch::i32("x", vec![3, 7, 5]),
-                Branch::f64("y", vec![0.5, 2.0, 1.0]),
+                Branch::new("x", vec![3, 7, 5]),
+                Branch::new("y", vec![0.5, 2.0, 1.0]),
             ]
         };
         let one_shot = tree_bytes("t.root", "T", &scalars(), Compression::Zstd(3), 0, 0).unwrap();
@@ -341,15 +329,20 @@ mod tests {
         let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
             t.branch("x").values().unwrap(),
-            BranchValues::I32(vec![1, 2, 3, 4])
+            Column::I32(vec![1, 2, 3, 4])
         );
         assert_eq!(
             t.branch("v").values().unwrap(),
-            BranchValues::VecF32(vec![vec![1.0], vec![], vec![2.0, 3.0], vec![4.0]])
+            Column::from(vec![vec![1.0_f32], vec![], vec![2.0, 3.0], vec![4.0]])
         );
         assert_eq!(
             t.branch("s").values().unwrap(),
-            BranchValues::Str(vec!["a".into(), "bb".into(), String::new(), "d".into()])
+            Column::from(vec![
+                "a".to_string(),
+                "bb".into(),
+                String::new(),
+                "d".into()
+            ])
         );
     }
 
@@ -359,7 +352,7 @@ mod tests {
         let bytes = tree_bytes(
             "t.root",
             "T",
-            &[Branch::f64(name.as_str(), vec![0.5, 1.5])],
+            &[Branch::new(name.as_str(), vec![0.5, 1.5])],
             Compression::Stored,
             1,
             KSTART_BIG_FILE,
@@ -369,7 +362,7 @@ mod tests {
         let t = TreeReader::open(&f, "T").unwrap();
         assert_eq!(
             t.branch(&name).values().unwrap(),
-            BranchValues::F64(vec![0.5, 1.5])
+            Column::F64(vec![0.5, 1.5])
         );
     }
 }

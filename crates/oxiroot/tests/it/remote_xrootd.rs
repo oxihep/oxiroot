@@ -365,7 +365,7 @@ fn many_basket_tree() -> Vec<u8> {
     write_tree_file_baskets(
         &path,
         "events",
-        &[Branch::f64("x", x), Branch::i32("n", n)],
+        &[Branch::new("x", x), Branch::new("n", n)],
         Compression::Zstd(5),
         100,
     )

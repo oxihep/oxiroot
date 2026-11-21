@@ -1,4 +1,4 @@
-//! Branch introspection (B1): type/len/title accessors, `BranchValues` helpers,
+//! Branch introspection (B1): type/len/title accessors, `Column` helpers,
 //! and the unsupported-branch diagnostics, on a flat primitive tree.
 
 use std::path::PathBuf;
@@ -37,10 +37,13 @@ fn branch_values_helpers() {
     let i4 = t.branch("i4").values().expect("read i4");
     assert_eq!(i4.len(), 5);
     assert!(!i4.is_empty());
-    assert_eq!(i4.leaf_type(), LeafType::I32);
-    assert_eq!(i4.as_i32(), Some([0, 1, 2, 3, 4].as_slice()));
-    assert_eq!(i4.as_f64(), None); // wrong-type accessor returns None
+    assert_eq!(t.branch_type("i4"), Some(LeafType::I32));
+    assert_eq!(i4.values::<i32>(), Some([0, 1, 2, 3, 4].as_slice()));
+    assert_eq!(i4.values::<f64>(), None); // another type than it holds
 
     let f8 = t.branch("f8").values().expect("read f8");
-    assert_eq!(f8.as_f64(), Some([0.25, 1.25, 2.25, 3.25, 4.25].as_slice()));
+    assert_eq!(
+        f8.values::<f64>(),
+        Some([0.25, 1.25, 2.25, 3.25, 4.25].as_slice())
+    );
 }

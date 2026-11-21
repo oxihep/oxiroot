@@ -11,7 +11,7 @@ use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues};
+use oxiroot::tree::raw::{Branch, Column};
 
 fn tmp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("oxiroot_e2e_{name}.root"))
@@ -99,10 +99,10 @@ fn tree_round_trips_through_the_facade() {
         .add(TreeObject::new(
             "Events",
             vec![
-                Branch::i32("i", vec![1, 2, 3]),
-                Branch::f64("x", vec![1.5, 2.5, 3.5]),
-                Branch::string("s", vec!["a".into(), "b".into(), "c".into()]),
-                Branch::jagged_f64("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]),
+                Branch::new("i", vec![1, 2, 3]),
+                Branch::new("x", vec![1.5, 2.5, 3.5]),
+                Branch::new("s", vec!["a".to_string(), "b".into(), "c".into()]),
+                Branch::new("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]).counted(),
             ],
         ))
         .write()
@@ -113,15 +113,15 @@ fn tree_round_trips_through_the_facade() {
     assert_eq!(t.entries(), 3);
     assert_eq!(
         t.branch("i").values().unwrap(),
-        BranchValues::I32(vec![1, 2, 3])
+        Column::I32(vec![1, 2, 3])
     );
     assert_eq!(
         t.branch("s").values().unwrap(),
-        BranchValues::Str(vec!["a".into(), "b".into(), "c".into()])
+        Column::from(vec!["a".to_string(), "b".into(), "c".into()])
     );
     assert_eq!(
         t.branch("v").values().unwrap(),
-        BranchValues::VecF64(vec![vec![1.0], vec![], vec![2.0, 3.0]])
+        Column::from(vec![vec![1.0], vec![], vec![2.0, 3.0]])
     );
 }
 

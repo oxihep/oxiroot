@@ -59,9 +59,9 @@ fn bench(c: &mut Criterion) {
             )
             .unwrap();
             w.write_batch(&[
-                Branch::f64("pt", pt.clone()),
-                Branch::i32("n", n.clone()),
-                Branch::vector_f64("jets", jets.clone()),
+                Branch::new("pt", pt.clone()),
+                Branch::new("n", n.clone()),
+                Branch::new("jets", jets.clone()),
             ])
             .unwrap();
             black_box(w.finish().unwrap())

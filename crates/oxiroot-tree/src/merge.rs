@@ -4,10 +4,9 @@
 //! the `oxiroot` facade's `hadd`, which goes through the `Dataset` reader and
 //! writer.
 
-use oxiroot_io_core::{Error, Result};
+use oxiroot_io_core::{Column, Error, Result};
 
 use crate::reader::{BranchRead, Rewrite};
-use crate::value::BranchValues;
 use crate::writer::Branch;
 
 impl BranchRead<'_, '_> {
@@ -41,57 +40,28 @@ impl BranchRead<'_, '_> {
 }
 
 /// Rebuild a writable [`Branch`] of the correct kind from a branch's read
-/// metadata and its concatenated values.
-fn build_branch(name: &str, flavor: Rewrite, values: BranchValues) -> Result<Branch> {
+/// metadata and its values: the column already has the branch's shape, so
+/// only a counted array needs saying.
+fn build_branch(name: &str, flavor: Rewrite, values: Column) -> Result<Branch> {
     let reject = |what: &str| -> Result<Branch> {
         Err(Error::Unsupported(format!(
             "branch {name:?} is a {what}, which oxiroot cannot write yet",
         )))
     };
-
-    use BranchValues::*;
-    // A `Vec*` variant with all three flavours available.
-    macro_rules! vec3 {
-        ($v:expr, $fixed:ident, $jagged:ident, $stl:ident) => {
-            match flavor {
-                Rewrite::Fixed => Ok(Branch::$fixed(name, $v)),
-                Rewrite::Jagged => Ok(Branch::$jagged(name, $v)),
-                Rewrite::Vector => Ok(Branch::$stl(name, $v)),
-            }
-        };
+    if let Column::List { values: inner, .. } = &values {
+        match (&**inner, flavor) {
+            (Column::String { .. }, _) => return reject("std::vector<std::string> branch"),
+            (Column::List { .. }, _) => return reject("std::vector<std::vector<T>> branch"),
+            // `std::vector<bool>` is bit-packed in memory and has no writer.
+            (Column::Bool(_), Rewrite::Vector) => return reject("std::vector<bool> branch"),
+            _ => {}
+        }
     }
-
-    match values {
-        Bool(v) => Ok(Branch::bool(name, v)),
-        I8(v) => Ok(Branch::i8(name, v)),
-        U8(v) => Ok(Branch::u8(name, v)),
-        I16(v) => Ok(Branch::i16(name, v)),
-        U16(v) => Ok(Branch::u16(name, v)),
-        I32(v) => Ok(Branch::i32(name, v)),
-        U32(v) => Ok(Branch::u32(name, v)),
-        I64(v) => Ok(Branch::i64(name, v)),
-        U64(v) => Ok(Branch::u64(name, v)),
-        F32(v) => Ok(Branch::f32(name, v)),
-        F64(v) => Ok(Branch::f64(name, v)),
-        Str(v) => Ok(Branch::string(name, v)),
-        // `std::vector<bool>` has no writer constructor (bit-packed); the fixed
-        // and jagged flavours do.
-        VecBool(v) => match flavor {
-            Rewrite::Fixed => Ok(Branch::array_bool(name, v)),
-            Rewrite::Jagged => Ok(Branch::jagged_bool(name, v)),
-            Rewrite::Vector => reject("std::vector<bool> branch"),
-        },
-        VecI8(v) => vec3!(v, array_i8, jagged_i8, vector_i8),
-        VecU8(v) => vec3!(v, array_u8, jagged_u8, vector_u8),
-        VecI16(v) => vec3!(v, array_i16, jagged_i16, vector_i16),
-        VecU16(v) => vec3!(v, array_u16, jagged_u16, vector_u16),
-        VecI32(v) => vec3!(v, array_i32, jagged_i32, vector_i32),
-        VecU32(v) => vec3!(v, array_u32, jagged_u32, vector_u32),
-        VecI64(v) => vec3!(v, array_i64, jagged_i64, vector_i64),
-        VecU64(v) => vec3!(v, array_u64, jagged_u64, vector_u64),
-        VecF32(v) => vec3!(v, array_f32, jagged_f32, vector_f32),
-        VecF64(v) => vec3!(v, array_f64, jagged_f64, vector_f64),
-        VecStr(_) => reject("std::vector<std::string> branch"),
-        Nested { .. } => reject("std::vector<std::vector<T>> branch"),
-    }
+    let is_list = matches!(values, Column::List { .. });
+    let branch = Branch::new(name, values);
+    // Only a list has a counted form; a scalar or a string has one way.
+    Ok(match (flavor, is_list) {
+        (Rewrite::Jagged, true) => branch.counted(),
+        _ => branch,
+    })
 }

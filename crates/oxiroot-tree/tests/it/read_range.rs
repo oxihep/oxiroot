@@ -3,9 +3,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn open(name: &str) -> FileReader {
     FileReader::open(
@@ -28,25 +28,25 @@ fn reads_entry_ranges() {
         t.branch("i4").range(0..5).values().expect("range full"),
         full
     );
-    assert_eq!(full, BranchValues::I32(vec![0, 1, 2, 3, 4]));
+    assert_eq!(full, Column::I32(vec![0, 1, 2, 3, 4]));
 
     // A sub-window (may span the basket boundary).
     assert_eq!(
         t.branch("i4").range(1..4).values().expect("mid"),
-        BranchValues::I32(vec![1, 2, 3])
+        Column::I32(vec![1, 2, 3])
     );
 
     // stop clamps to the entry count; start clamps to stop.
     assert_eq!(
         t.branch("i4").range(3..100).values().expect("tail"),
-        BranchValues::I32(vec![3, 4])
+        Column::I32(vec![3, 4])
     );
     assert_eq!(
         t.branch("i4").range(2..2).values().expect("empty"),
-        BranchValues::I32(vec![])
+        Column::I32(vec![])
     );
     assert_eq!(
         t.branch("i4").range(10..20).values().expect("past end"),
-        BranchValues::I32(vec![])
+        Column::I32(vec![])
     );
 }

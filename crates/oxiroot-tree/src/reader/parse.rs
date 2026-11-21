@@ -513,7 +513,7 @@ fn read_branch_element(
     }
 
     // An unsplit `std::vector<std::vector<T>>` (`0`) reads as a doubly-nested
-    // collection: the inner element type drives a [`BranchValues::Nested`].
+    // collection: the inner element type drives a [`Column::List`].
     let nested_elem = if f_type == 0 {
         parse_nested_vector_elem(&class_name)
     } else {

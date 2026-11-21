@@ -6,9 +6,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 #[test]
 fn reads_split_single_object_scalars() {
@@ -25,20 +25,17 @@ fn reads_split_single_object_scalars() {
     assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     // Each member is a scalar (one value per entry), not a jagged array.
-    assert_eq!(
-        t.branch("id").values().unwrap(),
-        BranchValues::I32(vec![0, 1, 2])
-    );
+    assert_eq!(t.branch("id").values().unwrap(), Column::I32(vec![0, 1, 2]));
     assert_eq!(
         t.branch("inner.a").values().unwrap(),
-        BranchValues::F32(vec![0.5, 1.5, 2.5])
+        Column::F32(vec![0.5, 1.5, 2.5])
     );
     assert_eq!(
         t.branch("inner.b").values().unwrap(),
-        BranchValues::I32(vec![0, 2, 4])
+        Column::I32(vec![0, 2, 4])
     );
     assert_eq!(
         t.branch("w").values().unwrap(),
-        BranchValues::F32(vec![0.0, 1.5, 3.0])
+        Column::F32(vec![0.0, 1.5, 3.0])
     );
 }

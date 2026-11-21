@@ -37,7 +37,7 @@ use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues, SplitMember};
+use oxiroot::tree::raw::{Branch, Column, SplitMember};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -204,18 +204,17 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         dir.join("rust_tree.root"),
         "Tree",
         &[
-            Branch::i32("ti", NTPL_X.to_vec()),
-            Branch::f64("tf", NTPL_Y.to_vec()),
-            Branch::array_f64("tv", TREE_TV.iter().map(|r| r.to_vec()).collect()),
-            Branch::string(
+            Branch::new("ti", NTPL_X.to_vec()),
+            Branch::new("tf", NTPL_Y.to_vec()),
+            Branch::new("tv", TREE_TV.iter().map(|r| r.to_vec()).collect() /*ARRAY_FIXME f64*/),
+            Branch::new(
                 "ts",
                 TREE_TS
                     .iter()
                     .map(std::string::ToString::to_string)
-                    .collect(),
-            ),
-            Branch::jagged_f64("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()),
-            Branch::vector_f64("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
+                    .collect()),
+            Branch::new("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()).counted(),
+            Branch::new("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
             Branch::split_vector(
                 "th",
                 "Hit",
@@ -326,15 +325,15 @@ fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
     let f = FileReader::open(dir.join("oracle_tree.root"))?;
     let t = TreeReader::open(&f, "otree")?;
     match t.branch("oi").values()? {
-        BranchValues::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
+        Column::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
         other => die(&format!("otree oi: expected I32, got {other:?}")),
     }
     match t.branch("oj").values()? {
-        BranchValues::VecF64(v) => assert_nested("otree oj", &v, &OTREE_OJ),
+        Column::from(v) => assert_nested("otree oj", &v, &OTREE_OJ),
         other => die(&format!("otree oj: expected VecF64, got {other:?}")),
     }
     match t.branch("os").values()? {
-        BranchValues::Str(v) => {
+        Column::from(v) => {
             let got: Vec<&str> = v.iter().map(String::as_str).collect();
             assert_eq_or_die("otree os", &got, &OTREE_OS);
         }
@@ -343,7 +342,7 @@ fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
     // The std::vector<double> branch is written only by the ROOT C++ oracle.
     if t.branch_names().collect::<Vec<_>>().contains(&"ov") {
         match t.branch("ov").values()? {
-            BranchValues::VecF64(v) => assert_nested("otree ov", &v, &OTREE_OV),
+            Column::from(v) => assert_nested("otree ov", &v, &OTREE_OV),
             other => die(&format!("otree ov: expected VecF64, got {other:?}")),
         }
     }

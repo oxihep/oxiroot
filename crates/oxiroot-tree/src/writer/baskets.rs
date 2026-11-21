@@ -5,11 +5,10 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::raw::{ContainerWriter, DATIME, DirId, Key, compress_if_smaller};
-use oxiroot_io_core::{Error, Result, WBuffer};
+use oxiroot_io_core::{Column, Error, Result, WBuffer};
 
 use super::branch::{Branch, BranchKind, vec_row_lengths};
 use super::layout::Kind;
-use crate::value::BranchValues;
 
 /// One basket's recorded location, for the branch metadata.
 #[derive(Clone, Copy)]
@@ -156,64 +155,16 @@ pub(super) fn place_basket<W: Write + Seek>(
 /// A sub-range `[start, start+len)` of a non-split branch's entries, as a fresh
 /// `Branch` — used to split a branch into multiple baskets.
 fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
-    Branch {
-        name: branch.name.clone(),
-        values: chunk_values(&branch.values, start, len),
-        kind: branch.chunk_kind(),
-        meta: None,
-    }
+    Branch::raw(
+        branch.name.clone(),
+        chunk_values(&branch.values, start, len),
+        branch.chunk_kind(),
+    )
 }
 
-/// Slice a [`BranchValues`] to `[start, start+len)` (clamped), preserving variant.
-pub(super) fn chunk_values(bv: &BranchValues, start: usize, len: usize) -> BranchValues {
-    use BranchValues::*;
-    macro_rules! sl {
-        ($variant:ident, $v:expr) => {{
-            let end = (start + len).min($v.len());
-            let s = start.min(end);
-            $variant($v[s..end].to_vec())
-        }};
-    }
-    match bv {
-        Bool(v) => sl!(Bool, v),
-        I8(v) => sl!(I8, v),
-        U8(v) => sl!(U8, v),
-        I16(v) => sl!(I16, v),
-        U16(v) => sl!(U16, v),
-        I32(v) => sl!(I32, v),
-        U32(v) => sl!(U32, v),
-        I64(v) => sl!(I64, v),
-        U64(v) => sl!(U64, v),
-        F32(v) => sl!(F32, v),
-        F64(v) => sl!(F64, v),
-        VecBool(v) => sl!(VecBool, v),
-        VecI8(v) => sl!(VecI8, v),
-        VecU8(v) => sl!(VecU8, v),
-        VecI16(v) => sl!(VecI16, v),
-        VecU16(v) => sl!(VecU16, v),
-        VecI32(v) => sl!(VecI32, v),
-        VecU32(v) => sl!(VecU32, v),
-        VecI64(v) => sl!(VecI64, v),
-        VecU64(v) => sl!(VecU64, v),
-        VecF32(v) => sl!(VecF32, v),
-        VecF64(v) => sl!(VecF64, v),
-        Str(v) => sl!(Str, v),
-        VecStr(v) => sl!(VecStr, v),
-        Nested { offsets, items } => {
-            let n = offsets.len().saturating_sub(1);
-            let end = (start + len).min(n);
-            let s = start.min(end);
-            let (lo, hi) = (offsets[s], offsets[end]);
-            Nested {
-                offsets: offsets[s..=end].iter().map(|&o| o - lo).collect(),
-                items: Box::new(chunk_values(
-                    items,
-                    usize::saturating_from(lo),
-                    usize::saturating_from(hi - lo),
-                )),
-            }
-        }
-    }
+/// Entries `[start, start+len)` of `values` (clamped).
+pub(super) fn chunk_values(values: &Column, start: usize, len: usize) -> Column {
+    values.slice(start, start.saturating_add(len))
 }
 
 /// The branches a split `std::vector<MyStruct>` branch's entries
@@ -226,23 +177,25 @@ pub(super) fn split_pieces(branch: &Branch, start: usize, len: usize) -> Vec<Bra
     let first = chunk_values(&spec.members[0].values, start, len);
     let counts = vec_row_lengths(&first);
     let mut out = Vec::with_capacity(spec.members.len() + 1);
-    out.push(Branch {
-        name: branch.name.clone(),
-        values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
-        kind: BranchKind::Jagged,
-        meta: None,
-    });
+    out.push(Branch::raw(
+        branch.name.clone(),
+        Column::List {
+            offsets: (0..=counts.len() as u64).collect(),
+            values: Box::new(Column::I32(counts)),
+        },
+        BranchKind::Jagged,
+    ));
     for (i, m) in spec.members.iter().enumerate() {
-        out.push(Branch {
-            name: format!("{}.{}", branch.name, m.name),
-            values: if i == 0 {
-                first.clone()
-            } else {
-                chunk_values(&m.values, start, len)
-            },
-            kind: BranchKind::Jagged,
-            meta: None,
-        });
+        let values = if i == 0 {
+            first.clone()
+        } else {
+            chunk_values(&m.values, start, len)
+        };
+        out.push(Branch::raw(
+            format!("{}.{}", branch.name, m.name),
+            values,
+            BranchKind::Jagged,
+        ));
     }
     out
 }

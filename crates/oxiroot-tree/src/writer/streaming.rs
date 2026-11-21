@@ -11,11 +11,11 @@ use oxiroot_io_core::{Compression, Error, Result};
 use super::baskets::{
     BasketRec, PreparedBasket, chunk_values, place_basket, prepare_basket, split_pieces,
 };
-use super::branch::{Branch, BranchKind, LeafMeta, SplitMember, check_split_members, split_class};
+use super::branch::{Branch, BranchKind, LeafMeta, SplitMember, SplitSpec, split_class};
 use super::check_entry_counts;
 use super::layout::Kind;
 use super::serialize::build_tree_object;
-use crate::value::BranchValues;
+use oxiroot_io_core::{Column, DataType};
 
 /// A column's identity, used to check that every batch shares the first batch's
 /// schema: name, value-variant, and the array/`std::vector` flags. Fixed-array
@@ -23,7 +23,8 @@ use crate::value::BranchValues;
 #[derive(PartialEq)]
 struct ColSig {
     name: String,
-    variant: std::mem::Discriminant<BranchValues>,
+    /// The type of the values: element type and shape.
+    data_type: DataType,
     jagged: bool,
     stl_vector: bool,
     flen: i32,
@@ -35,12 +36,12 @@ struct ColSig {
 }
 
 /// A split member's name and value type.
-type MemberSig = (String, std::mem::Discriminant<BranchValues>);
+type MemberSig = (String, DataType);
 
 fn col_sig(b: &Branch) -> ColSig {
     ColSig {
         name: b.name.clone(),
-        variant: std::mem::discriminant(&b.values),
+        data_type: b.values.data_type(),
         jagged: b.jagged(),
         stl_vector: b.stl_vector(),
         flen: b.flen(),
@@ -50,7 +51,7 @@ fn col_sig(b: &Branch) -> ColSig {
                 spec.class_name.clone(),
                 spec.members
                     .iter()
-                    .map(|m| (m.name.clone(), std::mem::discriminant(&m.values)))
+                    .map(|m| (m.name.clone(), m.values.data_type()))
                     .collect(),
             )
         }),
@@ -61,31 +62,38 @@ fn col_sig(b: &Branch) -> ColSig {
 /// What the header says of them is in its [`LeafMeta`].
 fn split_rep(b: &Branch) -> Branch {
     let spec = b.split().expect("a split branch");
-    let mut rep = Branch::split_vector(
+    let members = spec
+        .members
+        .iter()
+        .map(|m| SplitMember {
+            name: m.name.clone(),
+            values: chunk_values(&m.values, 0, 0),
+        })
+        .collect();
+    let mut rep = Branch::raw(
         b.name.clone(),
-        spec.class_name.clone(),
-        spec.members
-            .iter()
-            .map(|m| SplitMember {
-                name: m.name.clone(),
-                values: chunk_values(&m.values, 0, 0),
-            })
-            .collect(),
+        Column::I32(Vec::new()),
+        BranchKind::Split(SplitSpec {
+            class_name: spec.class_name.clone(),
+            members,
+        }),
     );
     rep.meta = Some(LeafMeta::default());
     rep
 }
 
-/// The largest element count in a split branch's count piece (single-element
-/// `i32` rows).
+/// The largest element count in a split branch's count piece (one `i32` per
+/// entry).
 fn max_count(count_piece: &Branch) -> usize {
     match &count_piece.values {
-        BranchValues::VecI32(rows) => rows
-            .iter()
-            .filter_map(|r| r.first())
-            .map(|&n| usize::saturating_from(n))
-            .max()
-            .unwrap_or(0),
+        Column::List { values, .. } => match &**values {
+            Column::I32(counts) => counts
+                .iter()
+                .map(|&n| usize::saturating_from(n))
+                .max()
+                .unwrap_or(0),
+            _ => 0,
+        },
         _ => 0,
     }
 }
@@ -137,7 +145,7 @@ struct StreamCol {
 /// let mut w = TreeWriter::create("big.root", "T", Compression::Stored)?;
 /// for batch in 0..1_000 {
 ///     let x: Vec<f64> = (0..10_000).map(|i| (batch * 10_000 + i) as f64).collect();
-///     w.write_batch(&[Branch::f64("x", x)])?; // one basket, flushed now
+///     w.write_batch(&[Branch::new("x", x)])?; // one basket, flushed now
 /// }
 /// w.finish()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -359,15 +367,7 @@ impl<W: Write + Seek> TreeWriter<W> {
     /// its entry count.
     fn check_batch(&mut self, branches: &[Branch]) -> Result<u32> {
         for b in branches {
-            if let Some(spec) = b.split() {
-                check_split_members(&b.name, spec)?;
-            }
-            if !b.jagged() && !b.stl_vector() && b.is_jagged() {
-                return Err(Error::InvalidInput(format!(
-                    "branch {:?}: rows differ in length; use Branch::jagged_* or Branch::vector_*",
-                    b.name
-                )));
-            }
+            b.check()?;
         }
 
         // All branches in a batch must carry the same number of entries.
@@ -456,16 +456,17 @@ impl<W: Write + Seek> TreeWriter<W> {
                     .count_branch()
                     .expect("a jagged branch has a count branch");
                 let m = count.leaf_max();
+                let mut rep = Branch::raw(
+                    count.name.clone(),
+                    Column::I32(Vec::new()),
+                    BranchKind::Count,
+                );
+                rep.meta = Some(LeafMeta {
+                    max: m,
+                    ..LeafMeta::default()
+                });
                 cols.push(StreamCol {
-                    rep: Branch {
-                        name: count.name.clone(),
-                        values: BranchValues::I32(Vec::new()),
-                        kind: BranchKind::Count,
-                        meta: Some(LeafMeta {
-                            max: m,
-                            ..LeafMeta::default()
-                        }),
-                    },
+                    rep,
                     baskets: Vec::new(),
                     agg: ColAgg::Count(m),
                 });
@@ -481,15 +482,16 @@ impl<W: Write + Seek> TreeWriter<W> {
             } else {
                 (ColAgg::Data, None)
             };
+            // No rows are needed: the column says its type and, for a fixed
+            // array, its width.
+            let mut rep = Branch::raw(
+                b.name.clone(),
+                chunk_values(&b.values, 0, 0),
+                b.chunk_kind(),
+            );
+            rep.meta = meta;
             cols.push(StreamCol {
-                rep: Branch {
-                    name: b.name.clone(),
-                    // One row fixes the type and, for a fixed array, the
-                    // width; jagged and vector branches report flen = 1.
-                    values: chunk_values(&b.values, 0, 1),
-                    kind: b.chunk_kind(),
-                    meta,
-                },
+                rep,
                 baskets: Vec::new(),
                 agg,
             });

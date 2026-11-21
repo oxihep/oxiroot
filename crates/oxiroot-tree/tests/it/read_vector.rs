@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -25,17 +25,22 @@ fn reads_std_vector_branches() {
         ["n", "vf", "vd", "vi"]
     );
 
-    assert_eq!(read("n"), BranchValues::I32(vec![0, 1, 2, 3]));
+    assert_eq!(read("n"), Column::I32(vec![0, 1, 2, 3]));
     assert_eq!(
         read("vf"),
-        BranchValues::VecF32(vec![vec![1.0, 2.0, 3.0], vec![], vec![4.0], vec![5.0, 6.0]])
+        Column::from(vec![
+            vec![1.0_f32, 2.0, 3.0],
+            vec![],
+            vec![4.0],
+            vec![5.0, 6.0]
+        ])
     );
     assert_eq!(
         read("vd"),
-        BranchValues::VecF64(vec![vec![1.5], vec![2.5, 3.5], vec![], vec![]])
+        Column::from(vec![vec![1.5], vec![2.5, 3.5], vec![], vec![]])
     );
     assert_eq!(
         read("vi"),
-        BranchValues::VecI32(vec![vec![10, 20], vec![30], vec![], vec![40, 50, 60]])
+        Column::from(vec![vec![10, 20], vec![30], vec![], vec![40, 50, 60]])
     );
 }

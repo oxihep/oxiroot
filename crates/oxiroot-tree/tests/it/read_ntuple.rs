@@ -7,9 +7,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -26,11 +26,11 @@ fn reads_tntuple_float() {
     assert_eq!(t.branch_names().collect::<Vec<_>>(), vec!["x", "y", "z"]);
     assert_eq!(
         t.branch("x").values().unwrap(),
-        BranchValues::F32(vec![1.5, 11.5, 21.5, 31.5])
+        Column::F32(vec![1.5, 11.5, 21.5, 31.5])
     );
     assert_eq!(
         t.branch("z").values().unwrap(),
-        BranchValues::F32(vec![3.5, 13.5, 23.5, 33.5])
+        Column::F32(vec![3.5, 13.5, 23.5, 33.5])
     );
 }
 
@@ -42,10 +42,10 @@ fn reads_tntupled_double() {
     assert_eq!(t.branch_names().collect::<Vec<_>>(), vec!["a", "b"]);
     assert_eq!(
         t.branch("a").values().unwrap(),
-        BranchValues::F64(vec![100.25, 300.25, 500.25])
+        Column::F64(vec![100.25, 300.25, 500.25])
     );
     assert_eq!(
         t.branch("b").values().unwrap(),
-        BranchValues::F64(vec![200.25, 400.25, 600.25])
+        Column::F64(vec![200.25, 400.25, 600.25])
     );
 }

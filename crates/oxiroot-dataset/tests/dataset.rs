@@ -9,7 +9,7 @@ use oxiroot_dataset::{
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter};
 use oxiroot_rntuple::raw::FieldValues;
 use oxiroot_tree::BranchLayout;
-use oxiroot_tree::raw::BranchValues;
+use oxiroot_tree::raw::Column;
 
 fn ix(n: u64) -> usize {
     usize::try_from(n).unwrap()
@@ -52,7 +52,7 @@ fn column_rows(c: &Column) -> Option<Vec<String>> {
 }
 
 /// The same rendering of the low-level readers' values.
-fn branch_rows(v: &BranchValues) -> Option<Vec<String>> {
+fn branch_rows(v: &Column) -> Option<Vec<String>> {
     fn each<T: std::fmt::Debug>(v: &[T]) -> Vec<String> {
         v.iter().map(|x| format!("{x:?}")).collect()
     }
@@ -61,7 +61,7 @@ fn branch_rows(v: &BranchValues) -> Option<Vec<String>> {
             .map(|r| format!("[{}]", each(r).join(", ")))
             .collect()
     }
-    use BranchValues as B;
+    use Column as B;
     Some(match v {
         B::Bool(v) => each(v),
         B::I8(v) => each(v),
@@ -682,7 +682,7 @@ fn a_root_written_split_vector_reads_as_a_list_of_structs() {
     assert_eq!(
         values.member("x"),
         Some(&Column::F32(match x.values {
-            BranchValues::F32(v) => v,
+            Column::F32(v) => v,
             other => panic!("{other:?}"),
         }))
     );

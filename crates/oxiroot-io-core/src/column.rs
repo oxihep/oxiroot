@@ -141,6 +141,53 @@ impl Column {
         }
     }
 
+    /// The values as a slice of `T`, if this is a scalar column of that type.
+    #[must_use]
+    pub fn values<T: Primitive>(&self) -> Option<&[T]> {
+        T::slice(self)
+    }
+
+    /// A list of structs, from one list per member: `members` are list
+    /// columns with the same entries, and the result has one struct per
+    /// element, its members the lists' values.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`] if there is no member, a member is not a list,
+    /// or two members do not have the same number of values in every entry.
+    pub fn list_of_structs<N: Into<String>>(
+        members: impl IntoIterator<Item = (N, Self)>,
+    ) -> Result<Self> {
+        let mut shared: Option<Vec<u64>> = None;
+        let mut fields = Vec::new();
+        for (name, column) in members {
+            let name = name.into();
+            let Self::List { offsets, values } = column else {
+                return Err(Error::InvalidInput(format!(
+                    "member {name:?} is a {}, not a list",
+                    column.type_name()
+                )));
+            };
+            match &shared {
+                Some(first) if *first != offsets => {
+                    return Err(Error::InvalidInput(format!(
+                        "member {name:?} does not have the first member's number of values \
+                         in every entry"
+                    )));
+                }
+                Some(_) => {}
+                None => shared = Some(offsets),
+            }
+            fields.push((name, *values));
+        }
+        let offsets = shared
+            .ok_or_else(|| Error::InvalidInput("a list of structs needs a member".into()))?;
+        Ok(Self::List {
+            offsets,
+            values: Box::new(Self::Struct(fields)),
+        })
+    }
+
     /// The member `name` of a struct column, if this is one and it has it.
     #[must_use]
     pub fn member(&self, name: &str) -> Option<&Self> {

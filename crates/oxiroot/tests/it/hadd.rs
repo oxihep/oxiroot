@@ -6,7 +6,7 @@ use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues};
+use oxiroot::tree::raw::{Branch, Column};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -57,7 +57,7 @@ fn concatenates_tree_files() {
     FileWriter::create(tmp("tree_a"))
         .add(TreeObject::new(
             "Events",
-            vec![Branch::i32("i", vec![0, 1])],
+            vec![Branch::new("i", vec![0, 1])],
         ))
         .compression(Compression::Stored)
         .write()
@@ -65,7 +65,7 @@ fn concatenates_tree_files() {
     FileWriter::create(tmp("tree_b"))
         .add(TreeObject::new(
             "Events",
-            vec![Branch::i32("i", vec![2, 3, 4])],
+            vec![Branch::new("i", vec![2, 3, 4])],
         ))
         .compression(Compression::Stored)
         .write()
@@ -92,7 +92,7 @@ fn concatenates_tree_files() {
     assert_eq!(t.entries(), 5);
     assert_eq!(
         t.branch("i").values().unwrap(),
-        BranchValues::I32(vec![0, 1, 2, 3, 4])
+        Column::I32(vec![0, 1, 2, 3, 4])
     );
 }
 
@@ -144,7 +144,7 @@ fn refuses_a_fileset_mixing_a_tree_with_histograms() {
     FileWriter::create(tmp("mix_tree"))
         .add(TreeObject::new(
             "Events",
-            vec![Branch::i32("i", vec![0, 1])],
+            vec![Branch::new("i", vec![0, 1])],
         ))
         .compression(Compression::Stored)
         .write()
@@ -179,15 +179,14 @@ fn a_tree_merge_streams_one_batch_per_input() {
                 .add(TreeObject::new(
                     "Events",
                     vec![
-                        Branch::i32("i", (0..n).map(|x| k * 10 + x).collect()),
-                        Branch::jagged_f32(
+                        Branch::new("i", (0..n).map(|x| k * 10 + x).collect()),
+                        Branch::new(
                             "hits",
                             (0..n)
                                 .map(|x| vec![x as f32; usize::saturating_from(x)])
-                                .collect(),
-                        ),
-                        Branch::string("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
-                        Branch::vector_f64("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
+                                .collect()).counted(),
+                        Branch::new("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
+                        Branch::new("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
                     ],
                 ))
                 .compression(Compression::Zstd(3))
@@ -212,14 +211,14 @@ fn a_tree_merge_streams_one_batch_per_input() {
     let t = TreeReader::open(&fo, "Events").unwrap();
     assert_eq!(
         t.branch("i").values().unwrap(),
-        BranchValues::I32(vec![0, 10, 11, 20, 21, 22])
+        Column::I32(vec![0, 10, 11, 20, 21, 22])
     );
     assert_eq!(
         t.branch("hits").values().unwrap(),
-        BranchValues::VecF32(vec![
+        Column::from(vec![
             vec![],
             vec![],
-            vec![1.0],
+            vec![1.0_f32],
             vec![],
             vec![1.0],
             vec![2.0, 2.0],
@@ -227,7 +226,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
     );
     assert_eq!(
         t.branch("tag").values().unwrap(),
-        BranchValues::Str(
+        Column::from(
             ["t00", "t10", "t11", "t20", "t21", "t22"]
                 .map(String::from)
                 .to_vec()
@@ -235,7 +234,7 @@ fn a_tree_merge_streams_one_batch_per_input() {
     );
     assert_eq!(
         t.branch("vec").values().unwrap(),
-        BranchValues::VecF64(vec![
+        Column::from(vec![
             vec![0.0; 2],
             vec![0.0; 2],
             vec![1.0; 2],
@@ -296,7 +295,7 @@ fn an_rntuple_merge_gathers_small_inputs_into_one_cluster() {
 fn empty_inputs_merge_to_an_empty_tree() {
     for k in 0..2 {
         FileWriter::create(tmp(&format!("empty_tree_{k}")))
-            .add(TreeObject::new("T", vec![Branch::f64("x", vec![])]))
+            .add(TreeObject::new("T", vec![Branch::new("x", Vec::<f64>::new())]))
             .compression(Compression::Stored)
             .write()
             .unwrap();
@@ -319,7 +318,7 @@ fn empty_inputs_merge_to_an_empty_tree() {
 fn the_output_cannot_be_an_input() {
     let path = tmp("self_merge");
     FileWriter::create(&path)
-        .add(TreeObject::new("T", vec![Branch::i32("x", vec![1])]))
+        .add(TreeObject::new("T", vec![Branch::new("x", vec![1])]))
         .compression(Compression::Stored)
         .write()
         .unwrap();
