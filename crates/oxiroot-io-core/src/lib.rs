@@ -45,6 +45,7 @@
 mod buffer;
 #[doc(hidden)]
 pub mod cast;
+mod class_kind;
 mod compression;
 mod error;
 mod file;
@@ -73,6 +74,7 @@ pub use file::{
     SubdirWriter,
 };
 
+pub use class_kind::ClassKind;
 pub use object_io::{KeyCheck, Object, ReadRoot, StreamerSet, Within, WriteInto, WriteRoot};
 pub use objects::{ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter};
 pub use read_object::read_object;

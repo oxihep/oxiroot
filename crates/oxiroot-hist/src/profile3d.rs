@@ -30,10 +30,6 @@ pub struct Profile3D {
     pub(crate) yaxis: Axis,
     /// Z axis.
     pub(crate) zaxis: Axis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)*(nz+2)`). Read via
-    /// [`ncells`](Profile3D::ncells); `pub(crate)` so it cannot drift from the
-    /// per-bin vectors.
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -108,7 +104,6 @@ impl Profile3D {
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", nz, zlo, zhi),
-            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -219,7 +214,6 @@ impl Profile3D {
             xaxis: c.xaxis,
             yaxis: c.yaxis,
             zaxis: c.zaxis,
-            ncells: c.ncells,
             entries: c.entries,
             tsumw: c.tsumw,
             tsumw2: c.tsumw2,

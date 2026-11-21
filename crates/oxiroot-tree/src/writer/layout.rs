@@ -255,9 +255,12 @@ impl Branch {
                 VecU64(_) => ("vector<vector<ULong64_t> >", 4042251808),
                 VecF32(_) => ("vector<vector<float> >", 2219069760),
                 VecF64(_) => ("vector<vector<double> >", 3084746367),
-                _ => ("vector<vector<float> >", 0),
+                // `Branch`'s vector constructors build the variants above and
+                // no other. A made-up class name and checksum would write a
+                // file ROOT misreads.
+                ref other => unreachable!("a nested vector branch of {other:?}"),
             },
-            _ => ("vector<float>", 0),
+            other => unreachable!("a std::vector branch holding {other:?}"),
         }
     }
 

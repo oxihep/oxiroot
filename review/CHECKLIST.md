@@ -53,7 +53,7 @@ Legend: `[ ]` to do, `[x]` done, `[~]` partly done (the note says what is left).
   - [x] `Branch::n_entries` / `BranchValues::len`
   - [x] `check_len` (linalg, hist, rntuple) One `raw::check_len` for linalg and hist; the RNTuple one builds a different error and stays.
   - [x] `object_bytes_any` / `object_bytes_any_keyed`
-- [ ] **P2.13** One `ClassKind::of(class)` replacing the four dispatch tables [C6]
+- [x] **P2.13** One `ClassKind::of(class)` in the core replaces the class-name tables of the file writer and reader, the histogram readers, the dataset reader, `hadd` and the CLI [C6]. They disagreed: only the writer knew `TChain`, two matched an `RNTuple` by substring and three exactly, and the histogram readers took any four-letter `TH1?`.
 - [x] **P2.14** Export `K_NEW_CLASS_TAG`, `K_CLASS_MASK` once; remove the 40 literals in `oxiroot-hist` [C2]
 - [x] **P2.15** One embedded-object writer in the core; delete the four copies [C3]
 - [~] **P2.16** All embedded-object readers through `TagReader` (`func_record.rs`, `efficiency.rs`, `sparsehist.rs`, `axis.rs`) [C2] One shared `raw::read_pointer_header` replaces the five hand-written copies. It does not follow class back-references; graphs no longer depend on it inside collections (see P1.3). The other decoders still take a collection member as a detached slice: they skip what they cannot resolve, and none has a known failing case.
@@ -137,7 +137,7 @@ Numbers match the table in [api.md](api.md).
 - [ ] **S1** `Column` moved below the formats; `BranchValues`, `FieldValues`, the writer `Column` and both `Jagged` structs removed [C5]
 - [ ] **S2** `WriteRoot::write_body(&self, &mut WBuffer)`; the ten `*_to_bytes` wrappers removed
 - [~] **S3** `Form` enum (`Small` / `Big`) replaces `big: bool` throughout `container.rs` and in `ContainerWriter::new` / `append`. `KeySpec` and the named patch offsets are not done.
-- [ ] **S4** `usize` bin counts in memory; `ncells` field removed
+- [~] **S4** The `ncells` field is removed from the six records: `ncells()` and the writer derive it from the per-cell vectors, and the file's `fNcells` is no longer carried (the arrays are checked against the axes). Bin counts are still `i32` in `Axis`, as ROOT stores them.
 - [ ] **S5** `ElementKind` and a shared streamer type-code module
 - [ ] **S6** Shared histogram core struct replacing the per-type macros; `Moments` struct
 - [x] **S7** `Patch<const N>` (`w.reserve::<4>()`, `Patch::offset()`), `#[must_use]`, neither it nor `CountToken` is `Copy`
@@ -152,11 +152,13 @@ Items not already covered by a phase entry above.
 ### `oxiroot-compress`
 
 - [ ] Passthrough returns `Cow` instead of copying
-- [ ] Blocks decoded into the output buffer
+- [x] Zstd blocks decoded into the output buffer (the default codec; about 1% on a 48 MiB payload). The other codecs still decode into their own buffer first.
 - [x] Level type consistent (`u8`); `#[non_exhaustive]` on `Compression`; `Compression::level()`
 - [x] `lzma_encode` clamps its level to XZ's 0 to 9
 - [x] `BlockHeader` 24-bit fields: `write` asserts them in debug builds (`compress` is the only producer and splits to fit). The assertion found a test whose forged size was truncated to 0.
 - [~] `Algorithm: Hash + Display` done. `CompressError::Codec` still holds a message, not the source error: the type is `Clone + Eq`, which io-core's `Error` relies on.
+
+- [ ] **Upstream (zrip)** The pure-Rust Zstd encoder finds no repeats at a distance of about 2000 bytes: data with a 2008-byte period compresses 1.0x, where C `zstd -1` gets 862x and this crate's LZ4 250x. On a realistic event dataset (run, event, pt, hit counts, trigger names) it is still the smallest of the fast codecs, so the default stands; a column with long-range repeats does better with zlib or LZMA.
 
 ### `oxiroot-io-core`
 
@@ -175,18 +177,18 @@ Items not already covered by a phase entry above.
 - [ ] `TagReader` uses `Rc<str>`; `read_cstring` scans for NUL
 - [ ] `root_class() -> Cow<'static, str>`
 - [ ] `struct Member` and `Option<Member>` in collections
-- [~] `Value`'s `Display` writes into the formatter Uses `writeln!` into one `String` now; still not written straight to the formatter.
+- [x] `Value`'s `Display` writes straight to the formatter (an empty array no longer leaves a trailing space)
 - [x] `RecordHeader` derives `Debug`, `back_ref` included
 - [x] `collect_stored` uses a set
 - [ ] Error: histogram, column and schema variants moved or documented
 - [ ] Error: `Clone`/`PartialEq` dropped
-- [ ] `Error::context` covers every variant or is removed
+- [x] `Error::context` covers the variants that carry a free-text message and says so; the structured ones are returned unchanged, keeping their type.
 
 ### `oxiroot-tree`
 
-- [ ] `concat_values` replaced by `BranchValues::append`
-- [ ] Required members fallible (`member_int`, `member_str`)
-- [ ] Baskets sliced from `Bytes`, not copied; `Key::read` reused
+- [x] `concat_values` is gone, and so are `append_trees` / `append_ntuples`: `hadd` merges through `Dataset`, and `Merger` is the one way to concatenate.
+- [x] Required members fallible: `fEntries` is read with `required_int`, an error when the description lacks it. The other captured members keep their defaults: each is optional in some class version, or checked where it is used.
+- [~] Baskets sliced from `Bytes`, not copied, when compressed. `Key::read` is not reused for the basket header.
 - [ ] Leaflist and object branches share basket vectors
 - [ ] Return structs in place of tuples (`select_baskets`, `basket_locators`, `read_tbranch_base`, `diag`)
 - [ ] `decode_object_members` walks each object once
@@ -194,7 +196,7 @@ Items not already covered by a phase entry above.
 - [x] `header.class_name.as_deref()` (the clone in `parse.rs`)
 - [ ] Leaflist region loop, bracket scanner written once
 - [ ] Split branch carries no dummy payload
-- [ ] "Impossible" arms are `unreachable!`, not wrong values
+- [x] "Impossible" arms are `unreachable!`, not wrong values (`member_type_info`, `stl_info`): the typed constructors build no other variant.
 - [ ] `place_basket` and `chunk_values` stop copying
 - [x] `#[must_use]` on the writers. `total_entries` stays an `i64`: it is ROOT's `Long64_t fEntries`, which the serializers take.
 
@@ -202,8 +204,8 @@ Items not already covered by a phase entry above.
 
 - [x] `read_blob` keeps the source error: only a read past the end is a format error
 - [ ] Field and column adjacency built once at open
-- [ ] `group` and `strings` move instead of cloning
-- [ ] `VecU32` / `VecU64` writable, or the gap documented
+- [x] `group` moves the values into their entries instead of cloning each (a `std::vector<std::string>` field keeps its strings)
+- [x] `VecU32` / `VecU64` writable, or the gap documented: `hadd` no longer goes through `append_ntuples`, so it merges them. `raw::append_ntuples` / `to_field` still reject them, as their docs say.
 - [ ] Envelopes written into one `WBuffer`
 - [ ] Window selection written once
 - [ ] `read_offsets` emits the leading zero
@@ -223,18 +225,18 @@ Items not already covered by a phase entry above.
 
 - [ ] `FuncCore` holds a `GraphFunction`
 - [ ] `Func<const D: usize>` in place of the macro
-- [ ] Formula errors keep their source
+- [x] Formula errors: reported as `InvalidInput` with the formula and the parser's message. A typed source would mean an `Error::Other` no caller can match on better than the text.
 - [ ] `function_classes` uses `StreamerSet`
 
 ### `oxiroot-hist`
 
 - [x] `decode_th1/2/3` take `(&str, &[u8])`
-- [ ] `in_range_cells` without per-cell allocation; `in_range_sum` merged into it
-- [ ] `access.rs` accessors written once
-- [ ] `write_tarray(w, values, kind)` replacing 18 functions
+- [x] `in_range_cells` is gone with A9; `in_range_sum` allocates two small vectors per call, none per cell.
+- [x] `access.rs` accessors written once: 29 accessors that several types shared word for word are one definition each, listed per type (`accessors!`). 1005 lines to about 470, the same 155 methods.
+- [x] `write_tarray(w, values, kind)` and one `write_th{1,2,3}_obj(w, h, kind)` per dimension replace the 18 per-type functions and the six array writers
 - [ ] `TGraph` base read in one place; `Profile3D` reuses the `TH3` base reader
 - [ ] `list_member_ranges` shared with the tree and core readers
-- [ ] `write_th1_core` takes a struct
+- [x] `write_th1_core` takes a `Th1Core` struct
 - [ ] `SparseHist` index simplified; `PartialEq` hack removed
 - [ ] Conversion: no per-bin `Vec`; `parts` evaluated once
 - [ ] `HistStack` / `GraphStack` as one generic type
@@ -255,25 +257,25 @@ Items not already covered by a phase entry above.
 - [x] `DatasetWriter::write(Batch)` by value
 - [ ] String columns stored as `String`
 - [x] `#[must_use]` on `DatasetWriter`
-- [ ] `Sink` without `Gone` and `unreachable!`
+- [x] `Sink` without `Gone` and `unreachable!`: two options, and `open()` returns the writer. A failed start is an error on every later call (it panicked).
 - [ ] `.parallel()` unconditional in the lower crates
 - [ ] `Batches` without take-and-restore; `step` as `Option<NonZeroU64>`
-- [ ] `map_scalar!` without `unreachable!`
+- [x] `map_scalar!` without `unreachable!`: the other variants' arms are part of the same exhaustive match
 - [ ] Field-conversion closure written once
 
 ### `oxiroot`
 
-- [ ] `merge_tree` / `merge_rntuple` as one generic function
+- [x] `merge_tree` / `merge_rntuple` are one `merge_dataset`, through `Dataset` and `DatasetWriter`: the one read / write API, and every column type a `Batch` holds (the raw path refused structs, nested vectors, optionals and `std::vector` of unsigned integers).
 - [ ] `summed!` / `copied!` as generic functions
 - [x] `with_key` replaced by `Error::context`
 - [ ] Histogram merge does not build the whole output in memory
 
 ### `oxiroot-cli`
 
-- [ ] `show` uses `branch_layout`, reads no data
+- [x] `show` uses `branch_layout`, reads no data
 - [ ] One cell function over `Column` (after A6)
 - [x] `num()` keeps small values (scientific notation below `1e-4`)
 - [ ] Output through one render step instead of `json: bool`
 - [x] `compression_label` uses `Compression`
 - [ ] No import of the hidden `cast` module
-- [ ] `show_rntuple` looks up top-level fields only
+- [x] `show_rntuple` lists the top-level fields by parent, not by first matching name

@@ -301,7 +301,10 @@ pub(super) fn member_type_info(values: &BranchValues) -> (i32, &'static str, i32
         VecU64(_) => (17, "ULong64_t", 8),
         VecF32(_) => (5, "float", 4),
         VecF64(_) => (8, "double", 8),
-        _ => (0, "", 0),
+        // `SplitMember`'s constructors build these variants and no other, and
+        // its fields are private. A made-up type code would write a file ROOT
+        // misreads, so this is a bug to stop at, not a value to return.
+        other => unreachable!("a split member holds {other:?}, which no constructor builds"),
     }
 }
 

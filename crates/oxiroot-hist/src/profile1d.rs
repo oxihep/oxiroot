@@ -78,8 +78,6 @@ pub struct Profile1D {
     pub(crate) title: String,
     /// X axis.
     pub(crate) xaxis: Axis,
-    /// Total cells, including flow (`fNcells = nbins + 2`).
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -157,7 +155,6 @@ impl Profile1D {
             name: core.name,
             title: core.title,
             xaxis: core.xaxis,
-            ncells: core.ncells,
             entries: core.entries,
             tsumw: core.tsumw,
             tsumw2: core.tsumw2,
@@ -201,7 +198,6 @@ impl Profile1D {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nbins, xlo, xhi),
-            ncells: i32::saturating_from(ncells),
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,

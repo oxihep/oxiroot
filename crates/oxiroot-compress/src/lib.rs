@@ -110,7 +110,7 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
             });
         }
         let payload = &cur[HDR_SIZE..payload_end];
-        out.extend_from_slice(&decompress_block(&hdr, payload)?);
+        decompress_block(&hdr, payload, &mut out)?;
         cur = &cur[payload_end..];
     }
 
@@ -123,23 +123,29 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
     Ok(out)
 }
 
-fn decompress_block(hdr: &BlockHeader, payload: &[u8]) -> Result<Vec<u8>, CompressError> {
+/// Decode one block onto the end of `out`. The block must expand to exactly
+/// the size its header declares.
+fn decompress_block(
+    hdr: &BlockHeader,
+    payload: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), CompressError> {
     let n = hdr.uncompressed_size as usize;
-    let out = match hdr.algorithm() {
-        Algorithm::Zstd => codec::zstd_decode(payload, n)?,
-        Algorithm::Zlib => codec::zlib_decode(payload, n)?,
-        Algorithm::Lz4 => codec::lz4_decode(payload, n)?,
-        Algorithm::Lzma => codec::lzma_decode(payload, n)?,
+    let before = out.len();
+    match hdr.algorithm() {
+        // Zstandard, the default, decodes straight into the output.
+        Algorithm::Zstd => codec::zstd_decode_into(payload, n, out)?,
+        Algorithm::Zlib => out.extend_from_slice(&codec::zlib_decode(payload, n)?),
+        Algorithm::Lz4 => out.extend_from_slice(&codec::lz4_decode(payload, n)?),
+        Algorithm::Lzma => out.extend_from_slice(&codec::lzma_decode(payload, n)?),
         // The legacy `CS` ("old ROOT") codec and unknown tags remain unhandled.
         algo => return Err(CompressError::CodecUnavailable(algo)),
-    };
-    if out.len() != n {
-        return Err(CompressError::SizeMismatch {
-            expected: n,
-            got: out.len(),
-        });
     }
-    Ok(out)
+    let got = out.len() - before;
+    if got != n {
+        return Err(CompressError::SizeMismatch { expected: n, got });
+    }
+    Ok(())
 }
 
 /// Compress `src` with `compression`.

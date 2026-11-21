@@ -50,16 +50,10 @@ pub struct HistMergeOutcome {
 /// `TH3I` → 3), or `None` for anything else (including `PolyHist`, `SparseHist`,
 /// and `HistStack`, which are not summed here).
 fn summable_hist_dim(class: &str) -> Option<u8> {
-    let b = class.as_bytes();
-    if b.len() == 4 && &b[..2] == b"TH" && matches!(b[3], b'C' | b'S' | b'I' | b'F' | b'D' | b'L') {
-        return match b[2] {
-            b'1' => Some(1),
-            b'2' => Some(2),
-            b'3' => Some(3),
-            _ => None,
-        };
+    match oxiroot_io_core::ClassKind::of(class) {
+        oxiroot_io_core::ClassKind::Hist(dim) => Some(dim),
+        _ => None,
     }
-    None
 }
 
 /// Merge histogram-family files into `output`.

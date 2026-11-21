@@ -103,8 +103,6 @@ pub struct HistBase {
     pub yaxis: Axis,
     /// Z axis.
     pub zaxis: Axis,
-    /// Total number of cells, including flow (`fNcells`).
-    pub ncells: i32,
     /// Number of entries (`fEntries`).
     pub entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -204,7 +202,8 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
     skip_versioned(r)?; // TAttFill
     skip_versioned(r)?; // TAttMarker
 
-    let ncells = r.be_i32()?;
+    // fNcells: the arrays are checked against the axes, which say the same.
+    let _ncells = r.be_i32()?;
     let xaxis = Axis::read(r)?;
     let yaxis = Axis::read(r)?;
     let zaxis = Axis::read(r)?;
@@ -243,7 +242,6 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
         xaxis,
         yaxis,
         zaxis,
-        ncells,
         entries,
         tsumw,
         tsumw2,
@@ -323,10 +321,10 @@ pub(crate) fn read_th1_object(
     Ok((core, contents))
 }
 
-/// Whether `class` is a 4-character histogram class with the given dimension
-/// prefix (e.g. `"TH1"`), so a `Hist1D` cannot accept a `TH2D` or a `TH2Poly`.
-pub(crate) fn is_hist_class(class: &str, dim_prefix: &str) -> bool {
-    class.len() == 4 && class.starts_with(dim_prefix)
+/// Whether `class` is a histogram class of `dim` dimensions (`TH1D`, `TH2F`,
+/// …), so a `Hist1D` cannot accept a `TH2D` or a `TH2Poly`.
+pub(crate) fn is_hist_class(class: &str, dim: u8) -> bool {
+    oxiroot_io_core::ClassKind::of(class) == oxiroot_io_core::ClassKind::Hist(dim)
 }
 
 #[cfg(test)]

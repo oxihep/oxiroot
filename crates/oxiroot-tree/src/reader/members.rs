@@ -42,6 +42,18 @@ pub(super) type Members = std::collections::HashMap<String, MemberVal>;
 pub(super) fn member_int(m: &Members, name: &str) -> i64 {
     m.get(name).map_or(0, MemberVal::int)
 }
+/// The integer member `name` of a `class` object, which every such object
+/// has. Its absence means the file's streamer info does not describe the
+/// class as this reader knows it, and a default would be a wrong answer: a
+/// tree without `fEntries` is not a tree of no entries.
+pub(super) fn required_int(m: &Members, name: &str, class: &str) -> Result<i64> {
+    match m.get(name) {
+        Some(MemberVal::Int(v)) => Ok(*v),
+        _ => Err(Error::Format(format!(
+            "the file's description of {class} has no integer member {name}"
+        ))),
+    }
+}
 pub(super) fn member_str(m: &Members, name: &str) -> String {
     m.get(name).map_or(String::new(), |v| v.str().to_string())
 }
@@ -325,5 +337,23 @@ mod tests {
         let err =
             walk_members(&mut r, &reg, &looped.elements, &mut out, &mut on_object, "").unwrap_err();
         assert!(err.to_string().contains("nested deeper"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod required_tests {
+    use super::{MemberVal, Members, required_int};
+
+    /// A member every object of a class has is an error when missing, or of
+    /// another kind, never a silent zero.
+    #[test]
+    fn a_required_member_is_not_defaulted() {
+        let mut m = Members::new();
+        m.insert("fEntries".to_string(), MemberVal::Int(12));
+        m.insert("fName".to_string(), MemberVal::Str("t".to_string()));
+        assert_eq!(required_int(&m, "fEntries", "TTree").unwrap(), 12);
+        let err = required_int(&m, "fNope", "TTree").unwrap_err();
+        assert!(err.to_string().contains("no integer member fNope"), "{err}");
+        assert!(required_int(&m, "fName", "TTree").is_err());
     }
 }

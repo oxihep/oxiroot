@@ -74,9 +74,11 @@ pub enum Column {
 }
 
 /// Apply `$body` to the vector inside any scalar variant (bound as `$v`), and
-/// rebuild the same variant from its result.
+/// rebuild the same variant from its result. The arms in braces handle the
+/// other variants: together the match is exhaustive, so a new variant is a
+/// compile error here, not a panic.
 macro_rules! map_scalar {
-    ($col:expr, $v:ident => $body:expr, $other:pat => $fallback:expr) => {
+    ($col:expr, $v:ident => $body:expr, { $($others:tt)* }) => {
         match $col {
             Column::Bool($v) => Column::Bool($body),
             Column::I8($v) => Column::I8($body),
@@ -89,7 +91,7 @@ macro_rules! map_scalar {
             Column::U64($v) => Column::U64($body),
             Column::F32($v) => Column::F32($body),
             Column::F64($v) => Column::F64($body),
-            $other => $fallback,
+            $($others)*
         }
     };
 }
@@ -289,7 +291,7 @@ impl Column {
 
         let end = end.min(self.len());
         let start = start.min(end);
-        map_scalar!(self, v => v[start..end].to_vec(), other => match other {
+        map_scalar!(self, v => v[start..end].to_vec(), {
             Self::String { offsets, bytes } => {
                 let (offsets, lo, hi) = window(offsets, start, end, bytes.len());
                 Self::String {
@@ -319,7 +321,6 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.slice(start, end))).collect(),
             ),
-            _ => unreachable!("scalars are handled above"),
         })
     }
 
@@ -333,7 +334,7 @@ impl Column {
                 .map(|(&x, _)| x)
                 .collect()
         }
-        map_scalar!(self, v => keep(v, mask), other => match other {
+        map_scalar!(self, v => keep(v, mask), {
             Self::String { offsets, bytes } => {
                 let mut out_off = vec![0u64];
                 let mut out = Vec::new();
@@ -366,7 +367,6 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.filter(mask))).collect(),
             ),
-            _ => unreachable!("scalars are handled above"),
         })
     }
 

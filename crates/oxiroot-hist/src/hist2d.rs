@@ -31,9 +31,6 @@ pub struct Hist2D {
     pub(crate) yaxis: Axis,
     /// Z axis (degenerate for 2-D).
     pub(crate) zaxis: Axis,
-    /// Total cells, including flow (`fNcells = (nx+2)*(ny+2)`). Read via
-    /// [`ncells`](Hist2D::ncells); `pub(crate)` so it cannot drift from `contents`.
-    pub(crate) ncells: i32,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
     /// Sum of weights (`fTsumw`).
@@ -90,7 +87,6 @@ impl Hist2D {
             xaxis: c.xaxis,
             yaxis: c.yaxis,
             zaxis: c.zaxis,
-            ncells: c.ncells,
             entries: c.entries,
             tsumw: c.tsumw,
             tsumw2: c.tsumw2,
@@ -141,7 +137,6 @@ impl Hist2D {
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells,
             entries: 0.0,
             tsumw: 0.0,
             tsumw2: 0.0,
@@ -160,7 +155,7 @@ impl ReadRoot for Hist2D {
     const CLASS: &'static str = "TH2";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, "TH2").then(|| decode_th2(object.class, object.bytes))
+        is_hist_class(object.class, 2).then(|| decode_th2(object.class, object.bytes))
     }
 }
 pub(crate) fn decode_th2(class: &str, object: &[u8]) -> Result<Hist2D> {

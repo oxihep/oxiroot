@@ -1,6 +1,7 @@
 //! Shared helpers: path-spec parsing, class classification, type-name mapping,
 //! and a minimal aligned-column table.
 
+use oxiroot::file::ClassKind;
 use std::error::Error;
 use std::path::Path;
 
@@ -88,28 +89,21 @@ pub enum Kind {
 
 /// Classify a ROOT class name into a [`Kind`].
 pub fn classify(class: &str) -> Kind {
-    match class {
-        "TTree" | "TNtuple" | "TNtupleD" => Kind::Tree,
-        "ROOT::RNTuple" => Kind::RNtuple,
-        "TProfile" => Kind::Profile,
-        "TObjString" => Kind::ObjString,
-        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => Kind::Graph,
-        "TF1" | "TF2" | "TF3" => Kind::Function,
-        c if c.starts_with("TParameter") => Kind::Parameter,
-        c if is_th(c, b'1') => Kind::Hist1,
-        c if is_th(c, b'2') && c != "TH2Poly" => Kind::Hist2,
-        c if is_th(c, b'3') => Kind::Hist3,
+    // What the storage layer tells apart comes from its one table; the
+    // rest are the object classes this tool prints in their own way.
+    match (ClassKind::of(class), class) {
+        (ClassKind::Tree, _) => Kind::Tree,
+        (ClassKind::Ntuple, _) => Kind::RNtuple,
+        (ClassKind::Hist(1), _) => Kind::Hist1,
+        (ClassKind::Hist(2), _) => Kind::Hist2,
+        (ClassKind::Hist(3), _) => Kind::Hist3,
+        (_, "TProfile") => Kind::Profile,
+        (_, "TObjString") => Kind::ObjString,
+        (_, "TGraph" | "TGraphErrors" | "TGraphAsymmErrors") => Kind::Graph,
+        (_, "TF1" | "TF2" | "TF3") => Kind::Function,
+        (_, c) if c.starts_with("TParameter") => Kind::Parameter,
         _ => Kind::Other,
     }
-}
-
-/// A summable histogram class name `TH{dim}{precision}` (e.g. `TH1D`).
-fn is_th(class: &str, dim: u8) -> bool {
-    let b = class.as_bytes();
-    b.len() == 4
-        && &b[..2] == b"TH"
-        && b[2] == dim
-        && matches!(b[3], b'C' | b'S' | b'I' | b'F' | b'D' | b'L')
 }
 
 /// The C++ element type name for a leaf type.

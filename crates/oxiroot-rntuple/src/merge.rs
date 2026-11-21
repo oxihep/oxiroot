@@ -1,23 +1,18 @@
-//! Appending `RNTuples` — the `RNTuple` half of a `hadd`-style file merge, and
-//! the read → write round trip of one field.
-//!
-//! [`append_ntuples`] streams several [`NtupleReader`]s' entries into an
-//! [`NtupleWriter`], one cluster per input; the `oxiroot` facade's file merger
-//! uses it for `RNTuple` keys. An `RNTuple` field's type is fully determined by its
-//! [`FieldValues`] variant, so the mapping back to a [`Field`] is direct;
-//! [`FieldRead::to_field`] does it for one field.
-
-use std::io::{Seek, Write};
+//! The read → write round trip of one field: an `RNTuple` field's type is
+//! fully determined by its [`FieldValues`] variant, so
+//! [`FieldRead::to_field`] maps it straight back to a [`Field`]. Merging
+//! whole `RNTuple`s is the `oxiroot` facade's `hadd`, which goes through the
+//! `Dataset` reader and writer and handles the types this mapping cannot.
 
 use oxiroot_io_core::{Error, Result};
 
 use crate::field::FieldValues;
-use crate::reader::{FieldRead, NtupleReader};
-use crate::writer::{Field, NtupleWriter};
+use crate::reader::FieldRead;
+use crate::writer::Field;
 
 impl FieldRead<'_, '_> {
     /// Read the field (the [`range`](Self::range) set, if any) as a writable
-    /// [`Field`] of the same name and type, ready for an [`NtupleWriter`]: the
+    /// [`Field`] of the same name and type, ready for an [`NtupleWriter`](crate::raw::NtupleWriter): the
     /// round trip of a skim. Types the writer cannot encode (records, nested
     /// collections, variants, optionals, `std::vector` of unsigned integers)
     /// are an [`Error::Unsupported`].
@@ -30,40 +25,6 @@ impl FieldRead<'_, '_> {
         let name = self.name();
         build_field(name, self.values()?)
     }
-}
-
-/// Append every entry of `inputs` to `writer`, one input at a time: each input's
-/// fields are read, written as one cluster, and dropped before the next input is
-/// read. Returns the number of entries appended.
-///
-/// Every input must have the first input's fields, of the same types; the first
-/// cluster the writer receives fixes the schema.
-///
-/// # Errors
-///
-/// No inputs, an input missing a field or holding a type the writer cannot
-/// encode, or any error from [`NtupleWriter::write_batch`].
-pub fn append_ntuples<W: Write + Seek>(
-    writer: &mut NtupleWriter<W>,
-    inputs: &[&NtupleReader<'_>],
-) -> Result<u64> {
-    let &first = inputs
-        .first()
-        .ok_or_else(|| Error::InvalidInput("append_ntuples: no input RNTuples".into()))?;
-    let field_names = first.field_names();
-    let mut appended = 0;
-    for (i, &ntuple) in inputs.iter().enumerate() {
-        let mut batch = Vec::with_capacity(field_names.len());
-        for &field in &field_names {
-            let values = ntuple.field(field).values().map_err(|e| {
-                e.context(format_args!("append_ntuples: input #{i} field {field:?}"))
-            })?;
-            batch.push(build_field(field, values)?);
-        }
-        writer.write_batch(&batch)?;
-        appended += ntuple.entries();
-    }
-    Ok(appended)
 }
 
 /// Rebuild a writable [`Field`] from a field's concatenated values.

@@ -3,8 +3,7 @@
 use clap::Args as ClapArgs;
 use oxiroot::FileReader;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::tree::raw::BranchValues;
-use oxiroot::tree::{LeafType, TreeReader};
+use oxiroot::tree::{BranchLayout, LeafType, TreeReader};
 
 use crate::json::Json;
 use crate::util::{CmdResult, Kind, Table, classify, leaf_type_name, parse_spec};
@@ -98,15 +97,16 @@ fn show_tree(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult
 /// Show an `RNTuple`'s top-level fields and their C++ types.
 fn show_rntuple(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult {
     let ntuple = NtupleReader::open(file, path)?;
-    let descriptors = &ntuple.header().fields;
-    let mut fields = Vec::new();
-    for f in ntuple.field_names() {
-        let ty = descriptors
-            .iter()
-            .find(|fd| fd.name == f)
-            .map_or_default(|fd| fd.type_name.clone());
-        fields.push((f.to_string(), ty));
-    }
+    // A top-level field is its own parent. A field nested in another can have
+    // the same name, so the name alone does not find the right descriptor.
+    let fields: Vec<(String, String)> = ntuple
+        .header()
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(i, fd)| fd.parent_field_id as usize == *i)
+        .map(|(_, fd)| (fd.name.clone(), fd.type_name.clone()))
+        .collect();
 
     if json {
         let out = Json::Object(vec![
@@ -148,35 +148,26 @@ fn named_type_array(items: &[(String, String)]) -> Json {
 }
 
 /// The C++-ish type label of a branch: `double`, `double[3]` (fixed array),
-/// `double[]` (variable), `char*`, or a nested/vector form. Peeks at the first
-/// entry to tell a scalar from a collection when the title carries no shape.
+/// `double[]` (variable), `char*`, or a nested/vector form. Read from the
+/// tree's metadata alone: no entry is decoded.
 fn branch_type_label(tree: &TreeReader<'_>, name: &str) -> String {
-    let elem = leaf_type_name(tree.branch_type(name).unwrap_or(LeafType::Str));
+    let leaf = tree.branch_type(name).unwrap_or(LeafType::Str);
+    let elem = leaf_type_name(leaf);
+    let is_string = leaf == LeafType::Str;
 
     let shape = tree.branch_shape(name).unwrap_or(&[]);
     if !shape.is_empty() {
         let dims: String = shape.iter().map(|n| format!("[{n}]")).collect();
         return format!("{elem}{dims}");
     }
-
-    if tree.entries() == 0 {
-        return elem.to_string();
-    }
-    match tree.branch(name).range(0..1).values() {
-        Ok(values) => values_label(elem, &values),
-        Err(_) => elem.to_string(),
-    }
-}
-
-/// Turn the first entry's decoded value into a type label.
-fn values_label(elem: &str, values: &BranchValues) -> String {
-    use BranchValues::*;
-    match values {
-        Str(_) => "char*".to_string(),
-        VecStr(_) => "std::vector<string>".to_string(),
-        Nested { .. } => format!("std::vector<std::vector<{elem}>>"),
-        VecBool(_) | VecI8(_) | VecU8(_) | VecI16(_) | VecU16(_) | VecI32(_) | VecU32(_)
-        | VecI64(_) | VecU64(_) | VecF32(_) | VecF64(_) => format!("{elem}[]"),
+    match tree.branch_layout(name) {
+        Some(BranchLayout::ListOfLists) => format!("std::vector<std::vector<{elem}>>"),
+        Some(BranchLayout::List | BranchLayout::CArray) if is_string => {
+            "std::vector<string>".to_string()
+        }
+        Some(BranchLayout::List | BranchLayout::CArray) => format!("{elem}[]"),
+        Some(BranchLayout::Array(n)) => format!("{elem}[{n}]"),
+        _ if is_string => "char*".to_string(),
         _ => elem.to_string(),
     }
 }

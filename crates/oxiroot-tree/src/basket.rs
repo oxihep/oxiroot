@@ -101,22 +101,24 @@ impl Basket {
         // and fetch only the tail past it — so no byte is fetched twice and a
         // basket costs exactly its on-disk size over a remote source.
         let record_end = key_len + on_disk;
-        let raw: Vec<u8> = if record_end <= head.len() {
-            head[key_len..record_end].to_vec()
+        // A slice of the bytes read shares them: a compressed payload is only
+        // ever decompressed from, so it is not copied first.
+        let raw = if record_end <= head.len() {
+            head.slice(key_len..record_end)
         } else if key_len >= head.len() {
             // The payload starts past the probe window: fetch it whole.
-            file.read_at(seek + key_len as u64, on_disk)?.to_vec()
+            file.read_at(seek + key_len as u64, on_disk)?
         } else {
             let have = head.len();
             let tail = file.read_at(seek + have as u64, record_end - have)?;
             let mut buf = Vec::with_capacity(on_disk);
             buf.extend_from_slice(&head[key_len..have]);
             buf.extend_from_slice(&tail);
-            buf
+            buf.into()
         };
 
         let data = if on_disk == obj_len as usize {
-            raw
+            raw.to_vec()
         } else {
             decompress_payload(&raw, obj_len as usize, "TBasket")?
         };

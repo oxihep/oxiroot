@@ -268,3 +268,46 @@ fn dump_fails_on_a_branch_that_does_not_exist() {
     let (out, ok) = oxroot(&["dump", &spec("tree_flat.root", "Events"), "-b", "f8"]);
     assert!(ok, "{out}");
 }
+
+/// `show` labels each branch from the tree's metadata: a fixed array with its
+/// length, a counted array and a `std::vector` as a list, a string, a vector
+/// of strings, a vector of vectors.
+#[test]
+fn show_labels_branch_types_without_reading_entries() {
+    let labels = |file: &str, tree: &str| {
+        let (out, ok) = oxroot(&["show", &spec(file, tree)]);
+        assert!(ok, "{out}");
+        out
+    };
+    let squeeze = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let arrays = squeeze(&labels("tree_arrays.root", "T"));
+    assert!(arrays.contains("x double[3]"), "{arrays}");
+    assert!(arrays.contains("ny int32_t"), "{arrays}");
+    assert!(arrays.contains("y double[]"), "{arrays}");
+    assert!(arrays.contains("s char*"), "{arrays}");
+
+    let strings = squeeze(&labels("tree_vecstring.root", "T"));
+    assert!(strings.contains("vs std::vector<string>"), "{strings}");
+
+    let nested = squeeze(&labels("tree_vecvec.root", "T"));
+    assert!(
+        nested.contains("vi std::vector<std::vector<int32_t>>"),
+        "{nested}"
+    );
+
+    let vectors = squeeze(&labels("tree_vector.root", "T"));
+    assert!(vectors.contains("vf float[]"), "{vectors}");
+}
+
+/// For an `RNTuple`, `show` lists the top-level fields with their C++ types.
+#[test]
+fn show_lists_the_top_level_fields_of_an_rntuple() {
+    let (out, ok) = oxroot(&["show", &spec("rntuple_nested_zstd.root", "ntpl")]);
+    assert!(ok, "{out}");
+    assert!(out.contains("3 fields"), "{out}");
+    assert!(
+        out.contains("std::vector<std::pair<std::int32_t,double>>"),
+        "{out}"
+    );
+}

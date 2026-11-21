@@ -40,7 +40,6 @@ pub use reader::NtupleReader;
 /// at the level of the format (a merger, an inspector).
 pub mod raw {
     pub use crate::field::{FieldValues, FromField, Jagged};
-    pub use crate::merge::append_ntuples;
     pub use crate::page::ColumnValues;
     pub use crate::reader::FieldRead;
     pub use crate::writer::raw::*;

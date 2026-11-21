@@ -27,7 +27,7 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Open the tree (if it parses), read every branch, and run it through the
-/// `hadd`-style [`append_trees`](oxiroot_tree::raw::append_trees) merge. The point is that none of this panics
+/// read → write round trip of each branch. The point is that none of this panics
 /// regardless of the bytes.
 fn poke_tree(f: &FileReader, tree: &str) {
     if let Ok(t) = TreeReader::open(f, tree) {
@@ -39,16 +39,11 @@ fn poke_tree(f: &FileReader, tree: &str) {
         for b in &names {
             let _ = t.branch(b).values();
         }
-        // Merge the (possibly corrupt) tree with itself — exercises the branch
-        // kind reconstruction and value concatenation on malformed input.
-        let mut w = oxiroot_tree::raw::TreeWriter::new(
-            std::io::Cursor::new(Vec::new()),
-            "m.root",
-            tree,
-            oxiroot_io_core::Compression::Stored,
-        )
-        .expect("an in-memory writer");
-        let _ = oxiroot_tree::raw::append_trees(&mut w, &[&t]);
+        // Rebuild each (possibly corrupt) branch for writing: exercises the
+        // branch kind reconstruction on malformed input.
+        for b in &names {
+            let _ = t.branch(b).to_branch();
+        }
     }
 }
 

@@ -8,630 +8,304 @@ use crate::polyhist::PolyBin;
 use crate::sparsehist::SparseBin;
 use crate::*;
 
-impl Hist1D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// The z axis.
-    #[must_use]
-    pub fn zaxis(&self) -> &Axis {
-        &self.zaxis
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The bin contents, flow bins included (`x` fastest).
-    #[must_use]
-    pub fn contents(&self) -> &[f64] {
-        &self.contents
-    }
-
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
-    /// tracks errors; `None` otherwise.
-    #[must_use]
-    pub fn sumw2(&self) -> Option<&[f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
-
-    /// The z axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn zaxis_mut(&mut self) -> &mut Axis {
-        &mut self.zaxis
-    }
+/// One definition of each accessor several types share: the same field, read
+/// the same way, with the same documentation.
+macro_rules! accessor {
+    (xaxis) => {
+        /// The x axis.
+        #[must_use]
+        pub fn xaxis(&self) -> &Axis {
+            &self.xaxis
+        }
+    };
+    (yaxis) => {
+        /// The y axis.
+        #[must_use]
+        pub fn yaxis(&self) -> &Axis {
+            &self.yaxis
+        }
+    };
+    (zaxis) => {
+        /// The z axis.
+        #[must_use]
+        pub fn zaxis(&self) -> &Axis {
+            &self.zaxis
+        }
+    };
+    (entries) => {
+        /// The number of entries (`fEntries`).
+        #[must_use]
+        pub fn entries(&self) -> f64 {
+            self.entries
+        }
+    };
+    (tsumw) => {
+        /// Σw over the fills.
+        #[must_use]
+        pub fn tsumw(&self) -> f64 {
+            self.tsumw
+        }
+    };
+    (tsumw2) => {
+        /// Σw² over the fills.
+        #[must_use]
+        pub fn tsumw2(&self) -> f64 {
+            self.tsumw2
+        }
+    };
+    (tsumwx) => {
+        /// The `tsumwx` moment sum.
+        #[must_use]
+        pub fn tsumwx(&self) -> f64 {
+            self.tsumwx
+        }
+    };
+    (tsumwx2) => {
+        /// The `tsumwx2` moment sum.
+        #[must_use]
+        pub fn tsumwx2(&self) -> f64 {
+            self.tsumwx2
+        }
+    };
+    (contents) => {
+        /// The bin contents, flow bins included (`x` fastest).
+        #[must_use]
+        pub fn contents(&self) -> &[f64] {
+            &self.contents
+        }
+    };
+    (sumw2) => {
+        /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
+        /// tracks errors; `None` otherwise.
+        #[must_use]
+        pub fn sumw2(&self) -> Option<&[f64]> {
+            (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
+        }
+    };
+    (xaxis_mut) => {
+        /// The x axis, to change its title, labels or time display (its
+        /// binning stays fixed).
+        #[must_use]
+        pub fn xaxis_mut(&mut self) -> &mut Axis {
+            &mut self.xaxis
+        }
+    };
+    (yaxis_mut) => {
+        /// The y axis, to change its title, labels or time display (its
+        /// binning stays fixed).
+        #[must_use]
+        pub fn yaxis_mut(&mut self) -> &mut Axis {
+            &mut self.yaxis
+        }
+    };
+    (zaxis_mut) => {
+        /// The z axis, to change its title, labels or time display (its
+        /// binning stays fixed).
+        #[must_use]
+        pub fn zaxis_mut(&mut self) -> &mut Axis {
+            &mut self.zaxis
+        }
+    };
+    (tsumwy) => {
+        /// The `tsumwy` moment sum.
+        #[must_use]
+        pub fn tsumwy(&self) -> f64 {
+            self.tsumwy
+        }
+    };
+    (tsumwy2) => {
+        /// The `tsumwy2` moment sum.
+        #[must_use]
+        pub fn tsumwy2(&self) -> f64 {
+            self.tsumwy2
+        }
+    };
+    (tsumwxy) => {
+        /// The `tsumwxy` moment sum.
+        #[must_use]
+        pub fn tsumwxy(&self) -> f64 {
+            self.tsumwxy
+        }
+    };
+    (tsumwz) => {
+        /// The `tsumwz` moment sum.
+        #[must_use]
+        pub fn tsumwz(&self) -> f64 {
+            self.tsumwz
+        }
+    };
+    (tsumwz2) => {
+        /// The `tsumwz2` moment sum.
+        #[must_use]
+        pub fn tsumwz2(&self) -> f64 {
+            self.tsumwz2
+        }
+    };
+    (tsumwxz) => {
+        /// The `tsumwxz` moment sum.
+        #[must_use]
+        pub fn tsumwxz(&self) -> f64 {
+            self.tsumwxz
+        }
+    };
+    (tsumwyz) => {
+        /// The `tsumwyz` moment sum.
+        #[must_use]
+        pub fn tsumwyz(&self) -> f64 {
+            self.tsumwyz
+        }
+    };
+    (ncells) => {
+        /// Total cells, flow included (ROOT's `fNcells`): the length of the
+        /// per-cell vectors, so it cannot disagree with them.
+        #[must_use]
+        pub fn ncells(&self) -> i32 {
+            i32::try_from(self.bin_entries.len()).unwrap_or(i32::MAX)
+        }
+    };
+    (sums) => {
+        /// Per cell, the Σw·v of the profiled value.
+        #[must_use]
+        pub fn sums(&self) -> &[f64] {
+            &self.sums
+        }
+    };
+    (bin_entries) => {
+        /// Per cell, Σw (`fBinEntries`).
+        #[must_use]
+        pub fn bin_entries(&self) -> &[f64] {
+            &self.bin_entries
+        }
+    };
+    (bin_sumw2) => {
+        /// Per cell, Σw² (`fBinSumw2`); empty when not tracked.
+        #[must_use]
+        pub fn bin_sumw2(&self) -> &[f64] {
+            &self.bin_sumw2
+        }
+    };
+    (x) => {
+        /// The x values.
+        #[must_use]
+        pub fn x(&self) -> &[f64] {
+            &self.x
+        }
+    };
+    (y) => {
+        /// The y values.
+        #[must_use]
+        pub fn y(&self) -> &[f64] {
+            &self.y
+        }
+    };
+    (x_mut) => {
+        /// The x values, to change in place (the number of points stays
+        /// fixed).
+        #[must_use]
+        pub fn x_mut(&mut self) -> &mut [f64] {
+            &mut self.x
+        }
+    };
+    (y_mut) => {
+        /// The y values, to change in place (the number of points stays
+        /// fixed).
+        #[must_use]
+        pub fn y_mut(&mut self) -> &mut [f64] {
+            &mut self.y
+        }
+    };
+    (set_entries) => {
+        /// Set the number of entries (`fEntries`).
+        pub fn set_entries(&mut self, entries: f64) {
+            self.entries = entries;
+        }
+    };
 }
 
-impl Hist2D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// The z axis.
-    #[must_use]
-    pub fn zaxis(&self) -> &Axis {
-        &self.zaxis
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// The `tsumwxy` moment sum.
-    #[must_use]
-    pub fn tsumwxy(&self) -> f64 {
-        self.tsumwxy
-    }
-
-    /// The bin contents, flow bins included (`x` fastest).
-    #[must_use]
-    pub fn contents(&self) -> &[f64] {
-        &self.contents
-    }
-
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
-    /// tracks errors; `None` otherwise.
-    #[must_use]
-    pub fn sumw2(&self) -> Option<&[f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
-
-    /// The z axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn zaxis_mut(&mut self) -> &mut Axis {
-        &mut self.zaxis
-    }
+/// Give `$ty` the listed shared accessors.
+macro_rules! accessors {
+    ($ty:ty: $($name:ident),+ $(,)?) => {
+        impl $ty {
+            $(accessor!($name);)+
+        }
+    };
 }
 
-impl Hist3D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// The z axis.
-    #[must_use]
-    pub fn zaxis(&self) -> &Axis {
-        &self.zaxis
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// The `tsumwxy` moment sum.
-    #[must_use]
-    pub fn tsumwxy(&self) -> f64 {
-        self.tsumwxy
-    }
-
-    /// The `tsumwz` moment sum.
-    #[must_use]
-    pub fn tsumwz(&self) -> f64 {
-        self.tsumwz
-    }
-
-    /// The `tsumwz2` moment sum.
-    #[must_use]
-    pub fn tsumwz2(&self) -> f64 {
-        self.tsumwz2
-    }
-
-    /// The `tsumwxz` moment sum.
-    #[must_use]
-    pub fn tsumwxz(&self) -> f64 {
-        self.tsumwxz
-    }
-
-    /// The `tsumwyz` moment sum.
-    #[must_use]
-    pub fn tsumwyz(&self) -> f64 {
-        self.tsumwyz
-    }
-
-    /// The bin contents, flow bins included (`x` fastest).
-    #[must_use]
-    pub fn contents(&self) -> &[f64] {
-        &self.contents
-    }
-
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
-    /// tracks errors; `None` otherwise.
-    #[must_use]
-    pub fn sumw2(&self) -> Option<&[f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
-
-    /// The z axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn zaxis_mut(&mut self) -> &mut Axis {
-        &mut self.zaxis
-    }
-}
+accessors!(
+    Hist1D:
+    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, contents, sumw2,
+    xaxis_mut, yaxis_mut, zaxis_mut
+);
+accessors!(
+    Hist2D:
+    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
+    tsumwxy, contents, sumw2, xaxis_mut, yaxis_mut, zaxis_mut
+);
+accessors!(
+    Hist3D:
+    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
+    tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz, contents, sumw2, xaxis_mut, yaxis_mut,
+    zaxis_mut
+);
+accessors!(
+    Profile1D:
+    xaxis, ncells, entries, tsumw, tsumw2, tsumwx, tsumwx2, sums, bin_entries, tsumwy,
+    tsumwy2, bin_sumw2, xaxis_mut
+);
+accessors!(
+    Profile2D:
+    xaxis, yaxis, ncells, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
+    tsumwxy, sums, bin_entries, tsumwz, tsumwz2, bin_sumw2, xaxis_mut, yaxis_mut
+);
+accessors!(
+    Profile3D:
+    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
+    tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz, sums, bin_entries, bin_sumw2, xaxis_mut,
+    yaxis_mut, zaxis_mut
+);
+accessors!(
+    Graph:
+    x, y, x_mut, y_mut
+);
+accessors!(
+    Graph2D:
+    x, y, x_mut, y_mut
+);
+accessors!(
+    MultiErrorGraph:
+    x, y
+);
+accessors!(
+    PolyHist:
+    xaxis, yaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy,
+    set_entries, xaxis_mut, yaxis_mut
+);
+accessors!(
+    SparseHist:
+    entries, tsumw, set_entries
+);
 
 impl Profile1D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// Total cells, flow included.
-    #[must_use]
-    pub fn ncells(&self) -> i32 {
-        self.ncells
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// Per cell, the Σw·v of the profiled value.
-    #[must_use]
-    pub fn sums(&self) -> &[f64] {
-        &self.sums
-    }
-
     /// `sumy2`.
     #[must_use]
     pub fn sumy2(&self) -> &[f64] {
         &self.sumy2
     }
-
-    /// Per cell, Σw (`fBinEntries`).
-    #[must_use]
-    pub fn bin_entries(&self) -> &[f64] {
-        &self.bin_entries
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// Per cell, Σw² (`fBinSumw2`); empty when not tracked.
-    #[must_use]
-    pub fn bin_sumw2(&self) -> &[f64] {
-        &self.bin_sumw2
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
 }
 
 impl Profile2D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// Total cells, flow included.
-    #[must_use]
-    pub fn ncells(&self) -> i32 {
-        self.ncells
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// The `tsumwxy` moment sum.
-    #[must_use]
-    pub fn tsumwxy(&self) -> f64 {
-        self.tsumwxy
-    }
-
-    /// Per cell, the Σw·v of the profiled value.
-    #[must_use]
-    pub fn sums(&self) -> &[f64] {
-        &self.sums
-    }
-
     /// `sumz2`.
     #[must_use]
     pub fn sumz2(&self) -> &[f64] {
         &self.sumz2
     }
-
-    /// Per cell, Σw (`fBinEntries`).
-    #[must_use]
-    pub fn bin_entries(&self) -> &[f64] {
-        &self.bin_entries
-    }
-
-    /// The `tsumwz` moment sum.
-    #[must_use]
-    pub fn tsumwz(&self) -> f64 {
-        self.tsumwz
-    }
-
-    /// The `tsumwz2` moment sum.
-    #[must_use]
-    pub fn tsumwz2(&self) -> f64 {
-        self.tsumwz2
-    }
-
-    /// Per cell, Σw² (`fBinSumw2`); empty when not tracked.
-    #[must_use]
-    pub fn bin_sumw2(&self) -> &[f64] {
-        &self.bin_sumw2
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
 }
 
 impl Profile3D {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// The z axis.
-    #[must_use]
-    pub fn zaxis(&self) -> &Axis {
-        &self.zaxis
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// The `tsumwxy` moment sum.
-    #[must_use]
-    pub fn tsumwxy(&self) -> f64 {
-        self.tsumwxy
-    }
-
-    /// The `tsumwz` moment sum.
-    #[must_use]
-    pub fn tsumwz(&self) -> f64 {
-        self.tsumwz
-    }
-
-    /// The `tsumwz2` moment sum.
-    #[must_use]
-    pub fn tsumwz2(&self) -> f64 {
-        self.tsumwz2
-    }
-
-    /// The `tsumwxz` moment sum.
-    #[must_use]
-    pub fn tsumwxz(&self) -> f64 {
-        self.tsumwxz
-    }
-
-    /// The `tsumwyz` moment sum.
-    #[must_use]
-    pub fn tsumwyz(&self) -> f64 {
-        self.tsumwyz
-    }
-
-    /// Per cell, the Σw·v of the profiled value.
-    #[must_use]
-    pub fn sums(&self) -> &[f64] {
-        &self.sums
-    }
-
     /// `sumt2`.
     #[must_use]
     pub fn sumt2(&self) -> &[f64] {
         &self.sumt2
-    }
-
-    /// Per cell, Σw (`fBinEntries`).
-    #[must_use]
-    pub fn bin_entries(&self) -> &[f64] {
-        &self.bin_entries
     }
 
     /// The `tsumwt` moment sum.
@@ -644,33 +318,6 @@ impl Profile3D {
     #[must_use]
     pub fn tsumwt2(&self) -> f64 {
         self.tsumwt2
-    }
-
-    /// Per cell, Σw² (`fBinSumw2`); empty when not tracked.
-    #[must_use]
-    pub fn bin_sumw2(&self) -> &[f64] {
-        &self.bin_sumw2
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
-
-    /// The z axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn zaxis_mut(&mut self) -> &mut Axis {
-        &mut self.zaxis
     }
 }
 
@@ -701,70 +348,18 @@ impl Axis {
 }
 
 impl Graph {
-    /// The x values.
-    #[must_use]
-    pub fn x(&self) -> &[f64] {
-        &self.x
-    }
-
-    /// The y values.
-    #[must_use]
-    pub fn y(&self) -> &[f64] {
-        &self.y
-    }
-
     /// The error bars.
     #[must_use]
     pub fn errors(&self) -> &GraphErrors {
         &self.errors
     }
-
-    /// The x values, to change in place (the number of points stays
-    /// fixed).
-    #[must_use]
-    pub fn x_mut(&mut self) -> &mut [f64] {
-        &mut self.x
-    }
-
-    /// The y values, to change in place (the number of points stays
-    /// fixed).
-    #[must_use]
-    pub fn y_mut(&mut self) -> &mut [f64] {
-        &mut self.y
-    }
 }
 
 impl Graph2D {
-    /// The x values.
-    #[must_use]
-    pub fn x(&self) -> &[f64] {
-        &self.x
-    }
-
-    /// The y values.
-    #[must_use]
-    pub fn y(&self) -> &[f64] {
-        &self.y
-    }
-
     /// The z values.
     #[must_use]
     pub fn z(&self) -> &[f64] {
         &self.z
-    }
-
-    /// The x values, to change in place (the number of points stays
-    /// fixed).
-    #[must_use]
-    pub fn x_mut(&mut self) -> &mut [f64] {
-        &mut self.x
-    }
-
-    /// The y values, to change in place (the number of points stays
-    /// fixed).
-    #[must_use]
-    pub fn y_mut(&mut self) -> &mut [f64] {
-        &mut self.y
     }
 
     /// The z values, to change in place (the number of points stays
@@ -776,18 +371,6 @@ impl Graph2D {
 }
 
 impl MultiErrorGraph {
-    /// The x values.
-    #[must_use]
-    pub fn x(&self) -> &[f64] {
-        &self.x
-    }
-
-    /// The y values.
-    #[must_use]
-    pub fn y(&self) -> &[f64] {
-        &self.y
-    }
-
     /// `ex_low`.
     #[must_use]
     pub fn ex_low(&self) -> &[f64] {
@@ -828,66 +411,6 @@ impl Efficiency {
 }
 
 impl PolyHist {
-    /// The x axis.
-    #[must_use]
-    pub fn xaxis(&self) -> &Axis {
-        &self.xaxis
-    }
-
-    /// The y axis.
-    #[must_use]
-    pub fn yaxis(&self) -> &Axis {
-        &self.yaxis
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
-    }
-
-    /// Σw² over the fills.
-    #[must_use]
-    pub fn tsumw2(&self) -> f64 {
-        self.tsumw2
-    }
-
-    /// The `tsumwx` moment sum.
-    #[must_use]
-    pub fn tsumwx(&self) -> f64 {
-        self.tsumwx
-    }
-
-    /// The `tsumwx2` moment sum.
-    #[must_use]
-    pub fn tsumwx2(&self) -> f64 {
-        self.tsumwx2
-    }
-
-    /// The `tsumwy` moment sum.
-    #[must_use]
-    pub fn tsumwy(&self) -> f64 {
-        self.tsumwy
-    }
-
-    /// The `tsumwy2` moment sum.
-    #[must_use]
-    pub fn tsumwy2(&self) -> f64 {
-        self.tsumwy2
-    }
-
-    /// The `tsumwxy` moment sum.
-    #[must_use]
-    pub fn tsumwxy(&self) -> f64 {
-        self.tsumwxy
-    }
-
     /// The nine flow regions around the polygons.
     #[must_use]
     pub fn overflow(&self) -> &[f64; 9] {
@@ -899,25 +422,6 @@ impl PolyHist {
     pub fn bins(&self) -> &[PolyBin] {
         &self.bins
     }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
-    }
-
-    /// The x axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn xaxis_mut(&mut self) -> &mut Axis {
-        &mut self.xaxis
-    }
-
-    /// The y axis, to change its title, labels or time display (its
-    /// binning stays fixed).
-    #[must_use]
-    pub fn yaxis_mut(&mut self) -> &mut Axis {
-        &mut self.yaxis
-    }
 }
 
 impl SparseHist {
@@ -925,18 +429,6 @@ impl SparseHist {
     #[must_use]
     pub fn axes(&self) -> &[Axis] {
         &self.axes
-    }
-
-    /// The number of entries (`fEntries`).
-    #[must_use]
-    pub fn entries(&self) -> f64 {
-        self.entries
-    }
-
-    /// Σw over the fills.
-    #[must_use]
-    pub fn tsumw(&self) -> f64 {
-        self.tsumw
     }
 
     /// Σw² over the fills, or `None` when the histogram does not track its
@@ -963,11 +455,6 @@ impl SparseHist {
     #[must_use]
     pub fn bins(&self) -> &[SparseBin] {
         &self.bins
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 }
 

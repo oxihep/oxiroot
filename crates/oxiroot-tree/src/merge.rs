@@ -1,20 +1,14 @@
-//! Appending trees — the `TTree` half of a `hadd`-style file merge, and the
-//! read → write round trip of one branch.
-//!
-//! [`append_trees`] streams several [`TreeReader`]s' entries into a
-//! [`TreeWriter`], holding one input's entries at a time, rebuilding each
-//! branch's kind (scalar, fixed array, jagged, `std::vector`, or string) so the
-//! result writes back the way it was read. The `oxiroot` facade's file merger
-//! uses it for tree keys. [`BranchRead::to_branch`] does the same for one
-//! branch.
-
-use std::io::{Seek, Write};
+//! The read → write round trip of one branch: [`BranchRead::to_branch`]
+//! rebuilds a branch's kind (scalar, fixed array, jagged, `std::vector`, or
+//! string) so that it writes back the way it was read. Merging whole trees is
+//! the `oxiroot` facade's `hadd`, which goes through the `Dataset` reader and
+//! writer.
 
 use oxiroot_io_core::{Error, Result};
 
-use crate::reader::{BranchMetaLite, BranchRead, TreeReader};
+use crate::reader::{BranchMetaLite, BranchRead};
 use crate::value::BranchValues;
-use crate::writer::{Branch, TreeWriter};
+use crate::writer::Branch;
 
 impl BranchRead<'_, '_> {
     /// Read the branch (the [`range`](Self::range) set, if any) as a writable
@@ -38,51 +32,6 @@ impl BranchRead<'_, '_> {
             })?;
         build_branch(name, &meta, self.values()?)
     }
-}
-
-/// Append every entry of `inputs` to `writer`, one input at a time: each input's
-/// branches are read, written as one batch (one basket per branch), and dropped
-/// before the next input is read. Returns the number of entries appended.
-///
-/// Every input must have the first input's branches, of the same kinds; the
-/// first batch the writer receives fixes the schema.
-///
-/// # Errors
-///
-/// No inputs; an input missing a branch or holding one this crate cannot read
-/// or write back; any error from [`TreeWriter::write_batch`].
-pub fn append_trees<W: Write + Seek>(
-    writer: &mut TreeWriter<W>,
-    inputs: &[&TreeReader<'_>],
-) -> Result<u64> {
-    let &first = inputs
-        .first()
-        .ok_or_else(|| Error::InvalidInput("append_trees: no input trees".into()))?;
-    let names = first.branch_names();
-    let mut appended = 0;
-    for (i, &tree) in inputs.iter().enumerate() {
-        if let Some((name, reason)) = tree.unsupported_branches().first() {
-            return Err(Error::Unsupported(format!(
-                "append_trees: input #{i} ({:?}) has an unreadable branch {name:?} ({reason}); \
-                 cannot merge it without losing data",
-                tree.name(),
-            )));
-        }
-        let mut batch = Vec::with_capacity(names.len());
-        for &name in &names {
-            let meta = tree.branch_meta(name).ok_or_else(|| Error::SchemaChanged {
-                detail: format!(
-                    "append_trees: input #{i} ({:?}) is missing branch {name:?} \
-                     present in the first tree",
-                    tree.name(),
-                ),
-            })?;
-            batch.push(build_branch(name, &meta, tree.branch(name).values()?)?);
-        }
-        writer.write_batch(&batch)?;
-        appended += tree.entries();
-    }
-    Ok(appended)
 }
 
 /// Rebuild a writable [`Branch`] of the correct kind from a branch's read

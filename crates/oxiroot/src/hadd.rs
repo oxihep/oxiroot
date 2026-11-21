@@ -36,24 +36,23 @@
 //! partial file.
 //!
 //! The inputs are read on demand rather than loaded whole. A tree or `RNTuple` is
-//! streamed to the output one input at a time (one batch of baskets, or one
-//! cluster, per input), so memory holds a single input's entries. A large
+//! copied one cluster at a time through [`Dataset`] and [`DatasetWriter`], so
+//! memory holds a cluster, and every column type a
+//! [`Batch`](oxiroot_dataset::Batch) can hold is merged, stored as the first
+//! input stores it (an `RNTuple` `std::variant` is the one that cannot). A large
 //! merge is written in ROOT's 64-bit container form. The output must not be
 //! one of the inputs.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
-use oxiroot_io_core::{Compression, Error, FileReader, FileSource, Result};
+use oxiroot_dataset::{DataType, Dataset, DatasetWriter, Format, Schema};
+use oxiroot_io_core::raw::KSTART_BIG_FILE;
+use oxiroot_io_core::{ClassKind, Compression, Error, FileReader, FileSource, Result};
 
 mod histograms;
 pub use histograms::HistMergeOutcome;
 use histograms::merge_histogram_files;
-use oxiroot_rntuple::raw::{NtupleWriter, append_ntuples};
-use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader};
-use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::{TreeWriter, append_trees};
 
 /// Inputs larger than this in total are merged straight into the 64-bit
 /// container form; smaller ones switch to it only if the output turns out not to
@@ -226,9 +225,9 @@ fn merge(output: &Path, inputs: &[PathBuf], compression: Compression) -> Result<
             if key.is_deleted() || !seen.insert(key.name.clone()) {
                 continue;
             }
-            match key.class_name.as_str() {
-                "TTree" | "TNtuple" | "TNtupleD" => trees.push(key.name.clone()),
-                ANCHOR_CLASS => rntuples.push(key.name.clone()),
+            match ClassKind::of(&key.class_name) {
+                ClassKind::Tree => trees.push(key.name.clone()),
+                ClassKind::Ntuple => rntuples.push(key.name.clone()),
                 _ => others += 1,
             }
         }
@@ -238,9 +237,9 @@ fn merge(output: &Path, inputs: &[PathBuf], compression: Compression) -> Result<
         // No trees or RNTuples: a histogram-family fileset.
         (0, 0, _) => merge_histograms(output, &files, inputs.len(), compression),
         // Exactly one TTree and nothing else.
-        (1, 0, 0) => merge_tree(output, &files, &trees[0], inputs.len(), compression, large),
+        (1, 0, 0) => merge_dataset(output, &files, &trees[0], inputs.len(), compression, large),
         // Exactly one RNTuple and nothing else.
-        (0, 1, 0) => merge_rntuple(
+        (0, 1, 0) => merge_dataset(
             output,
             &files,
             &rntuples[0],
@@ -283,120 +282,101 @@ fn with_form_fallback(large: bool, mut write: impl FnMut(bool) -> Result<()>) ->
     }
 }
 
-/// Write a whole file laid out by `layout` to `output`.
-fn write_whole(
+/// `schema` with every counted array whose counter is not one of `columns`
+/// stored as a `std::vector` instead.
+///
+/// A tree writes a counted array `x[n]` next to the branch that counts it,
+/// which the writer names `n` followed by the array's name and adds when it
+/// is missing. A member of a split object is counted by the object, and a C
+/// array can be counted by a leaf of any name: for those the writer would add
+/// a counter branch the inputs do not have. A `std::vector` holds the same
+/// values and needs none.
+fn without_invented_counters(schema: &Schema, columns: &[String]) -> Schema {
+    Schema::new(schema.iter().map(|(name, data_type)| {
+        let stored = match data_type {
+            DataType::CArray(item) if !columns.contains(&format!("n{name}")) => {
+                DataType::List(item.clone())
+            }
+            other => other.clone(),
+        };
+        (name, stored)
+    }))
+}
+
+/// Concatenate the dataset `name` of every file into `output`: a `TTree` into
+/// a `TTree`, an `RNTuple` into an `RNTuple`, each column stored as the first
+/// input stores it.
+///
+/// One cluster of one input is in memory at a time. Every input must have the
+/// first input's columns, of the same types.
+fn merge_dataset(
     output: &Path,
+    files: &[FileReader],
+    name: &str,
+    inputs: usize,
     compression: Compression,
-    layout: impl FnMut(&mut ContainerWriter<std::io::Cursor<Vec<u8>>>) -> Result<()>,
-) -> Result<()> {
+    large: bool,
+) -> Result<MergeReport> {
+    let parts: Vec<Dataset<'_>> = files
+        .iter()
+        .map(|f| Dataset::open(f, name))
+        .collect::<Result<Vec<_>>>()?;
+    let first = &parts[0];
+    let format = first.format();
+    let entries = parts.iter().map(Dataset::entries).sum();
+    let columns: Vec<String> = first.columns().into_iter().map(str::to_string).collect();
+    let schema = without_invented_counters(&first.schema()?, &columns);
+    // The key in the output: the object's own name, without its directory.
+    let key = name.rsplit('/').next().unwrap_or(name);
+
+    // Written beside the output and renamed when complete: a merge that fails
+    // part-way (an input with other columns, a full disk) leaves no output,
+    // and an existing one as it was.
     let file_name = output
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
-    let bytes = ContainerWriter::build(file_name, compression, KSTART_BIG_FILE, layout)?;
-    oxiroot_io_core::raw::write_atomic(output, &bytes)?;
-    Ok(())
-}
-
-fn merge_tree(
-    output: &Path,
-    files: &[FileReader],
-    name: &str,
-    inputs: usize,
-    compression: Compression,
-    large: bool,
-) -> Result<MergeReport> {
-    let trees: Vec<TreeReader<'_>> = files
-        .iter()
-        .map(|f| TreeReader::open(f, name))
-        .collect::<Result<Vec<_>>>()?;
-    let entries = trees.iter().map(TreeReader::entries).sum();
-    let inputs_ref: Vec<&TreeReader<'_>> = trees.iter().collect();
-
-    if entries == 0 {
-        // The streaming writer needs at least one entry; write the empty tree
-        // whole, its branches rebuilt as they were read.
-        let first = &trees[0];
-        let branches = first
-            .branch_names()
-            .into_iter()
-            .map(|b| first.branch(b).to_branch())
-            .collect::<Result<Vec<_>>>()?;
-        write_whole(output, compression, |file| {
-            oxiroot_tree::raw::write_tree(file, DirId::TOP, first.name(), &branches, 0)?;
-            file.place_streamer_info(&[], &oxiroot_tree::raw::tree_streamer_classes(&branches))
-        })?;
-    } else {
-        // Stream one input at a time: one batch of baskets per input.
-        let tree_name = trees[0].name();
-        with_form_fallback(large, |big| {
-            let mut writer = if big {
-                TreeWriter::create_large(output, tree_name, compression)?
-            } else {
-                TreeWriter::create(output, tree_name, compression)?
-            };
-            append_trees(&mut writer, &inputs_ref)?;
-            writer.finish().map(drop)
-        })?;
-    }
-
-    Ok(MergeReport {
-        output: output.to_path_buf(),
-        inputs,
-        kind: MergeKind::Tree {
-            name: name.to_string(),
-            entries,
-        },
+    let partial = output.with_file_name(format!(".{file_name}.{}.partial", std::process::id()));
+    let written = with_form_fallback(large, |big| {
+        let sink = std::fs::File::create(&partial)?;
+        let mut writer = DatasetWriter::new(sink, file_name, key, format)
+            .compression(compression)
+            .schema(schema.clone());
+        if big {
+            writer = writer.large();
+        }
+        for (i, part) in parts.iter().enumerate() {
+            for batch in part.batches(&columns) {
+                let batch = batch.map_err(|e| e.context(format_args!("input #{i}")))?;
+                writer.write(batch)?;
+            }
+        }
+        if entries == 0 {
+            // No cluster to copy: the columns alone, so the output has them.
+            writer.write(first.read(&columns)?)?;
+        }
+        writer.finish().map(drop)
     })
-}
-
-fn merge_rntuple(
-    output: &Path,
-    files: &[FileReader],
-    name: &str,
-    inputs: usize,
-    compression: Compression,
-    large: bool,
-) -> Result<MergeReport> {
-    let ntuples: Vec<NtupleReader<'_>> = files
-        .iter()
-        .map(|f| NtupleReader::open(f, name))
-        .collect::<Result<Vec<_>>>()?;
-    let entries = ntuples.iter().map(NtupleReader::entries).sum();
-    let inputs_ref: Vec<&NtupleReader<'_>> = ntuples.iter().collect();
-
-    if entries == 0 {
-        // The streaming writer needs at least one entry; write the empty
-        // RNTuple whole, its fields rebuilt as they were read.
-        let first = &ntuples[0];
-        let fields = first
-            .field_names()
-            .into_iter()
-            .map(|f| first.field(f).to_field())
-            .collect::<Result<Vec<_>>>()?;
-        write_whole(output, compression, |file| {
-            oxiroot_rntuple::raw::write_ntuple(file, DirId::TOP, name, &fields, &[])?;
-            file.place_streamer_info(&[], &oxiroot_rntuple::raw::ntuple_streamer_classes(&fields))
-        })?;
-    } else {
-        // Stream one input at a time: one cluster per input.
-        with_form_fallback(large, |big| {
-            let mut writer = if big {
-                NtupleWriter::create_large(output, name, compression)?
-            } else {
-                NtupleWriter::create(output, name, compression)?
-            };
-            append_ntuples(&mut writer, &inputs_ref)?;
-            writer.finish().map(drop)
-        })?;
+    .and_then(|()| Ok(std::fs::rename(&partial, output)?));
+    if written.is_err() {
+        // Best effort: the error to report is the merge's, not the cleanup's.
+        let _ = std::fs::remove_file(&partial);
     }
+    written?;
 
     Ok(MergeReport {
         output: output.to_path_buf(),
         inputs,
-        kind: MergeKind::Ntuple {
-            name: name.to_string(),
-            entries,
+        kind: match format {
+            Format::Tree => MergeKind::Tree {
+                name: name.to_string(),
+                entries,
+            },
+            // `Format` can grow; today everything that is not a tree is an RNTuple.
+            _ => MergeKind::Ntuple {
+                name: name.to_string(),
+                entries,
+            },
         },
     })
 }

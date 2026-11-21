@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::Path;
 
+use crate::ClassKind;
 use crate::Compression;
 use crate::error::{Error, Result, decompress_payload};
 use crate::object_io::{KeyCheck, ObjectRecord, StreamerSet, WriteInto, WriteRoot};
@@ -619,7 +620,7 @@ impl CopiedDir {
         let mut objects = Vec::new();
         let mut dirs = Vec::new();
         for key in keys {
-            if matches!(key.class_name.as_str(), "TDirectory" | "TDirectoryFile") {
+            if ClassKind::of(&key.class_name) == ClassKind::Directory {
                 let below = if path.is_empty() {
                     key.name.clone()
                 } else {
@@ -633,7 +634,7 @@ impl CopiedDir {
             // A TTree or an RNTuple is more than its key: its baskets and pages
             // sit elsewhere in the file, and copying the key alone would leave
             // them behind.
-            if is_multi_record(&key.class_name) {
+            if ClassKind::holds_data_outside_its_key(&key.class_name) {
                 return Err(Error::Unsupported(format!(
                     "cannot compact a file that holds {} {:?}: its records live outside its \
                      key. Merge the file with oxiroot::hadd instead",
@@ -696,12 +697,6 @@ impl CopiedDir {
         }
         Ok(())
     }
-}
-
-/// Whether a class writes records outside its own key (a tree's baskets, an
-/// `RNTuple`'s pages), which a key-by-key copy would leave behind.
-fn is_multi_record(class: &str) -> bool {
-    matches!(class, "TTree" | "TNtuple" | "TNtupleD" | "TChain") || class.contains("RNTuple")
 }
 
 /// One subdirectory in a file being composed: what it holds, and the
