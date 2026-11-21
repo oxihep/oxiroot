@@ -13,7 +13,7 @@ one `Graph` whose `errors` field selects the concrete class:
 
 | Rust value | ROOT class | Error bars |
 | --- | --- | --- |
-| `GraphErrors::None` | `Graph` | none |
+| `GraphErrors::Plain` | `Graph` | none |
 | `GraphErrors::Symmetric { ex, ey }` | `TGraphErrors` | symmetric x/y |
 | `GraphErrors::Asymmetric { ex_low, ex_high, ey_low, ey_high }` | `TGraphAsymmErrors` | independent low/high per axis |
 
@@ -48,22 +48,20 @@ let plain = Graph::new(
 )?;
 
 // TGraphErrors: symmetric x and y error bars.
-let sym = Graph::with_errors(
-    vec![1.0, 2.0, 3.0],   // x
-    vec![10.0, 20.0, 30.0], // y
-    vec![0.1, 0.1, 0.1],    // ex
-    vec![1.0, 2.0, 1.5],    // ey
-)?;
+let sym = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?
+    .with_errors(GraphErrors::Symmetric {
+        ex: vec![0.1, 0.1, 0.1],
+        ey: vec![1.0, 2.0, 1.5],
+    })?;
 
 // TGraphAsymmErrors: independent low/high errors on each axis.
-let asym = Graph::with_asymm_errors(
-    vec![1.0, 2.0, 3.0],     // x
-    vec![10.0, 20.0, 30.0],  // y
-    vec![0.1, 0.1, 0.1],     // ex_low
-    vec![0.2, 0.2, 0.2],     // ex_high
-    vec![1.0, 2.0, 1.5],     // ey_low
-    vec![1.5, 2.5, 2.0],     // ey_high
-)?;
+let asym = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?
+    .with_errors(GraphErrors::Asymmetric {
+        ex_low: vec![0.1, 0.1, 0.1],
+        ex_high: vec![0.2, 0.2, 0.2],
+        ey_low: vec![1.0, 2.0, 1.5],
+        ey_high: vec![1.5, 2.5, 2.0],
+    })?;
 ```
 
 ## Naming and titling
@@ -75,10 +73,7 @@ Set the name and title with the chainable `named` / `titled` builders:
 ```rust
 use oxiroot::prelude::*;
 
-let g = Graph::with_errors(
-    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
-    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)?
+let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("resolution")
 .titled("Detector resolution vs. p_{T}");
 ```
@@ -86,26 +81,22 @@ let g = Graph::with_errors(
 !!! warning
     Writing an unnamed graph is a loud error, as is writing two objects with the
     same name into one directory. Give every graph a non-empty, unique key name
-    before `write_root` / `FileWriter::write`.
+    before `FileWriter::write`.
 
 ## Writing
 
-`Graph` implements the [`WriteRoot`](../api/oxiroot/index.html) trait, the one
-way to write any single writable object. `write_root` writes the graph as the
-sole content of a new file; `to_root_bytes` returns just the streamed object
+`Graph` implements the [`WriteRoot`](../api/oxiroot/index.html) trait, so
+`FileWriter::add` stores it; `to_root_bytes` returns just the streamed object
 payload (no file framing).
 
 ```rust
 use oxiroot::prelude::*;
 
-let g = Graph::with_errors(
-    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
-    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)?
+let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("resolution")
 .titled("Detector resolution");
 
-g.write_root("graph.root", Compression::None)?;
+FileWriter::create("graph.root").add(&g).compression(Compression::Stored).write()?;
 ```
 
 To put several objects (graphs, histograms, profiles — any mix) in one file, or
@@ -116,13 +107,13 @@ to use subdirectories, use [`FileWriter`](../api/oxiroot/index.html).
 use oxiroot::prelude::*;
 
 let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.named("g");
-let h = Hist::reg(10, 0.0, 1.0).double().to_root().named("h");
+let h = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("h");
 
 FileWriter::create("out.root")
     .add(&g)
     .add(&h)
     .dir("by_region", |d| d.add(&g)) // a TDirectory holding `g`
-    .write(Compression::Zstd(5))?;
+    .write()?;
 ```
 
 The resulting file reads back in ROOT, uproot, and oxiroot. See
@@ -140,7 +131,7 @@ use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("graph.root")?;
-let g = Graph::read_root(&f, "resolution")?;
+let g = f.get::<Graph>("resolution")?;
 
 println!("{} points, class {}", g.len(), g.class_name());
 match g.errors() {
@@ -150,19 +141,19 @@ match g.errors() {
     GraphErrors::Asymmetric { ey_low, ey_high, .. } => {
         println!("asymmetric y errors: low={ey_low:?}, high={ey_high:?}");
     }
-    GraphErrors::None => println!("no error bars"),
+    GraphErrors::Plain => println!("no error bars"),
     _ => println!("another error layout"), // GraphErrors is #[non_exhaustive]
 }
 ```
 
-Read a graph from inside a subdirectory with `read_root_in`:
+Read a graph from inside a subdirectory by its path:
 
 ```rust
 use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("out.root")?;
-let g = Graph::read_root_in(&f, "by_region", "g")?;
+let g = f.get::<Graph>("by_region/g")?;
 ```
 
 ## Fitting a graph
@@ -176,10 +167,7 @@ the graph carries no errors.
 ```rust
 use oxiroot::prelude::*;
 
-let graph = Graph::with_errors(
-    vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0],
-    vec![0.1, 0.1, 0.1], vec![1.0, 2.0, 1.5],
-)?
+let graph = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("g");
 
 let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
@@ -203,7 +191,7 @@ use oxiroot::prelude::*;
 use oxiroot::FileReader;
 
 let f = FileReader::open("graph_function.root")?;
-let g = Graph::read_root(&f, "gfit")?;
+let g = f.get::<Graph>("gfit")?;
 
 for fun in &g.functions {
     // `formula` is in ROOT's `[pN]` form; `params` are the current values.
@@ -225,7 +213,7 @@ let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
 
 assert_eq!(g.functions[0].formula, "[p0]+[p1]*x");
-g.write_root("graph_function.root", Compression::None)?;
+FileWriter::create("graph_function.root").add(&g).compression(Compression::Stored).write()?;
 ```
 
 `GraphFunction` also carries the per-parameter fit errors and limits
@@ -253,9 +241,9 @@ let g = Graph2D::new(
 .named("surface")
 .titled("a 3-D scatter");
 
-g.write_root("g2d.root", Compression::Zstd(5))?;
+FileWriter::create("g2d.root").add(&g).write()?;
 
-let back = Graph2D::read_root(&FileReader::open("g2d.root")?, "surface")?;
+let back = FileReader::open("g2d.root")?.get::<Graph2D>("surface")?;
 assert_eq!(back.len(), 3);
 ```
 
@@ -268,7 +256,7 @@ transient in ROOT and not persisted.
 
 A `MultiErrorGraph` carries asymmetric x errors and **several independent
 layers** of asymmetric y errors — e.g. a statistical and a systematic band on the
-same points. Start from the first y-error layer and chain `add_y_error`:
+same points. Start from the first y-error layer and chain `with_y_error`:
 
 ```rust
 use oxiroot::prelude::*;
@@ -279,12 +267,12 @@ let g = MultiErrorGraph::new(
     vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5],    // x errors (low, high)
     vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0],    // statistical y error (low, high)
 )?
-.add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])? // systematic layer
+.with_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])? // systematic layer
 .named("spectrum");
 
 assert_eq!(g.n_y_errors(), 2);
-g.write_root("multi.root", Compression::Zstd(5))?;
-let back = MultiErrorGraph::read_root(&FileReader::open("multi.root")?, "spectrum")?;
+FileWriter::create("multi.root").add(&g).write()?;
+let back = FileReader::open("multi.root")?.get::<MultiErrorGraph>("spectrum")?;
 ```
 
 The `ey_low`/`ey_high` fields are `Vec<Vec<f64>>` (one inner `Vec` per layer).

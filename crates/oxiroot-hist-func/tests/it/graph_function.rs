@@ -2,14 +2,16 @@
 //! into the other keeps the bytes, and a function attached to a graph survives a
 //! file round trip as something `Func1D` can evaluate.
 
-use oxiroot_hist::{Compression, Graph, GraphFunction, ReadRoot, WriteRoot};
+use oxiroot_hist::{Graph, GraphFunction};
 use oxiroot_hist_func::Func1D;
+use oxiroot_io_core::{Compression, WriteRoot};
 use oxiroot_io_core::{FileReader, WBuffer};
 
 fn fitted() -> Func1D {
-    Func1D::new("fit", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0, 6.0)
+    Func1D::new("fit", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0..=6.0)
         .unwrap()
-        .with_params(vec![4.0, 1.5, 0.75, 0.25])
+        .with_params(&[4.0, 1.5, 0.75, 0.25])
+        .unwrap()
 }
 
 #[test]
@@ -26,7 +28,7 @@ fn conversion_round_trips_in_memory() {
     let record = f.to_graph_function();
     assert_eq!(record.formula, f.formula());
     assert_eq!(record.params, f.params());
-    assert_eq!((record.xmin, record.xmax), f.range());
+    assert_eq!(record.xmin..=record.xmax, f.range());
     assert_eq!(Func1D::from_graph_function(record).unwrap(), f);
 }
 
@@ -38,16 +40,20 @@ fn attached_function_evaluates_after_a_file_round_trip() {
         .named("g")
         .with_function(f.to_graph_function());
     let path = std::env::temp_dir().join("oxiroot_hist_func_graph_function.root");
-    g.write_root(&path, Compression::None).unwrap();
+    oxiroot_io_core::FileWriter::create(&path)
+        .add(&g)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
 
-    let back = Graph::read_root(&FileReader::open(&path).unwrap(), "g").unwrap();
+    let back = FileReader::open(&path).unwrap().get::<Graph>("g").unwrap();
     assert_eq!(back.functions.len(), 1);
     let h = Func1D::from_graph_function(back.functions[0].clone()).unwrap();
     for x in [-1.0, 0.0, 1.5, 2.25, 5.0] {
         assert_eq!(h.eval(x), f.eval(x), "x = {x}");
     }
     assert_eq!(h.name(), "fit");
-    assert_eq!(h.range(), (-2.0, 6.0));
+    assert_eq!(h.range(), -2.0..=6.0);
 }
 
 #[test]
@@ -73,9 +79,10 @@ fn to_model_works_for_a_function_with_a_free_text_title() {
 #[cfg(feature = "fit")]
 #[test]
 fn to_model_keeps_the_names_of_a_shortcut_formula() {
-    let f = Func1D::new("g", "gaus", -5.0, 5.0)
+    let f = Func1D::new("g", "gaus", -5.0..=5.0)
         .unwrap()
-        .with_params(vec![2.0, 0.5, 1.5]);
+        .with_params(&[2.0, 0.5, 1.5])
+        .unwrap();
     let model = f.to_model();
     let expected = oxifit::Model::from_formula("g", "gaus").unwrap();
     assert_eq!(model.param_names(), expected.param_names());
@@ -94,6 +101,7 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
         .reg(8, 0.0, 8.0)
         .double()
         .to_root()
+        .unwrap()
         .named("plane");
     for ix in 0..10 {
         for iy in 0..8 {
@@ -101,9 +109,10 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
             h.fill_weight(x, y, 2.0 + 0.5 * x + 1.5 * y);
         }
     }
-    let f2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", 0.0, 10.0, 0.0, 8.0)
+    let f2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", 0.0..=10.0, 0.0..=8.0)
         .unwrap()
-        .with_params(vec![1.0, 1.0, 1.0]);
+        .with_params(&[1.0, 1.0, 1.0])
+        .unwrap();
     let model = f2.to_model();
     assert_eq!(model.dim(), 2);
     assert_eq!(model.eval_at(&[3.0, 4.0]), f2.eval(3.0, 4.0));
@@ -120,6 +129,7 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
         .reg(5, 0.0, 5.0)
         .double()
         .to_root()
+        .unwrap()
         .named("cube");
     for ix in 0..4 {
         for iy in 0..3 {
@@ -136,15 +146,13 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
     let f3 = Func3D::new(
         "cube",
         "[0]+[1]*x+[2]*y+[3]*z",
-        0.0,
-        4.0,
-        0.0,
-        3.0,
-        0.0,
-        5.0,
+        0.0..=4.0,
+        0.0..=3.0,
+        0.0..=5.0,
     )
     .unwrap()
-    .with_params(vec![0.0, 0.5, 0.0, 1.0]);
+    .with_params(&[0.0, 0.5, 0.0, 1.0])
+    .unwrap();
     let fit = h3.fit(&f3.to_model());
     assert!(fit.valid, "{fit:?}");
     for (got, want) in fit.params.iter().zip([1.0, 1.0, -1.0, 2.0]) {

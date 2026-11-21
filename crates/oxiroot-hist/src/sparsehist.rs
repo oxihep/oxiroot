@@ -9,11 +9,12 @@
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, read_object_base};
-use oxiroot_io_core::{FileReader, RBuffer, Result};
+use oxiroot_io_core::raw::{read_named, read_object_base, read_pointer_header};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::axis::Axis;
-use crate::base::{BinContentType, check_len, object_bytes, object_bytes_in, read_tarray};
+use crate::base::{BinContentType, check_len, read_tarray};
 
 /// A filled cell: one (per-axis, flow-inclusive) bin index per dimension, and its
 /// content.
@@ -86,9 +87,10 @@ impl SparseHist {
 
     /// Create an empty `SparseHist` over the given per-dimension uniform axes,
     /// `(nbins, xmin, xmax)`.
-    pub fn new(axes: &[(i32, f64, f64)]) -> SparseHist {
+    #[must_use]
+    pub fn new(axes: &[(i32, f64, f64)]) -> Self {
         let n = axes.len();
-        SparseHist {
+        Self {
             name: String::new(),
             title: String::new(),
             axes: axes
@@ -107,6 +109,7 @@ impl SparseHist {
     }
 
     /// Number of dimensions.
+    #[must_use]
     pub fn ndim(&self) -> usize {
         self.axes.len()
     }
@@ -120,6 +123,7 @@ impl SparseHist {
     /// filled.
     pub fn fill(&mut self, coords: &[f64]) -> Result<()> {
         check_len("THnSparse fill coordinates", self.ndim(), coords.len())?;
+        self.check_coordinate_width()?;
         let bins: Vec<i32> = self
             .axes
             .iter()
@@ -140,16 +144,25 @@ impl SparseHist {
         Ok(())
     }
 
+    /// A filled cell is stored under one packed coordinate, which this crate
+    /// holds in 64 bits. ROOT can pack wider ones (many axes, or very finely
+    /// binned ones); they are refused rather than truncated.
+    fn check_coordinate_width(&self) -> Result<()> {
+        let bits: u32 = self.axes.iter().map(axis_bit_width).sum();
+        if bits > u64::BITS {
+            return Err(Error::Unsupported(format!(
+                "a THnSparse whose packed bin coordinate takes {bits} bits \
+                 (oxiroot holds at most {})",
+                u64::BITS
+            )));
+        }
+        Ok(())
+    }
+
     /// Per-axis bit widths used to pack a compact coordinate
     /// (`bits[d] = bitlength(nbins[d] + 2)`).
     pub(crate) fn axis_bits(&self) -> Vec<u32> {
-        self.axes
-            .iter()
-            .map(|ax| {
-                let cells = (ax.nbins.max(0) + 2).cast_unsigned();
-                u32::BITS - cells.leading_zeros()
-            })
-            .collect()
+        self.axes.iter().map(axis_bit_width).collect()
     }
 
     /// Pack per-axis bins into the compact global coordinate.
@@ -180,7 +193,7 @@ impl SparseHist {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<SparseHist> {
+    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let tt = r.read_version()?; // THnSparseT<TArrayD> wrapper
         let _ts = r.read_version()?; // SparseHist v3
         let thnbase = r.read_version()?; // THnBase v1
@@ -205,7 +218,7 @@ impl SparseHist {
             r.seek(end)?;
         }
 
-        let mut h = SparseHist {
+        let mut h = Self {
             name: named.name,
             title: named.title,
             axes,
@@ -217,6 +230,8 @@ impl SparseHist {
             bins: Vec::new(),
             index: CellIndex::default(),
         };
+        // Before unpacking: a wider coordinate was cut to its low 64 bits.
+        h.check_coordinate_width()?;
         let bit_widths = h.axis_bits();
         h.bins = bins
             .into_iter()
@@ -229,22 +244,20 @@ impl SparseHist {
     }
 }
 
+/// The bits one axis takes in a packed coordinate: `bitlength(nbins + 2)`.
+fn axis_bit_width(axis: &Axis) -> u32 {
+    let cells = (axis.nbins.max(0) + 2).cast_unsigned();
+    u32::BITS - cells.leading_zeros()
+}
+
 /// Consume an object-pointer header (`{byte count}{class tag}`), leaving the
 /// cursor at the object body. Returns `false` for a null pointer.
-fn enter_object(r: &mut RBuffer) -> Result<bool> {
-    let bc = r.be_i32()?.cast_unsigned();
-    if bc == 0 {
-        return Ok(false); // null pointer
-    }
-    let tag = r.be_i32()?.cast_unsigned();
-    if tag == 0xFFFF_FFFF {
-        while r.u8()? != 0 {} // kNewClassTag: NUL-terminated class name
-    }
-    Ok(true)
+fn enter_object(r: &mut RBuffer<'_>) -> Result<bool> {
+    Ok(read_pointer_header(r)?.is_some())
 }
 
 /// Read a `TObjArray` header, returning the element count.
-fn read_objarray_len(r: &mut RBuffer) -> Result<usize> {
+fn read_objarray_len(r: &mut RBuffer<'_>) -> Result<usize> {
     let _oa = r.read_version()?; // TObjArray version 3
     read_object_base(r)?;
     let _name = r.string()?;
@@ -254,7 +267,7 @@ fn read_objarray_len(r: &mut RBuffer) -> Result<usize> {
 }
 
 /// Read `fAxes`: a `TObjArray` of `Axis` object pointers.
-fn read_axis_array(r: &mut RBuffer) -> Result<Vec<Axis>> {
+fn read_axis_array(r: &mut RBuffer<'_>) -> Result<Vec<Axis>> {
     let n = read_objarray_len(r)?;
     (0..n)
         .map(|_| {
@@ -266,7 +279,7 @@ fn read_axis_array(r: &mut RBuffer) -> Result<Vec<Axis>> {
 
 /// Read `fBinContent`: a `TObjArray` of `THnSparseArrayChunk`. Returns each
 /// filled bin as `(compact coordinate, content)`.
-fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
+fn read_bin_content(r: &mut RBuffer<'_>, _ndim: usize) -> Result<Vec<(u64, f64)>> {
     let nchunks = read_objarray_len(r)?;
     let mut out = Vec::new();
     for _ in 0..nchunks {
@@ -276,6 +289,13 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
         let _chunk = r.read_version()?; // THnSparseArrayChunk v1
         read_object_base(r)?;
         let single = usize::saturating_from(r.be_i32()?); // fSingleCoordinateSize
+        if single > size_of::<u64>() {
+            return Err(Error::Unsupported(format!(
+                "a THnSparse chunk with {single}-byte packed coordinates \
+                 (oxiroot holds at most {})",
+                size_of::<u64>()
+            )));
+        }
         let coords_size = usize::saturating_from(r.be_i32()?); // fCoordinatesSize
         let _marker = r.u8()?; // char* presence flag
         let coords = r.bytes(coords_size)?.to_vec();
@@ -301,23 +321,12 @@ fn read_bin_content(r: &mut RBuffer, _ndim: usize) -> Result<Vec<(u64, f64)>> {
     Ok(out)
 }
 
-/// Read a `SparseHist` named `name` from `file`.
-pub(crate) fn read_thnsparse(file: &FileReader, name: &str) -> Result<SparseHist> {
-    SparseHist::read(&mut RBuffer::new(&object_bytes(
-        file,
-        name,
-        "THnSparseT<TArrayD>",
-    )?))
-}
+impl ReadRoot for SparseHist {
+    const CLASS: &'static str = "THnSparseT<TArrayD>";
 
-/// Read a `THnSparseT<TArrayD>` from subdirectory `subdir`.
-pub(crate) fn read_thnsparse_in(file: &FileReader, subdir: &str, name: &str) -> Result<SparseHist> {
-    SparseHist::read(&mut RBuffer::new(&object_bytes_in(
-        file,
-        subdir,
-        name,
-        "THnSparseT<TArrayD>",
-    )?))
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+    }
 }
 
 #[cfg(test)]
@@ -354,5 +363,24 @@ mod index_tests {
         h.fill(&x).unwrap();
         let again = h.bins.iter().filter(|b| b.coords == gone.coords).count();
         assert_eq!(again, 1);
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    /// Seven axes of 1000 bins pack into 70 bits, more than the 64 a packed
+    /// coordinate is held in: refused, where it used to be cut short.
+    #[test]
+    fn a_coordinate_wider_than_64_bits_is_refused() {
+        let mut wide = SparseHist::new(&[(1000, 0.0, 1.0); 7]);
+        let err = wide.fill(&[0.5; 7]).unwrap_err();
+        assert!(matches!(err, Error::Unsupported(_)), "{err}");
+        assert!(wide.bins.is_empty(), "nothing was filled");
+
+        let mut fits = SparseHist::new(&[(1000, 0.0, 1.0); 6]);
+        fits.fill(&[0.5; 6]).unwrap();
+        assert_eq!(fits.bins.len(), 1);
     }
 }

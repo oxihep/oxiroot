@@ -7,13 +7,11 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::sync::LazyLock;
 
-use oxiroot_io_core::raw::{write_named, write_object_base};
+pub(crate) use oxiroot_io_core::WriteRoot;
+pub(crate) use oxiroot_io_core::raw::write_object_ptr;
+use oxiroot_io_core::raw::{K_BYTE_COUNT_MASK, write_named, write_object_base};
 use oxiroot_io_core::streamer_gen::{ClassDef, StreamerInfoList};
 use oxiroot_io_core::{ObjString, WBuffer};
-// The object framework (the `WriteRoot` trait and `FileWriter`) lives
-// in `oxiroot-io-core`; re-export it so `oxiroot_hist::{WriteRoot, FileWriter, SubdirWriter}`
-// and the in-crate `crate::write::WriteRoot` path keep resolving.
-pub use oxiroot_io_core::{FileWriter, SubdirWriter, WriteRoot};
 
 use crate::axis::Axis;
 use crate::base::BinContentType;
@@ -113,7 +111,7 @@ impl_write_root_hist!(
 /// its members' types do not name (`$holds`), and the bin labels of its axes
 /// (`$axis`).
 macro_rules! impl_write_root_fixed {
-    ($ty:ty, $class:expr_2021, $bytes:ident, [$($holds:expr_2021),*], [$($axis:ident),*]) => {
+    ($ty:ty, $class:expr, $bytes:ident, [$($holds:expr),*], [$($axis:ident),*]) => {
         impl WriteRoot for $ty {
             fn root_class(&self) -> String {
                 $class.to_string()
@@ -384,7 +382,7 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
     write_tarrayd(w, &h.sums); // TH1D TArrayD base: per-bin sum of w*y
     w.end_object(th1d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode.to_code());
+    w.be_i32(h.error_mode.code());
     w.be_f64(h.ymin);
     w.be_f64(h.ymax);
     w.be_f64(h.tsumwy);
@@ -423,7 +421,7 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
     write_tarrayd(w, &h.sums); // TH2D TArrayD base: per-cell Σ(w·z)
     w.end_object(th2d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode.to_code());
+    w.be_i32(h.error_mode.code());
     w.be_f64(h.zmin);
     w.be_f64(h.zmax);
     w.be_f64(h.tsumwz);
@@ -464,7 +462,7 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
     write_tarrayd(w, &h.sums); // TH3D TArrayD base: per-cell Σ(w·t)
     w.end_object(th3d);
     write_tarrayd(w, &h.bin_entries); // fBinEntries
-    w.be_i32(h.error_mode.to_code());
+    w.be_i32(h.error_mode.code());
     w.be_f64(h.tmin);
     w.be_f64(h.tmax);
     w.be_f64(h.tsumwt);
@@ -497,25 +495,13 @@ const EFF_FUNCTIONS_EMPTY: [u8; 21] = [
 /// {TH1D object}`. ROOT shares the class via a back-reference for the second
 /// histogram; a fresh `kNewClassTag` for both is read identically.
 fn write_th1d_ptr(w: &mut WBuffer, h: &Hist1D) {
-    let bc = w.reserve(4);
-    let start = w.len();
-    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
-    w.bytes(b"TH1D\0");
-    write_th1d(w, h);
-    let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(bc, 0x4000_0000 | len);
+    write_object_ptr(w, "TH1D", |w| write_th1d(w, h));
 }
 
 /// Write an embedded `TH1F*` object pointer (a graph's `fHistogram` display
 /// frame): `{byte count}{kNewClassTag}{"TH1F"}{TH1F object}`.
 fn write_th1f_ptr(w: &mut WBuffer, h: &Hist1D) {
-    let bc = w.reserve(4);
-    let start = w.len();
-    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
-    w.bytes(b"TH1F\0");
-    write_th1f(w, h);
-    let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(bc, 0x4000_0000 | len);
+    write_object_ptr(w, "TH1F", |w| write_th1f(w, h));
 }
 
 /// Serialize an `Efficiency` object (with its byte-count/version header) into `w`.
@@ -545,19 +531,6 @@ pub(crate) fn tefficiency_to_bytes(h: &Efficiency) -> Vec<u8> {
     let mut w = WBuffer::new();
     write_tefficiency(&mut w, h);
     w.into_vec()
-}
-
-/// Write an object-pointer member: `{byte count}{kNewClassTag}{class\0}{body}`,
-/// with `body` written by `f`.
-pub(crate) fn write_object_ptr(w: &mut WBuffer, class: &str, f: impl FnOnce(&mut WBuffer)) {
-    let bc = w.reserve(4);
-    let start = w.len();
-    w.bytes(&[0xFF, 0xFF, 0xFF, 0xFF]); // kNewClassTag
-    w.bytes(class.as_bytes());
-    w.u8(0);
-    f(w);
-    let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(bc, 0x4000_0000 | len);
 }
 
 /// Write a `TObjArray` (version 3) of `n` object-pointer elements, each emitted
@@ -691,14 +664,14 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
 
     // fCells (TStreamerLoop): a {byte count, version} header then `ncells_grid`
     // empty TLists. ROOT/uproot skip the 6-byte header; we patch the byte count.
-    let cells_bc = w.reserve(4);
+    let cells_bc = w.reserve::<4>();
     let cells_start = w.len();
     w.be_u16(10); // streamloop version (constant in ROOT's PolyHist)
     for _ in 0..ncells_grid {
         write_empty_tlist(w);
     }
     let cells_len = u32::saturating_from(w.len() - cells_start);
-    w.patch_be_u32(cells_bc, 0x4000_0000 | cells_len);
+    w.patch_be_u32(cells_bc, K_BYTE_COUNT_MASK | cells_len);
 
     let step_x = (h.xaxis.xmax - h.xaxis.xmin) / f64::from(POLY_CELLS_PER_AXIS);
     let step_y = (h.yaxis.xmax - h.yaxis.xmin) / f64::from(POLY_CELLS_PER_AXIS);
@@ -849,7 +822,7 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &Graph) {
     let x = &g.x[..n];
     let y = &g.y[..n];
     match &g.errors {
-        GraphErrors::None => write_tgraph_base(
+        GraphErrors::Plain => write_tgraph_base(
             w,
             &g.name,
             &g.title,

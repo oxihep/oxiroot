@@ -23,10 +23,8 @@ mod collections;
 mod compare;
 mod convert;
 mod family;
-mod from_member;
 mod naming;
 mod ops;
-mod read;
 
 mod axis;
 mod derive;
@@ -52,8 +50,6 @@ mod stats;
 mod threaded;
 mod write;
 
-pub use oxiroot_io_core::Compression;
-
 pub use axis::Axis;
 pub use base::BinContentType;
 pub use collections::{GraphStack, HistStack};
@@ -65,7 +61,7 @@ pub use graph2d::Graph2D;
 pub use multierrorgraph::MultiErrorGraph;
 // The generic objects live in `oxiroot-io-core`; re-exported so these paths keep
 // resolving.
-pub use convert::{FromRoot, ToRoot};
+pub use convert::ToRoot;
 pub use efficiency::Efficiency;
 pub use hist1d::Hist1D;
 pub use hist2d::Hist2D;
@@ -75,20 +71,16 @@ pub use ops::RootHistogram;
 pub use oxihist;
 pub use oxihist::Random;
 /// Build histograms with oxihist's builder, then [`ToRoot::to_root`] them:
-/// `Hist::reg(50, 0.0, 100.0).weight().to_root()` is a `TH1D` with `Sumw2`.
+/// `Hist::reg(50, 0.0, 100.0).weight().to_root()?` is a `TH1D` with `Sumw2`.
 pub use oxihist::{Build1, Build2, Build3, Hist};
-pub use oxiroot_io_core::{
-    FromMember, ListKind, ObjList, ObjMap, ObjString, ParamValue, Parameter,
-};
 pub use polyhist::{PolyBin, PolyHist};
 pub use profile1d::{ErrorMode, Profile1D};
 pub use profile2d::Profile2D;
 pub use profile3d::Profile3D;
-pub use read::ReadRoot;
 pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
 pub use threaded::{
     Mergeable, ThreadedFill1, ThreadedFill2, ThreadedFill3, ThreadedFill4, ThreadedHist,
 };
-pub use write::{FileWriter, SubdirWriter, WriteRoot, hist_streamer_classes};
+pub use write::hist_streamer_classes;

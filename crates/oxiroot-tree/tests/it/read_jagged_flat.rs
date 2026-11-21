@@ -1,11 +1,12 @@
-//! The offsets+flat jagged view (B9): read_branch_flat avoids the Vec<Vec>
-//! allocation and stays consistent with read_branch.
+//! The offsets+flat jagged view (B9): `read_branch_flat` avoids the Vec<Vec>
+//! allocation and stays consistent with `read_branch`.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 fn open() -> FileReader {
     FileReader::open(

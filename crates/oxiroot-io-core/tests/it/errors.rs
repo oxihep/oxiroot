@@ -1,16 +1,15 @@
 //! The typed errors a caller can match on: a missing key or subdirectory, a key
 //! holding another class, invalid input and an unsupported URL scheme.
 
-use oxiroot_io_core::raw::object_bytes_any;
 use oxiroot_io_core::{
-    Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue, Parameter, ReadRoot,
+    Compression, Error, FileReader, FileWriter, ObjList, ObjString, ParamValue, Parameter,
 };
 
 /// A file with a string `s` and a list `l` at the top, and a string `t` in the
 /// subdirectory `sub`.
 fn file() -> FileReader {
     let s = ObjString::new("hello").named("s");
-    let l = ObjList::list()
+    let l = ObjList::new(oxiroot_io_core::ListKind::List)
         .named("l")
         .add(&ObjString::new("a").named("a"));
     let t = ObjString::new("there").named("t");
@@ -18,7 +17,8 @@ fn file() -> FileReader {
         .add(&s)
         .add(&l)
         .dir("sub", |d| d.add(&t))
-        .to_bytes(Compression::None)
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap();
     FileReader::from_bytes(bytes).unwrap()
 }
@@ -26,7 +26,7 @@ fn file() -> FileReader {
 #[test]
 fn a_missing_key_or_subdirectory_is_not_found() {
     let f = file();
-    let err = object_bytes_any(&f, "nope").unwrap_err();
+    let err = f.key("nope").unwrap_err();
     assert_eq!(
         err,
         Error::NotFound {
@@ -43,17 +43,17 @@ fn a_missing_key_or_subdirectory_is_not_found() {
     );
 
     // A key in a subdirectory is named by its path.
-    let err = f.object_in("sub", "nope").unwrap_err();
+    let err = f.key("sub/nope").unwrap_err();
     assert!(
         matches!(&err, Error::NotFound { what: "key", name } if name == "sub/nope"),
         "{err:?}"
     );
-    assert_eq!(f.object_in("sub", "t").unwrap().0, "TObjString");
+    assert_eq!(f.key("sub/t").unwrap().class_name, "TObjString");
 }
 
 #[test]
 fn a_key_holding_another_class_is_the_wrong_class() {
-    let err = ObjString::read_root(&file(), "l").unwrap_err();
+    let err = file().get::<ObjString>("l").unwrap_err();
     assert_eq!(
         err,
         Error::WrongClass {
@@ -72,7 +72,8 @@ fn invalid_input_says_so() {
 
     let err = FileWriter::create("unused.root")
         .add(&ObjString::new("no name"))
-        .to_bytes(Compression::None)
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap_err();
     assert!(
         matches!(&err, Error::InvalidInput(m) if m.contains("unnamed")),

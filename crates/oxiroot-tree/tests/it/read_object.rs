@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 #[test]
 fn reads_split_single_object_scalars() {

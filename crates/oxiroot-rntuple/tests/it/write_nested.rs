@@ -3,11 +3,12 @@
 //! then read them back through our own reader.
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Column, Field, FieldValues};
 
 fn round_trip(fields: &[Field], tag: &str) -> FileReader {
     let out = std::env::temp_dir().join(format!("oxiroot_write_nested_{tag}.root"));
-    crate::support::write_rntuple_file(&out, "ntpl", fields, Compression::None).expect("write");
+    crate::support::write_rntuple_file(&out, "ntpl", fields, Compression::Stored).expect("write");
     FileReader::open(&out).expect("reopen")
 }
 

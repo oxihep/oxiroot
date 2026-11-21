@@ -48,6 +48,7 @@ fn main() {
     let mut peak = Hist::reg(60, 80.0, 100.0)
         .double()
         .to_root()
+        .unwrap()
         .named("mass")
         .titled("di-muon mass [GeV]");
     peak.track_sumw2(); // track per-bin errors for the chi-square
@@ -81,6 +82,7 @@ fn main() {
     let mut withbkg = Hist::reg(60, 80.0, 100.0)
         .double()
         .to_root()
+        .unwrap()
         .named("mass_bkg")
         .titled("peak + background");
     withbkg.track_sumw2();
@@ -125,15 +127,16 @@ fn main() {
         .iter()
         .map(|&x| 0.5 * x + 1.0 + rng.gauss(0.0, 0.03))
         .collect();
-    let graph = Graph::with_errors(
-        thr.to_vec(),
-        resp,
-        vec![0.0; thr.len()],
-        vec![0.03; thr.len()],
-    )
-    .expect("x, y and their errors have the same length")
-    .named("resp")
-    .titled("response vs threshold");
+    let graph = Graph::new(thr.to_vec(), resp)
+        .and_then(|g| {
+            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                ex: vec![0.0; thr.len()],
+                ey: vec![0.03; thr.len()],
+            })
+        })
+        .expect("x, y and their errors have the same length")
+        .named("resp")
+        .titled("response vs threshold");
     let line = graph.fit(&Model::polynomial("line", 1).with_params(vec![0.0, 0.0]));
     println!(
         "TGraph line fit (truth: slope 0.5, intercept 1.0):  slope = {:.3} ± {:.3}, intercept = {:.3}",

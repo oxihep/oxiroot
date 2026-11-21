@@ -39,7 +39,7 @@ pub(crate) fn in_range_cells(n: &[usize]) -> impl Iterator<Item = usize> + use<>
 
 /// Effective per-bin error² for `other`: its `fSumw2[i]` if tracked, else the
 /// content (for an unweighted histogram, `Σw² == Σw == content`).
-fn err2(sumw2: &[f64], contents: &[f64], i: usize) -> f64 {
+pub(crate) fn err2(sumw2: &[f64], contents: &[f64], i: usize) -> f64 {
     sumw2.get(i).copied().unwrap_or_else(|| contents[i].abs())
 }
 
@@ -218,8 +218,8 @@ macro_rules! impl_hist_family {
             /// Clear all bin contents, errors, entries and moment sums (ROOT
             /// `Reset`), keeping the binning.
             pub fn reset(&mut self) {
-                self.contents.iter_mut().for_each(|v| *v = 0.0);
-                self.sumw2.iter_mut().for_each(|v| *v = 0.0);
+                self.contents.fill(0.0);
+                self.sumw2.fill(0.0);
                 self.entries = 0.0;
                 self.tsumw = 0.0;
                 self.tsumw2 = 0.0;

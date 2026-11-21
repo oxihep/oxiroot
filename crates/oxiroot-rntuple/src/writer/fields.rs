@@ -5,7 +5,7 @@ use oxiroot_io_core::{Error, Result};
 use super::lower::flatten;
 use crate::field::leading_zero;
 
-/// A column of data for one RNTuple field.
+/// A column of data for one `RNTuple` field.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Column {
@@ -77,19 +77,19 @@ pub enum Column {
     /// A record / struct: named sub-fields (a struct-of-arrays), each with one
     /// value per record instance. At top level this is a struct field; wrap it
     /// in [`Nested`](Self::Nested) for a `std::vector<MyStruct>`.
-    Record(Vec<(String, Column)>),
+    Record(Vec<(String, Self)>),
     /// A collection whose element is itself a collection or record — e.g.
     /// `std::vector<std::vector<T>>` or `std::vector<MyStruct>`. The cumulative
     /// `offsets` partition the flattened child `items`: entry `i` spans
     /// `items[offsets[i]..offsets[i + 1]]`, so `offsets` holds one more value
-    /// than there are entries and starts with `0`, as [`crate::FieldValues::Nested`]
+    /// than there are entries and starts with `0`, as [`Nested`](crate::raw::FieldValues::Nested)
     /// and the tree's `BranchValues` do. The `vec_vec_*` constructors build the
     /// common nested-vector cases for you.
     Nested {
         /// Cumulative element boundaries: a leading `0`, then one per entry.
         offsets: Vec<u64>,
         /// The flattened child column.
-        items: Box<Column>,
+        items: Box<Self>,
     },
     /// A `std::variant`: the `alternatives` (named `_0`, `_1`, … on disk) each
     /// hold their densely-packed active values, and `tags` selects the active
@@ -99,7 +99,7 @@ pub enum Column {
     /// `tags == k + 1`.
     Variant {
         /// The variant alternatives, in order.
-        alternatives: Vec<Column>,
+        alternatives: Vec<Self>,
         /// Per entry, the 1-based active alternative (`0` = valueless).
         tags: Vec<u32>,
     },
@@ -111,7 +111,7 @@ pub enum Column {
         /// Elements per entry (`N`).
         len: usize,
         /// The flattened element column.
-        items: Box<Column>,
+        items: Box<Self>,
     },
     /// A `std::bitset<N>`: exactly `len` bits per entry, stored in the field's own
     /// Bit column. `bits` is the flattened bit stream (`len * entries`).
@@ -129,7 +129,7 @@ pub enum Column {
         /// The C++ class name (e.g. `"Hit"`).
         type_name: String,
         /// The named members, in declaration order.
-        members: Vec<(String, Column)>,
+        members: Vec<(String, Self)>,
     },
     /// An associative container stored as a collection (`std::set<T>`,
     /// `std::map<K, V>`, …): an Index offset column from `offsets` plus a single
@@ -142,7 +142,7 @@ pub enum Column {
         /// Cumulative element boundaries: a leading `0`, then one per entry.
         offsets: Vec<u64>,
         /// The flattened element child.
-        items: Box<Column>,
+        items: Box<Self>,
     },
     /// A nullable / "late" field — `std::optional<T>` or `std::unique_ptr<T>`.
     /// `present[i]` flags whether entry `i` holds a value; `values` holds the
@@ -154,55 +154,55 @@ pub enum Column {
         /// Per-entry presence (length = entry count).
         present: Vec<bool>,
         /// The present values, densely packed in entry order.
-        values: Box<Column>,
+        values: Box<Self>,
     },
     /// A `std::atomic<T>` field — stored as the bare `T`. Built by `atomic_*`.
-    Atomic(Box<Column>),
+    Atomic(Box<Self>),
 }
 
 impl Column {
     /// Number of top-level entries.
     pub(super) fn len(&self) -> usize {
         match self {
-            Column::Bool(v) => v.len(),
-            Column::I8(v) => v.len(),
-            Column::U8(v) => v.len(),
-            Column::I16(v) => v.len(),
-            Column::U16(v) => v.len(),
-            Column::I32(v) => v.len(),
-            Column::I64(v) => v.len(),
-            Column::U32(v) => v.len(),
-            Column::U64(v) => v.len(),
-            Column::F32(v) => v.len(),
-            Column::F64(v) => v.len(),
-            Column::Str(v) => v.len(),
-            Column::VecBool(v) => v.len(),
-            Column::VecI8(v) => v.len(),
-            Column::VecU8(v) => v.len(),
-            Column::VecI16(v) => v.len(),
-            Column::VecU16(v) => v.len(),
-            Column::VecF32(v) => v.len(),
-            Column::VecF64(v) => v.len(),
-            Column::VecI32(v) => v.len(),
-            Column::VecI64(v) => v.len(),
-            Column::VecStr(v) => v.len(),
-            Column::HalfF32(v) => v.len(),
-            Column::TruncF32 { values, .. } => values.len(),
-            Column::QuantF32 { values, .. } => values.len(),
-            Column::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
-            Column::Nested { offsets, .. } => offsets.len().saturating_sub(1),
-            Column::Variant { tags, .. } => tags.len(),
-            Column::Array { len, items } => items.len().checked_div(*len).unwrap_or(0),
-            Column::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
-            Column::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
-            Column::Assoc { offsets, .. } => offsets.len().saturating_sub(1),
-            Column::Optional { present, .. } => present.len(),
-            Column::Atomic(inner) => inner.len(),
+            Self::Bool(v) => v.len(),
+            Self::I8(v) => v.len(),
+            Self::U8(v) => v.len(),
+            Self::I16(v) => v.len(),
+            Self::U16(v) => v.len(),
+            Self::I32(v) => v.len(),
+            Self::I64(v) => v.len(),
+            Self::U32(v) => v.len(),
+            Self::U64(v) => v.len(),
+            Self::F32(v) => v.len(),
+            Self::F64(v) => v.len(),
+            Self::Str(v) => v.len(),
+            Self::VecBool(v) => v.len(),
+            Self::VecI8(v) => v.len(),
+            Self::VecU8(v) => v.len(),
+            Self::VecI16(v) => v.len(),
+            Self::VecU16(v) => v.len(),
+            Self::VecF32(v) => v.len(),
+            Self::VecF64(v) => v.len(),
+            Self::VecI32(v) => v.len(),
+            Self::VecI64(v) => v.len(),
+            Self::VecStr(v) => v.len(),
+            Self::HalfF32(v) => v.len(),
+            Self::TruncF32 { values, .. } => values.len(),
+            Self::QuantF32 { values, .. } => values.len(),
+            Self::Record(subs) => subs.first().map_or(0, |(_, c)| c.len()),
+            Self::Nested { offsets, .. } => offsets.len().saturating_sub(1),
+            Self::Variant { tags, .. } => tags.len(),
+            Self::Array { len, items } => items.len().checked_div(*len).unwrap_or(0),
+            Self::Bitset { len, bits } => bits.len().checked_div(*len).unwrap_or(0),
+            Self::Object { members, .. } => members.first().map_or(0, |(_, c)| c.len()),
+            Self::Assoc { offsets, .. } => offsets.len().saturating_sub(1),
+            Self::Optional { present, .. } => present.len(),
+            Self::Atomic(inner) => inner.len(),
         }
     }
 }
 
-/// A named RNTuple field.
+/// A named `RNTuple` field.
 #[derive(Debug)]
 pub struct Field {
     /// Field name.
@@ -213,8 +213,8 @@ pub struct Field {
 
 impl Field {
     /// A field named `name` holding `data`.
-    pub fn new(name: impl Into<String>, data: Column) -> Field {
-        Field {
+    pub fn new(name: impl Into<String>, data: Column) -> Self {
+        Self {
             name: name.into(),
             data,
         }
@@ -358,14 +358,14 @@ late_ctors! {
 impl Field {
     /// A `float` field stored at half precision (the `Real16` column) — half the
     /// space, ~3 decimal digits.
-    pub fn half(name: impl Into<String>, values: Vec<f32>) -> Field {
-        Field::new(name, Column::HalfF32(values))
+    pub fn half(name: impl Into<String>, values: Vec<f32>) -> Self {
+        Self::new(name, Column::HalfF32(values))
     }
 
     /// A `float` field with its mantissa truncated to `bits` bits total (the
     /// `Real32Trunc` column, `10 <= bits <= 31`).
-    pub fn truncated(name: impl Into<String>, values: Vec<f32>, bits: u16) -> Field {
-        Field::new(name, Column::TruncF32 { values, bits })
+    pub fn truncated(name: impl Into<String>, values: Vec<f32>, bits: u16) -> Self {
+        Self::new(name, Column::TruncF32 { values, bits })
     }
 
     /// A `float` field linearly quantized into `bits`-wide integers over
@@ -377,8 +377,8 @@ impl Field {
         min: f64,
         max: f64,
         bits: u16,
-    ) -> Field {
-        Field::new(
+    ) -> Self {
+        Self::new(
             name,
             Column::QuantF32 {
                 values,
@@ -391,16 +391,16 @@ impl Field {
     /// A `std::variant` field: `alternatives` are the densely-packed active
     /// values per alternative, `tags` the 1-based active alternative per entry
     /// (`0` = valueless). See [`Column::Variant`].
-    pub fn variant(name: impl Into<String>, alternatives: Vec<Column>, tags: Vec<u32>) -> Field {
-        Field::new(name, Column::Variant { alternatives, tags })
+    pub fn variant(name: impl Into<String>, alternatives: Vec<Column>, tags: Vec<u32>) -> Self {
+        Self::new(name, Column::Variant { alternatives, tags })
     }
 
     /// A fixed-size array field (`std::array<T, N>`): `len` elements per entry,
     /// `items` the flattened element column (`len * entries` values). The element
     /// type spelling is taken from `items`. Use this for element types without a
     /// dedicated `array_*` shortcut.
-    pub fn array(name: impl Into<String>, len: usize, items: Column) -> Field {
-        Field::new(
+    pub fn array(name: impl Into<String>, len: usize, items: Column) -> Self {
+        Self::new(
             name,
             Column::Array {
                 len,
@@ -415,11 +415,11 @@ impl Field {
     /// # Errors
     /// [`Error::LengthMismatch`] if an entry's bit vector is not as long as the
     /// first one's.
-    pub fn bitset(name: impl Into<String>, data: Vec<Vec<bool>>) -> Result<Field> {
+    pub fn bitset(name: impl Into<String>, data: Vec<Vec<bool>>) -> Result<Self> {
         let name = name.into();
         let len = uniform_len(&name, &data)?;
         let bits: Vec<bool> = data.into_iter().flatten().collect();
-        Ok(Field::new(name, Column::Bitset { len, bits }))
+        Ok(Self::new(name, Column::Bitset { len, bits }))
     }
 
     /// A user-class field (`type_name`) split into named `members`. The ROOT
@@ -429,8 +429,8 @@ impl Field {
         name: impl Into<String>,
         type_name: impl Into<String>,
         members: Vec<(String, Column)>,
-    ) -> Field {
-        Field::new(
+    ) -> Self {
+        Self::new(
             name,
             Column::Object {
                 type_name: type_name.into(),
@@ -512,9 +512,9 @@ impl Field {
         offsets: Vec<u64>,
         keys: Column,
         vals: Column,
-    ) -> Field {
+    ) -> Self {
         let items = Column::Record(vec![("_0".into(), keys), ("_1".into(), vals)]);
-        Field::new(
+        Self::new(
             name,
             Column::Assoc {
                 type_name: format!("std::map<{key_type},{val_type}>"),
@@ -527,7 +527,7 @@ impl Field {
     /// A `std::map<std::int32_t, double>` field from one `(key, value)` list per
     /// entry. The pairs are stored in the order given (ROOT re-sorts a real
     /// `std::map` by key on read).
-    pub fn map_i32_f64(name: impl Into<String>, data: Vec<Vec<(i32, f64)>>) -> Field {
+    pub fn map_i32_f64(name: impl Into<String>, data: Vec<Vec<(i32, f64)>>) -> Self {
         let mut offsets = Vec::with_capacity(data.len() + 1);
         let mut keys = Vec::new();
         let mut vals = Vec::new();
@@ -539,7 +539,7 @@ impl Field {
             offsets.push(keys.len() as u64);
         }
         let offsets = leading_zero(offsets);
-        Field::map(
+        Self::map(
             name,
             "std::int32_t",
             "double",

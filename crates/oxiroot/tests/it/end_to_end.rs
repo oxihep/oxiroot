@@ -4,10 +4,12 @@
 //! regression anywhere (writer, reader, or a feature added on top) surfaces here.
 
 use crate::support::{NtupleObject, TreeObject};
-use oxiroot::hadd::merge_files;
-use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
+use oxiroot::hadd::Merger;
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, TreeReader};
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::{Branch, BranchValues};
 
 fn tmp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("oxiroot_e2e_{name}.root"))
@@ -20,6 +22,7 @@ fn writes_and_reads_a_mixed_object_file() {
     let mut h = Hist::reg(20, 0.0, 100.0)
         .double()
         .to_root()
+        .unwrap()
         .named("pt")
         .titled("p_{T}");
     for x in [5.0, 15.0, 15.0, 95.0] {
@@ -29,6 +32,7 @@ fn writes_and_reads_a_mixed_object_file() {
     let mut hv = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0])
         .double()
         .to_root()
+        .unwrap()
         .named("hv");
     for x in [0.5, 3.0, 50.0] {
         hv.fill(x);
@@ -38,16 +42,22 @@ fn writes_and_reads_a_mixed_object_file() {
         .reg(3, 0.0, 3.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h2");
     h2.fill(1.5, 1.5);
 
-    let mut prof = Hist::reg(10, 0.0, 10.0).mean().to_root().named("prof");
+    let mut prof = Hist::reg(10, 0.0, 10.0)
+        .mean()
+        .to_root()
+        .unwrap()
+        .named("prof");
     prof.fill(1.0, 5.0);
     prof.fill(1.0, 7.0);
 
-    let f = Func1D::new("f", "[0]*sin([1]*x)", 0.0, 6.3)
+    let f = Func1D::new("f", "[0]*sin([1]*x)", 0.0..=6.3)
         .unwrap()
-        .with_params(vec![2.0, 1.5]);
+        .with_params(&[2.0, 1.5])
+        .unwrap();
 
     let mut g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]).unwrap();
     g.name = "g".into();
@@ -60,37 +70,38 @@ fn writes_and_reads_a_mixed_object_file() {
         .add(&f)
         .add(&g)
         .add(&ObjString::new("skim v3").named("meta"))
-        .write(Compression::Zstd(5))
+        .write()
         .unwrap();
 
     // Every object reads back with its identity intact.
     let file = FileReader::open(tmp("mixed")).unwrap();
-    assert_eq!(Hist1D::read_root(&file, "pt").unwrap().integral(), 4.0);
+    assert_eq!(file.get::<Hist1D>("pt").unwrap().integral(), 4.0);
     assert_eq!(
-        Hist1D::read_root(&file, "hv").unwrap().edges(),
+        file.get::<Hist1D>("hv").unwrap().edges(),
         vec![0.0, 1.0, 2.0, 5.0, 10.0, 100.0]
     );
-    assert_eq!(Hist2D::read_root(&file, "h2").unwrap().integral(), 1.0);
-    assert!(Profile1D::read_root(&file, "prof").is_ok());
-    let f_back = Func1D::read_root(&file, "f").unwrap();
+    assert_eq!(file.get::<Hist2D>("h2").unwrap().integral(), 1.0);
+    assert!(file.get::<Profile1D>("prof").is_ok());
+    let f_back = file.get::<Func1D>("f").unwrap();
     assert!((f_back.eval(1.0) - f.eval(1.0)).abs() < 1e-9);
-    assert_eq!(Graph::read_root(&file, "g").unwrap().len(), 3);
-    assert!(ObjString::read_root(&file, "meta").is_ok());
+    assert_eq!(file.get::<Graph>("g").unwrap().len(), 3);
+    assert!(file.get::<ObjString>("meta").is_ok());
 }
 
 #[test]
 fn tree_round_trips_through_the_facade() {
-    TreeObject::new(
-        "Events",
-        vec![
-            Branch::i32("i", vec![1, 2, 3]),
-            Branch::f64("x", vec![1.5, 2.5, 3.5]),
-            Branch::string("s", vec!["a".into(), "b".into(), "c".into()]),
-            Branch::jagged_f64("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]),
-        ],
-    )
-    .write_root(tmp("tree"), Compression::Zstd(5))
-    .unwrap();
+    FileWriter::create(tmp("tree"))
+        .add(TreeObject::new(
+            "Events",
+            vec![
+                Branch::i32("i", vec![1, 2, 3]),
+                Branch::f64("x", vec![1.5, 2.5, 3.5]),
+                Branch::string("s", vec!["a".into(), "b".into(), "c".into()]),
+                Branch::jagged_f64("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]),
+            ],
+        ))
+        .write()
+        .unwrap();
 
     let f = FileReader::open(tmp("tree")).unwrap();
     let t = TreeReader::open(&f, "Events").unwrap();
@@ -111,16 +122,17 @@ fn tree_round_trips_through_the_facade() {
 
 #[test]
 fn rntuple_round_trips_through_the_facade() {
-    NtupleObject::new(
-        "ntpl",
-        vec![
-            Field::f64("mass", vec![91.2, 125.0]),
-            Field::vector_i32("hits", vec![vec![1, 2], vec![3]]),
-            Field::string("tag", vec!["z".into(), "h".into()]),
-        ],
-    )
-    .write_root(tmp("rn"), Compression::Zstd(5))
-    .unwrap();
+    FileWriter::create(tmp("rn"))
+        .add(NtupleObject::new(
+            "ntpl",
+            vec![
+                Field::f64("mass", vec![91.2, 125.0]),
+                Field::vector_i32("hits", vec![vec![1, 2], vec![3]]),
+                Field::string("tag", vec!["z".into(), "h".into()]),
+            ],
+        ))
+        .write()
+        .unwrap();
 
     let f = FileReader::open(tmp("rn")).unwrap();
     let nt = NtupleReader::open(&f, "ntpl").unwrap();
@@ -138,7 +150,11 @@ fn rntuple_round_trips_through_the_facade() {
 #[test]
 fn sampling_a_histogram_reproduces_its_shape() {
     // A source distribution peaked at 3.0.
-    let mut src = Hist::reg(50, 0.0, 10.0).double().to_root().named("src");
+    let mut src = Hist::reg(50, 0.0, 10.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("src");
     for _ in 0..200 {
         src.fill(3.0);
     }
@@ -149,7 +165,11 @@ fn sampling_a_histogram_reproduces_its_shape() {
 
     // Draw from it into a new histogram — reproducibly, with the seedable Random.
     let mut rng = Random::seed(7);
-    let mut drawn = Hist::reg(50, 0.0, 10.0).double().to_root().named("drawn");
+    let mut drawn = Hist::reg(50, 0.0, 10.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("drawn");
     drawn.fill_random(&src, 20_000, &mut rng);
 
     // All draws land in range, and the sampled mean tracks the source's.
@@ -169,16 +189,26 @@ fn sampling_a_histogram_reproduces_its_shape() {
 #[test]
 fn hadd_merges_histogram_files_end_to_end() {
     for (name, xs) in [("m1", [1.0, 2.0]), ("m2", [2.0, 3.0])] {
-        let mut h = Hist::reg(5, 0.0, 5.0).double().to_root().named("h");
+        let mut h = Hist::reg(5, 0.0, 5.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h");
         for x in xs {
             h.fill(x);
         }
-        h.write_root(tmp(name), Compression::Zstd(5)).unwrap();
+        FileWriter::create(tmp(name)).add(&h).write().unwrap();
     }
 
-    let report = merge_files(tmp("merged"), &[tmp("m1"), tmp("m2")], Compression::Zstd(5)).unwrap();
-    assert_eq!(report.merged, vec!["h".to_string()]);
+    let report = Merger::new()
+        .inputs([tmp("m1"), tmp("m2")])
+        .merge(tmp("merged"))
+        .unwrap();
+    assert!(
+        matches!(&report.kind, oxiroot::hadd::MergeKind::Histograms(o) if o.summed == ["h"]),
+        "{report}"
+    );
 
     let file = FileReader::open(tmp("merged")).unwrap();
-    assert_eq!(Hist1D::read_root(&file, "h").unwrap().integral(), 4.0);
+    assert_eq!(file.get::<Hist1D>("h").unwrap().integral(), 4.0);
 }

@@ -21,9 +21,9 @@ fn poke(f: &FileReader) {
         let _ = f.key_payload(k);
     }
     let _ = f.streamer_registry();
-    let _ = f.streamer_info_object();
+    let _ = oxiroot_io_core::raw::streamer_info_bytes(f);
     for name in ["h1", "h", "ntpl", "p", ""] {
-        let _ = f.object_in("missing", name);
+        let _ = f.key(&format!("missing/{name}"));
     }
 }
 
@@ -132,7 +132,7 @@ fn key_header(w: &mut WBuffer, class: &str, name: &str, seek_key: u64, big: bool
     w.string(""); // title
 }
 
-/// A minimal, parseable TFile whose root directory holds a single big-format
+/// A minimal, parseable `TFile` whose root directory holds a single big-format
 /// (version 1004, 64-bit seeks) `TDirectory` key named "d" with `fSeekKey` near
 /// `u64::MAX`. `FileReader::from_bytes` accepts it; navigating into "d" must reject
 /// the offset rather than overflow.
@@ -167,7 +167,7 @@ fn file_with_hostile_big_directory_key() -> Vec<u8> {
     w.be_i32(0); // fNbytesName
     w.be_u32(100); // fSeekDir
     w.be_u32(0); // fSeekParent
-    let p_seek_keys = w.reserve(4); // fSeekKeys (patched below)
+    let p_seek_keys = w.reserve::<4>(); // fSeekKeys (patched below)
 
     // Key list: a wrapper key, the count, then the one hostile entry.
     let keylist = u32::saturating_from(w.len());
@@ -202,6 +202,6 @@ fn subdir_rejects_overflowing_big_directory_key() {
         f.subdir("d").is_err(),
         "subdir must reject the overflowing directory key"
     );
-    // object_in() reaches the same offset computation via subdir().
-    assert!(f.object_in("d", "x").is_err());
+    // A path reaches the same offset computation via subdir().
+    assert!(f.key("d/x").is_err());
 }

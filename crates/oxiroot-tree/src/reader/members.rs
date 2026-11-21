@@ -18,19 +18,19 @@ pub(super) enum MemberVal {
 impl MemberVal {
     pub(super) fn int(&self) -> i64 {
         match self {
-            MemberVal::Int(v) => *v,
+            Self::Int(v) => *v,
             _ => 0,
         }
     }
     pub(super) fn ints(&self) -> &[i64] {
         match self {
-            MemberVal::IntArray(v) => v,
+            Self::IntArray(v) => v,
             _ => &[],
         }
     }
     pub(super) fn str(&self) -> &str {
         match self {
-            MemberVal::Str(s) => s,
+            Self::Str(s) => s,
             _ => "",
         }
     }
@@ -62,7 +62,7 @@ fn basic_kind(t: i32) -> Option<(usize, bool)> {
 }
 
 /// Read one basic value of the given width, widening integers to `i64`.
-fn read_basic(r: &mut RBuffer, width: usize, is_float: bool) -> Result<MemberVal> {
+fn read_basic(r: &mut RBuffer<'_>, width: usize, is_float: bool) -> Result<MemberVal> {
     Ok(match (width, is_float) {
         (1, false) => MemberVal::Int(i64::from(r.u8()?.cast_signed())),
         (2, false) => MemberVal::Int(i64::from(r.be_i16()?)),
@@ -90,11 +90,11 @@ fn unsupported_element(el: &StreamerElement) -> Error {
 /// skipped via the enclosing byte count. This is the adaptive replacement for
 /// fixed-offset parsing: layout comes from the file's `TStreamerInfo`, not pins.
 pub(super) fn walk_members(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     reg: &StreamerRegistry,
     elements: &[StreamerElement],
     out: &mut Members,
-    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer<'_>) -> Result<()>,
     stop_after: &str,
 ) -> Result<()> {
     walk_members_at(r, reg, elements, out, on_object, stop_after, 0)
@@ -105,11 +105,11 @@ pub(super) fn walk_members(
 /// streamer info drives the recursion, and a class listing itself as its base
 /// would otherwise recurse until the stack overflows.
 fn walk_members_at(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     reg: &StreamerRegistry,
     elements: &[StreamerElement],
     out: &mut Members,
-    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer<'_>) -> Result<()>,
     stop_after: &str,
     depth: usize,
 ) -> Result<()> {
@@ -165,11 +165,11 @@ fn walk_members_at(
 /// walked through its own streamer info when present, else skipped via its
 /// version byte count.
 fn read_base(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     reg: &StreamerRegistry,
     class: &str,
     out: &mut Members,
-    on_object: &mut dyn FnMut(&str, &mut RBuffer) -> Result<()>,
+    on_object: &mut dyn FnMut(&str, &mut RBuffer<'_>) -> Result<()>,
     stop_after: &str,
     depth: usize,
 ) -> Result<()> {
@@ -260,7 +260,7 @@ mod tests {
         let reg = StreamerRegistry::default();
         let mut out = Members::new();
         let mut r = RBuffer::new(&bytes);
-        let mut on_object = |_: &str, _: &mut RBuffer| -> Result<()> { Ok(()) };
+        let mut on_object = |_: &str, _: &mut RBuffer<'_>| -> Result<()> { Ok(()) };
         walk_members(&mut r, &reg, &elements, &mut out, &mut on_object, "").unwrap();
 
         assert_eq!(member_int(&out, "a"), 7);
@@ -290,7 +290,7 @@ mod tests {
         let reg = StreamerRegistry::default();
         let mut out = Members::new();
         let mut r = RBuffer::new(&bytes);
-        let mut on_object = |_: &str, _: &mut RBuffer| -> Result<()> { Ok(()) };
+        let mut on_object = |_: &str, _: &mut RBuffer<'_>| -> Result<()> { Ok(()) };
         walk_members(&mut r, &reg, &elements, &mut out, &mut on_object, "b").unwrap();
         assert_eq!(member_int(&out, "a"), 1);
         assert_eq!(member_int(&out, "b"), 2);
@@ -321,7 +321,7 @@ mod tests {
         }
         let mut r = RBuffer::new(&bytes);
         let mut out = Members::new();
-        let mut on_object = |_: &str, _: &mut RBuffer| Ok(());
+        let mut on_object = |_: &str, _: &mut RBuffer<'_>| Ok(());
         let err =
             walk_members(&mut r, &reg, &looped.elements, &mut out, &mut on_object, "").unwrap_err();
         assert!(err.to_string().contains("nested deeper"), "{err}");

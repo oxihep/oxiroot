@@ -19,24 +19,9 @@ fn std_dev_axis(tsumw: f64, tsumwx: f64, tsumwx2: f64) -> f64 {
 impl Hist1D {
     /// Standard deviation of the filled x distribution (ROOT `GetStdDev`, also
     /// exposed as `GetRMS`).
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
-    }
-    /// Bin holding `x` (0 = underflow, `1..=nbins`, `nbins+1` = overflow).
-    pub fn find_bin(&self, x: f64) -> usize {
-        self.xaxis.find_bin(x)
-    }
-    /// Center of bin `bin` (1-based).
-    pub fn bin_center(&self, bin: usize) -> f64 {
-        self.xaxis.bin_center(bin)
-    }
-    /// Width of bin `bin` (1-based).
-    pub fn bin_width(&self, bin: usize) -> f64 {
-        self.xaxis.bin_width(bin)
-    }
-    /// Low edge of bin `bin` (1-based).
-    pub fn bin_low_edge(&self, bin: usize) -> f64 {
-        self.xaxis.bin_low_edge(bin)
     }
     /// Linearly interpolate the bin content at `x` between adjacent bin centers
     /// (ROOT `Hist1D::Interpolate`). Returns the first/last bin content when `x` is
@@ -48,19 +33,19 @@ impl Hist1D {
             return 0.0;
         }
         let content = |bin: usize| self.contents.get(bin).copied().unwrap_or(0.0);
-        if x <= self.bin_center(1) {
+        if x <= self.xaxis.bin_center(1) {
             return content(1);
         }
-        if x >= self.bin_center(n) {
+        if x >= self.xaxis.bin_center(n) {
             return content(n);
         }
-        let xbin = self.find_bin(x).clamp(1, n);
-        let (lo, hi) = if x <= self.bin_center(xbin) {
+        let xbin = self.xaxis.find_bin(x).clamp(1, n);
+        let (lo, hi) = if x <= self.xaxis.bin_center(xbin) {
             (xbin - 1, xbin)
         } else {
             (xbin, xbin + 1)
         };
-        let (x0, x1) = (self.bin_center(lo), self.bin_center(hi));
+        let (x0, x1) = (self.xaxis.bin_center(lo), self.xaxis.bin_center(hi));
         let (y0, y1) = (content(lo), content(hi));
         y0 + (x - x0) * (y1 - y0) / (x1 - x0)
     }
@@ -92,14 +77,14 @@ impl Hist1D {
                 // TMath::BinarySearch searches the first `n` cumulative values).
                 let ibin = integral[..n].iter().rposition(|&c| c <= p).unwrap_or(0);
                 if integral[ibin] == p {
-                    return self.bin_center(ibin); // exact cumulative tie → bin center
+                    return self.xaxis.bin_center(ibin); // exact cumulative tie → bin center
                 }
                 let dint = integral[ibin + 1] - integral[ibin];
                 if dint > 0.0 {
-                    self.bin_low_edge(ibin + 1)
-                        + (p - integral[ibin]) / dint * self.bin_width(ibin + 1)
+                    self.xaxis.bin_low_edge(ibin + 1)
+                        + (p - integral[ibin]) / dint * self.xaxis.bin_width(ibin + 1)
                 } else {
-                    self.bin_low_edge(ibin + 1)
+                    self.xaxis.bin_low_edge(ibin + 1)
                 }
             })
             .collect()
@@ -108,14 +93,17 @@ impl Hist1D {
 
 impl Hist2D {
     /// Standard deviation of the filled x distribution (ROOT `GetStdDev(1)`).
+    #[must_use]
     pub fn std_dev_x(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
     }
     /// Standard deviation of the filled y distribution (ROOT `GetStdDev(2)`).
+    #[must_use]
     pub fn std_dev_y(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwy, self.tsumwy2)
     }
     /// Global cell index `ix + (nx+2)*iy` for `(x, y)` (flow bins included).
+    #[must_use]
     pub fn find_bin(&self, x: f64, y: f64) -> usize {
         self.xaxis.find_bin(x) + (self.nx() + 2) * self.yaxis.find_bin(y)
     }
@@ -123,14 +111,17 @@ impl Hist2D {
 
 impl Hist3D {
     /// Standard deviation of the filled x distribution.
+    #[must_use]
     pub fn std_dev_x(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
     }
     /// Standard deviation of the filled y distribution.
+    #[must_use]
     pub fn std_dev_y(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwy, self.tsumwy2)
     }
     /// Standard deviation of the filled z distribution.
+    #[must_use]
     pub fn std_dev_z(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwz, self.tsumwz2)
     }
@@ -138,6 +129,7 @@ impl Hist3D {
 
 impl Profile1D {
     /// Mean of the filled x distribution (ROOT `GetMean`).
+    #[must_use]
     pub fn mean(&self) -> f64 {
         if self.tsumw == 0.0 {
             0.0
@@ -146,16 +138,9 @@ impl Profile1D {
         }
     }
     /// Standard deviation of the filled x distribution (ROOT `GetStdDev`).
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         std_dev_axis(self.tsumw, self.tsumwx, self.tsumwx2)
-    }
-    /// Center of bin `bin` (1-based).
-    pub fn bin_center(&self, bin: usize) -> f64 {
-        self.xaxis.bin_center(bin)
-    }
-    /// Bin holding `x` (0 = underflow, `1..=nbins`, `nbins+1` = overflow).
-    pub fn find_bin(&self, x: f64) -> usize {
-        self.xaxis.find_bin(x)
     }
     /// Clear all per-bin sums, entries, and moment sums, keeping the binning.
     pub fn reset(&mut self) {
@@ -165,7 +150,7 @@ impl Profile1D {
             &mut self.bin_entries,
             &mut self.bin_sumw2,
         ] {
-            arr.iter_mut().for_each(|v| *v = 0.0);
+            arr.fill(0.0);
         }
         self.entries = 0.0;
         for v in [

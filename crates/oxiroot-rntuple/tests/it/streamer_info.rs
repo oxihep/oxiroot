@@ -1,4 +1,4 @@
-//! RNTuple files carry the streamer info ROOT writes: the `ROOT::RNTuple` anchor
+//! `RNTuple` files carry the streamer info ROOT writes: the `ROOT::RNTuple` anchor
 //! class, plus each user class with plain-number members. The entries must be
 //! the ones ROOT wrote for the same classes in `rntuple_user_uncompressed.root`.
 
@@ -6,12 +6,16 @@ use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader, FileWriter, StreamerRegistry};
-use oxiroot_rntuple::{Column, Field, NtupleWriter};
+use oxiroot_rntuple::raw::{Column, Field, NtupleWriter};
 
 fn root_written() -> StreamerRegistry {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/rntuple_user_uncompressed.root");
-    FileReader::open(path).unwrap().streamer_registry().unwrap()
+    FileReader::open(path)
+        .unwrap()
+        .streamer_registry()
+        .unwrap()
+        .clone()
 }
 
 fn hit(ids: Vec<i32>) -> Column {
@@ -30,6 +34,7 @@ fn registry(bytes: Vec<u8>) -> StreamerRegistry {
         .unwrap()
         .streamer_registry()
         .unwrap()
+        .clone()
 }
 
 #[test]
@@ -59,7 +64,7 @@ fn one_shot_file_describes_the_anchor_and_user_classes_like_root() {
 #[test]
 fn streamed_file_describes_the_anchor_and_user_classes() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_stream_streamers.root");
-    let mut w = NtupleWriter::create(&path, "ntpl", Compression::None).unwrap();
+    let mut w = NtupleWriter::create(&path, "ntpl", Compression::Stored).unwrap();
     for k in 0..2 {
         w.write_batch(&[Field::new("hit", hit(vec![k, k + 1]))])
             .unwrap();
@@ -68,7 +73,8 @@ fn streamed_file_describes_the_anchor_and_user_classes() {
     let ours = FileReader::open(&path)
         .unwrap()
         .streamer_registry()
-        .unwrap();
+        .unwrap()
+        .clone();
     let root = root_written();
     assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
     assert_eq!(ours.get("Hit"), root.get("Hit"));
@@ -86,14 +92,15 @@ fn classes_with_other_members_are_not_described() {
         ],
     };
     let bytes = FileWriter::create("t.root")
-        .put(NtupleObject::new("a", vec![Field::new("t", tagged)]))
+        .add(NtupleObject::new("a", vec![Field::new("t", tagged)]))
         .dir("d", |d| {
-            d.put(NtupleObject::new(
+            d.add(NtupleObject::new(
                 "b",
                 vec![Field::new("hit", hit(vec![3]))],
             ))
         })
-        .to_bytes(Compression::None)
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap();
     assert_eq!(registry(bytes).class_names(), ["ROOT::RNTuple", "Hit"]);
 }
@@ -105,12 +112,13 @@ fn schema_extended_files_are_described_too() {
         .write_root_extended(
             &path,
             &[(1, Field::new("y", Column::F64(vec![0.5])))],
-            Compression::None,
+            Compression::Stored,
         )
         .unwrap();
     let ours = FileReader::open(&path)
         .unwrap()
         .streamer_registry()
-        .unwrap();
+        .unwrap()
+        .clone();
     assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
 }

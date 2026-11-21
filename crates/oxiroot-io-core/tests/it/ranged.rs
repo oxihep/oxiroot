@@ -1,10 +1,10 @@
-//! `FileReader::open_ranged` (positioned local reads, no full slurp) must parse and
-//! read byte-for-byte identically to the resident `FileReader::open`.
+//! Positioned local reads (a `FileSource`, which `FileReader::open` uses for a
+//! large file) must parse and read byte-for-byte as a file held in memory does.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{FileReader, FileSource};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,11 +13,12 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 #[test]
-fn open_ranged_matches_open() {
+fn positioned_reads_match_a_file_in_memory() {
     for name in ["th1d_uncompressed.root", "th1d_zstd.root"] {
         let path = fixture(name);
-        let resident = FileReader::open(&path).expect("open");
-        let ranged = FileReader::open_ranged(&path).expect("open_ranged");
+        let resident = FileReader::from_bytes(std::fs::read(&path).unwrap()).expect("open");
+        let ranged = FileReader::from_source(Box::new(FileSource::open(&path).unwrap()))
+            .expect("positioned");
 
         assert_eq!(ranged.size(), resident.size(), "{name}: same length");
 

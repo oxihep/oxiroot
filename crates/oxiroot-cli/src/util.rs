@@ -5,7 +5,6 @@ use std::error::Error;
 use std::path::Path;
 
 use oxiroot::FileReader;
-use oxiroot::file::raw::find_key;
 use oxiroot::tree::LeafType;
 
 /// Every command returns this: `Ok(())` on success, else a boxed error printed
@@ -21,7 +20,7 @@ pub fn is_url(target: &str) -> bool {
 }
 
 /// Open a ROOT file from a local path or a remote URL — `http(s)://` (the `http`
-/// feature) or `root://` XRootD (the `xrootd` feature) — read lazily via
+/// feature) or `root://` `XRootD` (the `xrootd` feature) — read lazily via
 /// byte-range requests.
 pub fn open_root(target: &str) -> Result<FileReader, Box<dyn Error>> {
     if is_url(target) {
@@ -69,37 +68,6 @@ pub fn parse_spec(spec: &str) -> (String, Option<String>) {
         }
     }
     (spec.to_string(), None)
-}
-
-/// Split an in-file object path into an optional single subdirectory and the
-/// object name (`dir/obj` → `(Some("dir"), "obj")`, `obj` → `(None, "obj")`).
-pub fn split_obj(obj: &str) -> (Option<&str>, &str) {
-    match obj.rsplit_once('/') {
-        Some((dir, name)) => (Some(dir), name),
-        None => (None, obj),
-    }
-}
-
-/// The class name of the object at `(subdir, name)`, or an error if there is no
-/// such key.
-pub fn locate_class(
-    file: &FileReader,
-    subdir: Option<&str>,
-    name: &str,
-) -> Result<String, Box<dyn Error>> {
-    match subdir {
-        None => Ok(file
-            .key(name)
-            .ok_or_else(|| format!("no object named {name:?} in the file"))?
-            .class_name
-            .clone()),
-        Some(dir) => {
-            let d = file.subdir(dir)?;
-            let key = find_key(&d.keys, name)
-                .ok_or_else(|| format!("no object named {name:?} in subdirectory {dir:?}"))?;
-            Ok(key.class_name.clone())
-        }
-    }
 }
 
 /// A coarse object category derived from a ROOT class name — the CLI dispatches
@@ -191,16 +159,19 @@ pub struct Table {
 
 impl Table {
     /// A new table with these column headers (all left-aligned by default).
-    pub fn new(headers: &[&str]) -> Table {
-        Table {
+    pub fn new(headers: &[&str]) -> Self {
+        Self {
             right: vec![false; headers.len()],
-            headers: headers.iter().map(|h| h.to_string()).collect(),
+            headers: headers
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             rows: Vec::new(),
         }
     }
 
     /// Right-align the given column indices (for numbers).
-    pub fn right_align(mut self, cols: &[usize]) -> Table {
+    pub fn right_align(mut self, cols: &[usize]) -> Self {
         for &c in cols {
             if let Some(slot) = self.right.get_mut(c) {
                 *slot = true;
@@ -229,7 +200,7 @@ impl Table {
         let line = |cells: &[String]| {
             let parts: Vec<String> = (0..ncol)
                 .map(|c| {
-                    let cell = cells.get(c).map(String::as_str).unwrap_or("");
+                    let cell = cells.get(c).map_or("", String::as_str);
                     pad(cell, width[c], self.right[c])
                 })
                 .collect();

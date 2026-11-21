@@ -3,7 +3,7 @@
 //! variant, a 2-D parameter scan as a `Graph2D`, and two datasets drawn
 //! together as a `GraphStack` — write them all into ONE ROOT file with the
 //! `FileWriter`, then read one graph back point-by-point
-//! (`Graph::read_root`). The file is readable by official ROOT and uproot.
+//! (`file.get::<Graph>`). The file is readable by official ROOT and uproot.
 //! (Fitting a graph is shown in `fit.rs`; this is about the objects themselves.)
 //!
 //! ```sh
@@ -22,14 +22,13 @@ fn main() -> oxiroot::Result<()> {
     let energy = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
     let sigma = vec![12.4, 18.9, 22.1, 20.3, 15.7, 9.8];
     let sigma_err = vec![1.1, 1.3, 1.5, 1.4, 1.2, 0.9];
-    let xsec = Graph::with_errors(
-        energy.clone(),
-        sigma.clone(),
-        vec![0.0; energy.len()], // ex: energy is exact
-        sigma_err.clone(),       // ey: statistical error on sigma
-    )?
-    .named("xsec")
-    .titled("cross-section vs energy");
+    let xsec = Graph::new(energy.clone(), sigma.clone())?
+        .with_errors(GraphErrors::Symmetric {
+            ex: vec![0.0; energy.len()], // energy is exact
+            ey: sigma_err.clone(),       // statistical error on sigma
+        })?
+        .named("xsec")
+        .titled("cross-section vs energy");
     // `class_name` reflects the error variant we chose: no errors -> "Graph",
     // symmetric -> "TGraphErrors", asymmetric (below) -> "TGraphAsymmErrors".
     println!(
@@ -40,20 +39,18 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // --- 2. The same measurement with ASYMMETRIC errors (a TGraphAsymmErrors). -
-    // Systematic bands are often lopsided. Arg order is (x, y, exl, exh, eyl,
-    // eyh): the low then high error for x, then the low then high error for y.
+    // Systematic bands are often lopsided: each axis has a low and a high error.
     let ey_low: Vec<f64> = sigma_err.iter().map(|e| e * 0.8).collect(); // tighter below
     let ey_high: Vec<f64> = sigma_err.iter().map(|e| e * 1.5).collect(); // looser above
-    let xsec_asym = Graph::with_asymm_errors(
-        energy.clone(),
-        sigma.clone(),
-        vec![0.0; energy.len()], // exl
-        vec![0.0; energy.len()], // exh
-        ey_low,
-        ey_high,
-    )?
-    .named("xsec_asym")
-    .titled("cross-section (asymmetric errors)");
+    let xsec_asym = Graph::new(energy.clone(), sigma.clone())?
+        .with_errors(GraphErrors::Asymmetric {
+            ex_low: vec![0.0; energy.len()],
+            ex_high: vec![0.0; energy.len()],
+            ey_low,
+            ey_high,
+        })?
+        .named("xsec_asym")
+        .titled("cross-section (asymmetric errors)");
     println!(
         "xsec_asym: {} points, class {}",
         xsec_asym.len(),
@@ -110,12 +107,12 @@ fn main() -> oxiroot::Result<()> {
         .add(&xsec_asym)
         .add(&scan)
         .add(&comparison)
-        .write(Compression::Zstd(5))?;
+        .write()?;
     println!("\nwrote 4 graphs -> {}", path.display());
 
-    // --- Read one graph back and print its points (idiomatic Graph::read_root).
+    // --- Read one graph back and print its points (file.get::<Graph>).
     let f = FileReader::open(&path)?;
-    let back = Graph::read_root(&f, "xsec")?;
+    let back = f.get::<Graph>("xsec")?;
     println!("read back `{}` ({} points):", back.name, back.len());
     // The error arrays live in the `errors` enum; pull the y errors out for the
     // symmetric variant we wrote (they are empty for a plain Graph).
@@ -133,7 +130,7 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // The multigraph round-trips too: read it and count its members.
-    let mg = GraphStack::read_root(&f, "comparison")?;
+    let mg = f.get::<GraphStack>("comparison")?;
     println!(
         "read back multigraph `{}`: {} member graphs ({})",
         mg.name(),

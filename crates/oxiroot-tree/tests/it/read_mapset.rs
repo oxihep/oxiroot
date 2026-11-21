@@ -4,12 +4,13 @@
 //! sub-branches sharing one counter (identical to a split `vector<pair>`), so
 //! both read straight through oxiroot's existing collection paths. Cross-checked
 //! against uproot. The fixture needs a runtime collection-proxy dictionary to
-//! write (see scripts/gen_tree_mapset.sh); the on-disk bytes are stable.
+//! write (see `scripts/gen_tree_mapset.sh`); the on-disk bytes are stable.
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> FileReader {
     FileReader::open(

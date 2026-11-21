@@ -20,7 +20,7 @@ impl BranchRead<'_, '_> {
     /// Read the branch (the [`range`](Self::range) set, if any) as a writable
     /// [`Branch`] of the same name and layout — scalar, fixed array, jagged
     /// array, `std::vector` or string — ready for a
-    /// [`TreeWriter`](crate::TreeWriter): the round trip of a skim. Layouts
+    /// [`TreeWriter`](crate::raw::TreeWriter): the round trip of a skim. Layouts
     /// this crate reads but cannot write (split objects, leaflists) are an
     /// [`Error::Unsupported`].
     pub fn to_branch(self) -> Result<Branch> {
@@ -122,7 +122,7 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
     use BranchValues::*;
     // A `Vec*` variant with all three flavours available.
     macro_rules! vec3 {
-        ($v:expr_2021, $fixed:ident, $jagged:ident, $stl:ident) => {
+        ($v:expr, $fixed:ident, $jagged:ident, $stl:ident) => {
             match flavor {
                 Flavor::Fixed => Ok(Branch::$fixed(name, $v)),
                 Flavor::Jagged => Ok(Branch::$jagged(name, $v)),

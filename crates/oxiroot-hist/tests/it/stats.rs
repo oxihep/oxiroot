@@ -1,4 +1,4 @@
-//! Tier-1 statistics accessors (std_dev/maximum/find_bin/effective_entries/reset)
+//! Tier-1 statistics accessors (`std_dev/maximum/find_bin/effective_entries/reset`)
 //! against hand-computed values.
 
 use oxiroot_hist::ToRoot;
@@ -6,7 +6,11 @@ use oxiroot_hist::{Hist, Hist1D};
 
 fn filled_th1() -> Hist1D {
     // 4 bins over [0,4); fills at 0.5,0.5,1.5,2.5,2.5,2.5 → contents [2,1,3,0].
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     for x in [0.5, 0.5, 1.5, 2.5, 2.5, 2.5] {
         h.fill(x);
     }
@@ -27,12 +31,12 @@ fn th1_stats() {
     assert_eq!(h.minimum(), 0.0);
     assert_eq!(h.minimum_bin(), 4);
 
-    assert_eq!(h.find_bin(2.5), 3);
-    assert_eq!(h.find_bin(-1.0), 0, "underflow");
-    assert_eq!(h.find_bin(5.0), 5, "overflow = nbins+1");
-    assert_eq!(h.bin_center(3), 2.5);
-    assert_eq!(h.bin_width(3), 1.0);
-    assert_eq!(h.bin_low_edge(3), 2.0);
+    assert_eq!(h.xaxis().find_bin(2.5), 3);
+    assert_eq!(h.xaxis().find_bin(-1.0), 0, "underflow");
+    assert_eq!(h.xaxis().find_bin(5.0), 5, "overflow = nbins+1");
+    assert_eq!(h.xaxis().bin_center(3), 2.5);
+    assert_eq!(h.xaxis().bin_width(3), 1.0);
+    assert_eq!(h.xaxis().bin_low_edge(3), 2.0);
 
     // Unweighted: Σw² = 6, so effective entries = 6²/6 = 6.
     assert!((h.effective_entries() - 6.0).abs() < 1e-12);
@@ -63,6 +67,7 @@ fn th2_extrema_and_find_bin() {
         .reg(2, 0.0, 2.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h");
     h.fill(0.5, 0.5); // cell (1,1)
     h.fill(1.5, 1.5);
@@ -76,7 +81,7 @@ fn th2_extrema_and_find_bin() {
 
 #[test]
 fn tprofile_mean_std_dev() {
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().named("p");
+    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap().named("p");
     for (x, y) in [(0.5, 10.0), (0.5, 20.0), (1.5, 5.0), (2.5, 30.0)] {
         p.fill(x, y);
     }
@@ -90,17 +95,19 @@ fn tprofile_mean_std_dev() {
 fn profiles_share_bin_value_error_and_effective_entries() {
     // The same two values (1 and 3) in one cell of a 1-D, 2-D and 3-D profile:
     // mean 2, spread² = (1+9)/2 − 4 = 1, two entries → error √(1/2).
-    let mut p1 = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p1");
+    let mut p1 = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p1");
     let mut p2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .mean()
         .to_root()
+        .unwrap()
         .named("p2");
     let mut p3 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .mean()
         .to_root()
+        .unwrap()
         .named("p3");
     for v in [1.0, 3.0] {
         p1.fill(0.5, v);

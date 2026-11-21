@@ -6,7 +6,7 @@
 //! the waiting dwarfs the transfer. A reader that knows its ranges up front
 //! announces them ([`ByteSource::plan_reads`]); when the first planned range is
 //! asked for, it is fetched together with the ranges after it in one
-//! [`ByteSource::read_many`] (an XRootD `kXR_readv`, or concurrent HTTP range
+//! [`ByteSource::read_many`] (an `XRootD` `kXR_readv`, or concurrent HTTP range
 //! requests), and the others wait in a small cache until their decoder asks.
 //!
 //! Each batch is bounded ([`MAX_BATCH_RANGES`], [`MAX_BATCH_BYTES`]), so a
@@ -20,7 +20,7 @@ use bytes::Bytes;
 use super::source::ByteSource;
 use crate::error::Result;
 
-/// The most ranges one batch fetches (also XRootD's `kXR_readv` limit).
+/// The most ranges one batch fetches (also `XRootD`'s `kXR_readv` limit).
 pub(crate) const MAX_BATCH_RANGES: usize = 1024;
 /// The most bytes one batch fetches (a batch always holds at least one range).
 pub(crate) const MAX_BATCH_BYTES: usize = 32 << 20;

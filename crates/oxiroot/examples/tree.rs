@@ -8,7 +8,7 @@
 //! [`DatasetWriter`] (it closes a cluster every ~32 MiB, so memory stays
 //! bounded), then reads them back with [`Dataset`]: all at once, one cluster at
 //! a time, and an entry window that touches only the baskets it needs. The same
-//! code writes an RNTuple with `Format::Ntuple`. Pass an output path as the
+//! code writes an `RNTuple` with `Format::Ntuple`. Pass an output path as the
 //! first argument to keep the file.
 
 use oxiroot::prelude::*;
@@ -36,7 +36,7 @@ fn main() -> oxiroot::Result<()> {
             .column("event", event)?
             .column("hits", hits)?
             .column("label", label)?;
-        out.write(&batch)?;
+        out.write(batch)?;
     }
     println!("wrote {} entries to {path}", out.entries());
     out.finish()?;

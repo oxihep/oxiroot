@@ -1,6 +1,6 @@
-//! The start-here RNTuple example: write a flat event dataset, reopen it, and
-//! read the columns back per entry — then put two RNTuples in one file with
-//! `FileWriter` and read both. RNTuple is ROOT's modern columnar event-data
+//! The start-here `RNTuple` example: write a flat event dataset, reopen it, and
+//! read the columns back per entry — then put two `RNTuples` in one file with
+//! `FileWriter` and read both. `RNTuple` is ROOT's modern columnar event-data
 //! format; the files here are readable by official ROOT and uproot. The same
 //! code writes a `TTree` with `Format::Tree`. (For records and other
 //! RNTuple-only shapes, see `rntuple_nested.rs`.)
@@ -37,7 +37,7 @@ fn main() -> oxiroot::Result<()> {
     // --- Write it as an RNTuple. Pages are Zstd-compressed on disk. -------------
     let path = dir.join("oxiroot_ex_rntuple.root");
     let mut out = DatasetWriter::create(&path, "events", Format::Ntuple)?;
-    out.write(&events)?;
+    out.write(events.clone())?;
     out.finish()?;
     println!("wrote RNTuple `events` -> {}", path.display());
 
@@ -84,13 +84,13 @@ fn main() -> oxiroot::Result<()> {
         .column("run", vec![101_i32, 102, 103])?
         .column("n_events", vec![12_000_i64, 8_400, 15_250])?;
     FileWriter::create(&multi_path)
-        .put(DatasetObject::new(
+        .add(DatasetObject::new(
             "events",
             Format::Ntuple,
-            &events.slice(0..2),
-        )?)
-        .put(DatasetObject::new("runs", Format::Ntuple, &runs)?)
-        .write(Compression::Zstd(5))?;
+            events.slice(0..2),
+        ))
+        .add(DatasetObject::new("runs", Format::Ntuple, runs.clone()))
+        .write()?;
     println!("wrote 2 RNTuples -> {}", multi_path.display());
 
     // --- Read both back out of the one file. -----------------------------------

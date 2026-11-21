@@ -106,6 +106,6 @@ fn prelude_threaded_hist_takes_builder_histograms() {
     });
     let h: Histogram<oxiroot::hist::oxihist::Int64, 1> = acc.merge().unwrap();
     assert_eq!(h.sum(true), 300);
-    let root = h.to_root();
+    let root = h.to_root().unwrap();
     assert_eq!(root.entries(), 300.0);
 }

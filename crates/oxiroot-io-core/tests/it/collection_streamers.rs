@@ -5,7 +5,7 @@
 use oxiroot_io_core::raw::{StreamerInfo, write_named};
 use oxiroot_io_core::streamer_gen::{ClassDef, any, base, basic};
 use oxiroot_io_core::{
-    Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, ReadRoot, WBuffer, WriteRoot,
+    Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, WBuffer, WriteRoot,
 };
 
 /// An object of a class only this test knows: `MyEvent` (version 3), a `Named`
@@ -80,20 +80,28 @@ fn described(file: &FileReader, classes: &[&str]) -> Vec<StreamerInfo> {
 #[test]
 fn a_list_read_back_still_describes_its_members() {
     let first = temp("list_a");
-    let list = ObjList::list()
+    let list = ObjList::new(oxiroot_io_core::ListKind::List)
         .named("events")
         .add(&MyEvent { name: "e1".into() })
         .add(&ObjString::new("note").named("n"));
-    list.write_root(&first, Compression::None).unwrap();
+    FileWriter::create(&first)
+        .add(&list)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
     let source = FileReader::open(&first).unwrap();
     let expected = described(&source, &["MyHit", "MyEvent"]);
     assert_eq!(expected.len(), 2, "the first file describes both classes");
 
     // Read the list back and write it on its own: nothing but the file it came
     // from knows MyEvent or MyHit.
-    let back = ObjList::read_root(&source, "events").unwrap();
+    let back = source.get::<ObjList>("events").unwrap();
     let second = temp("list_b");
-    back.write_root(&second, Compression::None).unwrap();
+    FileWriter::create(&second)
+        .add(&back)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
     let copy = FileReader::open(&second).unwrap();
     assert_eq!(described(&copy, &["MyHit", "MyEvent"]), expected);
     // The member's dependency comes before it, as ROOT orders them.
@@ -106,7 +114,7 @@ fn a_list_read_back_still_describes_its_members() {
         .collect();
     let at = |class: &str| names.iter().position(|n| n == class).unwrap();
     assert!(at("MyHit") < at("MyEvent"), "{names:?}");
-    assert_eq!(ObjList::read_root(&copy, "events").unwrap(), back);
+    assert_eq!(copy.get::<ObjList>("events").unwrap(), back);
 
     let _ = std::fs::remove_file(first);
     let _ = std::fs::remove_file(second);
@@ -118,15 +126,20 @@ fn a_map_read_back_still_describes_its_values() {
     let map = ObjMap::new()
         .named("by_run")
         .insert("run7", &MyEvent { name: "e".into() });
-    map.write_root(&first, Compression::None).unwrap();
+    FileWriter::create(&first)
+        .add(&map)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
     let source = FileReader::open(&first).unwrap();
     let expected = described(&source, &["MyHit", "MyEvent"]);
 
-    let back = ObjMap::read_root(&source, "by_run").unwrap();
+    let back = source.get::<ObjMap>("by_run").unwrap();
     let second = temp("map_b");
     FileWriter::create(&second)
         .add(&back)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let copy = FileReader::open(&second).unwrap();
     assert_eq!(described(&copy, &["MyHit", "MyEvent"]), expected);
@@ -167,7 +180,8 @@ fn two_versions_of_a_class_are_both_described() {
     FileWriter::create(&path)
         .add(&Versioned(1))
         .add(&Versioned(2))
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let versions: Vec<i32> = described(&FileReader::open(&path).unwrap(), &["MyHit"])
         .iter()
@@ -197,14 +211,23 @@ fn a_list_stored_without_a_name_takes_its_key_name() {
         }
     }
     let path = temp("unnamed");
-    let list = ObjList::list().add(&ObjString::new("a").named("a"));
-    Unnamed(list.to_root_bytes())
-        .write_root(&path, Compression::None)
+    let list = ObjList::new(oxiroot_io_core::ListKind::List).add(&ObjString::new("a").named("a"));
+    FileWriter::create(&path)
+        .add(&Unnamed(list.to_root_bytes()))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
-    let back = ObjList::read_root(&FileReader::open(&path).unwrap(), "things").unwrap();
+    let back = FileReader::open(&path)
+        .unwrap()
+        .get::<ObjList>("things")
+        .unwrap();
     assert_eq!(back.name(), "things");
     let again = temp("unnamed_again");
-    back.write_root(&again, Compression::None).unwrap();
+    FileWriter::create(&again)
+        .add(&back)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(again);
 }

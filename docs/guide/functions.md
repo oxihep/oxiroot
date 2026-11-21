@@ -20,8 +20,8 @@ the parameters:
 ```rust
 use oxiroot::prelude::*;
 
-let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0, 6.283)?
-    .with_params(vec![2.0, 1.5, 0.5]);
+let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0..=6.283)?
+    .with_params(&[2.0, 1.5, 0.5])?;
 
 f.eval(1.0);                       // 2*sin(1.5) + 0.5  = 2.494990
 f.integral(0.0, 3.14159);         // ∫ over [0, π]     = 2.904130
@@ -37,12 +37,12 @@ Richardson-extrapolated central difference, matching `Func1D::Integral` /
 
 ```rust
 use oxiroot::prelude::*;
-let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0, 3.0, -2.0, 2.0)?
-    .with_params(vec![1.5, 0.7]);
+let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0..=3.0, -2.0..=2.0)?
+    .with_params(&[1.5, 0.7])?;
 f2.eval(1.0, 1.0);                            // 1.5*sin(1) + 0.7
 
-let f3 = Func3D::new("f3", "[0]*x + y*z", 0.0, 2.0, 0.0, 2.0, 0.0, 2.0)?
-    .with_params(vec![2.0]);
+let f3 = Func3D::new("f3", "[0]*x + y*z", 0.0..=2.0, 0.0..=2.0, 0.0..=2.0)?
+    .with_params(&[2.0])?;
 f3.eval(1.0, 1.0, 1.0);                       // 3.0
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -69,7 +69,7 @@ supports:
 
 ```rust
 use oxiroot::prelude::*;
-let g = Func1D::new("g", "gaus", -5.0, 5.0)?.with_params(vec![2.0, 0.0, 1.0]);
+let g = Func1D::new("g", "gaus", -5.0..=5.0)?.with_params(&[2.0, 0.0, 1.0])?;
 assert_eq!(g.eval(0.0), 2.0);
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -77,8 +77,9 @@ assert_eq!(g.eval(0.0), 2.0);
 ## Precision and parameters
 
 `npar()` is the number of parameters (inferred from the highest `[i]`), `ndim()`
-the dimensionality. Read parameters with `params()`/`param(i)`, set them with
-`set_param(i, v)`, `set_params(&[…])`, or the `with_params(vec)` builder.
+the dimensionality. Read parameters with `params()` (or `param(i)`, an `Option`), set them all with
+the `with_params(&[…])` builder, which checks their number, or change them in
+place through `params_mut()`.
 `title()` is the formula as written (ROOT's `fTitle`); `formula()` is ROOT's
 canonical `[pN]` form.
 
@@ -89,9 +90,9 @@ other object — [Reading & writing](reading-writing.md):
 
 ```rust
 use oxiroot::prelude::*;
-let f = Func1D::new("resp", "[0]*exp(-[1]*x)", 0.0, 5.0)?.with_params(vec![10.0, 0.5]);
-f.write_root("func.root", Compression::None)?;             // a standalone Func1D key
-let back = Func1D::read_root(&FileReader::open("func.root")?, "resp")?;
+let f = Func1D::new("resp", "[0]*exp(-[1]*x)", 0.0..=5.0)?.with_params(&[10.0, 0.5])?;
+FileWriter::create("func.root").add(&f).compression(Compression::Stored).write()?;             // a standalone Func1D key
+let back = FileReader::open("func.root")?.get::<Func1D>("resp")?;
 assert!((back.eval(2.0) - f.eval(2.0)).abs() < 1e-12);
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -107,7 +108,7 @@ can evaluate:
 
 ```rust
 use oxiroot::prelude::*;
-let f = Func1D::new("line", "[0]+[1]*x", 0.0, 2.0)?.with_params(vec![1.0, 2.0]);
+let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
     .named("g")
     .with_function(f.to_graph_function());
@@ -129,7 +130,7 @@ graph, or point set:
 
 ```rust
 use oxiroot::prelude::*;
-let mut h = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass");
+let mut h = Hist::reg(60, 80.0, 100.0).double().to_root()?.named("mass");
 // … fill h …
 let model = Model::from_formula("peak", "gaus(0) + pol1(3)")?
     .with_params(vec![100.0, 91.0, 2.5, 10.0, 0.0]);

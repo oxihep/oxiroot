@@ -282,7 +282,7 @@ fn decode_object_members(
         locate_object(&mut r);
         r.read_version()?; // the object's own version header
         let mut members = Members::new();
-        let mut on_object = |_: &str, rb: &mut RBuffer| -> Result<()> { skip_object(rb) };
+        let mut on_object = |_: &str, rb: &mut RBuffer<'_>| -> Result<()> { skip_object(rb) };
         walk_members(
             &mut r,
             &reg,
@@ -299,7 +299,7 @@ fn decode_object_members(
 /// Skip an entry's leading class-name string (when present, for a "virtual"
 /// `TLeafObject`) and any padding so the cursor sits at the object's version
 /// header — recognised by the byte count's mask bit in its leading word.
-fn locate_object(r: &mut RBuffer) {
+fn locate_object(r: &mut RBuffer<'_>) {
     if r.remaining() < 4 {
         return;
     }
@@ -377,12 +377,9 @@ fn chunk_regions(baskets: &[Basket], stride: usize) -> Vec<&[u8]> {
 /// Decode `bytes` as a contiguous big-endian array of `leaf`-typed scalars.
 pub(super) fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues> {
     macro_rules! be {
-        ($variant:ident, $ty:ty, $w:expr_2021) => {{
-            let mut v = Vec::with_capacity(bytes.len() / $w);
-            for c in bytes.chunks_exact($w) {
-                v.push(<$ty>::from_be_bytes(c.try_into().unwrap()));
-            }
-            BranchValues::$variant(v)
+        ($variant:ident, $ty:ty, $w:expr) => {{
+            let chunks = bytes.as_chunks::<{ $w }>().0;
+            BranchValues::$variant(chunks.iter().map(|c| <$ty>::from_be_bytes(*c)).collect())
         }};
     }
     Ok(match leaf {
@@ -405,14 +402,11 @@ pub(super) fn decode_scalar(leaf: LeafType, bytes: &[u8]) -> Result<BranchValues
 /// one inner vector per entry.
 fn decode_array(leaf: LeafType, regions: &[&[u8]]) -> Result<BranchValues> {
     macro_rules! be {
-        ($variant:ident, $ty:ty, $w:expr_2021) => {{
+        ($variant:ident, $ty:ty, $w:expr) => {{
             let mut out = Vec::with_capacity(regions.len());
             for r in regions {
-                let mut g = Vec::with_capacity(r.len() / $w);
-                for c in r.chunks_exact($w) {
-                    g.push(<$ty>::from_be_bytes(c.try_into().unwrap()));
-                }
-                out.push(g);
+                let chunks = r.as_chunks::<{ $w }>().0;
+                out.push(chunks.iter().map(|c| <$ty>::from_be_bytes(*c)).collect());
             }
             BranchValues::$variant(out)
         }};
@@ -458,16 +452,10 @@ fn decode_nested_vec(regions: &[&[u8]], elem: LeafType) -> Result<BranchValues> 
     for region in regions {
         if region.len() >= 10 {
             // The outer count is the last 4 bytes of the 10-byte header.
-            let outer = u32::from_be_bytes(region[6..10].try_into().unwrap()) as usize;
+            let outer = be_u32_at(region, 6).ok_or_else(short_entry)? as usize;
             let mut pos = 10;
             for _ in 0..outer {
-                let count = u32::from_be_bytes(
-                    region
-                        .get(pos..pos + 4)
-                        .ok_or_else(short_entry)?
-                        .try_into()
-                        .unwrap(),
-                ) as usize;
+                let count = be_u32_at(region, pos).ok_or_else(short_entry)? as usize;
                 pos += 4;
                 let nbytes = count * size;
                 inner.push(region.get(pos..pos + nbytes).ok_or_else(short_entry)?);
@@ -481,6 +469,12 @@ fn decode_nested_vec(regions: &[&[u8]], elem: LeafType) -> Result<BranchValues> 
         offsets,
         items: Box::new(decode_array(elem, &inner)?),
     })
+}
+
+/// The big-endian `u32` at byte `at` of `bytes`, if it is all there.
+fn be_u32_at(bytes: &[u8], at: usize) -> Option<u32> {
+    let word = bytes.get(at..)?.first_chunk::<4>()?;
+    Some(u32::from_be_bytes(*word))
 }
 
 /// Error for a `std::vector<std::vector<T>>` entry that ends mid-element.

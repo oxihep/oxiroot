@@ -6,12 +6,17 @@
 
 use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Column, Field, FieldValues};
 
 fn write_and_reopen(tag: &str, fields: Vec<Field>) -> FileReader {
     let nt = NtupleObject::new("ntpl", fields);
     let out = std::env::temp_dir().join(format!("oxiroot_write_stl_{tag}.root"));
-    nt.write_root(&out, Compression::Zstd(3)).expect("write");
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(nt)
+        .compression(Compression::Zstd(3))
+        .write()
+        .expect("write");
     FileReader::open(&out).expect("reopen")
 }
 

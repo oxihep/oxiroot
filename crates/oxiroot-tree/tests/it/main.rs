@@ -1,4 +1,4 @@
-//! The oxiroot-tree TTree integration tests, compiled as one binary so the
+//! The oxiroot-tree `TTree` integration tests, compiled as one binary so the
 //! suite links once. Each module is one topic.
 
 mod chain;

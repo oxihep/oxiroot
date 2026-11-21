@@ -22,15 +22,12 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     let size = file.size();
     let header = file.header();
     let keys = file.keys().iter().filter(|k| !k.is_deleted()).count();
-    let mut streamers: Vec<(String, i32)> = file
-        .streamer_registry()
-        .map(|r| {
-            r.infos()
-                .iter()
-                .map(|i| (i.class_name.clone(), i.class_version))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut streamers: Vec<(String, i32)> = file.streamer_registry().map_or_default(|r| {
+        r.infos()
+            .iter()
+            .map(|i| (i.class_name.clone(), i.class_version))
+            .collect()
+    });
     streamers.sort();
 
     if json {

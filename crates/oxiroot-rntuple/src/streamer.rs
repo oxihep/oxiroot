@@ -1,4 +1,4 @@
-//! Decoding an RNTuple *streamer* field (the `kStreamer` structural role).
+//! Decoding an `RNTuple` *streamer* field (the `kStreamer` structural role).
 //!
 //! Unlike a split record, a streamer field stores each entry's object as one
 //! opaque blob — the bytes ROOT's `TBufferFile` produces from the class
@@ -51,7 +51,7 @@ pub(crate) fn decode(info: &StreamerInfo, offsets: &[u64], bytes: &[u8]) -> Resu
 /// Read a streamed object's `{byte count, version}` header. A version of `0`
 /// signals a class identified by checksum (the common case for the plain
 /// structs ROOT stores in streamer fields), so a 4-byte checksum follows.
-fn read_object_header(r: &mut RBuffer) -> Result<()> {
+fn read_object_header(r: &mut RBuffer<'_>) -> Result<()> {
     let _byte_count = r.be_u32()?;
     let version = r.be_u16()?;
     if version == 0 {
@@ -78,20 +78,20 @@ enum Acc {
 
 impl Acc {
     /// Choose the accumulator for a streamer element's ROOT type code (`fType`).
-    fn for_element(el: &StreamerElement) -> Result<Acc> {
+    fn for_element(el: &StreamerElement) -> Result<Self> {
         Ok(match el.el_type {
-            18 => Acc::Bool(Vec::new()),            // Bool
-            1 => Acc::I8(Vec::new()),               // Char
-            11 => Acc::U8(Vec::new()),              // UChar
-            2 => Acc::I16(Vec::new()),              // Short
-            12 => Acc::U16(Vec::new()),             // UShort
-            3 | 6 => Acc::I32(Vec::new()),          // Int / Counter
-            13 | 15 => Acc::U32(Vec::new()),        // UInt / Bits
-            4 | 16 => Acc::I64(Vec::new()),         // Long / Long64
-            14 | 17 => Acc::U64(Vec::new()),        // ULong / ULong64
-            5 => Acc::F32(Vec::new()),              // Float
-            8 => Acc::F64(Vec::new()),              // Double
-            65 | 365 | 500 => Acc::Str(Vec::new()), // TString / string / STLstring
+            18 => Self::Bool(Vec::new()),            // Bool
+            1 => Self::I8(Vec::new()),               // Char
+            11 => Self::U8(Vec::new()),              // UChar
+            2 => Self::I16(Vec::new()),              // Short
+            12 => Self::U16(Vec::new()),             // UShort
+            3 | 6 => Self::I32(Vec::new()),          // Int / Counter
+            13 | 15 => Self::U32(Vec::new()),        // UInt / Bits
+            4 | 16 => Self::I64(Vec::new()),         // Long / Long64
+            14 | 17 => Self::U64(Vec::new()),        // ULong / ULong64
+            5 => Self::F32(Vec::new()),              // Float
+            8 => Self::F64(Vec::new()),              // Double
+            65 | 365 | 500 => Self::Str(Vec::new()), // TString / string / STLstring
             other => {
                 return Err(Error::Unsupported(format!(
                     "streamer member {:?} has unsupported type code {other} ({})",
@@ -102,45 +102,45 @@ impl Acc {
     }
 
     /// Read this member's value for one entry from the blob cursor.
-    fn read_one(&mut self, r: &mut RBuffer, el: &StreamerElement) -> Result<()> {
+    fn read_one(&mut self, r: &mut RBuffer<'_>, el: &StreamerElement) -> Result<()> {
         match self {
-            Acc::Bool(v) => v.push(r.u8()? != 0),
-            Acc::I8(v) => v.push(r.i8()?),
-            Acc::U8(v) => v.push(r.u8()?),
-            Acc::I16(v) => v.push(r.be_i16()?),
-            Acc::U16(v) => v.push(r.be_u16()?),
-            Acc::I32(v) => v.push(r.be_i32()?),
-            Acc::U32(v) => v.push(r.be_u32()?),
-            Acc::I64(v) => v.push(r.be_i64()?),
-            Acc::U64(v) => v.push(r.be_u64()?),
-            Acc::F32(v) => v.push(r.be_f32()?),
-            Acc::F64(v) => v.push(r.be_f64()?),
-            Acc::Str(v) => v.push(read_string_member(r, el)?),
+            Self::Bool(v) => v.push(r.u8()? != 0),
+            Self::I8(v) => v.push(r.i8()?),
+            Self::U8(v) => v.push(r.u8()?),
+            Self::I16(v) => v.push(r.be_i16()?),
+            Self::U16(v) => v.push(r.be_u16()?),
+            Self::I32(v) => v.push(r.be_i32()?),
+            Self::U32(v) => v.push(r.be_u32()?),
+            Self::I64(v) => v.push(r.be_i64()?),
+            Self::U64(v) => v.push(r.be_u64()?),
+            Self::F32(v) => v.push(r.be_f32()?),
+            Self::F64(v) => v.push(r.be_f64()?),
+            Self::Str(v) => v.push(read_string_member(r, el)?),
         }
         Ok(())
     }
 
     fn into_values(self) -> FieldValues {
         match self {
-            Acc::Bool(v) => FieldValues::Bool(v),
-            Acc::I8(v) => FieldValues::I8(v),
-            Acc::U8(v) => FieldValues::U8(v),
-            Acc::I16(v) => FieldValues::I16(v),
-            Acc::U16(v) => FieldValues::U16(v),
-            Acc::I32(v) => FieldValues::I32(v),
-            Acc::U32(v) => FieldValues::U32(v),
-            Acc::I64(v) => FieldValues::I64(v),
-            Acc::U64(v) => FieldValues::U64(v),
-            Acc::F32(v) => FieldValues::F32(v),
-            Acc::F64(v) => FieldValues::F64(v),
-            Acc::Str(v) => FieldValues::Str(v),
+            Self::Bool(v) => FieldValues::Bool(v),
+            Self::I8(v) => FieldValues::I8(v),
+            Self::U8(v) => FieldValues::U8(v),
+            Self::I16(v) => FieldValues::I16(v),
+            Self::U16(v) => FieldValues::U16(v),
+            Self::I32(v) => FieldValues::I32(v),
+            Self::U32(v) => FieldValues::U32(v),
+            Self::I64(v) => FieldValues::I64(v),
+            Self::U64(v) => FieldValues::U64(v),
+            Self::F32(v) => FieldValues::F32(v),
+            Self::F64(v) => FieldValues::F64(v),
+            Self::Str(v) => FieldValues::Str(v),
         }
     }
 }
 
 /// Read a string member. A `std::string` (`STLstring`) is wrapped in its own
 /// `{byte count, version}` header; a bare `TString` is not.
-fn read_string_member(r: &mut RBuffer, el: &StreamerElement) -> Result<String> {
+fn read_string_member(r: &mut RBuffer<'_>, el: &StreamerElement) -> Result<String> {
     if el.el_type == 65 {
         // TString: a length-prefixed string, no object header.
         r.string()

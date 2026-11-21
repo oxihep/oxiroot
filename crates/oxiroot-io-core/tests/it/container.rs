@@ -1,4 +1,4 @@
-//! `ContainerWriter`: the TFile layout every oxiroot writer goes through. Each
+//! `ContainerWriter`: the `TFile` layout every oxiroot writer goes through. Each
 //! file is read back with `FileReader`, in both the 32-bit and 64-bit forms.
 
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -15,7 +15,7 @@ fn build(
 ) -> FileReader {
     let threshold = if big { 0 } else { u64::MAX };
     let bytes =
-        ContainerWriter::build("t.root", Compression::None, threshold, layout).expect("build");
+        ContainerWriter::build("t.root", Compression::Stored, threshold, layout).expect("build");
     let f = FileReader::from_bytes(bytes).expect("parse");
     assert_eq!(f.header().is_big(), big);
     f
@@ -23,12 +23,8 @@ fn build(
 
 /// The payload stored under `name` in `dir` ("" for the top directory).
 fn payload(f: &FileReader, dir: &str, name: &str) -> Vec<u8> {
-    if dir.is_empty() {
-        let key = f.key(name).expect("key");
-        f.key_payload(key).expect("payload").to_vec()
-    } else {
-        f.object_in(dir, name).expect("object").1
-    }
+    let key = f.key(&format!("{dir}/{name}")).expect("key");
+    f.key_payload(&key).expect("payload").to_vec()
 }
 
 #[test]
@@ -104,7 +100,7 @@ fn long_names_and_titles_get_the_long_string_form() {
 #[test]
 fn oversized_key_strings_are_rejected() {
     let huge = "x".repeat(70_000);
-    let err = ContainerWriter::build("t.root", Compression::None, u64::MAX, |c| {
+    let err = ContainerWriter::build("t.root", Compression::Stored, u64::MAX, |c| {
         c.place_key(DirId::TOP, "TObjString", &huge, "", b"")
             .map(drop)
     });
@@ -117,7 +113,7 @@ fn oversized_key_strings_are_rejected() {
 #[test]
 fn blobs_land_at_the_returned_offset() {
     let mut offsets = Vec::new();
-    let bytes = ContainerWriter::build("t.root", Compression::None, u64::MAX, |c| {
+    let bytes = ContainerWriter::build("t.root", Compression::Stored, u64::MAX, |c| {
         offsets.clear();
         offsets.push(c.place_blob(b"first blob")?);
         c.place_key(DirId::TOP, "TObjString", "k", "", b"between")?;
@@ -145,7 +141,7 @@ fn threshold_picks_the_form_from_the_finished_size() {
         c.place_key(DirId::TOP, "TObjString", "k", "", &[7u8; 500])
             .map(drop)
     };
-    let small = ContainerWriter::build("t.root", Compression::None, u64::MAX, layout).unwrap();
+    let small = ContainerWriter::build("t.root", Compression::Stored, u64::MAX, layout).unwrap();
     assert!(
         !FileReader::from_bytes(small.clone())
             .unwrap()
@@ -153,13 +149,18 @@ fn threshold_picks_the_form_from_the_finished_size() {
             .is_big()
     );
     let at_size =
-        ContainerWriter::build("t.root", Compression::None, small.len() as u64, layout).unwrap();
+        ContainerWriter::build("t.root", Compression::Stored, small.len() as u64, layout).unwrap();
     assert_eq!(
         at_size, small,
         "a file exactly at the threshold stays small"
     );
-    let over = ContainerWriter::build("t.root", Compression::None, small.len() as u64 - 1, layout)
-        .unwrap();
+    let over = ContainerWriter::build(
+        "t.root",
+        Compression::Stored,
+        small.len() as u64 - 1,
+        layout,
+    )
+    .unwrap();
     assert!(FileReader::from_bytes(over).unwrap().header().is_big());
 }
 
@@ -216,7 +217,13 @@ fn streamer_info_is_compressed_with_the_file() {
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(f.header().compress, 505);
     assert!(f.header().nbytes_info < 400);
-    assert_eq!(f.streamer_info_object().unwrap().unwrap(), vec![0u8; 400]);
+    assert_eq!(
+        oxiroot_io_core::raw::streamer_info_bytes(&f)
+            .unwrap()
+            .map(|(object, _)| object)
+            .unwrap(),
+        vec![0u8; 400]
+    );
 }
 
 #[test]
@@ -229,12 +236,13 @@ fn streaming_to_a_sink_matches_the_in_memory_build() {
     };
     for big in [false, true] {
         let threshold = if big { 0 } else { u64::MAX };
-        let built = ContainerWriter::build("t.root", Compression::None, threshold, layout).unwrap();
+        let built =
+            ContainerWriter::build("t.root", Compression::Stored, threshold, layout).unwrap();
         let mut c = ContainerWriter::new(
             Cursor::<Vec<u8>>::default(),
             "t.root",
-            Compression::None,
-            big,
+            Compression::Stored,
+            oxiroot_io_core::raw::Form::big_if(big),
         )
         .unwrap();
         layout(&mut c).unwrap();
@@ -245,7 +253,7 @@ fn streaming_to_a_sink_matches_the_in_memory_build() {
 
 #[test]
 fn misuse_is_an_error() {
-    ContainerWriter::build("t.root", Compression::None, u64::MAX, |c| {
+    ContainerWriter::build("t.root", Compression::Stored, u64::MAX, |c| {
         let d = c.mkdir(DirId::TOP, "d")?;
         c.close_dir(d)?;
         assert!(c.place_key(d, "TObjString", "late", "", b"").is_err());
@@ -260,16 +268,16 @@ fn misuse_is_an_error() {
     let mut other = ContainerWriter::new(
         Cursor::<Vec<u8>>::default(),
         "o.root",
-        Compression::None,
-        false,
+        Compression::Stored,
+        oxiroot_io_core::raw::Form::Small,
     )
     .unwrap();
     let foreign = other.mkdir(DirId::TOP, "x").unwrap();
     let mut c = ContainerWriter::new(
         Cursor::<Vec<u8>>::default(),
         "t.root",
-        Compression::None,
-        false,
+        Compression::Stored,
+        oxiroot_io_core::raw::Form::Small,
     )
     .unwrap();
     assert!(c.place_key(foreign, "TObjString", "k", "", b"").is_err());
@@ -281,7 +289,7 @@ fn existing_file() -> Vec<u8> {
 }
 
 fn existing_file_with(streamer_info: &[u8]) -> Vec<u8> {
-    ContainerWriter::build("orig.root", Compression::None, u64::MAX, |c| {
+    ContainerWriter::build("orig.root", Compression::Stored, u64::MAX, |c| {
         c.place_key(DirId::TOP, "TObjString", "a", "", b"alpha")?;
         c.place_key(DirId::TOP, "TObjString", "b", "", b"beta")?;
         let d = c.mkdir(DirId::TOP, "sub")?;
@@ -302,7 +310,7 @@ fn append_keeps_existing_bytes_and_adds_keys() {
         let bytes = ContainerWriter::build_append(
             &existing,
             "a-much-longer-name-than-before.root",
-            Compression::None,
+            Compression::Stored,
             threshold,
             |c| {
                 c.place_key(DirId::TOP, "TObjString", "a", "", b"alpha v2")?;
@@ -354,7 +362,7 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
         .header()
         .seek_info;
     let bytes =
-        ContainerWriter::build_append(&existing, "orig.root", Compression::None, u64::MAX, |c| {
+        ContainerWriter::build_append(&existing, "orig.root", Compression::Stored, u64::MAX, |c| {
             c.place_streamer_info(&[], &[class("A")])
         })
         .unwrap();
@@ -366,26 +374,29 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
     // A record that does not parse is kept rather than extended.
     let existing = existing_file_with(b"not a streamer info list");
     let bytes =
-        ContainerWriter::build_append(&existing, "orig.root", Compression::None, u64::MAX, |c| {
+        ContainerWriter::build_append(&existing, "orig.root", Compression::Stored, u64::MAX, |c| {
             c.place_streamer_info(&[], &[class("B")])
         })
         .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(
-        f.streamer_info_object().unwrap().unwrap(),
+        oxiroot_io_core::raw::streamer_info_bytes(&f)
+            .unwrap()
+            .map(|(object, _)| object)
+            .unwrap(),
         b"not a streamer info list"
     );
 }
 
 #[test]
 fn a_big_file_stays_big_when_appended() {
-    let big = ContainerWriter::build("b.root", Compression::None, 0, |c| {
+    let big = ContainerWriter::build("b.root", Compression::Stored, 0, |c| {
         c.place_key(DirId::TOP, "TObjString", "a", "", b"alpha")
             .map(drop)
     })
     .unwrap();
     let appended =
-        ContainerWriter::build_append(&big, "b.root", Compression::None, u64::MAX, |c| {
+        ContainerWriter::build_append(&big, "b.root", Compression::Stored, u64::MAX, |c| {
             c.place_key(DirId::TOP, "TObjString", "b", "", b"beta")
                 .map(drop)
         })
@@ -399,7 +410,16 @@ fn a_big_file_stays_big_when_appended() {
     let file = FileReader::from_bytes(big.clone()).unwrap();
     let mut sink = Cursor::new(big);
     sink.set_position(file.header().end);
-    assert!(ContainerWriter::append(sink, &file, "b.root", Compression::None, false).is_err());
+    assert!(
+        ContainerWriter::append(
+            sink,
+            &file,
+            "b.root",
+            Compression::Stored,
+            oxiroot_io_core::raw::Form::Small
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -408,7 +428,7 @@ fn append_rejects_a_truncated_file() {
     let err = ContainerWriter::build_append(
         &existing[..existing.len() - 1],
         "orig.root",
-        Compression::None,
+        Compression::Stored,
         u64::MAX,
         |_| Ok(()),
     );
@@ -421,14 +441,14 @@ fn compress_if_smaller_keeps_incompressible_bytes() {
         .map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8)
         .collect();
     assert!(matches!(
-        compress_if_smaller(&noise, Compression::Zstd(5).setting()),
+        compress_if_smaller(&noise, Compression::Zstd(5)),
         std::borrow::Cow::Borrowed(_)
     ));
     assert!(matches!(
-        compress_if_smaller(&[0u8; 1000], 0),
+        compress_if_smaller(&[0u8; 1000], Compression::Stored),
         std::borrow::Cow::Borrowed(_)
     ));
-    let zeros = compress_if_smaller(&[0u8; 1000], Compression::Zlib(1).setting());
+    let zeros = compress_if_smaller(&[0u8; 1000], Compression::Zlib(1));
     assert!(zeros.len() < 1000);
     assert_eq!(
         oxiroot_compress::decompress(&zeros, 1000).unwrap(),

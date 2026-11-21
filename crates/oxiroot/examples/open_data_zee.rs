@@ -3,7 +3,7 @@
 //! Streams a 966 MB ATLAS open-data simulation sample (Z → ee) from CERN's
 //! public EOS server over `root://`, without downloading it: only the
 //! branches read, for the entries read, cross the network (batched with
-//! XRootD vector reads). Selects events with exactly two opposite-charge
+//! `XRootD` vector reads). Selects events with exactly two opposite-charge
 //! electrons, builds their invariant mass from the four-momenta, fits the Z
 //! peak, and plots it. Needs the network and the
 //! `xrootd` feature:
@@ -40,7 +40,7 @@ fn main() -> oxiroot::Result<()> {
     // Exactly two electrons (|PDG ID| 11), opposite charge, pT > 25 GeV.
     let mut mass = Hist::reg(50, 66.0, 116.0)
         .double()
-        .to_root()
+        .to_root()?
         .named("m_ee")
         .titled("dielectron mass");
     mass.track_sumw2();

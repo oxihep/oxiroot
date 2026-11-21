@@ -1,4 +1,4 @@
-//! Read throughput: a `TTree` and an RNTuple holding the same columns —
+//! Read throughput: a `TTree` and an `RNTuple` holding the same columns —
 //! scalars and a `std::vector<double>` — written once under Zstd into a
 //! temporary directory, then read back three ways: the format's own reader
 //! (`values()`, one `Vec` per entry for a vector), its flat read, and the
@@ -52,7 +52,7 @@ fn write_files() -> Files {
     let ntuple = dir.join("ntuple.root");
     for (path, format) in [(&tree, Format::Tree), (&ntuple, Format::Ntuple)] {
         let mut out = DatasetWriter::create(path, "events", format).unwrap();
-        out.write(&batch).unwrap();
+        out.write(batch.clone()).unwrap();
         out.finish().unwrap();
     }
 
@@ -63,6 +63,7 @@ fn write_files() -> Files {
             let mut h = Hist::reg(100, 0.0, 1.0)
                 .double()
                 .to_root()
+                .unwrap()
                 .named(format!("h{i}"));
             h.fill(0.5);
             h
@@ -71,7 +72,7 @@ fn write_files() -> Files {
     for h in &made {
         w = w.add(h);
     }
-    w.write(Compression::Zstd(5)).unwrap();
+    w.write().unwrap();
 
     Files {
         dir,
@@ -200,7 +201,7 @@ fn bench(c: &mut Criterion) {
         b.iter(|| {
             let file = FileReader::open(&files.hists).unwrap();
             for i in 0..500 {
-                black_box(Hist1D::read_root(&file, &format!("h{i}")).unwrap());
+                black_box(file.get::<Hist1D>(&format!("h{i}")).unwrap());
             }
         });
     });

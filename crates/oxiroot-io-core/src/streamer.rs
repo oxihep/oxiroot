@@ -6,7 +6,7 @@
 //! later schema versions. `TObject` is the notable exception — it is written
 //! with a 2-byte version and no byte count.
 
-use crate::buffer::{RBuffer, WBuffer};
+use crate::buffer::{Patch, RBuffer, WBuffer};
 use crate::cast::SaturatingFrom;
 use crate::error::Result;
 
@@ -29,7 +29,7 @@ pub struct ObjectBase {
 /// Read a `TObject` base: a 2-byte version, `fUniqueID`, `fBits`, and a 2-byte
 /// process-id reference iff `kIsReferenced` is set. Leaves the cursor just past
 /// the `TObject` data.
-pub fn read_object_base(r: &mut RBuffer) -> Result<ObjectBase> {
+pub fn read_object_base(r: &mut RBuffer<'_>) -> Result<ObjectBase> {
     let vh = r.read_version()?; // version only, no byte count
     let unique_id = r.be_u32()?;
     let bits = r.be_u32()?;
@@ -56,7 +56,7 @@ pub struct Named {
 
 /// Read a `Named` base (`TObject` + `fName` + `fTitle`), then seek to the end
 /// of the `Named` record as given by its byte count.
-pub fn read_named(r: &mut RBuffer) -> Result<Named> {
+pub fn read_named(r: &mut RBuffer<'_>) -> Result<Named> {
     let vh = r.read_version()?;
     let _obj = read_object_base(r)?;
     let name = r.string()?;
@@ -70,7 +70,7 @@ pub fn read_named(r: &mut RBuffer) -> Result<Named> {
 /// Read a versioned object's header and seek straight to its end, skipping the
 /// payload entirely. Returns the version. Errors if the object had no byte
 /// count (and therefore no known end to skip to).
-pub fn skip_versioned(r: &mut RBuffer) -> Result<u16> {
+pub fn skip_versioned(r: &mut RBuffer<'_>) -> Result<u16> {
     let vh = r.read_version()?;
     match vh.end {
         Some(end) => {
@@ -95,13 +95,35 @@ pub fn write_object_base(w: &mut WBuffer, bits: u32) {
 /// `kNewClassTag`, the NUL-terminated class name, then `body` (the object's own
 /// streamed bytes, as produced by [`WriteRoot`](crate::WriteRoot)).
 pub fn write_object_any(w: &mut WBuffer, class: &str, body: &[u8]) {
-    let bc = w.reserve(4);
-    w.be_u32(0xFFFF_FFFF); // kNewClassTag
+    write_object_ptr(w, class, |w| w.bytes(body));
+}
+
+/// Write an object held by pointer: a byte count, `kNewClassTag`, the
+/// NUL-terminated class name, then the body `write` produces. Every object gets
+/// a fresh class tag, never a back-reference, so what is written does not
+/// depend on where in the buffer it lands.
+pub fn write_object_ptr(w: &mut WBuffer, class: &str, write: impl FnOnce(&mut WBuffer)) {
+    let count = begin_object_any(w, class);
+    write(w);
+    end_object_any(w, count);
+}
+
+/// The first half of [`write_object_ptr`], for a body that cannot be written
+/// from one closure: the byte-count placeholder (returned, for
+/// [`end_object_any`]), `kNewClassTag` and the class name.
+pub fn begin_object_any(w: &mut WBuffer, class: &str) -> Patch<4> {
+    let count = w.reserve::<4>();
+    w.be_u32(crate::object::K_NEW_CLASS_TAG);
     w.bytes(class.as_bytes());
     w.u8(0);
-    w.bytes(body);
-    let inner = u32::saturating_from(w.len() - w.patch_offset(bc) - 4);
-    w.patch_be_u32(bc, inner | crate::buffer::K_BYTE_COUNT_MASK);
+    count
+}
+
+/// Finish an object begun with [`begin_object_any`]: fill in its byte count,
+/// which covers everything after the count word.
+pub fn end_object_any(w: &mut WBuffer, count: Patch<4>) {
+    let inner = u32::saturating_from(w.len() - count.offset() - 4);
+    w.patch_be_u32(count, inner | crate::buffer::K_BYTE_COUNT_MASK);
 }
 
 /// Write a `Named` base (a byte-counted `TObject` + `fName` + `fTitle`).

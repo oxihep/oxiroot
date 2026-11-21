@@ -1,4 +1,4 @@
-//! Hardening: corrupt/truncated TTree files must yield `Err`, never panic.
+//! Hardening: corrupt/truncated `TTree` files must yield `Err`, never panic.
 //!
 //! Covers a flat tree, fixed/variable arrays, a split `std::vector<MyStruct>`
 //! tree, and a `std::vector<double>` tree. For every mutated file we open the
@@ -27,24 +27,28 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// Open the tree (if it parses), read every branch, and run it through the
-/// `hadd`-style [`append_trees`](oxiroot_tree::append_trees) merge. The point is that none of this panics
+/// `hadd`-style [`append_trees`](oxiroot_tree::raw::append_trees) merge. The point is that none of this panics
 /// regardless of the bytes.
 fn poke_tree(f: &FileReader, tree: &str) {
     if let Ok(t) = TreeReader::open(f, tree) {
-        let names: Vec<String> = t.branch_names().iter().map(|s| s.to_string()).collect();
+        let names: Vec<String> = t
+            .branch_names()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         for b in &names {
             let _ = t.branch(b).values();
         }
         // Merge the (possibly corrupt) tree with itself — exercises the branch
         // kind reconstruction and value concatenation on malformed input.
-        let mut w = oxiroot_tree::TreeWriter::new(
+        let mut w = oxiroot_tree::raw::TreeWriter::new(
             std::io::Cursor::new(Vec::new()),
             "m.root",
             tree,
-            oxiroot_io_core::Compression::None,
+            oxiroot_io_core::Compression::Stored,
         )
         .expect("an in-memory writer");
-        let _ = oxiroot_tree::append_trees(&mut w, &[&t]);
+        let _ = oxiroot_tree::raw::append_trees(&mut w, &[&t]);
     }
 }
 

@@ -1,5 +1,5 @@
-//! Streamer-info-driven schema validation + exposure (B10): TreeReader::open reads the
-//! file's TStreamerInfo, validates the classes it parses, and exposes them.
+//! Streamer-info-driven schema validation + exposure (B10): `TreeReader::open` reads the
+//! file's `TStreamerInfo`, validates the classes it parses, and exposes them.
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
 use std::path::PathBuf;

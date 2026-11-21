@@ -14,7 +14,7 @@ fn fixture() -> String {
 
 /// The one bin of the `TH1D` at `name`, through the generic reader.
 fn bin(file: &FileReader, name: &str) -> Option<f64> {
-    let v = file.get_value(name).ok()?;
+    let v = file.get::<Value>(name).ok()?;
     v.get("fArray")
         .and_then(Value::as_array)
         .and_then(|a| a.get(1))
@@ -27,19 +27,19 @@ fn a_name_reads_its_highest_cycle_and_a_cycle_reads_that_one() {
 
     // Three cycles are on file; the name alone reads the current one.
     assert_eq!(f.keys().iter().filter(|k| k.name == "h").count(), 3);
-    assert_eq!(f.key("h").map(|k| k.cycle), Some(3));
+    assert_eq!(f.key("h").unwrap().cycle, 3);
     assert_eq!(bin(&f, "h"), Some(3.0));
 
     // Each cycle reads back the value written at that cycle.
-    assert_eq!(f.key("h;1").map(|k| k.cycle), Some(1));
+    assert_eq!(f.key("h;1").unwrap().cycle, 1);
     assert_eq!(bin(&f, "h;1"), Some(1.0));
     assert_eq!(bin(&f, "h;2"), Some(2.0));
     assert_eq!(bin(&f, "h;3"), Some(3.0));
 
     // A cycle the file does not hold is not found, and does not fall back to
     // another cycle.
-    assert!(f.key("h;4").is_none());
-    assert!(f.get_value("h;4").is_err());
+    assert!(f.key("h;4").is_err());
+    assert!(f.get::<Value>("h;4").is_err());
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn a_cycle_reads_the_same_way_in_a_subdirectory() {
     assert_eq!(dir.keys.iter().filter(|k| k.name == "d").count(), 2);
 
     let value = |name: &str| {
-        f.get_value_in("sub", name).ok().and_then(|v| {
+        f.get::<Value>(&format!("sub/{name}")).ok().and_then(|v| {
             v.get("fArray")
                 .and_then(Value::as_array)
                 .and_then(|a| a.get(1))
@@ -59,7 +59,7 @@ fn a_cycle_reads_the_same_way_in_a_subdirectory() {
     assert_eq!(value("d"), Some(20.0));
     assert_eq!(value("d;1"), Some(10.0));
     assert_eq!(value("d;2"), Some(20.0));
-    assert!(f.get_value_in("sub", "d;3").is_err());
+    assert!(f.get::<Value>("sub/d;3").is_err());
 }
 
 #[test]
@@ -68,9 +68,9 @@ fn a_deleted_key_is_not_read_even_at_its_cycle() {
     // directory; neither the name nor its cycle finds anything, as in ROOT.
     let f = FileReader::open(fixture()).unwrap();
     assert!(!f.keys().iter().any(|k| k.name == "gone"));
-    assert!(f.key("gone").is_none());
-    assert!(f.key("gone;1").is_none());
-    assert!(f.get_value("gone;1").is_err());
+    assert!(f.key("gone").is_err());
+    assert!(f.key("gone;1").is_err());
+    assert!(f.get::<Value>("gone;1").is_err());
 }
 
 #[test]

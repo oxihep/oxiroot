@@ -12,10 +12,10 @@ use crate::{Graph, GraphErrors, Hist1D, Hist2D, Profile1D};
 
 impl Hist1dData for Hist1D {
     fn edges(&self) -> Vec<f64> {
-        Hist1D::edges(self)
+        Self::edges(self)
     }
     fn values(&self) -> Vec<f64> {
-        Hist1D::values(self).to_vec()
+        Self::values(self).to_vec()
     }
     fn error(&self, i: usize) -> f64 {
         self.bin_error(i + 1)
@@ -29,10 +29,10 @@ impl Hist1dData for Hist1D {
 
 impl Hist1dData for Profile1D {
     fn edges(&self) -> Vec<f64> {
-        Profile1D::edges(self)
+        Self::edges(self)
     }
     fn values(&self) -> Vec<f64> {
-        Profile1D::values(self)
+        Self::values(self)
     }
     fn error(&self, i: usize) -> f64 {
         self.bin_error(i + 1)
@@ -100,7 +100,11 @@ mod tests {
 
     #[test]
     fn hist1d_exposes_in_range_bins_and_errors() {
-        let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+        let mut h = Hist::reg(4, 0.0, 4.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h");
         h.track_sumw2();
         h.fill(-1.0); // underflow: not drawn
         h.fill_weight(1.5, 4.0);
@@ -111,7 +115,7 @@ mod tests {
 
     #[test]
     fn profile_draws_its_bin_means() {
-        let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+        let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
         p.fill(0.5, 1.0);
         p.fill(0.5, 3.0);
         assert_eq!(Hist1dData::values(&p)[0], 2.0);
@@ -123,6 +127,7 @@ mod tests {
             .reg(3, 0.0, 3.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h2");
         h.fill_weight(1.5, 0.5, 7.0);
         let grid = h.grid();
@@ -132,13 +137,14 @@ mod tests {
 
     #[test]
     fn graph_errors_are_padded_and_asymmetric_ones_kept() {
-        let g = Graph::with_errors(
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-            vec![0.1, 0.1],
-            vec![0.2, 0.3],
-        )
-        .unwrap();
+        let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])
+            .and_then(|g| {
+                g.with_errors(crate::GraphErrors::Symmetric {
+                    ex: vec![0.1, 0.1],
+                    ey: vec![0.2, 0.3],
+                })
+            })
+            .unwrap();
         assert_eq!(g.y_errors(), Some((vec![0.2, 0.3], vec![0.2, 0.3])));
         let plain = Graph::new(vec![1.0], vec![2.0]).unwrap();
         assert_eq!(plain.x_errors(), None);
@@ -149,19 +155,26 @@ mod tests {
         let mut h = Hist::reg(24, 0.0, 86_400.0)
             .double()
             .to_root()
+            .unwrap()
             .named("rate");
         h.xaxis.set_time_format("%H:%M%F2024-01-01 00:00:00");
         assert_eq!(
             Hist1dData::x_time_format(&h).as_deref(),
             Some("%H:%M%F2024-01-01 00:00:00")
         );
-        let plain = Hist::reg(4, 0.0, 4.0).double().to_root().named("plain");
+        let plain = Hist::reg(4, 0.0, 4.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("plain");
         assert_eq!(Hist1dData::x_time_format(&plain), None);
 
         // A graph takes it from its display frame, as ROOT stores it.
         let mut frame = Hist::reg(2, 0.0, 7200.0)
             .double()
-            .to_root_as(crate::BinContentType::F32)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(crate::BinContentType::F32)
             .named("Graph");
         frame.xaxis.set_time_format("%H:%M");
         let mut g = Graph::new(vec![0.0, 3600.0], vec![1.0, 2.0]).unwrap();
@@ -171,14 +184,23 @@ mod tests {
 
     #[test]
     fn every_type_renders() {
-        let mut h = Hist::reg(10, 0.0, 10.0).double().to_root().named("h");
+        let mut h = Hist::reg(10, 0.0, 10.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h");
         h.fill(3.0);
-        let mut p = Hist::reg(10, 0.0, 10.0).mean().to_root().named("p");
+        let mut p = Hist::reg(10, 0.0, 10.0)
+            .mean()
+            .to_root()
+            .unwrap()
+            .named("p");
         p.fill(3.0, 1.0);
         let h2 = Hist::reg(4, 0.0, 1.0)
             .reg(4, 0.0, 1.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h2");
         let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0]).unwrap();
 

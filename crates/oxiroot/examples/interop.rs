@@ -1,4 +1,4 @@
-//! Interop driver for the round-trip CI: writes a canonical histogram + RNTuple
+//! Interop driver for the round-trip CI: writes a canonical histogram + `RNTuple`
 //! for an external ROOT reader (uproot / ROOT C++) to verify, and reads the
 //! files an external ROOT writer produced, asserting the same canonical values.
 //!
@@ -7,25 +7,25 @@
 //!
 //! Canonical dataset (both sides agree):
 //!   - TH1D "h": 4 bins over [0, 4), in-range bin contents [1, 2, 3, 4].
-//!   - RNTuple "ntpl": field x = int32 [1,2,3,4,5], y = double [1.5,2.5,3.5,4.5,5.5].
-//!   - TTree "Tree": ti = int32 [1..5], tf = double [1.5..5.5], tv = double[3]
+//!   - `RNTuple` "ntpl": field x = int32 [1,2,3,4,5], y = double [1.5,2.5,3.5,4.5,5.5].
+//!   - `TTree` "Tree": ti = int32 [1..5], tf = double [1.5..5.5], tv = double[3]
 //!     fixed array, ts = string, tj = jagged double (auto count ntj),
-//!     tw = std::vector<double> (TBranchElement), th = split std::vector<Hit>
+//!     tw = `std::vector`<double> (`TBranchElement`), th = split `std::vector`<Hit>
 //!     (Hit = {float x; float y; int id;}) read back as th.x/th.y/th.id.
-//!   - rust_multi.root (FileWriter, Rust → oracle): top-level TH1D "mh"
+//!   - `rust_multi.root` (`FileWriter`, Rust → oracle): top-level TH1D "mh"
 //!     = [5,6,7], a subdirectory "sub" holding TH1D "sh" = [8,9], and a
 //!     directory nested three deep, "sub/deep/deeper" holding TH1D "dh2"
 //!     = [10,11].
-//!   - rust_append.root (FileWriter create then open/append, Rust → oracle):
+//!   - `rust_append.root` (`FileWriter` create then open/append, Rust → oracle):
 //!     TH1D "bh" = [3,1] written first, TH1D "ah" = [4] appended afterwards.
-//!   - rust_codec_<zlib|lz4|zstd|lzma>.root (Rust → oracle), one file per
+//!   - `rust_codec`_<zlib|lz4|zstd|lzma>.root (Rust → oracle), one file per
 //!     codec, each holding: the canonical TH1D "h"; a TH2D "h2" of 3×2 unit
 //!     bins over [0,3)×[0,2) with in-range bin (i, j) = 1 + i + 3j; a TH3D
 //!     "h3" of 2×2×2 unit bins with bin (i, j, k) = 1 + i + 2j + 4k; a
-//!     TProfile "p" of 2 unit bins with means [2, 5] from entries [2, 1]; and
+//!     `TProfile` "p" of 2 unit bins with means [2, 5] from entries [2, 1]; and
 //!     a TH1D "big" of 1000 unit bins with bin i = i % 7, large enough that
 //!     every codec really compresses it.
-//!   - oracle_dirs.root (oracle → Rust, read via read_root + read_root_in):
+//!   - `oracle_dirs.root` (oracle → Rust, read via `FileReader::get`):
 //!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
 //!     = [3,6,9].
 
@@ -33,9 +33,11 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::Path;
 use std::process::exit;
 
-use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, SplitMember, TreeReader};
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::{Branch, BranchValues, SplitMember};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -43,10 +45,10 @@ use whole_file::{write_rntuple_file, write_tree_file};
 
 /// In-range bin contents of the canonical histogram.
 const HIST_BINS: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
-/// Canonical RNTuple columns.
+/// Canonical `RNTuple` columns.
 const NTPL_X: [i32; 5] = [1, 2, 3, 4, 5];
 const NTPL_Y: [f64; 5] = [1.5, 2.5, 3.5, 4.5, 5.5];
-/// Canonical TTree fixed-array (`tv`) and string (`ts`) columns.
+/// Canonical `TTree` fixed-array (`tv`) and string (`ts`) columns.
 const TREE_TV: [[f64; 3]; 5] = [
     [1.0, 2.0, 3.0],
     [4.0, 5.0, 6.0],
@@ -55,9 +57,9 @@ const TREE_TV: [[f64; 3]; 5] = [
     [13.0, 14.0, 15.0],
 ];
 const TREE_TS: [&str; 5] = ["a", "bb", "ccc", "dddd", "eeeee"];
-/// Canonical TTree jagged (variable-length) column.
+/// Canonical `TTree` jagged (variable-length) column.
 const TREE_TJ: [&[f64]; 5] = [&[1.0], &[2.0, 3.0], &[], &[4.0, 5.0, 6.0], &[7.0]];
-/// Canonical TTree `std::vector<double>` (TBranchElement) column.
+/// Canonical `TTree` `std::vector<double>` (`TBranchElement`) column.
 const TREE_TW: [&[f64]; 5] = [
     &[10.0, 20.0],
     &[],
@@ -71,7 +73,7 @@ const TREE_TW: [&[f64]; 5] = [
 const TREE_TH_X: [&[f32]; 5] = [&[1.0], &[], &[2.0, 3.0], &[4.0], &[5.0, 6.0, 7.0]];
 const TREE_TH_Y: [&[f32]; 5] = [&[1.5], &[], &[2.5, 3.5], &[4.5], &[5.5, 6.5, 7.5]];
 const TREE_TH_ID: [&[i32]; 5] = [&[1], &[], &[2, 3], &[4], &[5, 6, 7]];
-/// Canonical oracle-written TTree "otree" (ROOT/uproot → Rust): a scalar (`oi`),
+/// Canonical oracle-written `TTree` "otree" (ROOT/uproot → Rust): a scalar (`oi`),
 /// a jagged double (`oj`), a string (`os`), and a `std::vector<double>` (`ov`).
 /// uproot cannot write `std::vector`, so `ov` is present only in the ROOT C++
 /// oracle and is read back only when the branch exists.
@@ -84,7 +86,7 @@ const OTREE_OV: [&[f64]; 3] = [&[1.0], &[2.0, 3.0], &[]];
 const MULTI_MH: [f64; 3] = [5.0, 6.0, 7.0];
 const MULTI_SH: [f64; 2] = [8.0, 9.0];
 const MULTI_DH2: [f64; 2] = [10.0, 11.0];
-/// `rust_append.root`: base `bh`, then `ah` appended via `FileWriter::open`.
+/// `rust_append.root`: base `bh`, then `ah` appended via `FileUpdater::open`.
 const APPEND_BH: [f64; 2] = [3.0, 1.0];
 const APPEND_AH: [f64; 1] = [4.0];
 /// Oracle-written `oracle_dirs.root`: top-level `dh` + subdirectory `region/rh`.
@@ -108,7 +110,7 @@ fn canonical_hist() -> Hist1D {
             h.fill(center);
         }
     }
-    h.to_root()
+    h.to_root().unwrap()
 }
 
 /// A `TH1D` with `contents.len()` unit bins over `[0, n)` whose in-range bin `i`
@@ -119,6 +121,7 @@ fn hist(name: &str, contents: &[f64]) -> Hist1D {
     let mut h = Hist::reg(usize::saturating_from(n), 0.0, f64::from(n))
         .double()
         .to_root()
+        .unwrap()
         .named(name)
         .titled("interop");
     for (i, &c) in contents.iter().enumerate() {
@@ -141,6 +144,7 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
         .reg(2, 0.0, 2.0)
         .weight()
         .to_root()
+        .unwrap()
         .named("h2");
     for i in 0..3 {
         for j in 0..2 {
@@ -156,6 +160,7 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
         .reg(2, 0.0, 2.0)
         .weight()
         .to_root()
+        .unwrap()
         .named("h3");
     for i in 0..2 {
         for j in 0..2 {
@@ -170,11 +175,15 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
             }
         }
     }
-    let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().named("p");
+    let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
     p.fill(0.5, 1.0);
     p.fill(0.5, 3.0);
     p.fill(1.5, 5.0);
-    let mut big = Hist::reg(1000, 0.0, 1000.0).double().to_root().named("big");
+    let mut big = Hist::reg(1000, 0.0, 1000.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("big");
     for i in 0..1000 {
         big.fill_weight(f64::from(i) + 0.5, f64::from(i % 7));
     }
@@ -183,7 +192,10 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
 
 fn write(dir: &Path) -> oxiroot::Result<()> {
     let h = canonical_hist();
-    h.write_root(dir.join("rust_hist.root"), Compression::None)?;
+    FileWriter::create(dir.join("rust_hist.root"))
+        .add(&h)
+        .compression(Compression::Stored)
+        .write()?;
 
     let fields = vec![
         Field::i32("x", NTPL_X.to_vec()),
@@ -193,7 +205,7 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         dir.join("rust_ntuple.root"),
         "ntpl",
         &fields,
-        Compression::None,
+        Compression::Stored,
     )?;
 
     write_tree_file(
@@ -203,7 +215,13 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
             Branch::i32("ti", NTPL_X.to_vec()),
             Branch::f64("tf", NTPL_Y.to_vec()),
             Branch::array_f64("tv", TREE_TV.iter().map(|r| r.to_vec()).collect()),
-            Branch::string("ts", TREE_TS.iter().map(|s| s.to_string()).collect()),
+            Branch::string(
+                "ts",
+                TREE_TS
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+            ),
             Branch::jagged_f64("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()),
             Branch::vector_f64("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
             Branch::split_vector(
@@ -216,7 +234,7 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
                 ],
             ),
         ],
-        Compression::None,
+        Compression::Stored,
     )?;
 
     // rust_multi.root — FileWriter: a top-level hist, a subdirectory (`sub`)
@@ -229,17 +247,20 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         .dir("sub", |d| {
             d.add(&sh).dir("deep", |d| d.dir("deeper", |d| d.add(&dh2)))
         })
-        .write(Compression::None)?;
+        .compression(Compression::Stored)
+        .write()?;
 
-    // rust_append.root — write one hist, then append a second via FileWriter::open
+    // rust_append.root — write one hist, then append a second via FileUpdater::open
     // (the existing key is preserved and the new one added).
     let append_path = dir.join("rust_append.root");
     FileWriter::create(&append_path)
         .add(&hist("bh", &APPEND_BH))
-        .write(Compression::None)?;
-    FileWriter::open(&append_path)?
+        .compression(Compression::Stored)
+        .write()?;
+    oxiroot::FileUpdater::open(&append_path)?
         .add(&hist("ah", &APPEND_AH))
-        .write(Compression::None)?;
+        .compression(Compression::Stored)
+        .write()?;
 
     // rust_codec_*.root — the same objects under every codec.
     let (h2, h3, p, big) = matrix_hists();
@@ -250,7 +271,8 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
             .add(&h3)
             .add(&p)
             .add(&big)
-            .write(codec)?;
+            .compression(codec)
+            .write()?;
     }
 
     println!(
@@ -264,11 +286,10 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
 fn read(dir: &Path) -> oxiroot::Result<()> {
     // Histogram written by the ROOT oracle.
     let f = FileReader::open(dir.join("oracle_hist.root"))?;
-    let h = Hist1D::read_root(&f, "h")?;
+    let h = f.get::<Hist1D>("h")?;
     assert_close("hist bin contents", h.values(), &HIST_BINS);
     // The same histogram read straight into oxihist (ROOT → oxihist).
-    let oh =
-        oxiroot::hist::oxihist::Histogram::<oxiroot::hist::oxihist::Weight, 1>::read_root(&f, "h")?;
+    let oh = f.get::<Hist1D>("h")?.to_hist()?;
     assert_close("hist via oxihist", &oh.values(false), &HIST_BINS);
     println!("read oracle_hist.root — bin contents match");
 
@@ -279,13 +300,13 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     // read_root) and a hist inside subdirectory `region` (`rh`, via
     // read_root_in). Both ROOT C++ and uproot produce it.
     let f = FileReader::open(dir.join("oracle_dirs.root"))?;
-    assert_close("dirs dh", Hist1D::read_root(&f, "dh")?.values(), &DIRS_DH);
+    assert_close("dirs dh", f.get::<Hist1D>("dh")?.values(), &DIRS_DH);
     assert_close(
         "dirs region/rh",
-        Hist1D::read_root_in(&f, "region", "rh")?.values(),
+        f.get::<Hist1D>("region/rh")?.values(),
         &DIRS_RH,
     );
-    println!("read oracle_dirs.root — top-level + subdirectory (read_root_in) match");
+    println!("read oracle_dirs.root — top-level + subdirectory match");
 
     // RNTuple written by the ROOT oracle. uproot's RNTuple writer is
     // experimental, so the uproot job omits this file; only the ROOT C++ job

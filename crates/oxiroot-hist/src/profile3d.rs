@@ -1,17 +1,18 @@
 //! `Profile3D` — a 3-D profile histogram. For each `(x, y, z)` cell it stores
 //! the running sums to recover the mean of a fourth quantity `t`: `Σw`
-//! (`bin_entries`), `Σ(w·t)` (`sums`, the Hist3D contents), and `Σ(w·t²)` (`sumt2`,
-//! the Hist3D `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
+//! (`bin_entries`), `Σ(w·t)` (`sums`, the `Hist3D` contents), and `Σ(w·t²)` (`sumt2`,
+//! the `Hist3D` `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::skip_versioned;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, cell_count, check_cells, end_record, object_bytes, object_bytes_in,
-    read_tarray, read_th1_base, unsupported_version,
+    BinContentType, cell_count, check_cells, end_record, read_tarray, read_th1_base,
+    unsupported_version,
 };
 use crate::profile1d::ErrorMode;
 
@@ -57,9 +58,9 @@ pub struct Profile3D {
     pub(crate) tsumwxz: f64,
     /// Sum of `w·y·z` (`fTsumwyz`).
     pub(crate) tsumwyz: f64,
-    /// Per-cell `Σ(w·t)` (the Hist3D contents, `fArray`); length `ncells`.
+    /// Per-cell `Σ(w·t)` (the `Hist3D` contents, `fArray`); length `ncells`.
     pub(crate) sums: Vec<f64>,
-    /// Per-cell `Σ(w·t²)` (the Hist3D `fSumw2`); length `ncells`.
+    /// Per-cell `Σ(w·t²)` (the `Hist3D` `fSumw2`); length `ncells`.
     pub(crate) sumt2: Vec<f64>,
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub(crate) bin_entries: Vec<f64>,
@@ -87,7 +88,7 @@ impl Profile3D {
 
     /// Create an empty `Profile3D` with uniform x/y/z bins and no t
     /// restriction. Internal primitive behind the public builder:
-    /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).mean().to_root()`.
+    /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).mean().to_root()?`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         nx: i32,
@@ -99,9 +100,9 @@ impl Profile3D {
         nz: i32,
         zlo: f64,
         zhi: f64,
-    ) -> Profile3D {
+    ) -> Self {
         let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2));
-        Profile3D {
+        Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
@@ -133,14 +134,17 @@ impl Profile3D {
     }
 
     /// Number of x bins (excluding flow).
+    #[must_use]
     pub fn nx(&self) -> usize {
         usize::saturating_from(self.xaxis.nbins.max(0))
     }
     /// Number of y bins (excluding flow).
+    #[must_use]
     pub fn ny(&self) -> usize {
         usize::saturating_from(self.yaxis.nbins.max(0))
     }
     /// Number of z bins (excluding flow).
+    #[must_use]
     pub fn nz(&self) -> usize {
         usize::saturating_from(self.zaxis.nbins.max(0))
     }
@@ -193,6 +197,7 @@ impl Profile3D {
 
     /// Profiled `t` value per in-range cell as `values[ix][iy][iz]`:
     /// `Σ(w·t) / Σw`, or `0` where a cell has no entries.
+    #[must_use]
     pub fn values(&self) -> Vec<Vec<Vec<f64>>> {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (sx, sy) = (nx + 2, ny + 2);
@@ -209,7 +214,7 @@ impl Profile3D {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<Profile3D> {
+    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         // fBinSumw2 arrived in class version 7 (ROOT 5.24). The class was added
         // at version 6 (ROOT 5.12), which already had the other members.
         let tp = r.read_version()?; // Profile3D wrapper
@@ -236,7 +241,7 @@ impl Profile3D {
 
         let sums = read_tarray(r, BinContentType::F64)?; // TH3D TArrayD = Σ(w·t)
         let bin_entries = read_tarray(r, BinContentType::F64)?;
-        let error_mode = ErrorMode::from_code(r.be_i32()?);
+        let error_mode = ErrorMode::from_code(r.be_i32()?)?;
         let tmin = r.be_f64()?;
         let tmax = r.be_f64()?;
         let tsumwt = r.be_f64()?;
@@ -254,7 +259,7 @@ impl Profile3D {
         check_cells("TProfile3D fSumw2", c.sumw2.len(), cells, true)?;
         check_cells("TProfile3D fBinSumw2", bin_sumw2.len(), cells, true)?;
 
-        Ok(Profile3D {
+        Ok(Self {
             name: c.name,
             title: c.title,
             xaxis: c.xaxis,
@@ -286,17 +291,10 @@ impl Profile3D {
     }
 }
 
-/// Read a `Profile3D` named `name` from `file`.
-pub(crate) fn read_tprofile3d(file: &FileReader, name: &str) -> Result<Profile3D> {
-    Profile3D::read(&mut RBuffer::new(&object_bytes(file, name, "TProfile3D")?))
-}
+impl ReadRoot for Profile3D {
+    const CLASS: &'static str = "TProfile3D";
 
-/// Read a `Profile3D` from subdirectory `subdir`.
-pub(crate) fn read_tprofile3d_in(file: &FileReader, subdir: &str, name: &str) -> Result<Profile3D> {
-    Profile3D::read(&mut RBuffer::new(&object_bytes_in(
-        file,
-        subdir,
-        name,
-        "TProfile3D",
-    )?))
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+    }
 }

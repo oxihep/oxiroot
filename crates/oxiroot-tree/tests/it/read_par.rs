@@ -9,7 +9,8 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_tree::{Branch, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::Branch;
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(
@@ -20,7 +21,7 @@ fn fixture(name: &str) -> FileReader {
     .expect("open fixture")
 }
 
-fn assert_par_matches_serial(t: &TreeReader) {
+fn assert_par_matches_serial(t: &TreeReader<'_>) {
     for name in t.branch_names() {
         let serial = t.branch(name).values();
         assert_eq!(

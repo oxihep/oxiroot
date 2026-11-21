@@ -1,8 +1,8 @@
-//! Opening an RNTuple from a ROOT file: anchor → header/footer envelopes →
+//! Opening an `RNTuple` from a ROOT file: anchor → header/footer envelopes →
 //! page-list envelopes → on-demand column decoding.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{decompress_payload, find_key};
+use oxiroot_io_core::raw::decompress_payload;
 use oxiroot_io_core::{Error, FileReader, Result};
 
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
@@ -15,7 +15,7 @@ use crate::header::{Header, StructRole};
 use crate::page::{ColumnValues, read_column};
 use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
 
-/// Reads an RNTuple from a [`FileReader`]. Opening verifies the anchor and
+/// Reads an `RNTuple` from a [`FileReader`]. Opening verifies the anchor and
 /// parses the schema, cluster summaries, and per-cluster page locations; column
 /// data is decoded on demand.
 #[doc(alias = "RNTuple", alias = "RNTupleReader")]
@@ -35,36 +35,14 @@ pub struct NtupleReader<'f> {
 }
 
 impl<'f> NtupleReader<'f> {
-    /// Open the RNTuple named `name` from the file's top directory.
-    pub fn open(file: &'f FileReader, name: &str) -> Result<NtupleReader<'f>> {
-        let key = file.key(name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: name.to_string(),
-        })?;
-        Self::open_from_key(file, key)
+    /// Open the `RNTuple` at `path` in `file`: `"events"`, or
+    /// `"dir/sub/events;cycle"` for one in a subdirectory or at a given cycle.
+    pub fn open(file: &'f FileReader, path: &str) -> Result<Self> {
+        Self::open_from_key(file, &file.key(path)?)
     }
 
-    /// Open the RNTuple named `name` from the subdirectory `subdir`. The anchor's
-    /// blob offsets are absolute file positions, so reading is identical to a
-    /// top-directory RNTuple once the anchor key is located.
-    pub fn open_in(file: &'f FileReader, subdir: &str, name: &str) -> Result<NtupleReader<'f>> {
-        let dir = file.subdir(subdir)?;
-        // The cycle `name` asks for, or the highest — `FileReader::key`'s rule.
-        let key = find_key(&dir.keys, name).ok_or_else(|| Error::NotFound {
-            what: "key",
-            name: format!("{}/{name}", subdir.trim_end_matches('/')),
-        })?;
-        // Clone out of the borrowed `dir` so the returned RNTuple owns nothing
-        // tied to it.
-        let key = key.clone();
-        Self::open_from_key(file, &key)
-    }
-
-    /// Read an RNTuple given its already-located anchor `key`.
-    fn open_from_key(
-        file: &'f FileReader,
-        key: &oxiroot_io_core::raw::Key,
-    ) -> Result<NtupleReader<'f>> {
+    /// Read an `RNTuple` given its already-located anchor `key`.
+    fn open_from_key(file: &'f FileReader, key: &oxiroot_io_core::raw::Key) -> Result<Self> {
         if key.class_name != ANCHOR_CLASS {
             return Err(Error::WrongClass {
                 name: key.name.clone(),
@@ -153,31 +131,37 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// The verified anchor.
+    #[must_use]
     pub fn anchor(&self) -> &RNTupleAnchor {
         &self.anchor
     }
 
     /// The parsed schema (fields and columns).
+    #[must_use]
     pub fn header(&self) -> &Header {
         &self.header
     }
 
     /// The parsed footer (cluster groups).
+    #[must_use]
     pub fn footer(&self) -> &Footer {
         &self.footer
     }
 
     /// The decompressed header envelope bytes.
+    #[must_use]
     pub fn header_envelope(&self) -> &[u8] {
         &self.header_bytes
     }
 
     /// The decompressed footer envelope bytes.
+    #[must_use]
     pub fn footer_envelope(&self) -> &[u8] {
         &self.footer_bytes
     }
 
     /// Total number of entries across all clusters.
+    #[must_use]
     pub fn entries(&self) -> u64 {
         self.summaries.iter().map(|s| s.num_entries).sum()
     }
@@ -246,6 +230,7 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// Names of the top-level fields, in schema order.
+    #[must_use]
     pub fn field_names(&self) -> Vec<&str> {
         self.header
             .fields
@@ -453,10 +438,10 @@ impl<'f> NtupleReader<'f> {
         Ok(values)
     }
 
-    /// A lightweight view of this RNTuple limited to clusters `[k0, k1)`: the
+    /// A lightweight view of this `RNTuple` limited to clusters `[k0, k1)`: the
     /// same schema, but `entries` and every column read cover only those
     /// clusters. Cloning the schema is cheap next to decoding pages.
-    fn cluster_window(&self, k0: usize, k1: usize) -> NtupleReader<'f> {
+    fn cluster_window(&self, k0: usize, k1: usize) -> Self {
         NtupleReader {
             file: self.file,
             parallel: self.parallel,
@@ -742,7 +727,6 @@ impl<'f> NtupleReader<'f> {
     }
 }
 
-/// Read and decompress an RBlob (header/footer/page list) at `seek`.
 /// Whether `type_name` is a nullable / "late" field (`std::optional<T>` or
 /// `std::unique_ptr<T>`) — read back as [`FieldValues::Opt`], not a collection.
 fn is_late_field(type_name: &str) -> bool {
@@ -756,7 +740,7 @@ fn is_late_field(type_name: &str) -> bool {
 fn backfill_leading(values: ColumnValues, k: usize) -> Result<ColumnValues> {
     use ColumnValues::*;
     macro_rules! pre {
-        ($variant:ident, $v:ident, $default:expr_2021) => {{
+        ($variant:ident, $v:ident, $default:expr) => {{
             let mut out = Vec::new();
             out.try_reserve_exact(k.saturating_add($v.len()))
                 .map_err(|_| {
@@ -791,6 +775,7 @@ fn backfill_leading(values: ColumnValues, k: usize) -> Result<ColumnValues> {
 /// forged `first_element_index` before allocating defaults for it.
 const MAX_ELEMENTS_PER_ENTRY: u64 = 1 << 16;
 
+/// Read and decompress an `RBlob` (header/footer/page list) at `seek`.
 fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) -> Result<Vec<u8>> {
     let win = file
         .read_at(seek, usize::saturating_from(nbytes))

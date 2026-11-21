@@ -1,11 +1,12 @@
-//! M5/#2: write an RNTuple with scalar, string, and vector fields, then read it
+//! M5/#2: write an `RNTuple` with scalar, string, and vector fields, then read it
 //! back through our own reader.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Column, Field, FieldValues};
 
 #[test]
 fn writes_a_rich_rntuple_that_round_trips() {
@@ -20,7 +21,7 @@ fn writes_a_rich_rntuple_that_round_trips() {
             Column::Str(
                 ["row0", "row1", "row2", "row3", "row4"]
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect(),
             ),
         ),
@@ -37,7 +38,7 @@ fn writes_a_rich_rntuple_that_round_trips() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_written_rich_ntuple.root");
-    crate::support::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::None)
+    crate::support::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::Stored)
         .expect("write rntuple");
 
     let f = FileReader::open(&out).expect("reopen");
@@ -64,7 +65,7 @@ fn writes_a_rich_rntuple_that_round_trips() {
         FieldValues::Str(
             ["row0", "row1", "row2", "row3", "row4"]
                 .iter()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect()
         )
     );
@@ -94,7 +95,7 @@ fn writes_unsigned_and_more_vector_types() {
     ];
 
     let out = PathBuf::from("/tmp/rootrs_more_types.root");
-    crate::support::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::None)
+    crate::support::write_rntuple_file(&out, "ntpl", &fields, oxiroot_io_core::Compression::Stored)
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");

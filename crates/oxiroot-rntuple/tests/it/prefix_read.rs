@@ -17,8 +17,8 @@ fn fixture(name: &str) -> Vec<u8> {
     .expect("read fixture")
 }
 
-/// Every RNTuple fixture (all named `ntpl`): scalars, real precision, arrays,
-/// std::set, nested vectors, records, a std::variant, a streamer blob, a
+/// Every `RNTuple` fixture (all named `ntpl`): scalars, real precision, arrays,
+/// `std::set`, nested vectors, records, a `std::variant`, a streamer blob, a
 /// schema-extension file, and the multi-cluster vector file.
 const FIXTURES: &[&str] = &[
     "rntuple_scalars_uncompressed.root",

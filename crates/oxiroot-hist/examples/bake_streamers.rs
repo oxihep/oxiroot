@@ -16,8 +16,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (src, dst) = (&args[1], &args[2]);
     let f = FileReader::open(src).expect("open source ROOT file");
-    let blob = f
-        .streamer_info_object()
+    let (blob, _key_len) = oxiroot_io_core::raw::streamer_info_bytes(&f)
         .expect("read streamer info")
         .expect("source file has streamer info");
     std::fs::write(dst, &blob).expect("write blob");

@@ -15,12 +15,12 @@
 //!    mplhep style (in-pointing ticks, minors, all four sides), with a bold
 //!    `Demo Simulation` experiment-style label and luminosity/energy above the frame,
 //!    a fitted Gaussian, and a ROOT-style fit stat box (with the `fit` feature).
-//! 3. `heatmap` — a 2-D Hist2D as a viridis color mesh with a colorbar.
+//! 3. `heatmap` — a 2-D `Hist2D` as a viridis color mesh with a colorbar.
 //! 4. `ratio` — a main panel over a data/MC ratio panel sharing the x-axis.
 //! 5. `grid` — a 2×2 grid of panels sharing their axes, with a figure title.
 //! 6. `fit` — a fitted Gaussian with a ROOT-style stat box (the `fit` feature).
 //! 7. `font-stix` and `font-dejavu` — the MC template in the default STIX Two
-//!    fonts and in the matplotlib DejaVu Sans look.
+//!    fonts and in the matplotlib `DejaVu` Sans look.
 //!
 //! The plotting guide's images are these files, prefixed with `plot-`.
 
@@ -43,7 +43,7 @@ fn main() -> oxiroot::Result<()> {
     // A deterministic Gaussian-filled di-muon mass histogram (Sumw2 on).
     let mut mc = Hist::reg(40, 50.0, 130.0)
         .double()
-        .to_root()
+        .to_root()?
         .named("mass")
         .titled("di-muon mass");
     mc.track_sumw2();
@@ -59,7 +59,14 @@ fn main() -> oxiroot::Result<()> {
         .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
         .collect();
     let dey: Vec<f64> = dy.iter().map(|y| y.sqrt().max(15.0)).collect();
-    let data = Graph::with_errors(dx.clone(), dy.clone(), vec![5.0; dx.len()], dey)?.named("data");
+    let data = Graph::new(dx.clone(), dy.clone())
+        .and_then(|g| {
+            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                ex: vec![5.0; dx.len()],
+                ey: dey,
+            })
+        })?
+        .named("data");
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
@@ -116,7 +123,7 @@ fn main() -> oxiroot::Result<()> {
     let mut h2 = Hist::reg(40, -4.0, 4.0)
         .reg(40, -4.0, 4.0)
         .double()
-        .to_root()
+        .to_root()?
         .named("h2");
     for ix in 0..40 {
         for iy in 0..40 {
@@ -138,7 +145,7 @@ fn main() -> oxiroot::Result<()> {
     let mc_vals = mc.values();
     let bin_content = |x: f64| -> f64 {
         mc_vals
-            .get(mc.find_bin(x).wrapping_sub(1))
+            .get(mc.xaxis().find_bin(x).wrapping_sub(1))
             .copied()
             .unwrap_or(0.0)
     };
@@ -158,7 +165,14 @@ fn main() -> oxiroot::Result<()> {
             if c > 0.0 { y.sqrt() / c } else { 0.0 }
         })
         .collect();
-    let rgraph = Graph::with_errors(dx.clone(), ratio_y, vec![0.0; dx.len()], ratio_ey)?.named("r");
+    let rgraph = Graph::new(dx.clone(), ratio_y)
+        .and_then(|g| {
+            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
+                ex: vec![0.0; dx.len()],
+                ey: ratio_ey,
+            })
+        })?
+        .named("r");
 
     let (fig, mut main, mut ratio) = ratio_subplots();
     main.hist_with(
@@ -282,7 +296,7 @@ struct Lcg(u64);
 #[cfg(feature = "plot")]
 impl Lcg {
     fn new(seed: u64) -> Self {
-        Lcg(seed)
+        Self(seed)
     }
     fn unit(&mut self) -> f64 {
         self.0 = self

@@ -13,8 +13,12 @@ use std::collections::HashMap;
 use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer};
 use crate::error::{Error, Result};
 
-const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
-const K_CLASS_MASK: u32 = 0x8000_0000;
+/// The class tag that introduces a class by name (ROOT's `kNewClassTag`): a
+/// NUL-terminated class name follows it.
+pub const K_NEW_CLASS_TAG: u32 = 0xFFFF_FFFF;
+/// Set in a class tag that refers back to a class already named in the buffer
+/// (ROOT's `kClassMask`); the other bits say where.
+pub const K_CLASS_MASK: u32 = 0x8000_0000;
 const K_MAP_OFFSET: i64 = 2;
 
 /// The outcome of reading an object's `{byte-count, class-tag}` header.
@@ -40,8 +44,50 @@ pub struct ObjectRef {
     pub pos: usize,
 }
 
+/// The header of an object held by pointer, read without a class-tag map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PointerHeader {
+    /// The object's class, when the header names it. `None` when the header
+    /// refers back to a class named earlier in the buffer, which only a
+    /// [`TagReader`] can resolve; the caller then knows the class from context.
+    pub class_name: Option<String>,
+    /// The buffer offset one past the object.
+    pub end: usize,
+}
+
+/// Read the `{byte count}{class tag}` header of an object held by pointer,
+/// leaving the cursor at the object's body. `None` for a null pointer.
+///
+/// This is for a member whose class the reader already knows (an axis's label
+/// list, an efficiency's two histograms): it does not follow class
+/// back-references. Where the class has to be found out, use a [`TagReader`].
+///
+/// # Errors
+///
+/// [`Error::Format`] if the byte count runs past the buffer, and the buffer's
+/// errors if the header is cut short.
+pub fn read_pointer_header(r: &mut RBuffer<'_>) -> Result<Option<PointerHeader>> {
+    let count = r.be_u32()?;
+    if count == 0 {
+        return Ok(None);
+    }
+    let len = usize::saturating_from(count & !(K_BYTE_COUNT_MASK | K_CLASS_MASK));
+    let end = r
+        .pos()
+        .checked_add(len)
+        .filter(|&end| end <= r.len())
+        .ok_or_else(|| Error::Format(format!("object byte count {len} runs past the buffer")))?;
+    let class_name = if r.be_u32()? == K_NEW_CLASS_TAG {
+        Some(read_cstring(r)?)
+    } else {
+        None
+    };
+    Ok(Some(PointerHeader { class_name, end }))
+}
+
 /// Read a NUL-terminated class name (the `kNewClassTag` path).
-fn read_cstring(r: &mut RBuffer) -> Result<String> {
+fn read_cstring(r: &mut RBuffer<'_>) -> Result<String> {
     let mut bytes = Vec::new();
     loop {
         let b = r.u8()?;
@@ -66,8 +112,9 @@ pub struct TagReader {
 impl TagReader {
     /// Begin resolving tags for an object read from a key whose header is
     /// `keylen` bytes (ROOT keys objects relative to `-keylen`).
+    #[must_use]
     pub fn new(keylen: usize) -> Self {
-        TagReader {
+        Self {
             refs: HashMap::new(),
             objects: HashMap::new(),
             seq: 0,
@@ -86,7 +133,7 @@ impl TagReader {
     ///
     /// [`Error::Format`] if the byte count points outside that range, and the
     /// buffer's errors if the header is truncated.
-    pub fn read_header(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
+    pub fn read_header(&mut self, r: &mut RBuffer<'_>) -> Result<RecordHeader> {
         let header = self.read_header_unchecked(r)?;
         if let Some(end) = header.end
             && (end > r.len() || end < r.pos())
@@ -100,7 +147,7 @@ impl TagReader {
         Ok(header)
     }
 
-    fn read_header_unchecked(&mut self, r: &mut RBuffer) -> Result<RecordHeader> {
+    fn read_header_unchecked(&mut self, r: &mut RBuffer<'_>) -> Result<RecordHeader> {
         let beg = r.pos();
         let bcnt_raw = r.be_u32()?;
 

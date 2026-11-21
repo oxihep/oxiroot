@@ -1,12 +1,13 @@
-//! Append mode for a file that contains an RNTuple. The RNTuple's anchor and
+//! Append mode for a file that contains an `RNTuple`. The `RNTuple`'s anchor and
 //! page locators hold absolute file offsets, so append-in-place must not move
-//! it; only new keys are written after the existing content. Both the RNTuple
+//! it; only new keys are written after the existing content. Both the `RNTuple`
 //! and the appended histogram read back (separately verified against ROOT C++
 //! and uproot).
 
 use crate::support::NtupleObject;
 use oxiroot::FileReader;
-use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
 
 #[test]
@@ -17,21 +18,25 @@ fn appends_a_histogram_to_an_rntuple_file() {
         Field::f64("mass", vec![91.2, 125.0, 80.4]),
         Field::i32("n", vec![1, 2, 3]),
     ];
-    NtupleObject::new("events", fields)
-        .write_root(&out, Compression::None)
+    FileWriter::create(&out)
+        .add(NtupleObject::new("events", fields))
+        .compression(Compression::Stored)
+        .write()
         .expect("write rntuple");
 
     let mut h = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("appended");
     h.fill(0.5);
     h.fill(2.5);
-    FileWriter::open(&out)
+    oxiroot::FileUpdater::open(&out)
         .expect("open for append")
         .add(&h)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .expect("append");
 
     let f = FileReader::open(&out).expect("reopen");
@@ -52,7 +57,7 @@ fn appends_a_histogram_to_an_rntuple_file() {
         nt.field("n").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3])
     );
-    assert_eq!(Hist1D::read_root(&f, "h").unwrap(), h, "appended histogram");
+    assert_eq!(f.get::<Hist1D>("h").unwrap(), h, "appended histogram");
 
     let _ = std::fs::remove_file(&out);
 }

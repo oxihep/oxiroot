@@ -49,13 +49,13 @@ pub enum Value {
     /// A string (`TString`, `char*`, or `std::string`).
     Str(String),
     /// An array or STL container of values (a C array, `T[n]`, or `std::vector`).
-    Array(Vec<Value>),
+    Array(Vec<Self>),
     /// A nested object: its class name and its members in stream order.
     Object {
         /// The object's class name.
         class: String,
         /// The members, `(name, value)`, in the order they appear on disk.
-        members: Vec<(String, Value)>,
+        members: Vec<(String, Self)>,
     },
     /// A slot holding an object that is written elsewhere in the same object:
     /// ROOT streams a shared object once and points at it from every other
@@ -83,25 +83,25 @@ impl Value {
     #[must_use]
     pub fn class(&self) -> Option<&str> {
         match self {
-            Value::Object { class, .. }
-            | Value::Ref { class }
-            | Value::Unsupported { class, .. } => Some(class),
+            Self::Object { class, .. } | Self::Ref { class } | Self::Unsupported { class, .. } => {
+                Some(class)
+            }
             _ => None,
         }
     }
 
     /// The members of an [`Object`](Value::Object).
     #[must_use]
-    pub fn members(&self) -> Option<&[(String, Value)]> {
+    pub fn members(&self) -> Option<&[(String, Self)]> {
         match self {
-            Value::Object { members, .. } => Some(members),
+            Self::Object { members, .. } => Some(members),
             _ => None,
         }
     }
 
     /// Look up an object member by name.
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Value> {
+    pub fn get(&self, name: &str) -> Option<&Self> {
         self.members()?
             .iter()
             .find(|(n, _)| n == name)
@@ -110,9 +110,9 @@ impl Value {
 
     /// The elements of an [`Array`](Value::Array).
     #[must_use]
-    pub fn as_array(&self) -> Option<&[Value]> {
+    pub fn as_array(&self) -> Option<&[Self]> {
         match self {
-            Value::Array(v) => Some(v),
+            Self::Array(v) => Some(v),
             _ => None,
         }
     }
@@ -121,17 +121,17 @@ impl Value {
     #[must_use]
     pub fn as_f64(&self) -> Option<f64> {
         Some(match *self {
-            Value::Bool(b) => f64::from(b),
-            Value::I8(v) => f64::from(v),
-            Value::I16(v) => f64::from(v),
-            Value::I32(v) => f64::from(v),
-            Value::I64(v) => v as f64,
-            Value::U8(v) => f64::from(v),
-            Value::U16(v) => f64::from(v),
-            Value::U32(v) => f64::from(v),
-            Value::U64(v) => v as f64,
-            Value::F32(v) => f64::from(v),
-            Value::F64(v) => v,
+            Self::Bool(b) => f64::from(b),
+            Self::I8(v) => f64::from(v),
+            Self::I16(v) => f64::from(v),
+            Self::I32(v) => f64::from(v),
+            Self::I64(v) => v as f64,
+            Self::U8(v) => f64::from(v),
+            Self::U16(v) => f64::from(v),
+            Self::U32(v) => f64::from(v),
+            Self::U64(v) => v as f64,
+            Self::F32(v) => f64::from(v),
+            Self::F64(v) => v,
             _ => return None,
         })
     }
@@ -140,15 +140,15 @@ impl Value {
     #[must_use]
     pub fn as_i64(&self) -> Option<i64> {
         Some(match *self {
-            Value::Bool(b) => i64::from(b),
-            Value::I8(v) => i64::from(v),
-            Value::I16(v) => i64::from(v),
-            Value::I32(v) => i64::from(v),
-            Value::I64(v) => v,
-            Value::U8(v) => i64::from(v),
-            Value::U16(v) => i64::from(v),
-            Value::U32(v) => i64::from(v),
-            Value::U64(v) => v.cast_signed(),
+            Self::Bool(b) => i64::from(b),
+            Self::I8(v) => i64::from(v),
+            Self::I16(v) => i64::from(v),
+            Self::I32(v) => i64::from(v),
+            Self::I64(v) => v,
+            Self::U8(v) => i64::from(v),
+            Self::U16(v) => i64::from(v),
+            Self::U32(v) => i64::from(v),
+            Self::U64(v) => v.cast_signed(),
             _ => return None,
         })
     }
@@ -157,7 +157,7 @@ impl Value {
     #[must_use]
     pub fn as_bool(&self) -> Option<bool> {
         match *self {
-            Value::Bool(b) => Some(b),
+            Self::Bool(b) => Some(b),
             _ => None,
         }
     }
@@ -166,7 +166,7 @@ impl Value {
     #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Str(s) => Some(s),
+            Self::Str(s) => Some(s),
             _ => None,
         }
     }
@@ -174,7 +174,7 @@ impl Value {
     /// Whether this is a null object pointer.
     #[must_use]
     pub fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
+        matches!(self, Self::Null)
     }
 
     /// Whether every element of an array is a scalar (for compact one-line
@@ -182,70 +182,74 @@ impl Value {
     fn is_scalar(&self) -> bool {
         !matches!(
             self,
-            Value::Array(_) | Value::Object { .. } | Value::Ref { .. } | Value::Unsupported { .. }
+            Self::Array(_) | Self::Object { .. } | Self::Ref { .. } | Self::Unsupported { .. }
         )
     }
 
     /// A short one-line rendering of a scalar/leaf value.
     fn render_scalar(&self) -> String {
         match self {
-            Value::Null => "null".to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::I8(v) => v.to_string(),
-            Value::I16(v) => v.to_string(),
-            Value::I32(v) => v.to_string(),
-            Value::I64(v) => v.to_string(),
-            Value::U8(v) => v.to_string(),
-            Value::U16(v) => v.to_string(),
-            Value::U32(v) => v.to_string(),
-            Value::U64(v) => v.to_string(),
-            Value::F32(v) => v.to_string(),
-            Value::F64(v) => v.to_string(),
-            Value::Str(s) => format!("{s:?}"),
+            Self::Null => "null".to_string(),
+            Self::Bool(b) => b.to_string(),
+            Self::I8(v) => v.to_string(),
+            Self::I16(v) => v.to_string(),
+            Self::I32(v) => v.to_string(),
+            Self::I64(v) => v.to_string(),
+            Self::U8(v) => v.to_string(),
+            Self::U16(v) => v.to_string(),
+            Self::U32(v) => v.to_string(),
+            Self::U64(v) => v.to_string(),
+            Self::F32(v) => v.to_string(),
+            Self::F64(v) => v.to_string(),
+            Self::Str(s) => format!("{s:?}"),
             _ => String::new(),
         }
     }
 
     /// Render this value as an indented tree (rootprint-style). `indent` is the
     /// current depth; `label` is the member name prefix (`None` at the root).
-    fn render_into(&self, out: &mut String, indent: usize, label: Option<&str>) {
+    fn render_into(&self, out: &mut String, indent: usize, label: Option<&str>) -> fmt::Result {
+        use fmt::Write as _;
+
         const PAD: &str = "  ";
         let pad = PAD.repeat(indent);
         let name = label.map_or(String::new(), |l| format!("{l}: "));
         match self {
-            Value::Object { class, members } => {
-                out.push_str(&format!("{pad}{name}{class}\n"));
+            Self::Object { class, members } => {
+                writeln!(out, "{pad}{name}{class}")?;
                 for (member, value) in members {
-                    value.render_into(out, indent + 1, Some(member));
+                    value.render_into(out, indent + 1, Some(member))?;
                 }
             }
-            Value::Array(items) => {
-                if items.iter().all(Value::is_scalar) {
+            Self::Array(items) => {
+                if items.iter().all(Self::is_scalar) {
                     // A short scalar array prints inline; a long one is truncated.
                     let shown: Vec<String> =
-                        items.iter().take(20).map(Value::render_scalar).collect();
+                        items.iter().take(20).map(Self::render_scalar).collect();
                     let more = if items.len() > 20 { ", …" } else { "" };
-                    out.push_str(&format!(
-                        "{pad}{name}[{}] {}{}\n",
+                    writeln!(
+                        out,
+                        "{pad}{name}[{}] {}{}",
                         items.len(),
                         shown.join(", "),
                         more
-                    ));
+                    )?;
                 } else {
-                    out.push_str(&format!("{pad}{name}[{}]\n", items.len()));
+                    writeln!(out, "{pad}{name}[{}]", items.len())?;
                     for item in items {
-                        item.render_into(out, indent + 1, None);
+                        item.render_into(out, indent + 1, None)?;
                     }
                 }
             }
-            Value::Ref { class } => {
-                out.push_str(&format!("{pad}{name}<{class} written above>\n"));
+            Self::Ref { class } => {
+                writeln!(out, "{pad}{name}<{class} written above>")?;
             }
-            Value::Unsupported { class, reason } => {
-                out.push_str(&format!("{pad}{name}<unsupported {class}: {reason}>\n"));
+            Self::Unsupported { class, reason } => {
+                writeln!(out, "{pad}{name}<unsupported {class}: {reason}>")?;
             }
-            scalar => out.push_str(&format!("{pad}{name}{}\n", scalar.render_scalar())),
+            scalar => writeln!(out, "{pad}{name}{}", scalar.render_scalar())?,
         }
+        Ok(())
     }
 }
 
@@ -253,7 +257,7 @@ impl fmt::Display for Value {
     /// Render as an indented tree.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
-        self.render_into(&mut out, 0, None);
+        self.render_into(&mut out, 0, None)?;
         f.write_str(out.trim_end())
     }
 }

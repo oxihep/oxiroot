@@ -7,7 +7,8 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Graph, GraphStack, Hist, HistStack, ReadRoot};
+use oxiroot_hist::{Graph, GraphStack, Hist, HistStack};
+use oxiroot_io_core::FileWriter;
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture() -> FileReader {
@@ -21,7 +22,7 @@ fn fixture() -> FileReader {
 fn reads_root_written_collections() {
     let f = fixture();
 
-    let hs = HistStack::read_root(&f, "hs").unwrap();
+    let hs = f.get::<HistStack>("hs").unwrap();
     assert_eq!(hs.name(), "hs");
     assert_eq!(hs.title(), "my stack");
     assert_eq!(hs.hists().len(), 2);
@@ -31,7 +32,7 @@ fn reads_root_written_collections() {
     assert_eq!(hs.hists()[0].values(), &[1.0, 2.0, 0.0, 0.0]);
     assert_eq!(hs.hists()[1].values(), &[0.0, 0.0, 3.0, 4.0]);
 
-    let mg = GraphStack::read_root(&f, "mg").unwrap();
+    let mg = f.get::<GraphStack>("mg").unwrap();
     assert_eq!(mg.name(), "mg");
     assert_eq!(mg.title(), "my multigraph");
     assert_eq!(mg.graphs().len(), 2);
@@ -46,12 +47,14 @@ fn round_trips_collections_through_oxiroot() {
     let mut ha = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("ha")
         .titled("a");
     ha.fill(0.5);
     let hb = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("hb")
         .titled("b");
     let stack = HistStack::new()
@@ -78,15 +81,16 @@ fn round_trips_collections_through_oxiroot() {
     FileWriter::create(&out)
         .add(&stack)
         .add(&multi)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let hs = HistStack::read_root(&f, "hs").unwrap();
+    let hs = f.get::<HistStack>("hs").unwrap();
     assert_eq!(hs.hists().len(), 2);
     assert_eq!(hs.hists()[0].name(), "ha");
     assert_eq!(hs.hists()[0].values(), &[1.0, 0.0, 0.0, 0.0]); // the one fill
-    let mg = GraphStack::read_root(&f, "mg").unwrap();
+    let mg = f.get::<GraphStack>("mg").unwrap();
     assert_eq!(mg.graphs().len(), 2);
     assert_eq!(mg.graphs()[1].y(), vec![3.0, 2.0, 1.0]);
     let _ = std::fs::remove_file(&out);

@@ -58,7 +58,7 @@ fn main() -> oxiroot::Result<()> {
     // Every entry is `(label, Compression)`; the writer maps each to ROOT's
     // `algorithm*100 + level` setting integer under the hood.
     let codecs = [
-        ("None", Compression::None),
+        ("None", Compression::Stored),
         ("Zstd(1)", Compression::Zstd(1)),
         ("Zstd(9)", Compression::Zstd(9)),
         ("Zlib(6)", Compression::Zlib(6)),
@@ -72,7 +72,7 @@ fn main() -> oxiroot::Result<()> {
         // A distinct temp file per codec, all removed before we return.
         let path = dir.join(format!("oxiroot_ex_compression_{}.root", comp.setting()));
         let mut out = DatasetWriter::create(&path, "Events", Format::Tree)?.compression(comp);
-        out.write(&batch)?;
+        out.write(batch.clone())?;
         out.finish()?;
         let bytes = std::fs::metadata(&path)?.len();
         sizes.push(bytes);
@@ -95,7 +95,7 @@ fn main() -> oxiroot::Result<()> {
     for (i, (label, comp)) in codecs.iter().enumerate() {
         // The level lives inside the Compression value; None has no level.
         let level = match comp {
-            Compression::None => "-".to_string(),
+            Compression::Stored => "-".to_string(),
             Compression::Zstd(l)
             | Compression::Zlib(l)
             | Compression::Lz4(l)

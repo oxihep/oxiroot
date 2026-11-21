@@ -1,10 +1,10 @@
-//! An end-to-end dimuon analysis, the shape of a real one on CMS NanoAOD:
+//! An end-to-end dimuon analysis, the shape of a real one on CMS `NanoAOD`:
 //! write events with per-event muon collections to a `TTree`, read them
 //! back, select opposite-sign muon pairs, histogram their invariant mass, fit
 //! the Z peak over the Drell–Yan continuum, plot it, and save the histogram.
 //!
 //! The events are toys (Z → μμ, a Drell–Yan continuum, and fake muons), but
-//! the file layout is NanoAOD's: jagged branches `Muon_pt`, `Muon_eta`,
+//! the file layout is `NanoAOD`'s: jagged branches `Muon_pt`, `Muon_eta`,
 //! `Muon_phi`, `Muon_charge`, one entry per muon. Run with:
 //!
 //! ```sh
@@ -81,7 +81,7 @@ fn main() -> oxiroot::Result<()> {
         .column("Muon_phi", phi)?
         .column("Muon_charge", charge)?;
     let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
-    out.write(&muons)?;
+    out.write(muons)?;
     out.finish()?;
     println!("wrote {n_events} events to {}", tree_path.display());
 
@@ -97,7 +97,7 @@ fn main() -> oxiroot::Result<()> {
     // --- 3. Select: the two leading muons, pT > 25 and 15 GeV, opposite sign.
     let mut mass = Hist::reg(60, 60.0, 120.0)
         .double()
-        .to_root()
+        .to_root()?
         .named("m_mumu")
         .titled("dimuon mass");
     mass.track_sumw2();
@@ -188,7 +188,7 @@ fn main() -> oxiroot::Result<()> {
     let plot_path = dir.join("m_mumu.png");
     ax.save(&plot_path)?;
     let hist_path = dir.join("m_mumu.root");
-    mass.write_root(&hist_path, Compression::Zstd(5))?;
+    oxiroot::FileWriter::create(&hist_path).add(&mass).write()?;
     println!(
         "plot: {}\nhistogram: {}",
         plot_path.display(),

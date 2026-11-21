@@ -73,8 +73,8 @@ impl Batch {
     ///
     /// An Arrow type with no column counterpart (a dictionary, a timestamp,
     /// a union, …).
-    pub fn from_arrow(batch: &RecordBatch) -> Result<Batch> {
-        let mut out = Batch::new();
+    pub fn from_arrow(batch: &RecordBatch) -> Result<Self> {
+        let mut out = Self::new();
         for (field, array) in batch.schema().fields().iter().zip(batch.columns()) {
             out.insert(
                 field.name().clone(),
@@ -226,7 +226,7 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
         DataType::Utf8View => array
             .as_string_view()
             .iter()
-            .map(|s| s.unwrap_or_default())
+            .map(std::option::Option::unwrap_or_default)
             .collect::<Vec<&str>>()
             .into_column(),
         DataType::List(_) => {

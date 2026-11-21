@@ -4,11 +4,12 @@
 
 use crate::support::write_rntuple_file;
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Column, Field, FieldValues};
 
 fn write(fields: &[Field]) -> oxiroot_io_core::Result<()> {
     let path = std::env::temp_dir().join("oxiroot_rntuple_length_checks.root");
-    write_rntuple_file(&path, "events", fields, Compression::None)
+    write_rntuple_file(&path, "events", fields, Compression::Stored)
 }
 
 /// The error of a result that must have failed (`Field` has no `Debug`, so
@@ -147,7 +148,7 @@ fn a_zero_size_array_does_not_set_the_entry_count() {
         Field::array_f64("empty", vec![vec![]; 3]).ok().unwrap(),
         Field::i32("x", vec![1, 2, 3]),
     ];
-    write_rntuple_file(&path, "events", &fields, Compression::None).unwrap();
+    write_rntuple_file(&path, "events", &fields, Compression::Stored).unwrap();
     let f = FileReader::open(&path).unwrap();
     let nt = NtupleReader::open(&f, "events").unwrap();
     assert_eq!(nt.entries(), 3);

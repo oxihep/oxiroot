@@ -1,4 +1,4 @@
-//! Hardening: corrupt/truncated RNTuple bytes must yield `Err`, never panic.
+//! Hardening: corrupt/truncated `RNTuple` bytes must yield `Err`, never panic.
 //! A panic anywhere below fails the test.
 
 use std::path::PathBuf;
@@ -17,7 +17,11 @@ fn fixture(name: &str) -> Vec<u8> {
 
 fn poke_rntuple(f: &FileReader) {
     if let Ok(ntpl) = NtupleReader::open(f, "ntpl") {
-        let names: Vec<String> = ntpl.field_names().iter().map(|s| s.to_string()).collect();
+        let names: Vec<String> = ntpl
+            .field_names()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         for name in names {
             let _ = ntpl.field(&name).values();
             // The cluster-bounded prefix read shares the decode path; exercise it
@@ -26,13 +30,13 @@ fn poke_rntuple(f: &FileReader) {
         }
         // Run the (possibly corrupt) ntuple through the `hadd`-style merge —
         // exercises field concatenation + rebuild on malformed input.
-        if let Ok(mut w) = oxiroot_rntuple::NtupleWriter::new(
+        if let Ok(mut w) = oxiroot_rntuple::raw::NtupleWriter::new(
             std::io::Cursor::new(Vec::new()),
             "m.root",
             "ntpl",
-            oxiroot_io_core::Compression::None,
+            oxiroot_io_core::Compression::Stored,
         ) {
-            let _ = oxiroot_rntuple::append_ntuples(&mut w, &[&ntpl]);
+            let _ = oxiroot_rntuple::raw::append_ntuples(&mut w, &[&ntpl]);
         }
     }
 }

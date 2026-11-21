@@ -125,7 +125,7 @@ pub enum Error {
         detail: String,
     },
     /// Inputs that must have the same length do not: a graph's `x` and `y`, a
-    /// fill's values and weights, a tree's branches, an RNTuple's fields, …
+    /// fill's values and weights, a tree's branches, an `RNTuple`'s fields, …
     /// Nothing was changed or written.
     LengthMismatch {
         /// What has the wrong length, e.g. `Graph y` or `branch "pt"`.
@@ -136,7 +136,7 @@ pub enum Error {
         found: usize,
     },
     /// Inputs that must share a schema do not: a streaming writer's batches,
-    /// the trees or RNTuples being concatenated, or the trees of a chain.
+    /// the trees or `RNTuples` being concatenated, or the trees of a chain.
     SchemaChanged {
         /// Human-readable description of the schema change.
         detail: String,
@@ -185,15 +185,15 @@ impl Eq for External {}
 
 impl Error {
     /// Wrap an error from another crate (see [`Error::Other`]).
-    pub fn other(error: impl std::error::Error + Send + Sync + 'static) -> Error {
-        Error::Other(External(std::sync::Arc::new(error)))
+    pub fn other(error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        Self::Other(External(std::sync::Arc::new(error)))
     }
 
     /// The wrapped error, if this is an [`Error::Other`] holding a `T`.
     #[must_use]
     pub fn downcast_ref<T: std::error::Error + 'static>(&self) -> Option<&T> {
         match self {
-            Error::Other(External(e)) => e.downcast_ref::<T>(),
+            Self::Other(External(e)) => e.downcast_ref::<T>(),
             _ => None,
         }
     }
@@ -202,53 +202,53 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::DuplicateName { name, location } => {
+            Self::DuplicateName { name, location } => {
                 write!(
                     f,
                     "duplicate key name {name:?} in {location}: two objects with the same name \
                      would shadow each other on read"
                 )
             }
-            Error::UnexpectedEof { needed, available } => {
+            Self::UnexpectedEof { needed, available } => {
                 write!(
                     f,
                     "unexpected end of buffer: needed {needed} bytes, {available} available"
                 )
             }
-            Error::InvalidUtf8 => write!(f, "invalid UTF-8 in ROOT string"),
-            Error::BadMagic(m) => {
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 in ROOT string"),
+            Self::BadMagic(m) => {
                 write!(f, "bad file magic {m:02x?} (expected \"root\")")
             }
-            Error::ByteCountMismatch { expected, got } => {
+            Self::ByteCountMismatch { expected, got } => {
                 write!(
                     f,
                     "byte-count mismatch: object ends at {expected} but cursor is at {got}"
                 )
             }
-            Error::Format(s) => write!(f, "format error: {s}"),
-            Error::NotFound { what, name } => write!(f, "no {what} named {name:?}"),
-            Error::TypeMismatch {
+            Self::Format(s) => write!(f, "format error: {s}"),
+            Self::NotFound { what, name } => write!(f, "no {what} named {name:?}"),
+            Self::TypeMismatch {
                 name,
                 found,
                 expected,
             } => write!(f, "column {name:?} holds {found}, not {expected}"),
-            Error::WrongClass {
+            Self::WrongClass {
                 name,
                 found,
                 expected,
             } if name.is_empty() => write!(f, "the object is a {found}, not a {expected}"),
-            Error::WrongClass {
+            Self::WrongClass {
                 name,
                 found,
                 expected,
             } => write!(f, "key {name:?} is a {found}, not a {expected}"),
-            Error::UnsupportedVersion { class, version } => {
+            Self::UnsupportedVersion { class, version } => {
                 write!(f, "{class} class version {version} is not supported")
             }
-            Error::MissingStreamerInfo { class } => {
+            Self::MissingStreamerInfo { class } => {
                 write!(f, "the file has no TStreamerInfo for {class}")
             }
-            Error::ChecksumMismatch {
+            Self::ChecksumMismatch {
                 what,
                 computed,
                 stored,
@@ -256,15 +256,15 @@ impl fmt::Display for Error {
                 f,
                 "{what} checksum mismatch: computed {computed:#018x}, stored {stored:#018x}"
             ),
-            Error::Unsupported(s) | Error::InvalidInput(s) => f.write_str(s),
-            Error::Decompress { context, source } if context.is_empty() => {
+            Self::Unsupported(s) | Self::InvalidInput(s) => f.write_str(s),
+            Self::Decompress { context, source } if context.is_empty() => {
                 write!(f, "decompression failed: {source}")
             }
-            Error::Decompress { context, source } => {
+            Self::Decompress { context, source } => {
                 write!(f, "decompressing {context}: {source}")
             }
-            Error::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
-            Error::LengthMismatch {
+            Self::BinningMismatch { detail } => write!(f, "binning mismatch: {detail}"),
+            Self::LengthMismatch {
                 what,
                 expected,
                 found,
@@ -272,14 +272,14 @@ impl fmt::Display for Error {
                 f,
                 "length mismatch: {what} has length {found}, expected {expected}"
             ),
-            Error::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
-            Error::FileTooLarge { size } => write!(
+            Self::SchemaChanged { detail } => write!(f, "schema changed: {detail}"),
+            Self::FileTooLarge { size } => write!(
                 f,
                 "the file reached {size} bytes, more than the 32-bit container form can \
                  address (2 GiB); write it in the 64-bit form"
             ),
-            Error::Io { message, .. } => write!(f, "I/O error: {message}"),
-            Error::Other(External(e)) => fmt::Display::fmt(e, f),
+            Self::Io { message, .. } => write!(f, "I/O error: {message}"),
+            Self::Other(External(e)) => fmt::Display::fmt(e, f),
         }
     }
 }
@@ -290,15 +290,15 @@ impl Error {
     /// `SchemaChanged`, `BinningMismatch`). The other variants are returned
     /// unchanged, so the error keeps its type.
     #[must_use]
-    pub fn context(self, context: impl fmt::Display) -> Error {
+    pub fn context(self, context: impl fmt::Display) -> Self {
         match self {
-            Error::Format(m) => Error::Format(format!("{context}: {m}")),
-            Error::Unsupported(m) => Error::Unsupported(format!("{context}: {m}")),
-            Error::InvalidInput(m) => Error::InvalidInput(format!("{context}: {m}")),
-            Error::SchemaChanged { detail } => Error::SchemaChanged {
+            Self::Format(m) => Self::Format(format!("{context}: {m}")),
+            Self::Unsupported(m) => Self::Unsupported(format!("{context}: {m}")),
+            Self::InvalidInput(m) => Self::InvalidInput(format!("{context}: {m}")),
+            Self::SchemaChanged { detail } => Self::SchemaChanged {
                 detail: format!("{context}: {detail}"),
             },
-            Error::BinningMismatch { detail } => Error::BinningMismatch {
+            Self::BinningMismatch { detail } => Self::BinningMismatch {
                 detail: format!("{context}: {detail}"),
             },
             other => other,
@@ -309,8 +309,8 @@ impl Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Decompress { source, .. } => Some(source),
-            Error::Other(External(e)) => Some(&**e),
+            Self::Decompress { source, .. } => Some(source),
+            Self::Other(External(e)) => Some(&**e),
             _ => None,
         }
     }
@@ -318,7 +318,7 @@ impl std::error::Error for Error {
 
 impl From<CompressError> for Error {
     fn from(source: CompressError) -> Self {
-        Error::Decompress {
+        Self::Decompress {
             context: String::new(),
             source,
         }
@@ -334,9 +334,25 @@ pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -
     })
 }
 
+/// `Ok` if an input has the length of the one it is paired with, else
+/// [`Error::LengthMismatch`] naming `what` is wrong: so a constructor or a fill
+/// never silently cuts an input short or pads it. `what` is formatted only for
+/// the error.
+pub fn check_len(what: impl fmt::Display, expected: usize, found: usize) -> Result<()> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(Error::LengthMismatch {
+            what: what.to_string(),
+            expected,
+            found,
+        })
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Error::Io {
+        Self::Io {
             kind: e.kind(),
             message: e.to_string(),
         }

@@ -1,11 +1,12 @@
-//! Read a multi-leaf (leaflist) branch written by ROOT C++: one TBranch "s" with
+//! Read a multi-leaf (leaflist) branch written by ROOT C++: one `TBranch` "s" with
 //! leaves a/F, b/I, c/D packed at their fOffsets. Each leaf is exposed as an
 //! "s.<leaf>" sub-branch sliced from the per-entry stride.
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 #[test]
 fn reads_leaflist_branch() {

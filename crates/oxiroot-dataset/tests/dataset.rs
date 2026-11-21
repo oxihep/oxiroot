@@ -3,10 +3,13 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use oxiroot_dataset::{Batch, Column, Dataset, DatasetObject, DatasetWriter, Format};
+use oxiroot_dataset::{
+    Batch, Column, DataType, Dataset, DatasetObject, DatasetWriter, Format, Schema,
+};
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter};
-use oxiroot_rntuple::FieldValues;
-use oxiroot_tree::BranchValues;
+use oxiroot_rntuple::raw::FieldValues;
+use oxiroot_tree::BranchLayout;
+use oxiroot_tree::raw::BranchValues;
 
 fn ix(n: u64) -> usize {
     usize::try_from(n).unwrap()
@@ -164,7 +167,7 @@ fn write(format: Format, batches: &[Batch], cluster_bytes: usize) -> Vec<u8> {
         .compression(Compression::Zstd(1))
         .cluster_bytes(cluster_bytes);
     for b in batches {
-        w.write(b).unwrap();
+        w.write(b.clone()).unwrap();
     }
     w.finish().unwrap().into_inner()
 }
@@ -311,7 +314,7 @@ fn a_batch_checks_its_columns() {
 fn a_column_the_format_cannot_hold_is_refused_before_writing() {
     let b = Batch::new().column("o", vec![Some(1_i32), None]).unwrap();
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree);
-    let err = w.write(&b).unwrap_err();
+    let err = w.write(b.clone()).unwrap_err();
     assert!(matches!(err, Error::Unsupported(_)), "{err}");
     assert!(err.to_string().contains("Option<i32>"), "{err}");
     assert_eq!(w.entries(), 0);
@@ -327,9 +330,9 @@ fn a_column_the_format_cannot_hold_is_refused_before_writing() {
 #[test]
 fn a_later_batch_must_match_the_first() {
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple);
-    w.write(&sample(3, 0)).unwrap();
+    w.write(sample(3, 0)).unwrap();
     let other = Batch::new().column("idx", vec![1.0_f64]).unwrap();
-    assert!(matches!(w.write(&other), Err(Error::SchemaChanged { .. })));
+    assert!(matches!(w.write(other), Err(Error::SchemaChanged { .. })));
 }
 
 #[test]
@@ -359,9 +362,10 @@ fn nested_lists_round_trip_through_an_rntuple() {
 fn datasets_go_into_a_file_writer_next_to_each_other() {
     let b = sample(5, 0);
     let bytes = FileWriter::create("multi.root")
-        .put(DatasetObject::new("tree", Format::Tree, &b).unwrap())
-        .put(DatasetObject::new("ntuple", Format::Ntuple, &b).unwrap())
-        .to_bytes(Compression::None)
+        .add(DatasetObject::new("tree", Format::Tree, b.clone()))
+        .add(DatasetObject::new("ntuple", Format::Ntuple, b.clone()))
+        .compression(Compression::Stored)
+        .to_bytes()
         .unwrap();
     let file = FileReader::from_bytes(bytes).unwrap();
     for (name, format) in [("tree", Format::Tree), ("ntuple", Format::Ntuple)] {
@@ -375,7 +379,7 @@ fn datasets_go_into_a_file_writer_next_to_each_other() {
     ));
 }
 
-/// Every committed TTree and RNTuple fixture reads through `Dataset`, and each
+/// Every committed `TTree` and `RNTuple` fixture reads through `Dataset`, and each
 /// column equals the low-level reader's values converted — the flat paths
 /// agree with the general one.
 #[test]
@@ -383,6 +387,8 @@ fn every_fixture_reads_the_same_as_the_low_level_readers() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     let mut checked = 0;
     let mut compared = 0;
+    let mut with_schema = 0;
+    let mut without_schema = Vec::new();
     for entry in std::fs::read_dir(&dir).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "root") {
@@ -403,6 +409,23 @@ fn every_fixture_reads_the_same_as_the_low_level_readers() {
             let Ok(ds) = Dataset::open(&file, &name) else {
                 continue;
             };
+            // Where the schema can be read, each stored type has the shape the
+            // column is read in.
+            match ds.schema() {
+                Ok(schema) => {
+                    assert_eq!(schema.len(), ds.columns().len(), "{path:?} {name}");
+                    for (column, stored) in schema.iter() {
+                        let read = ds.read([column]).unwrap();
+                        assert_eq!(
+                            stored.storage(),
+                            read.get(column).unwrap().data_type(),
+                            "{path:?} {name} {column}"
+                        );
+                    }
+                    with_schema += 1;
+                }
+                Err(_) => without_schema.push(format!("{}:{name}", path.display())),
+            }
             for column in ds.columns() {
                 let Ok(got) = ds.read([column]) else { continue };
                 let got = got.get(column).unwrap();
@@ -443,6 +466,11 @@ fn every_fixture_reads_the_same_as_the_low_level_readers() {
     assert!(checked > 50, "only {checked} columns checked");
     assert!(compared > 50, "only {compared} columns compared");
     eprintln!("{checked} fixture columns read, {compared} compared with the low-level readers");
+    assert!(with_schema > 10, "only {with_schema} schemas read");
+    eprintln!(
+        "{with_schema} schemas read; {} datasets hold a column a batch cannot: {without_schema:?}",
+        without_schema.len()
+    );
 }
 
 /// Parallel reads (columns, baskets and pages concurrently) give exactly what
@@ -455,7 +483,7 @@ fn parallel_reads_match_serial_ones() {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
             .cluster_bytes(64 * 1024);
         for p in &parts {
-            w.write(p).unwrap();
+            w.write(p.clone()).unwrap();
         }
         let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
         let ds = Dataset::open(&file, "events").unwrap();
@@ -544,7 +572,11 @@ fn structs_round_trip_and_a_tree_takes_them_in_a_list() {
     // as one column; a struct on its own it refuses.
     let lists = b.select(["hits"]).unwrap();
     assert_eq!(round_trip(Format::Tree, &lists), lists);
-    let err = DatasetObject::new("t", Format::Tree, &b).unwrap_err();
+    // The refusal comes when the file is written, before anything is.
+    let err = FileWriter::create("unused.root")
+        .add(DatasetObject::new("t", Format::Tree, b.clone()))
+        .to_bytes()
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("\"hit\"") && msg.contains("{x: f32, id: i32}"),
@@ -663,7 +695,7 @@ fn an_empty_dataset_is_written_with_its_columns() {
     let b = sample(0, 0);
     for format in [Format::Tree, Format::Ntuple] {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format);
-        w.write(&b).unwrap();
+        w.write(b.clone()).unwrap();
         assert_eq!(w.entries(), 0);
         let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
         let ds = Dataset::open(&file, "events").unwrap();
@@ -873,4 +905,311 @@ mod polars {
             assert_eq!(arrow_back.get("rec").unwrap().member("oo"), Some(&folded));
         }
     }
+}
+
+/// A batch whose second column has another type is refused before anything
+/// is appended: the first column must not have grown.
+#[test]
+fn a_refused_append_leaves_the_batch_as_it_was() -> oxiroot_io_core::Result<()> {
+    use oxiroot_dataset::Batch;
+
+    let mut batch = Batch::new()
+        .column("x", vec![1.0_f64])?
+        .column("y", vec![1_i32])?;
+    let other = Batch::new()
+        .column("x", vec![2.0_f64])?
+        .column("y", vec![2.0_f32])?;
+    assert!(batch.append(other).is_err());
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch.values::<f64>("x")?, [1.0]);
+    assert_eq!(batch.values::<i32>("y")?, [1]);
+    Ok(())
+}
+
+// ------------------------------------------------------------------ schemas
+
+/// Write `batch` as `format`, stored as `schema` says, and open it again.
+fn write_with_schema(format: Format, batch: &Batch, schema: &Schema) -> FileReader {
+    let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
+        .schema(schema.clone());
+    w.write(batch.clone()).unwrap();
+    FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap()
+}
+
+fn list(item: DataType) -> DataType {
+    DataType::List(Box::new(item))
+}
+
+/// One column of every storage an `RNTuple` holds beyond a column's own shape.
+fn encoded() -> (Batch, Schema) {
+    let batch = Batch::new()
+        .column("half", vec![1.5_f32, -2.25, 0.0])
+        .unwrap()
+        .column("trunc", vec![1.5_f32, 2.0, -0.5])
+        .unwrap()
+        .column("quant", vec![0.0_f32, 17.0, 255.0])
+        .unwrap()
+        .column("set", vec![vec![1_i32, 2], vec![], vec![7]])
+        .unwrap()
+        .column(
+            "map",
+            Column::List {
+                offsets: vec![0, 2, 2, 3],
+                values: Box::new(Column::Struct(vec![
+                    ("_0".into(), Column::I32(vec![1, 2, 3])),
+                    ("_1".into(), Column::F64(vec![0.5, 1.5, 2.5])),
+                ])),
+            },
+        )
+        .unwrap()
+        .column("atomic", vec![10_i32, 20, 30])
+        .unwrap()
+        .column("uptr", vec![Some(1.0_f64), None, Some(3.0)])
+        .unwrap()
+        .column(
+            "bits",
+            vec![[true, false, false, true], [false; 4], [true; 4]],
+        )
+        .unwrap()
+        .column("halves", vec![vec![0.5_f32, 1.0], vec![], vec![-4.0]])
+        .unwrap();
+    let schema = batch
+        .schema()
+        .with("half", DataType::Half)
+        .with("trunc", DataType::Truncated { bits: 16 })
+        .with(
+            "quant",
+            DataType::Quantized {
+                bits: 8,
+                min: 0.0,
+                max: 255.0,
+            },
+        )
+        .with("set", DataType::Set(Box::new(DataType::I32)))
+        .with(
+            "map",
+            DataType::Map(Box::new(DataType::I32), Box::new(DataType::F64)),
+        )
+        .with("atomic", DataType::Atomic(Box::new(DataType::I32)))
+        .with("uptr", DataType::UniquePtr(Box::new(DataType::F64)))
+        .with("bits", DataType::Bitset(4))
+        .with("halves", list(DataType::Half));
+    (batch, schema)
+}
+
+#[test]
+fn an_rntuple_stores_each_column_as_the_schema_says_and_reports_it_back() {
+    let (batch, schema) = encoded();
+    let file = write_with_schema(Format::Ntuple, &batch, &schema);
+    let events = Dataset::open(&file, "events").unwrap();
+
+    // The file says how each column is stored …
+    assert_eq!(events.schema().unwrap(), schema);
+    // … and the values come back in the shapes they went in.
+    let names: Vec<&str> = batch.names().collect();
+    assert_eq!(events.read(names).unwrap(), batch);
+}
+
+#[test]
+fn a_schema_read_from_a_file_writes_the_same_types_back() {
+    let (batch, schema) = encoded();
+    let first = write_with_schema(Format::Ntuple, &batch, &schema);
+    let source = Dataset::open(&first, "events").unwrap();
+
+    // A skim: nothing but the schema says how the columns were stored.
+    let names: Vec<&str> = batch.names().collect();
+    let second = write_with_schema(
+        Format::Ntuple,
+        &source.read(names).unwrap(),
+        &source.schema().unwrap(),
+    );
+    assert_eq!(
+        Dataset::open(&second, "events").unwrap().schema().unwrap(),
+        schema
+    );
+}
+
+#[test]
+fn without_a_schema_a_column_is_stored_as_its_own_type() {
+    let (batch, _) = encoded();
+    for format in [Format::Tree, Format::Ntuple] {
+        let plain = batch.select(["half", "set", "atomic"]).unwrap();
+        let file = write_with_schema(format, &plain, &plain.schema());
+        let events = Dataset::open(&file, "events").unwrap();
+        assert_eq!(events.schema().unwrap(), plain.schema(), "{format:?}");
+        assert_eq!(
+            events.schema().unwrap().get("set"),
+            Some(&list(DataType::I32))
+        );
+    }
+}
+
+#[test]
+fn a_tree_stores_a_list_as_a_vector_or_as_a_counted_array() {
+    let batch = Batch::new()
+        .column("v", vec![vec![1.5_f32, 2.5], vec![], vec![3.5]])
+        .unwrap()
+        .column("c", vec![vec![1_i32], vec![2, 3], vec![]])
+        .unwrap();
+    let schema = batch
+        .schema()
+        .with("c", DataType::CArray(Box::new(DataType::I32)));
+    let file = write_with_schema(Format::Tree, &batch, &schema);
+    let events = Dataset::open(&file, "events").unwrap();
+
+    assert_eq!(events.read(["v", "c"]).unwrap(), batch);
+    // The tree itself agrees: one is a std::vector, the other counted by a leaf.
+    let tree = events.as_tree().unwrap();
+    assert_eq!(tree.branch_layout("v"), Some(BranchLayout::List));
+    assert_eq!(tree.branch_layout("c"), Some(BranchLayout::CArray));
+
+    // The array comes with the branch that counts it, a column of its own.
+    let on_disk = events.schema().unwrap();
+    assert_eq!(
+        on_disk,
+        Schema::new([
+            ("v", list(DataType::F32)),
+            ("nc", DataType::I32),
+            ("c", DataType::CArray(Box::new(DataType::I32))),
+        ])
+    );
+    assert_eq!(
+        events.read(["nc"]).unwrap().values::<i32>("nc").unwrap(),
+        [1, 2, 0]
+    );
+
+    // Written back from what was read, the count is not written twice.
+    let all = events.read(events.columns()).unwrap();
+    let again = write_with_schema(Format::Tree, &all, &on_disk);
+    let again = Dataset::open(&again, "events").unwrap();
+    assert_eq!(again.schema().unwrap(), on_disk);
+    assert_eq!(again.read(again.columns()).unwrap(), all);
+
+    // A column that only looks like the count is refused.
+    let wrong = Batch::new()
+        .column("v", all.get("v").unwrap().clone())
+        .unwrap()
+        .column("nc", vec![9_i32, 9, 9])
+        .unwrap()
+        .column("c", all.get("c").unwrap().clone())
+        .unwrap();
+    let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree)
+        .schema(on_disk);
+    let err = w.write(wrong).unwrap_err();
+    assert!(
+        err.to_string().contains("does not hold its lengths"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_storage_the_format_does_not_have_is_refused_before_anything_is_written() {
+    let batch = Batch::new().column("x", vec![1.0_f32, 2.0]).unwrap();
+    let refused = |format, data_type: DataType| {
+        let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
+            .schema(Schema::new([("x", data_type)]));
+        w.write(batch.clone()).unwrap_err().to_string()
+    };
+    // Half precision is an RNTuple encoding.
+    let msg = refused(Format::Tree, DataType::Half);
+    assert!(msg.contains("\"x\"") && msg.contains("half f32"), "{msg}");
+    // A truncated float keeps 10 to 31 bits.
+    let msg = refused(Format::Ntuple, DataType::Truncated { bits: 4 });
+    assert!(msg.contains("10 to 31 bits"), "{msg}");
+
+    // A counted array is a tree type.
+    let lists = Batch::new().column("x", vec![vec![1_i32]]).unwrap();
+    let mut w =
+        DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple).schema(
+            Schema::new([("x", DataType::CArray(Box::new(DataType::I32)))]),
+        );
+    let msg = w.write(lists).unwrap_err().to_string();
+    assert!(msg.contains("TTree type"), "{msg}");
+}
+
+#[test]
+fn a_batch_that_does_not_fit_the_schema_is_refused() {
+    let batch = Batch::new().column("x", vec![1.0_f64, 2.0]).unwrap();
+    let write = |schema: Schema| {
+        let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple)
+            .schema(schema);
+        w.write(batch.clone()).unwrap_err()
+    };
+    // Half precision stores an f32, and this column is an f64.
+    let err = write(Schema::new([("x", DataType::Half)]));
+    assert!(matches!(err, Error::SchemaChanged { .. }), "{err:?}");
+    assert!(err.to_string().contains("holds f64"), "{err}");
+    // The schema names another column.
+    let err = write(Schema::new([("y", DataType::F64)]));
+    assert!(matches!(err, Error::SchemaChanged { .. }), "{err:?}");
+}
+
+#[test]
+fn a_dataset_object_takes_a_schema_too() {
+    let (batch, schema) = encoded();
+    let bytes = FileWriter::create("unused.root")
+        .add(DatasetObject::new("events", Format::Ntuple, batch.clone()).schema(schema.clone()))
+        .to_bytes()
+        .unwrap();
+    let file = FileReader::from_bytes(bytes).unwrap();
+    let events = Dataset::open(&file, "events").unwrap();
+    assert_eq!(events.schema().unwrap(), schema);
+    let names: Vec<&str> = batch.names().collect();
+    assert_eq!(events.read(names).unwrap(), batch);
+}
+
+// ------------------------------------------------------------------- chains
+
+#[test]
+fn a_chain_reads_its_parts_one_after_the_other() {
+    let (a, b, c) = (sample(40, 0), sample(25, 40), sample(10, 65));
+    let mut whole = a.clone();
+    whole.append(b.clone()).unwrap();
+    whole.append(c.clone()).unwrap();
+
+    // A tree, an RNTuple and a tree again: a chain spans both formats.
+    let files: Vec<FileReader> = [(Format::Tree, &a), (Format::Ntuple, &b), (Format::Tree, &c)]
+        .into_iter()
+        .map(|(format, part)| {
+            FileReader::from_bytes(write(format, std::slice::from_ref(part), 1)).unwrap()
+        })
+        .collect();
+    let chain = Dataset::chain(files.iter().map(|f| Dataset::open(f, "events").unwrap())).unwrap();
+
+    assert_eq!(chain.entries(), 75);
+    assert_eq!(chain.columns(), COLUMNS);
+    assert_eq!(chain.read(COLUMNS).unwrap(), whole);
+
+    // Batches run across the parts, whatever their size, and so does a range.
+    for step in [0, 7, 1000] {
+        let mut glued = Batch::new();
+        for batch in chain.batches(COLUMNS).step(step) {
+            glued.append(batch.unwrap()).unwrap();
+        }
+        assert_eq!(glued, whole, "step {step}");
+    }
+    let mut window = Batch::new();
+    for batch in chain.batches(COLUMNS).range(35..70) {
+        window.append(batch.unwrap()).unwrap();
+    }
+    assert_eq!(window, whole.slice(35..70));
+}
+
+#[test]
+fn a_chain_needs_parts_with_the_same_columns() {
+    let Err(err) = Dataset::chain(std::iter::empty()) else {
+        panic!("an empty chain was accepted");
+    };
+    assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+
+    let full = FileReader::from_bytes(write(Format::Tree, &[sample(5, 0)], 1)).unwrap();
+    let other = Batch::new().column("only", vec![1_i32, 2]).unwrap();
+    let other = FileReader::from_bytes(write(Format::Tree, &[other], 1)).unwrap();
+    let Err(err) = Dataset::chain([
+        Dataset::open(&full, "events").unwrap(),
+        Dataset::open(&other, "events").unwrap(),
+    ]) else {
+        panic!("parts with different columns were chained");
+    };
+    assert!(matches!(err, Error::SchemaChanged { .. }), "{err:?}");
 }

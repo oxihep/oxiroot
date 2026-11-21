@@ -92,7 +92,7 @@ impl FitData for Hist1D {
         (1..=n)
             .map(|i| {
                 let y = self.contents.get(i).copied().unwrap_or(0.0);
-                Point::new(self.bin_center(i), y, self.bin_error(i))
+                Point::new(self.xaxis.bin_center(i), y, self.bin_error(i))
             })
             .collect()
     }
@@ -121,7 +121,7 @@ impl FitData for Graph {
 
 fn graph_sigma(errors: &GraphErrors, i: usize) -> f64 {
     match errors {
-        GraphErrors::None => 1.0,
+        GraphErrors::Plain => 1.0,
         GraphErrors::Symmetric { ey, .. } => ey.get(i).copied().unwrap_or(1.0),
         GraphErrors::Asymmetric {
             ey_low, ey_high, ..

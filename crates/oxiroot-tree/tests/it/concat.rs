@@ -3,12 +3,13 @@ use std::io::Cursor;
 
 use crate::support::write_tree_file;
 use oxiroot_io_core::{Compression, FileReader, Result};
-use oxiroot_tree::{Branch, BranchValues, TreeReader, TreeWriter, append_trees};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues, TreeWriter, append_trees};
 
 /// Write `branches` as tree `Events` to a fresh temp file and reopen it.
 fn write_open(tag: &str, branches: Vec<Branch>) -> (FileReader, &'static str) {
     let path = std::env::temp_dir().join(format!("oxiroot_concat_{tag}.root"));
-    write_tree_file(&path, "Events", &branches, Compression::None).expect("write");
+    write_tree_file(&path, "Events", &branches, Compression::Stored).expect("write");
     (FileReader::open(&path).expect("reopen"), "Events")
 }
 
@@ -18,7 +19,7 @@ fn concat_trees(inputs: &[&TreeReader<'_>]) -> Result<Vec<u8>> {
         Cursor::new(Vec::new()),
         "merged.root",
         "Events",
-        Compression::None,
+        Compression::Stored,
     )?;
     append_trees(&mut w, inputs)?;
     Ok(w.finish()?.into_inner())

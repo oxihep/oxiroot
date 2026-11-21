@@ -5,16 +5,16 @@
 //! contents are streamed inline — just a count and the values, no header.
 
 use oxiroot_io_core::raw::{VersionHeader, read_named, skip_versioned};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
 // The generic object-byte readers now live in `oxiroot-io-core`; re-export them
 // here so the histogram modules keep addressing them as `crate::base::…`.
-pub(crate) use oxiroot_io_core::raw::{object_bytes_any, object_bytes_any_keyed};
+pub(crate) use oxiroot_io_core::raw::check_len;
 
 use crate::axis::Axis;
 use oxiroot_io_core::cast::SaturatingFrom;
 
 /// The on-disk type of a histogram's bin contents, named by the class suffix
-/// (`Hist1D**D**`, `Hist2D**F**`, …). Contents are always held in memory as `f64`;
+/// (`TH1**D**`, `TH2**F**`, …). Contents are always held in memory as `f64`;
 /// this only selects the `TArray*` element type written to (and read from) the
 /// file. The default is [`BinContentType::F64`] (ROOT's `TH1D`/`TH2D`/`TH3D`).
 #[doc(alias = "Precision")]
@@ -41,18 +41,18 @@ impl BinContentType {
     #[must_use]
     pub fn code(self) -> char {
         match self {
-            BinContentType::F64 => 'D',
-            BinContentType::F32 => 'F',
-            BinContentType::I32 => 'I',
-            BinContentType::I16 => 'S',
-            BinContentType::I8 => 'C',
-            BinContentType::I64 => 'L',
+            Self::F64 => 'D',
+            Self::F32 => 'F',
+            Self::I32 => 'I',
+            Self::I16 => 'S',
+            Self::I8 => 'C',
+            Self::I64 => 'L',
         }
     }
 
-    /// The full ROOT class name for a histogram of dimension `dim` (`"Hist1D"`,
-    /// `"Hist2D"`, `"Hist3D"`) with this bin content type, e.g.
-    /// `BinContentType::F32.class_name("Hist1D") == "TH1F"`.
+    /// The full ROOT class name for a histogram whose class starts with `dim`
+    /// (`"TH1"`, `"TH2"`, `"TH3"`) with this bin content type, e.g.
+    /// `BinContentType::F32.class_name("TH1") == "TH1F"`.
     #[must_use]
     pub fn class_name(self, dim: &str) -> String {
         let mut s = String::with_capacity(dim.len() + 1);
@@ -76,20 +76,6 @@ pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
         _ => Err(Error::Unsupported(format!(
             "unsupported histogram type: {class}"
         ))),
-    }
-}
-
-/// Check that an input has the length of the input it is paired with, so a
-/// constructor or fill never silently truncates or pads.
-pub(crate) fn check_len(what: &str, expected: usize, found: usize) -> Result<()> {
-    if found == expected {
-        Ok(())
-    } else {
-        Err(Error::LengthMismatch {
-            what: what.to_string(),
-            expected,
-            found,
-        })
     }
 }
 
@@ -134,7 +120,7 @@ pub(crate) fn unsupported_version(class: &str, version: u16) -> Error {
 
 /// Move past the rest of `header`'s record: the members a newer class version
 /// added. It is an error if the members read ran past the record's end.
-pub(crate) fn end_record(r: &mut RBuffer, header: &VersionHeader, class: &str) -> Result<()> {
+pub(crate) fn end_record(r: &mut RBuffer<'_>, header: &VersionHeader, class: &str) -> Result<()> {
     if let Some(end) = header.end {
         if r.pos() > end {
             return Err(Error::Format(format!(
@@ -188,7 +174,7 @@ pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
 
 /// Read a `Hist1D` base object (its header, the `Named`/`TAtt*` bases, and the
 /// members up to the core statistics), then seek to the `Hist1D` record's end.
-pub(crate) fn read_th1_base(r: &mut RBuffer) -> Result<HistBase> {
+pub(crate) fn read_th1_base(r: &mut RBuffer<'_>) -> Result<HistBase> {
     let th1 = r.read_version()?;
     // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
     // fContour as floats; every later version reads the same up to fSumw2.
@@ -269,7 +255,10 @@ pub(crate) fn check_cells(name: &str, len: usize, cells: usize, optional: bool) 
 
 /// Read an inline `TArray` of `n` values of the given element type (a count
 /// followed by that many values, widened to `f64`).
-pub(crate) fn read_tarray(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Vec<f64>> {
+pub(crate) fn read_tarray(
+    r: &mut RBuffer<'_>,
+    bin_content_type: BinContentType,
+) -> Result<Vec<f64>> {
     let n = usize::saturating_from(r.be_i32()?.max(0));
     // Cap the up-front reservation at what the buffer could possibly hold, so a
     // forged count can't drive a huge allocation before the read fails.
@@ -292,7 +281,7 @@ pub(crate) fn read_tarray(r: &mut RBuffer, bin_content_type: BinContentType) -> 
 /// `TArray` bin contents; seek to the wrapper's end. Used both for a top-level
 /// `TH1D`/`TH1F` and for the `TH1D` base inside a `Profile1D`.
 pub(crate) fn read_th1_object(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     bin_content_type: BinContentType,
 ) -> Result<(HistBase, Vec<f64>)> {
     let wrapper = r.read_version()?;
@@ -304,98 +293,10 @@ pub(crate) fn read_th1_object(
     Ok((core, contents))
 }
 
-/// Check that key `name` exists and holds a `class`, before its payload is read.
-fn check_key_class(file: &FileReader, name: &str, class: &str) -> Result<()> {
-    let key = file.key(name).ok_or_else(|| Error::NotFound {
-        what: "key",
-        name: name.to_string(),
-    })?;
-    if key.class_name != class {
-        return Err(Error::WrongClass {
-            name: name.to_string(),
-            found: key.class_name.clone(),
-            expected: class.to_string(),
-        });
-    }
-    Ok(())
-}
-
-/// Locate a key, verify its class, and return its decompressed object bytes.
-pub(crate) fn object_bytes(file: &FileReader, name: &str, class: &str) -> Result<Vec<u8>> {
-    check_key_class(file, name, class)?;
-    Ok(object_bytes_any(file, name)?.1)
-}
-
-/// Like [`object_bytes`], but also return the key's header length (`fKeyLen`).
-///
-/// ROOT keys objects relative to `-fKeyLen`, so the object-reference map (see
-/// [`oxiroot_io_core::raw::TagReader`]) needs the key length to resolve the
-/// class/object back-references inside a streamed object (e.g. `PolyHist`'s bins).
-pub(crate) fn object_bytes_keyed(
-    file: &FileReader,
-    name: &str,
-    class: &str,
-) -> Result<(Vec<u8>, usize)> {
-    check_key_class(file, name, class)?;
-    let (_, object, key_len) = object_bytes_any_keyed(file, name)?;
-    Ok((object, key_len))
-}
-
-/// Fetch a histogram object, requiring a 4-character class with the given
-/// dimension prefix (e.g. `"Hist1D"`), so a `read_th1` cannot accept a `Hist2D`.
-pub(crate) fn histogram_object(
-    file: &FileReader,
-    name: &str,
-    dim_prefix: &str,
-) -> Result<(String, Vec<u8>)> {
-    check_dim(name, object_bytes_any(file, name)?, dim_prefix)
-}
-
-/// Like [`histogram_object`] but from subdirectory `subdir`.
-pub(crate) fn histogram_object_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-    dim_prefix: &str,
-) -> Result<(String, Vec<u8>)> {
-    check_dim(name, file.object_in(subdir, name)?, dim_prefix)
-}
-
-/// Require a looked-up `(class, object)` to be a 4-character histogram class with
-/// the given dimension prefix (e.g. `"Hist1D"`).
-fn check_dim(
-    name: &str,
-    (class, object): (String, Vec<u8>),
-    dim_prefix: &str,
-) -> Result<(String, Vec<u8>)> {
-    if class.len() == 4 && class.starts_with(dim_prefix) {
-        Ok((class, object))
-    } else {
-        Err(Error::WrongClass {
-            name: name.to_string(),
-            found: class,
-            expected: format!("{dim_prefix} histogram"),
-        })
-    }
-}
-
-/// Like [`object_bytes`] but from subdirectory `subdir` (validates the class).
-pub(crate) fn object_bytes_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-    class: &str,
-) -> Result<Vec<u8>> {
-    let (got, object) = file.object_in(subdir, name)?;
-    if got == class {
-        Ok(object)
-    } else {
-        Err(Error::WrongClass {
-            name: format!("{}/{name}", subdir.trim_end_matches('/')),
-            found: got,
-            expected: class.to_string(),
-        })
-    }
+/// Whether `class` is a 4-character histogram class with the given dimension
+/// prefix (e.g. `"TH1"`), so a `Hist1D` cannot accept a `TH2D` or a `TH2Poly`.
+pub(crate) fn is_hist_class(class: &str, dim_prefix: &str) -> bool {
+    class.len() == 4 && class.starts_with(dim_prefix)
 }
 
 #[cfg(test)]

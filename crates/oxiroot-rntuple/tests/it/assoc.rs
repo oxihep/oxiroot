@@ -2,13 +2,14 @@
 //! writes the `rntuple_set_*` and `rntuple_map_*` fixtures (read here), and the
 //! interop matrix has ROOT read oxiroot's own output; uproot reads the map too.
 //! (ROOT 6.40 needs the map's dictionary compiled in to write or read a
-//! `std::map` RNTuple: `scripts/rntuple_map_LinkDef.h`.)
+//! `std::map` `RNTuple`: `scripts/rntuple_map_LinkDef.h`.)
 
 use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::{Field, FieldValues, NtupleReader, StructRole};
+use oxiroot_rntuple::raw::{Field, FieldValues};
+use oxiroot_rntuple::{NtupleReader, StructRole};
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -95,7 +96,11 @@ fn writes_set_round_trip() {
         vec![Field::set_i32("s", vec![vec![1, 2, 3], vec![4, 5]])],
     );
     let out = std::env::temp_dir().join("oxiroot_set_rt.root");
-    nt.write_root(&out, Compression::None).expect("write");
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(nt)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
     let file = FileReader::open(&out).unwrap();
     let ntpl = NtupleReader::open(&file, "ntpl").unwrap();
     assert_eq!(ntpl.header().fields[0].type_name, "std::set<std::int32_t>");
@@ -118,7 +123,11 @@ fn writes_map_round_trip() {
         )],
     );
     let out = std::env::temp_dir().join("oxiroot_map_rt.root");
-    nt.write_root(&out, Compression::None).expect("write");
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(nt)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
     let file = FileReader::open(&out).unwrap();
     let ntpl = NtupleReader::open(&file, "ntpl").unwrap();
 

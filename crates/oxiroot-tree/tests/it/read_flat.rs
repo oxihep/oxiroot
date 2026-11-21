@@ -1,9 +1,10 @@
-//! Read a flat primitive TTree written by uproot; values must match.
+//! Read a flat primitive `TTree` written by uproot; values must match.
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -37,7 +38,7 @@ fn reads_multi_basket_tree() {
     check_values(&t);
 }
 
-fn check_values(t: &TreeReader) {
+fn check_values(t: &TreeReader<'_>) {
     let read = |n| t.branch(n).values().expect("read branch");
     assert_eq!(read("i4"), BranchValues::I32(vec![0, 1, 2, 3, 4]));
     assert_eq!(read("i8"), BranchValues::I64(vec![10, 11, 12, 13, 14]));

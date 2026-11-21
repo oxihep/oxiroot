@@ -1,7 +1,7 @@
 //! [`ByteSource`] — a random-access byte provider behind [`FileReader`].
 //!
 //! A ROOT file is read by seeking to absolute offsets (a key's `fSeekKey`, an
-//! RNTuple page locator, a TBasket seek) and pulling out a contiguous range.
+//! `RNTuple` page locator, a `TBasket` seek) and pulling out a contiguous range.
 //! Abstracting that single operation — "give me `len` bytes at `offset`" — lets
 //! the same readers run against an in-memory buffer, a memory map, a local file
 //! read positionally, or (with the `http` feature) a remote file fetched with
@@ -19,7 +19,7 @@ use crate::error::{Error, Result};
 /// A random-access source of a ROOT file's bytes.
 ///
 /// Implementations must be cheap to share across threads (`Send + Sync`) — the
-/// TTree reader fetches baskets in parallel under the `rayon` feature.
+/// `TTree` reader fetches baskets in parallel under the `rayon` feature.
 pub trait ByteSource: Send + Sync + std::fmt::Debug {
     /// Total length of the file in bytes.
     fn len(&self) -> u64;
@@ -35,7 +35,7 @@ pub trait ByteSource: Send + Sync + std::fmt::Debug {
 
     /// Read several ranges, returning their bytes in the same order. The
     /// default reads them one at a time; a remote source overrides it to fetch
-    /// them in fewer round trips (an XRootD vector read, concurrent HTTP
+    /// them in fewer round trips (an `XRootD` vector read, concurrent HTTP
     /// requests).
     fn read_many(&self, ranges: &[(u64, usize)]) -> Result<Vec<Bytes>> {
         ranges.iter().map(|&(o, l)| self.read_at(o, l)).collect()
@@ -87,7 +87,7 @@ pub struct BytesSource(Bytes);
 impl BytesSource {
     /// Wrap an owned in-memory buffer.
     pub fn new(data: impl Into<Bytes>) -> Self {
-        BytesSource(data.into())
+        Self(data.into())
     }
 }
 
@@ -103,7 +103,7 @@ impl ByteSource for BytesSource {
 }
 
 /// A memory-mapped file; `read_at` copies the requested range out of the map.
-/// Backs [`FileReader::open_mmap`](super::reader::FileReader::open_mmap).
+/// Hand one to [`FileReader::from_source`](super::reader::FileReader::from_source).
 #[cfg(feature = "mmap")]
 #[derive(Debug)]
 pub struct MmapSource(memmap2::Mmap);
@@ -111,8 +111,30 @@ pub struct MmapSource(memmap2::Mmap);
 #[cfg(feature = "mmap")]
 impl MmapSource {
     /// Wrap a read-only memory map of the whole file.
+    #[must_use]
     pub fn new(map: memmap2::Mmap) -> Self {
-        MmapSource(map)
+        Self(map)
+    }
+
+    /// Memory-map the file at `path`.
+    ///
+    /// # Safety
+    ///
+    /// The file must not be modified or truncated, by this process or any
+    /// other, while the source (or a reader built on it) is alive. A change
+    /// underneath the map is undefined behaviour, and a truncation can crash
+    /// the process with `SIGBUS`. Only map files you control.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be opened or mapped.
+    #[allow(unsafe_code)]
+    pub unsafe fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let file = std::fs::File::open(path)?;
+        // SAFETY: the caller upholds the no-modification contract above. This
+        // is the only `unsafe` in the workspace (`unsafe_code` is denied
+        // everywhere else); memmap2's `map` is unavoidably `unsafe`.
+        Ok(Self(unsafe { memmap2::Mmap::map(&file)? }))
     }
 }
 
@@ -130,7 +152,7 @@ impl ByteSource for MmapSource {
 
 /// A local file read with positioned reads (`pread`/`seek_read`) — every
 /// `read_at` touches only its range, so a large file is never slurped whole.
-/// Backs [`FileReader::open_ranged`](super::reader::FileReader::open_ranged).
+/// [`FileReader::open`](super::reader::FileReader::open) uses it for large files.
 #[derive(Debug)]
 pub struct FileSource {
     file: std::fs::File,
@@ -142,7 +164,7 @@ impl FileSource {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)?;
         let len = file.metadata()?.len();
-        Ok(FileSource { file, len })
+        Ok(Self { file, len })
     }
 }
 

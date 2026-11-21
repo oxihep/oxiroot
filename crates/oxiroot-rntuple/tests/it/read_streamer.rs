@@ -1,4 +1,4 @@
-//! Reading an RNTuple *streamer* field (the `kStreamer` structural role): a
+//! Reading an `RNTuple` *streamer* field (the `kStreamer` structural role): a
 //! class stored unsplit as one serialized blob per entry, rather than split into
 //! a record of member columns. oxiroot interprets each blob with the class
 //! `TStreamerInfo` carried in the file and surfaces it as a struct-of-arrays
@@ -8,7 +8,8 @@
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{FieldValues, NtupleReader, StructRole};
+use oxiroot_rntuple::raw::FieldValues;
+use oxiroot_rntuple::{NtupleReader, StructRole};
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

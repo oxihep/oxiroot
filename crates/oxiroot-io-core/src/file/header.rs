@@ -1,4 +1,4 @@
-//! The TFile header (first ~100 bytes of every ROOT file) and its TUUID.
+//! The `TFile` header (first ~100 bytes of every ROOT file) and its TUUID.
 //!
 //! Field widths depend on the file version: once any file pointer would exceed
 //! ~2 GiB, ROOT rewrites the file in "big" form — `fVersion` is bumped past
@@ -25,7 +25,7 @@ pub struct Uuid {
     pub bytes: [u8; 16],
 }
 
-/// Parsed TFile header.
+/// Parsed `TFile` header.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct FileHeader {
@@ -57,12 +57,13 @@ pub struct FileHeader {
 
 impl FileHeader {
     /// Whether the file uses the 64-bit ("big") on-disk form.
+    #[must_use]
     pub fn is_big(&self) -> bool {
         self.version >= BIG_FILE_VERSION
     }
 
     /// Parse a header from the start of `r`.
-    pub fn read(r: &mut RBuffer) -> Result<FileHeader> {
+    pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let magic_slice = r.bytes(4)?;
         let mut magic = [0u8; 4];
         magic.copy_from_slice(magic_slice);
@@ -93,7 +94,7 @@ impl FileHeader {
         let mut uuid_bytes = [0u8; 16];
         uuid_bytes.copy_from_slice(r.bytes(16)?);
 
-        Ok(FileHeader {
+        Ok(Self {
             version,
             begin,
             end,

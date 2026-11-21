@@ -148,7 +148,7 @@ struct Node {
     type_name: String,
     role: u16,
     cols: Vec<RawCol>,
-    children: Vec<Node>,
+    children: Vec<Self>,
     /// Field flag bits (`FIELD_FLAG_*`).
     flags: u16,
     /// Fixed array element count (`std::array`/`std::bitset`).
@@ -244,7 +244,7 @@ fn collection_node_wrapped(
     }
 }
 
-/// Cumulative present-count offsets for an optional/unique_ptr presence mask:
+/// Cumulative present-count offsets for an `optional/unique_ptr` presence mask:
 /// `offsets[i]` is the number of present entries in `0..=i` (the Index64 column).
 fn present_offsets(present: &[bool]) -> Vec<u64> {
     let mut acc = 0u64;

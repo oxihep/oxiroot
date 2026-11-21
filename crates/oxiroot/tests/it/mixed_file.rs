@@ -1,13 +1,19 @@
-//! Histograms, a `TTree` and an RNTuple in one file, through one `FileWriter`.
+//! Histograms, a `TTree` and an `RNTuple` in one file, through one `FileWriter`.
 
 use crate::support::{NtupleObject, TreeObject};
 use oxiroot::file::Error;
-use oxiroot::ntuple::{Field, FieldValues, NtupleReader};
+use oxiroot::ntuple::NtupleReader;
+use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, BranchValues, TreeReader};
+use oxiroot::tree::TreeReader;
+use oxiroot::tree::raw::{Branch, BranchValues};
 
 fn hist() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("pt");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("pt");
     h.fill(0.5);
     h.fill(2.5);
     h
@@ -18,28 +24,28 @@ fn histograms_trees_and_rntuples_share_a_file() {
     let path = std::env::temp_dir().join("oxiroot_mixed_all.root");
     FileWriter::create(&path)
         .add(&hist())
-        .put(TreeObject::new(
+        .add(TreeObject::new(
             "Events",
             vec![
                 Branch::f64("energy", vec![10.5, 20.1, 5.0]),
                 Branch::jagged_i32("hits", vec![vec![1], vec![], vec![2, 3]]),
             ],
         ))
-        .put(NtupleObject::new(
+        .add(NtupleObject::new(
             "ntuple",
             vec![Field::i32("x", vec![1, 2])],
         ))
         .dir("cal", |d| {
-            d.add(&Parameter::f64("gain", 1.5)).put(TreeObject::new(
+            d.add(&Parameter::f64("gain", 1.5)).add(TreeObject::new(
                 "Pedestals",
                 vec![Branch::i32("adc", vec![3, 4])],
             ))
         })
-        .write(Compression::Zstd(5))
+        .write()
         .unwrap();
 
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(Hist1D::read_root(&f, "pt").unwrap(), hist());
+    assert_eq!(f.get::<Hist1D>("pt").unwrap(), hist());
     let tree = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(
         tree.branch("energy").values().unwrap(),
@@ -58,13 +64,10 @@ fn histograms_trees_and_rntuples_share_a_file() {
         FieldValues::I32(vec![1, 2])
     );
     assert_eq!(
-        Parameter::read_root_in(&f, "cal", "gain")
-            .unwrap()
-            .value()
-            .as_f64(),
+        f.get::<Parameter>("cal/gain").unwrap().value().as_f64(),
         1.5
     );
-    let ped = TreeReader::open_in(&f, "cal", "Pedestals").unwrap();
+    let ped = TreeReader::open(&f, "cal/Pedestals").unwrap();
     assert_eq!(
         ped.branch("adc").values().unwrap(),
         BranchValues::I32(vec![3, 4])
@@ -87,22 +90,28 @@ fn histograms_trees_and_rntuples_share_a_file() {
 fn a_tree_and_a_histogram_cannot_share_a_name() {
     let err = FileWriter::create("clash.root")
         .add(&hist())
-        .put(TreeObject::new("pt", vec![Branch::i32("x", vec![1])]))
-        .to_bytes(Compression::None);
+        .add(TreeObject::new("pt", vec![Branch::i32("x", vec![1])]))
+        .compression(Compression::Stored)
+        .to_bytes();
     assert!(matches!(err, Err(Error::DuplicateName { .. })), "{err:?}");
 }
 
 #[test]
 fn a_tree_can_be_appended_to_a_histogram_file() {
     let path = std::env::temp_dir().join("oxiroot_mixed_append_tree.root");
-    hist().write_root(&path, Compression::None).unwrap();
-    FileWriter::open(&path)
+    FileWriter::create(&path)
+        .add(&hist())
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
+    oxiroot::FileUpdater::open(&path)
         .unwrap()
-        .put(TreeObject::new("T", vec![Branch::u8("flag", vec![1, 0])]))
-        .write(Compression::None)
+        .add(TreeObject::new("T", vec![Branch::u8("flag", vec![1, 0])]))
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let f = FileReader::open(&path).unwrap();
-    assert_eq!(Hist1D::read_root(&f, "pt").unwrap(), hist());
+    assert_eq!(f.get::<Hist1D>("pt").unwrap(), hist());
     assert_eq!(
         TreeReader::open(&f, "T")
             .unwrap()
@@ -120,14 +129,16 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
 fn compacting_a_file_that_holds_a_tree_is_refused() {
     let path = std::env::temp_dir().join("oxiroot_compact_with_tree.root");
     FileWriter::create(&path)
-        .put(TreeObject::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
-        .write(Compression::None)
+        .add(TreeObject::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
+        .compression(Compression::Stored)
+        .write()
         .expect("write");
 
-    let err = FileWriter::open(&path)
+    let err = oxiroot::FileUpdater::open(&path)
         .expect("open")
         .compact()
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .expect_err("compacting a tree file must be refused");
     let message = err.to_string();
     assert!(

@@ -14,7 +14,7 @@ fn sweep_all_fixtures() {
     let dir = format!("{}/../../fixtures", env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.ends_with(".root") && !n.contains("rntuple"))
         .collect();
@@ -36,7 +36,7 @@ fn sweep_all_fixtures() {
             if class.contains("RNTuple") || class.starts_with("TDirectory") {
                 continue;
             }
-            match f.get_value(&name) {
+            match f.get::<Value>(&name) {
                 Ok(v) if v.class().is_some() && !matches!(v, Value::Unsupported { .. }) => {
                     ok += 1;
                     // Every decoded object must carry members.
@@ -61,7 +61,7 @@ fn sweep_all_fixtures() {
 fn decoded_values_match_root() {
     // ObjString.
     let f = FileReader::open(fixture("persist_objs.root")).unwrap();
-    let s = f.get_value("label").unwrap();
+    let s = f.get::<Value>("label").unwrap();
     assert_eq!(
         s.get("fString").and_then(Value::as_str),
         Some("hello world")
@@ -69,14 +69,14 @@ fn decoded_values_match_root() {
 
     // Parameter<double> / <int>.
     assert_eq!(
-        f.get_value("lumi")
+        f.get::<Value>("lumi")
             .unwrap()
             .get("fVal")
             .and_then(Value::as_f64),
         Some(137.5)
     );
     assert_eq!(
-        f.get_value("nevents")
+        f.get::<Value>("nevents")
             .unwrap()
             .get("fVal")
             .and_then(Value::as_i64),
@@ -87,7 +87,7 @@ fn decoded_values_match_root() {
     // values(flow=True) = [0, 20, 38, 54, 68, 80, …].
     let h = FileReader::open(fixture("analysis.root"))
         .unwrap()
-        .get_value("h")
+        .get::<Value>("h")
         .unwrap();
     assert_eq!(h.class(), Some("TH1D"));
     assert_eq!(h.get("fName").and_then(Value::as_str), Some("h"));
@@ -105,7 +105,7 @@ fn decoded_values_match_root() {
     // TGraphErrors: fX / fY / fEX / fEY point arrays.
     let g = FileReader::open(fixture("graphs.root"))
         .unwrap()
-        .get_value("ge")
+        .get::<Value>("ge")
         .unwrap();
     let fx: Vec<f64> = g
         .get("fX")
@@ -127,7 +127,7 @@ fn decoded_values_match_root() {
     // ObjMap: three pairs, mixed value types, recursively decoded.
     let m = FileReader::open(fixture("tmap.root"))
         .unwrap()
-        .get_value("meta")
+        .get::<Value>("meta")
         .unwrap();
     let items = m.get("items").and_then(Value::as_array).unwrap();
     assert_eq!(items.len(), 3);
@@ -142,7 +142,7 @@ fn decoded_values_match_root() {
     // TList: three heterogeneous members.
     let l = FileReader::open(fixture("objlist.root"))
         .unwrap()
-        .get_value("mylist")
+        .get::<Value>("mylist")
         .unwrap();
     let its = l.get("items").and_then(Value::as_array).unwrap();
     assert_eq!(its.len(), 3);
@@ -152,7 +152,7 @@ fn decoded_values_match_root() {
     // Func1D: the fitted formula string and cling parameters, nested in TFormula.
     let f1 = FileReader::open(fixture("tf1.root"))
         .unwrap()
-        .get_value("myfunc")
+        .get::<Value>("myfunc")
         .unwrap();
     let formula = f1.get("fFormula").unwrap();
     assert_eq!(
@@ -169,14 +169,14 @@ fn reads_root_cpp_written_file() {
 
     // ObjString + Parameter<double> written by ROOT.
     assert_eq!(
-        f.get_value("note")
+        f.get::<Value>("note")
             .unwrap()
             .get("fString")
             .and_then(Value::as_str),
         Some("written by ROOT 6.40")
     );
     assert_eq!(
-        f.get_value("thr")
+        f.get::<Value>("thr")
             .unwrap()
             .get("fVal")
             .and_then(Value::as_f64),
@@ -184,7 +184,7 @@ fn reads_root_cpp_written_file() {
     );
 
     // TList: a Named("a","alpha") then an ObjString("beta"), decoded member-wise.
-    let list = f.get_value("mylist").unwrap();
+    let list = f.get::<Value>("mylist").unwrap();
     let items = list.get("items").and_then(Value::as_array).unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].class(), Some("TNamed"));
@@ -198,7 +198,7 @@ fn reads_root_cpp_written_file() {
     );
 
     // TH1D written by ROOT: nested Axis with the 10 bins we booked.
-    let h = f.get_value("hpx").unwrap();
+    let h = f.get::<Value>("hpx").unwrap();
     assert_eq!(h.class(), Some("TH1D"));
     assert_eq!(
         h.get("fXaxis")
@@ -256,15 +256,16 @@ fn each_object_is_decoded_with_its_own_class_version() {
     FileWriter::create(&path)
         .add(&Hit(1))
         .add(&Hit(2))
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let f = FileReader::open(&path).unwrap();
 
     // Version 1 is described first; version 2 must not be read with its layout.
-    let new = f.get_value("new").unwrap();
+    let new = f.get::<Value>("new").unwrap();
     assert_eq!(new.get("fE").and_then(Value::as_f64), Some(2.5));
     assert_eq!(new.get("fId").and_then(Value::as_i64), Some(7), "{new}");
-    let old = f.get_value("old").unwrap();
+    let old = f.get::<Value>("old").unwrap();
     assert_eq!(old.get("fE").and_then(Value::as_f64), Some(2.5));
     assert!(old.get("fId").is_none());
 
@@ -284,7 +285,7 @@ fn stl_members_decode_as_root_wrote_them() {
 
     // TFormula::fParams, a `map<TString,int>` streamed objectwise: the parameter
     // names in index order.
-    let formula = f.get_value("fn").unwrap();
+    let formula = f.get::<Value>("fn").unwrap();
     let params = formula
         .get("fFormula")
         .and_then(|v| v.get("fParams"))
@@ -312,7 +313,7 @@ fn stl_members_decode_as_root_wrote_them() {
     // Efficiency::fBeta_bin_params, a `vector<pair<double,double>>` streamed
     // memberwise: every `first`, then every `second`. Bins 1 and 2 were set to
     // (2, 3) and (4, 5); the rest keep ROOT's (1, 1).
-    let eff = f.get_value("eff").unwrap();
+    let eff = f.get::<Value>("eff").unwrap();
     let beta = eff
         .get("fBeta_bin_params")
         .and_then(Value::as_array)
@@ -333,7 +334,7 @@ fn stl_members_decode_as_root_wrote_them() {
 
     // MultiErrorGraph: `vector<TArrayD>` (objectwise) per y-error bar, and
     // `vector<TAttFill>`/`vector<TAttLine>` (memberwise) per bar.
-    let gme = f.get_value("gme").unwrap();
+    let gme = f.get::<Value>("gme").unwrap();
     let low: Vec<Vec<f64>> = gme
         .get("fEyL")
         .and_then(Value::as_array)
@@ -367,7 +368,7 @@ fn stl_members_decode_as_root_wrote_them() {
 
     // PolyHist::fCells, a `TStreamerLoop` of `TList`s: ROOT writes each bin in
     // full in the first cell it falls in, so the grid holds both bins once.
-    let poly = f.get_value("poly").unwrap();
+    let poly = f.get::<Value>("poly").unwrap();
     let cells = poly.get("fCells").and_then(Value::as_array).unwrap();
     assert_eq!(cells.len(), 625); // fNCells, the 25×25 lookup grid
     let mut bins: Vec<(i64, f64)> = Vec::new();
@@ -396,7 +397,7 @@ fn stl_members_decode_as_root_wrote_them() {
 
     // Nothing in the file is left undecoded.
     for key in ["fn", "eff", "gme", "poly"] {
-        let dump = f.get_value(key).unwrap().to_string();
+        let dump = f.get::<Value>(key).unwrap().to_string();
         assert!(!dump.contains("<unsupported"), "{key}: {dump}");
     }
 }

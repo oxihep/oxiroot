@@ -1,14 +1,15 @@
 //! `ObjMap` — ROOT's keyed map of object → object. oxiroot reads the
-//! ROOT-C++-written `tmap.root` fixture (string keys → a TObjString, a
-//! TParameter, a TH1F) and round-trips its own writes; ROOT C++ reads oxiroot's
+//! ROOT-C++-written `tmap.root` fixture (string keys → a `TObjString`, a
+//! `TParameter`, a TH1F) and round-trips its own writes; ROOT C++ reads oxiroot's
 //! output (checked out of band). uproot has no `TMap` model, so an `ObjMap` is not
 //! readable there — a uproot limitation that ROOT's own maps share.
 
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, Hist1D, ObjMap, ObjString, Parameter, ReadRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_io_core::{FileWriter, ObjMap, ObjString, Parameter};
 
 fn fixture() -> FileReader {
     FileReader::open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/tmap.root"))
@@ -18,7 +19,7 @@ fn fixture() -> FileReader {
 #[test]
 fn reads_root_written_map() {
     let f = fixture();
-    let m = ObjMap::read_root(&f, "meta").unwrap();
+    let m = f.get::<ObjMap>("meta").unwrap();
     assert_eq!(m.name(), "meta");
     assert_eq!(m.len(), 3);
     assert_eq!(m.string_keys(), ["version", "lumi", "hist"]);
@@ -42,7 +43,11 @@ fn reads_root_written_map() {
 
 #[test]
 fn round_trips_map_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     h.fill(0.5);
     let map = ObjMap::new()
         .named("meta")
@@ -53,11 +58,12 @@ fn round_trips_map_through_oxiroot() {
     let out = std::env::temp_dir().join("oxiroot_tmap_rt.root");
     FileWriter::create(&out)
         .add(&map)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let m = ObjMap::read_root(&f, "meta").unwrap();
+    let m = f.get::<ObjMap>("meta").unwrap();
     assert_eq!(m.len(), 3);
     assert_eq!(m.string_keys(), ["version", "lumi", "hist"]);
     assert_eq!(

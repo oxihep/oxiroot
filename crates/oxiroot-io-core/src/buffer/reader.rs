@@ -1,7 +1,7 @@
 //! Big-/little-endian read cursor for ROOT on-disk structures.
 //!
 //! ROOT's classic/Key/streamer payloads are big-endian (network order); the
-//! RNTuple anchor is big-endian while RNTuple envelope/page payloads are
+//! `RNTuple` anchor is big-endian while `RNTuple` envelope/page payloads are
 //! little-endian. Endianness is therefore explicit in every accessor name
 //! rather than carried as buffer state.
 
@@ -43,31 +43,51 @@ macro_rules! num_reader {
 
 impl<'a> RBuffer<'a> {
     /// Create a cursor positioned at the start of `data`.
+    #[must_use]
     pub fn new(data: &'a [u8]) -> Self {
         Self { data, pos: 0 }
     }
 
     /// Current cursor offset.
+    #[must_use]
     pub fn pos(&self) -> usize {
         self.pos
     }
 
     /// Number of bytes left to read.
+    #[must_use]
     pub fn remaining(&self) -> usize {
         self.data.len() - self.pos
     }
 
+    /// How many items to reserve room for when the file declares `count` of
+    /// them, each at least `min_item_bytes` long: `count`, capped at what the
+    /// bytes left could hold. A count read from a file is untrusted, so it
+    /// must never size an allocation on its own; the reads that follow still
+    /// fail if the items are not there.
+    #[must_use]
+    pub fn bounded_capacity(&self, count: usize, min_item_bytes: usize) -> usize {
+        count.min(self.remaining() / min_item_bytes.max(1))
+    }
+
     /// Total length of the underlying buffer.
+    #[must_use]
+    #[allow(
+        clippy::len_without_is_empty,
+        reason = "a cursor's question is `is_at_end`, not whether its buffer is empty"
+    )]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Whether the cursor is at or past the end of the buffer.
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_at_end(&self) -> bool {
         self.pos >= self.data.len()
     }
 
     /// The full underlying buffer (ignoring the cursor).
+    #[must_use]
     pub fn data(&self) -> &'a [u8] {
         self.data
     }
@@ -333,6 +353,14 @@ mod tests {
                 available: 1
             })
         ));
+    }
+
+    #[test]
+    fn a_declared_count_never_reserves_more_than_the_buffer_holds() {
+        let r = RBuffer::new(&[0u8; 40]);
+        assert_eq!(r.bounded_capacity(3, 10), 3);
+        assert_eq!(r.bounded_capacity(usize::MAX, 10), 4);
+        assert_eq!(r.bounded_capacity(usize::MAX, 0), 40);
     }
 
     #[test]

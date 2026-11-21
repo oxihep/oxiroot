@@ -11,10 +11,13 @@
 //! `Func1D`s — fitted functions, parsed into [`functions`](Graph::functions)),
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
-use oxiroot_io_core::raw::{read_named, read_object_base, skip_versioned};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::raw::{
+    PointerHeader, TagReader, read_named, read_object_base, read_pointer_header, skip_versioned,
+};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::{BinContentType, bin_content_type_of, check_len, object_bytes_any};
+use crate::base::{BinContentType, bin_content_type_of, check_len};
 use crate::hist1d::Hist1D;
 use oxiroot_io_core::cast::SaturatingFrom;
 
@@ -22,8 +25,8 @@ use oxiroot_io_core::cast::SaturatingFrom;
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum GraphErrors {
-    /// No error bars — a plain `Graph`.
-    None,
+    /// No error bars: a plain `TGraph`.
+    Plain,
     /// Symmetric per-point x and y errors — a `TGraphErrors`.
     Symmetric {
         /// x error (`fEX`).
@@ -84,10 +87,10 @@ impl GraphFunction {
         params: Vec<f64>,
         xmin: f64,
         xmax: f64,
-    ) -> GraphFunction {
+    ) -> Self {
         let title = formula.into();
         let n = params.len();
-        GraphFunction {
+        Self {
             name: name.into(),
             formula: normalize_formula(&title),
             title,
@@ -103,6 +106,7 @@ impl GraphFunction {
     }
 
     /// Number of parameters (`fNpar`).
+    #[must_use]
     pub fn npar(&self) -> usize {
         self.params.len()
     }
@@ -167,72 +171,55 @@ impl Graph {
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `y` is not as long as `x`.
-    pub fn new(x: Vec<f64>, y: Vec<f64>) -> Result<Graph> {
+    pub fn new(x: Vec<f64>, y: Vec<f64>) -> Result<Self> {
         check_len("TGraph y", x.len(), y.len())?;
-        Ok(Graph {
+        Ok(Self {
             name: String::new(),
             title: String::new(),
             x,
             y,
-            errors: GraphErrors::None,
+            errors: GraphErrors::Plain,
             histogram: None,
             functions: Vec::new(),
         })
     }
 
-    /// Create a `TGraphErrors` with symmetric x/y errors.
+    /// Attach error bars: [`GraphErrors::Symmetric`] makes a `TGraphErrors`,
+    /// [`GraphErrors::Asymmetric`] a `TGraphAsymmErrors`.
+    ///
+    /// ```
+    /// # use oxiroot_hist::{Graph, GraphErrors};
+    /// let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])?.with_errors(GraphErrors::Symmetric {
+    ///     ex: vec![0.1, 0.1],
+    ///     ey: vec![0.5, 0.4],
+    /// })?;
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
     ///
     /// # Errors
-    /// [`Error::LengthMismatch`] if `y`, `ex` or `ey` is not as long as `x`.
-    pub fn with_errors(x: Vec<f64>, y: Vec<f64>, ex: Vec<f64>, ey: Vec<f64>) -> Result<Graph> {
-        let n = x.len();
-        check_len("TGraphErrors y", n, y.len())?;
-        check_len("TGraphErrors ex", n, ex.len())?;
-        check_len("TGraphErrors ey", n, ey.len())?;
-        Ok(Graph {
-            name: String::new(),
-            title: String::new(),
-            x,
-            y,
-            errors: GraphErrors::Symmetric { ex, ey },
-            histogram: None,
-            functions: Vec::new(),
-        })
-    }
-
-    /// Create a `TGraphAsymmErrors` with independent low/high errors per axis.
-    ///
-    /// # Errors
-    /// [`Error::LengthMismatch`] if `y` or an error vector is not as long as `x`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_asymm_errors(
-        x: Vec<f64>,
-        y: Vec<f64>,
-        ex_low: Vec<f64>,
-        ex_high: Vec<f64>,
-        ey_low: Vec<f64>,
-        ey_high: Vec<f64>,
-    ) -> Result<Graph> {
-        let n = x.len();
-        check_len("TGraphAsymmErrors y", n, y.len())?;
-        check_len("TGraphAsymmErrors ex_low", n, ex_low.len())?;
-        check_len("TGraphAsymmErrors ex_high", n, ex_high.len())?;
-        check_len("TGraphAsymmErrors ey_low", n, ey_low.len())?;
-        check_len("TGraphAsymmErrors ey_high", n, ey_high.len())?;
-        Ok(Graph {
-            name: String::new(),
-            title: String::new(),
-            x,
-            y,
-            errors: GraphErrors::Asymmetric {
+    /// [`Error::LengthMismatch`] if an error vector is not as long as `x`.
+    pub fn with_errors(mut self, errors: GraphErrors) -> Result<Self> {
+        let n = self.x.len();
+        match &errors {
+            GraphErrors::Plain => {}
+            GraphErrors::Symmetric { ex, ey } => {
+                check_len("TGraphErrors ex", n, ex.len())?;
+                check_len("TGraphErrors ey", n, ey.len())?;
+            }
+            GraphErrors::Asymmetric {
                 ex_low,
                 ex_high,
                 ey_low,
                 ey_high,
-            },
-            histogram: None,
-            functions: Vec::new(),
-        })
+            } => {
+                check_len("TGraphAsymmErrors ex_low", n, ex_low.len())?;
+                check_len("TGraphAsymmErrors ex_high", n, ex_high.len())?;
+                check_len("TGraphAsymmErrors ey_low", n, ey_low.len())?;
+                check_len("TGraphAsymmErrors ey_high", n, ey_high.len())?;
+            }
+        }
+        self.errors = errors;
+        Ok(self)
     }
 
     /// Attach a display frame (`fHistogram`) — the axis-frame ROOT would build on
@@ -254,19 +241,22 @@ impl Graph {
     }
 
     /// Number of points (`fNpoints`).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.x.len().min(self.y.len())
     }
 
     /// Whether the graph has no points.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// The ROOT class this graph serializes as.
+    #[must_use]
     pub fn class_name(&self) -> &'static str {
         match self.errors {
-            GraphErrors::None => "TGraph",
+            GraphErrors::Plain => "TGraph",
             GraphErrors::Symmetric { .. } => "TGraphErrors",
             GraphErrors::Asymmetric { .. } => "TGraphAsymmErrors",
         }
@@ -275,7 +265,11 @@ impl Graph {
 
 /// Read the `Graph` base (`fName`/`fTitle`/`fX`/`fY`), then seek past the
 /// trailer (`fFunctions`/`fHistogram`/…) to the base object's end.
-fn read_tgraph_base(r: &mut RBuffer) -> Result<Graph> {
+///
+/// `tags` resolves the class tags of the attached functions. It is `None` for
+/// a graph decoded from a slice of a larger buffer (a collection member),
+/// whose class back-references point outside the slice.
+fn read_tgraph_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -> Result<Graph> {
     let base = r.read_version()?; // Graph v5
     let named = read_named(r)?;
     skip_versioned(r)?; // TAttLine
@@ -284,7 +278,10 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<Graph> {
     let npoints = usize::saturating_from(r.be_i32()?.max(0));
     let x = read_basic_array(r, npoints)?;
     let y = read_basic_array(r, npoints)?;
-    let functions = read_functions(r)?; // fFunctions (TList<Func1D>)
+    let functions = match tags {
+        Some(tags) => read_functions(r, tags)?, // fFunctions (TList<Func1D>)
+        None => read_functions_untracked(r)?,
+    };
     let histogram = read_opt_th1(r)?; // fHistogram (TH1F*, or null)
     if let Some(end) = base.end {
         r.seek(end)?; // skip fMinimum/fMaximum/fOption
@@ -294,33 +291,40 @@ fn read_tgraph_base(r: &mut RBuffer) -> Result<Graph> {
         title: named.title,
         x,
         y,
-        errors: GraphErrors::None,
+        errors: GraphErrors::Plain,
         histogram,
         functions,
     })
 }
 
-/// Read the `fFunctions` `TList` object pointer, decoding the `Func1D` elements we
-/// understand (formula functions) and silently dropping any other object kinds.
-/// A null pointer or empty list yields an empty `Vec`.
-fn read_functions(r: &mut RBuffer) -> Result<Vec<GraphFunction>> {
-    let bc = r.be_i32()?.cast_unsigned();
-    if bc == 0 {
-        return Ok(Vec::new()); // null pointer
-    }
-    let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()?.cast_unsigned();
-    if tag == 0xFFFF_FFFF {
-        skip_cstring(r)?; // "TList\0"
-    }
+/// Read the `fFunctions` `TList` object pointer, decoding its `TF1` elements
+/// (formula functions) and skipping any other class. A null pointer or empty
+/// list yields an empty `Vec`.
+///
+/// ROOT names a class in full the first time it appears in a buffer and by a
+/// back-reference afterwards, so the second and later functions of a
+/// ROOT-written graph carry no class name: `tags` resolves them.
+fn read_functions(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<GraphFunction>> {
+    let list = tags.read_header(r)?;
+    let (Some(_), Some(end)) = (&list.class_name, list.end) else {
+        // A null pointer, or a list written elsewhere: nothing inline.
+        if let Some(end) = list.end {
+            r.seek(end)?;
+        }
+        return Ok(Vec::new());
+    };
     let _ver = r.read_version()?; // TList v5
     let _obj = read_object_base(r)?; // TObject base
     let _name = r.string()?; // fName (empty)
     let nfns = usize::saturating_from(r.be_i32()?.max(0));
     let mut functions = Vec::new();
     for _ in 0..nfns {
-        if let Some(f) = read_function_element(r)? {
-            functions.push(f);
+        let element = tags.read_header(r)?;
+        if element.class_name.as_deref() == Some("TF1") {
+            functions.push(GraphFunction::read_tf1_body(r)?);
+        }
+        if let Some(end) = element.end {
+            r.seek(end)?;
         }
         // Each element carries an option TString trailer in the TList.
         let _opt = r.string()?;
@@ -329,76 +333,49 @@ fn read_functions(r: &mut RBuffer) -> Result<Vec<GraphFunction>> {
     Ok(functions)
 }
 
-/// Read one `fFunctions` element: an object pointer that is a `Func1D` (decoded) or
-/// some other class (skipped, returning `None`).
-fn read_function_element(r: &mut RBuffer) -> Result<Option<GraphFunction>> {
-    let bc = r.be_i32()?.cast_unsigned();
-    if bc == 0 {
-        return Ok(None); // null element
-    }
-    let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()?.cast_unsigned();
-    let class = if tag == 0xFFFF_FFFF {
-        read_cstring(r)?
-    } else {
-        String::new() // back-reference; we cannot resolve it, so skip
+/// [`read_functions`] without a class-tag map, for a graph decoded from a slice
+/// of a larger buffer: a function named by a class back-reference cannot be
+/// resolved there and is skipped.
+fn read_functions_untracked(r: &mut RBuffer<'_>) -> Result<Vec<GraphFunction>> {
+    let Some(PointerHeader { end, .. }) = read_pointer_header(r)? else {
+        return Ok(Vec::new()); // null pointer
     };
-    let function = if class == "TF1" {
-        Some(GraphFunction::read_tf1_body(r)?)
-    } else {
-        None
-    };
-    r.seek(end)?;
-    Ok(function)
-}
-
-/// Read a NUL-terminated class name (after a `kNewClassTag`).
-fn read_cstring(r: &mut RBuffer) -> Result<String> {
-    let mut s = String::new();
-    loop {
-        let b = r.u8()?;
-        if b == 0 {
-            break;
-        }
-        s.push(b as char);
-    }
-    Ok(s)
-}
-
-/// Skip a NUL-terminated class name.
-fn skip_cstring(r: &mut RBuffer) -> Result<()> {
-    while r.u8()? != 0 {}
-    Ok(())
-}
-
-/// Read an optional embedded `Hist1D*` (the `fHistogram` display frame). A null
-/// pointer is a 4-byte zero; otherwise `{byte count}{class tag}{Hist1D object}`.
-fn read_opt_th1(r: &mut RBuffer) -> Result<Option<Hist1D>> {
-    let bc = r.be_i32()?.cast_unsigned();
-    if bc == 0 {
-        return Ok(None); // null pointer
-    }
-    let tag = r.be_i32()?.cast_unsigned();
-    let bin_content_type = if tag == 0xFFFF_FFFF {
-        // kNewClassTag: a NUL-terminated class name follows (e.g. "TH1F").
-        let mut class = String::new();
-        loop {
-            let b = r.u8()?;
-            if b == 0 {
-                break;
+    let _ver = r.read_version()?; // TList v5
+    let _obj = read_object_base(r)?; // TObject base
+    let _name = r.string()?; // fName (empty)
+    let nfns = usize::saturating_from(r.be_i32()?.max(0));
+    let mut functions = Vec::new();
+    for _ in 0..nfns {
+        if let Some(element) = read_pointer_header(r)? {
+            if element.class_name.as_deref() == Some("TF1") {
+                functions.push(GraphFunction::read_tf1_body(r)?);
             }
-            class.push(b as char);
+            r.seek(element.end)?;
         }
-        bin_content_type_of(&class)?
-    } else {
-        BinContentType::F32 // a back-reference: fHistogram is always a TH1F
+        // Each element carries an option TString trailer in the TList.
+        let _opt = r.string()?;
+    }
+    r.seek(end)?; // skip any remaining TList payload
+    Ok(functions)
+}
+
+/// Read an optional embedded `TH1*` (the `fHistogram` display frame): `None`
+/// for a null pointer. A header that names no class refers back to one named
+/// earlier; `fHistogram` is declared a `TH1F`, so that is what it is.
+fn read_opt_th1(r: &mut RBuffer<'_>) -> Result<Option<Hist1D>> {
+    let Some(header) = read_pointer_header(r)? else {
+        return Ok(None);
+    };
+    let bin_content_type = match header.class_name.as_deref() {
+        Some(class) => bin_content_type_of(class)?,
+        None => BinContentType::F32,
     };
     Ok(Some(Hist1D::read(r, bin_content_type)?))
 }
 
 /// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)
 /// `n` big-endian doubles.
-fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
+pub(crate) fn read_basic_array(r: &mut RBuffer<'_>, n: usize) -> Result<Vec<f64>> {
     let present = r.u8()?;
     if present == 0 {
         return Ok(Vec::new());
@@ -406,25 +383,34 @@ fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
     (0..n).map(|_| r.be_f64()).collect()
 }
 
-/// Read a `Graph`, `TGraphErrors`, or `TGraphAsymmErrors` named `name`.
-pub(crate) fn read_tgraph(file: &FileReader, name: &str) -> Result<Graph> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tgraph(name, &class, &object)
+impl ReadRoot for Graph {
+    const CLASS: &'static str = "TGraph";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        matches!(
+            object.class,
+            "TGraph" | "TGraphErrors" | "TGraphAsymmErrors"
+        )
+        .then(|| decode_tgraph(object.name, object.class, object.bytes, object.key_len))
+    }
 }
 
-/// Read a graph from subdirectory `subdir`.
-pub(crate) fn read_tgraph_in(file: &FileReader, subdir: &str, name: &str) -> Result<Graph> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tgraph(name, &class, &object)
-}
-
-pub(crate) fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<Graph> {
+/// Decode a graph from its streamed `object`. `keylen` is the header length
+/// of the key the object was read from, or `None` when `object` is a slice of
+/// a larger buffer (see [`read_tgraph_base`]).
+pub(crate) fn decode_tgraph(
+    name: &str,
+    class: &str,
+    object: &[u8],
+    keylen: Option<usize>,
+) -> Result<Graph> {
     let mut r = RBuffer::new(object);
+    let mut tags = keylen.map(TagReader::new);
     match class {
-        "TGraph" => read_tgraph_base(&mut r),
+        "TGraph" => read_tgraph_base(&mut r, tags.as_mut()),
         "TGraphErrors" => {
             let _wrapper = r.read_version()?; // TGraphErrors v3
-            let mut g = read_tgraph_base(&mut r)?;
+            let mut g = read_tgraph_base(&mut r, tags.as_mut())?;
             let n = g.len();
             let ex = read_basic_array(&mut r, n)?;
             let ey = read_basic_array(&mut r, n)?;
@@ -433,7 +419,7 @@ pub(crate) fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<Gr
         }
         "TGraphAsymmErrors" => {
             let _wrapper = r.read_version()?; // TGraphAsymmErrors v3
-            let mut g = read_tgraph_base(&mut r)?;
+            let mut g = read_tgraph_base(&mut r, tags.as_mut())?;
             let n = g.len();
             let ex_low = read_basic_array(&mut r, n)?;
             let ex_high = read_basic_array(&mut r, n)?;
@@ -452,5 +438,82 @@ pub(crate) fn decode_tgraph(name: &str, class: &str, object: &[u8]) -> Result<Gr
             found: other.to_string(),
             expected: "TGraph, TGraphErrors or TGraphAsymmErrors".to_string(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod function_list_tests {
+    use oxiroot_io_core::WBuffer;
+    use oxiroot_io_core::raw::{
+        K_BYTE_COUNT_MASK, K_CLASS_MASK, K_NEW_CLASS_TAG, write_object_base,
+    };
+
+    use super::*;
+
+    /// An `fFunctions` list as ROOT writes it: the first `TF1` named in full,
+    /// the second by a back-reference to that class tag.
+    fn root_style_list(keylen: usize, functions: &[GraphFunction]) -> Vec<u8> {
+        let mut w = WBuffer::new();
+        let list_count = w.reserve::<4>();
+        let list_start = w.len();
+        w.be_u32(K_NEW_CLASS_TAG);
+        w.bytes(b"TList\0");
+        let list = w.begin_object(5);
+        write_object_base(&mut w, 0);
+        w.string("");
+        w.be_i32(i32::try_from(functions.len()).unwrap());
+
+        let mut first_tag = None;
+        for f in functions {
+            let count = w.reserve::<4>();
+            let tag_at = w.len();
+            match first_tag {
+                None => {
+                    first_tag = Some(tag_at);
+                    w.be_u32(K_NEW_CLASS_TAG);
+                    w.bytes(b"TF1\0");
+                }
+                // ROOT's reference to a class: the offset of its first tag,
+                // counted from the key (`+ keylen`), plus kMapOffset (2).
+                Some(first) => w.be_u32(K_CLASS_MASK | u32::try_from(first + keylen + 2).unwrap()),
+            }
+            f.write_tf1_body(&mut w, 1, 100);
+            let len = u32::try_from(w.len() - tag_at).unwrap();
+            w.patch_be_u32(count, K_BYTE_COUNT_MASK | len);
+            w.string(""); // the list's per-element option
+        }
+        w.end_object(list);
+        let len = u32::try_from(w.len() - list_start).unwrap();
+        w.patch_be_u32(list_count, K_BYTE_COUNT_MASK | len);
+        w.into_vec()
+    }
+
+    #[test]
+    fn functions_named_by_a_class_back_reference_are_read() {
+        let keylen = 58;
+        let functions = [
+            GraphFunction::new("first", "[0]*x", vec![2.0], 0.0, 1.0),
+            GraphFunction::new("second", "[0]+x", vec![3.0], 0.0, 1.0),
+            GraphFunction::new("third", "[0]-x", vec![4.0], 0.0, 1.0),
+        ];
+        let bytes = root_style_list(keylen, &functions);
+
+        let mut tags = TagReader::new(keylen);
+        let read = read_functions(&mut RBuffer::new(&bytes), &mut tags).unwrap();
+        let names: Vec<&str> = read.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["first", "second", "third"]);
+        assert_eq!(read[2].params, [4.0]);
+
+        // Without the class-tag map only the function named in full is found.
+        let read = read_functions_untracked(&mut RBuffer::new(&bytes)).unwrap();
+        assert_eq!(read.len(), 1);
+    }
+
+    #[test]
+    fn a_null_function_list_is_empty() {
+        let bytes = 0u32.to_be_bytes();
+        let mut tags = TagReader::new(0);
+        let read = read_functions(&mut RBuffer::new(&bytes), &mut tags).unwrap();
+        assert!(read.is_empty());
     }
 }

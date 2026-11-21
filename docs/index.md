@@ -12,12 +12,12 @@ write.
 use oxiroot::prelude::*;
 
 // Fill a histogram and save it — readable by ROOT and uproot.
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
 h.fill_weight(42.0, 1.5);
-h.write_root("hist.root", Compression::Zstd(5))?;
+FileWriter::create("hist.root").add(&h).write()?;
 
 // Read it back.
-let h = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;
+let h = FileReader::open("hist.root")?.get::<Hist1D>("pt")?;
 ```
 
 ## Why oxiroot

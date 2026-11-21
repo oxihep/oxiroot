@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Efficiency, ReadRoot, WriteRoot};
+use oxiroot_hist::Efficiency;
 use oxiroot_io_core::{Compression, FileReader};
 
 fn fixture(name: &str) -> PathBuf {
@@ -31,7 +31,7 @@ fn sample() -> Efficiency {
 fn reads_root_written_tefficiency() {
     let f = FileReader::open(fixture("tefficiency.root")).expect("open");
     assert_eq!(f.key("eff").unwrap().class_name, "TEfficiency");
-    let e = Efficiency::read_root(&f, "eff").expect("read");
+    let e = f.get::<Efficiency>("eff").expect("read");
     assert_eq!(e.efficiency(1), 0.5);
     assert_eq!(e.efficiency(2), 1.0);
     assert_eq!(e.efficiency(3), 0.0);
@@ -44,7 +44,11 @@ fn tefficiency_round_trips() {
     let e = sample();
     assert_eq!(e.efficiency(1), 0.5);
     let out = PathBuf::from("/tmp/oxiroot_tefficiency.root");
-    e.write_root(&out, Compression::None).expect("write");
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&e)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    assert_eq!(Efficiency::read_root(&f, "eff").unwrap(), e, "round-trips");
+    assert_eq!(f.get::<Efficiency>("eff").unwrap(), e, "round-trips");
 }

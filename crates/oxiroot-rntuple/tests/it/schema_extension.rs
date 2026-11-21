@@ -1,14 +1,15 @@
-//! Reading a schema-extended RNTuple: a field added after the header, via the
+//! Reading a schema-extended `RNTuple`: a field added after the header, via the
 //! footer's schema-extension record. oxiroot merges the extension fields/columns
 //! into the schema and back-fills the deferred column's leading entries (the
 //! ones written before the field existed), which ROOT defaults to 0. The fixture
-//! is ROOT-C++-written (scripts/gen_rntuple_ext.cpp); cross-checked with uproot.
+//! is ROOT-C++-written (`scripts/gen_rntuple_ext.cpp`); cross-checked with uproot.
 
 use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{FieldValues, NtupleReader};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::FieldValues;
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -40,7 +41,7 @@ fn reads_late_added_field() {
 #[test]
 fn writes_a_schema_extended_rntuple() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::Field;
+    use oxiroot_rntuple::raw::Field;
 
     let path = std::env::temp_dir().join("oxiroot_ext_write.root");
     let path = path.to_str().unwrap();
@@ -50,7 +51,7 @@ fn writes_a_schema_extended_rntuple() {
         .write_root_extended(
             path,
             &[(2, Field::f32("y", vec![3.5, 4.5]))],
-            Compression::None,
+            Compression::Stored,
         )
         .unwrap();
 
@@ -70,7 +71,7 @@ fn writes_a_schema_extended_rntuple() {
 #[test]
 fn late_field_value_count_is_validated() {
     use oxiroot_io_core::Compression;
-    use oxiroot_rntuple::Field;
+    use oxiroot_rntuple::raw::Field;
     // `y` claims to start at entry 2 of a 4-entry RNTuple but supplies 3 values.
     let err = NtupleObject::new("ntpl", vec![Field::i32("x", vec![1, 2, 3, 4])])
         .write_root_extended(
@@ -79,7 +80,7 @@ fn late_field_value_count_is_validated() {
                 .to_str()
                 .unwrap(),
             &[(2, Field::f32("y", vec![1.0, 2.0, 3.0]))],
-            Compression::None,
+            Compression::Stored,
         );
     assert!(err.is_err());
 }

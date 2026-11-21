@@ -7,12 +7,13 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::skip_versioned;
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, bin_content_type_of, cell_count, check_cells, histogram_object,
-    histogram_object_in, read_tarray, read_th1_base, unsupported_version,
+    BinContentType, bin_content_type_of, cell_count, check_cells, is_hist_class, read_tarray,
+    read_th1_base, unsupported_version,
 };
 
 /// A 3-D classic histogram (`TH3D` or `TH3F`); contents are widened to `f64`.
@@ -68,7 +69,7 @@ pub struct Hist3D {
 }
 
 impl Hist3D {
-    pub(crate) fn read(r: &mut RBuffer, bin_content_type: BinContentType) -> Result<Hist3D> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
         let th3x = r.read_version()?; // TH3x wrapper
         // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
         // Hist3D members, with no Hist3D record of their own.
@@ -97,7 +98,7 @@ impl Hist3D {
         check_cells("TH3 contents", contents.len(), cells, false)?;
         check_cells("TH3 fSumw2", c.sumw2.len(), cells, true)?;
 
-        Ok(Hist3D {
+        Ok(Self {
             bin_content_type,
             name: c.name,
             title: c.title,
@@ -123,16 +124,19 @@ impl Hist3D {
     }
 
     /// Number of x bins (excluding flow).
+    #[must_use]
     pub fn nx(&self) -> usize {
         usize::saturating_from(self.xaxis.nbins.max(0))
     }
 
     /// Number of y bins (excluding flow).
+    #[must_use]
     pub fn ny(&self) -> usize {
         usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
     /// Number of z bins (excluding flow).
+    #[must_use]
     pub fn nz(&self) -> usize {
         usize::saturating_from(self.zaxis.nbins.max(0))
     }
@@ -140,6 +144,7 @@ impl Hist3D {
     /// Bin contents excluding flow as `values[ix][iy][iz]`, matching uproot's
     /// `values(flow=False)`. Cell `(ix, iy, iz)` is stored at
     /// `ix + (nx+2)*(iy + (ny+2)*iz)` (indices include the underflow bin at 0).
+    #[must_use]
     pub fn values(&self) -> Vec<Vec<Vec<f64>>> {
         let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
         let (sx, sy) = (nx + 2, ny + 2);
@@ -170,9 +175,9 @@ impl Hist3D {
         nz: i32,
         zlo: f64,
         zhi: f64,
-    ) -> Hist3D {
+    ) -> Self {
         let ncells = (nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2);
-        Hist3D {
+        Self {
             bin_content_type: BinContentType::F64,
             name: String::new(),
             title: String::new(),
@@ -241,6 +246,7 @@ impl Hist3D {
     }
 
     /// Mean of the x projection (`fTsumwx / fTsumw`), 0 when empty.
+    #[must_use]
     pub fn mean_x(&self) -> f64 {
         if self.tsumw == 0.0 {
             0.0
@@ -250,6 +256,7 @@ impl Hist3D {
     }
 
     /// Mean of the y projection (`fTsumwy / fTsumw`), 0 when empty.
+    #[must_use]
     pub fn mean_y(&self) -> f64 {
         if self.tsumw == 0.0 {
             0.0
@@ -259,6 +266,7 @@ impl Hist3D {
     }
 
     /// Mean of the z projection (`fTsumwz / fTsumw`), 0 when empty.
+    #[must_use]
     pub fn mean_z(&self) -> f64 {
         if self.tsumw == 0.0 {
             0.0
@@ -268,17 +276,13 @@ impl Hist3D {
     }
 }
 
-/// Read any 3-D histogram (`TH3D/F/I/S/C/L`), detecting the bin content type from the
-/// stored class.
-pub(crate) fn read_th3(file: &FileReader, name: &str) -> Result<Hist3D> {
-    decode_th3(histogram_object(file, name, "TH3")?)
-}
+impl ReadRoot for Hist3D {
+    const CLASS: &'static str = "TH3";
 
-/// Read any 3-D histogram from subdirectory `subdir`.
-pub(crate) fn read_th3_in(file: &FileReader, subdir: &str, name: &str) -> Result<Hist3D> {
-    decode_th3(histogram_object_in(file, subdir, name, "TH3")?)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        is_hist_class(object.class, "TH3").then(|| decode_th3(object.class, object.bytes))
+    }
 }
-
-pub(crate) fn decode_th3((class, object): (String, Vec<u8>)) -> Result<Hist3D> {
-    Hist3D::read(&mut RBuffer::new(&object), bin_content_type_of(&class)?)
+pub(crate) fn decode_th3(class: &str, object: &[u8]) -> Result<Hist3D> {
+    Hist3D::read(&mut RBuffer::new(object), bin_content_type_of(class)?)
 }

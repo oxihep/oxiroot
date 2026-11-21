@@ -1,4 +1,4 @@
-//! Time `Dataset` reads of a `TTree` or RNTuple, for the comparison with
+//! Time `Dataset` reads of a `TTree` or `RNTuple`, for the comparison with
 //! uproot in `scripts/bench_uproot.py`.
 //!
 //! ```sh
@@ -58,7 +58,7 @@ fn write(dir: &Path, n: usize) -> Result<(), Box<dyn std::error::Error>> {
         .list("jets", offsets, values)?;
     for (file, format) in [("tree.root", Format::Tree), ("ntuple.root", Format::Ntuple)] {
         let mut out = DatasetWriter::create(dir.join(file), "events", format)?;
-        out.write(&batch)?;
+        out.write(batch.clone())?;
         out.finish()?;
     }
     Ok(())

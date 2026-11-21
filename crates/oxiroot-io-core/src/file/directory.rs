@@ -49,7 +49,7 @@ impl Directory {
     /// Read a directory record at absolute `offset` from `source`, loading its
     /// key list. Only the directory record and its key-list record are fetched —
     /// two small ranges — so this stays lazy over a remote source.
-    pub fn read(source: &dyn ByteSource, offset: u64) -> Result<Directory> {
+    pub fn read(source: &dyn ByteSource, offset: u64) -> Result<Self> {
         // The directory record's fixed header is at most `DIR_RECORD_MAX` bytes;
         // fetch that window (clamped to the file) and parse it standalone.
         let avail = source.len().saturating_sub(offset);
@@ -73,7 +73,7 @@ impl Directory {
 
         let keys = read_keys(source, seek_keys, nbytes_keys)?;
 
-        Ok(Directory {
+        Ok(Self {
             version,
             datime_c,
             datime_m,
@@ -87,7 +87,7 @@ impl Directory {
     }
 
     /// Read the root directory of a file (located at `begin + nbytes_name`).
-    pub fn read_root(source: &dyn ByteSource, header: &FileHeader) -> Result<Directory> {
+    pub fn read_root(source: &dyn ByteSource, header: &FileHeader) -> Result<Self> {
         Self::read(source, header.begin + u64::from(header.nbytes_name))
     }
 }

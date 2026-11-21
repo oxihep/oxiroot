@@ -4,8 +4,8 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
 
-use oxiroot_io_core::raw::{K_BYTE_COUNT_MASK, Key, write_named, write_object_base};
-use oxiroot_io_core::{CountToken, Patch, WBuffer};
+use oxiroot_io_core::raw::{Key, begin_object_any, end_object_any, write_named, write_object_base};
+use oxiroot_io_core::{CountToken, WBuffer};
 
 use super::baskets::BasketRec;
 use super::branch::{
@@ -41,26 +41,6 @@ fn write_iofeatures(w: &mut WBuffer) {
     let t = w.begin_object(1);
     w.u8(0); // fIOBits
     w.end_object(t);
-}
-
-/// Begin a `ReadObjectAny` object: a byte-count placeholder then a fresh class
-/// tag (`kNewClassTag` + name). Every object is written with a fresh tag (no
-/// back-references), which ROOT/uproot read correctly. Returns the byte-count
-/// patch.
-fn begin_object_any(w: &mut WBuffer, class: &str) -> Patch {
-    let bc = w.reserve(4); // byte-count placeholder
-    w.be_u32(0xFFFF_FFFF); // kNewClassTag
-    w.bytes(class.as_bytes());
-    w.u8(0); // NUL terminator
-    bc
-}
-
-/// Finish a `ReadObjectAny` object, back-patching its byte count (which covers
-/// everything after the 4-byte count word).
-fn end_object_any(w: &mut WBuffer, bc: Patch) {
-    let start = w.patch_offset(bc) + 4;
-    let nbytes = u32::saturating_from(w.len() - start) | K_BYTE_COUNT_MASK;
-    w.patch_be_u32(bc, nbytes);
 }
 
 /// Build the `TObjArray` of branches, then the tree-level `TObjArray` of leaves.

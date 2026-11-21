@@ -3,15 +3,15 @@
 //! and round-trip through a real file.
 
 use oxiroot_hist::ToRoot;
-use oxiroot_hist::{
-    BinContentType, Compression, FileWriter, Hist, Hist1D, Hist2D, Profile1D, ReadRoot, WriteRoot,
-};
+use oxiroot_hist::{BinContentType, Hist, Hist1D, Hist2D, Profile1D};
 use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{Compression, FileWriter, WriteRoot};
 
 fn sample() -> Hist1D {
     let mut h = Hist::reg(10, 0.0, 10.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h")
         .titled("title");
     h.track_sumw2();
@@ -39,11 +39,14 @@ fn trait_selects_correct_class_per_bin_content_type() {
 fn write_root_then_read_root_round_trips() {
     let h = sample();
     let path = std::env::temp_dir().join("oxiroot_traitapi_h.root");
-    h.write_root(&path, Compression::Zstd(3))
+    FileWriter::create(&path)
+        .add(&h)
+        .compression(Compression::Zstd(3))
+        .write()
         .expect("write_root");
 
     let f = FileReader::open(&path).expect("open");
-    let back = Hist1D::read_root(&f, "h").expect("read_root");
+    let back = f.get::<Hist1D>("h").expect("read_root");
     assert_eq!(back.values(), h.values());
     assert_eq!(back.name, "h");
     assert_eq!(back.class_name(), "TH1D");
@@ -53,9 +56,13 @@ fn write_root_then_read_root_round_trips() {
 fn float_precision_round_trips_as_th1f() {
     let h = sample().with_bin_content_type(BinContentType::F32);
     let path = std::env::temp_dir().join("oxiroot_traitapi_hf.root");
-    h.write_root(&path, Compression::None).expect("write");
+    FileWriter::create(&path)
+        .add(&h)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
     let f = FileReader::open(&path).expect("open");
-    let back = Hist1D::read_root(&f, "h").expect("read");
+    let back = f.get::<Hist1D>("h").expect("read");
     assert_eq!(back.class_name(), "TH1F"); // bin content type preserved on round-trip
 }
 
@@ -63,23 +70,29 @@ fn float_precision_round_trips_as_th1f() {
 fn write_root_file_handles_heterogeneous_objects() {
     // The new multi-object writer takes any mix of writable types via &dyn —
     // not just Hist1D/Hist2D/Hist3D as the old Hist enum did.
-    let h1 = Hist::reg(5, 0.0, 5.0).double().to_root().named("h1");
+    let h1 = Hist::reg(5, 0.0, 5.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h1");
     let h2 = Hist::reg(4, 0.0, 4.0)
         .reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("h2");
-    let p = Hist::reg(5, 0.0, 5.0).mean().to_root().named("p");
+    let p = Hist::reg(5, 0.0, 5.0).mean().to_root().unwrap().named("p");
     let path = std::env::temp_dir().join("oxiroot_traitapi_multi.root");
     FileWriter::create(&path)
         .add(&h1)
         .add(&h2)
         .add(&p)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .expect("write multi-object file");
 
     let f = FileReader::open(&path).expect("open");
-    assert!(Hist1D::read_root(&f, "h1").is_ok());
-    assert!(Hist2D::read_root(&f, "h2").is_ok());
-    assert!(Profile1D::read_root(&f, "p").is_ok());
+    assert!(f.get::<Hist1D>("h1").is_ok());
+    assert!(f.get::<Hist2D>("h2").is_ok());
+    assert!(f.get::<Profile1D>("p").is_ok());
 }

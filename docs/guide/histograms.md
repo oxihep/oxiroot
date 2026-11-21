@@ -17,32 +17,30 @@ on-disk format and is intentionally out of scope.)
     uproot and `hist` do:
 
     ```rust
-    use oxiroot::hist::oxihist::{Histogram, Weight};
     use oxiroot::prelude::*;
 
     // Build and fill with oxihist, then turn it into a ROOT TH1D…
     let mut h = Hist::reg(50, 0.0, 100.0).name("pt").weight();
     h.fill_weight(42.0, 1.5);
-    let th1: Hist1D = h.to_root();
-    h.write_root("pt.root", Compression::Zstd(5))?; // …or write it directly
+    let th1: Hist1D = h.to_root()?;
+    FileWriter::create("pt.root").add(&th1).write()?; // …and write it
 
     // …and read a ROOT histogram back as an oxihist one.
-    let back = Histogram::<Weight, 1>::read_root(&FileReader::open("pt.root")?, "pt")?;
+    let back = FileReader::open("pt.root")?.get::<Hist1D>("pt")?.to_hist()?;
     let again = th1.to_hist()?;
     # Ok::<(), oxiroot::Error>(())
     ```
 
     `Hist` is oxihist's builder, so every example below builds an oxihist
-    histogram and calls `.to_root()` to get the ROOT one. The [oxihist
+    histogram and calls `.to_root()?` to get the ROOT one. The [oxihist
     conversion table](../api/oxiroot_hist/index.html) lists how each axis and
     storage maps onto ROOT's classes.
 
     Some oxihist features have no ROOT counterpart and do not survive a round
     trip: an `Integer` axis reads back as a `Regular` one, an `IntCategory` or
     `Boolean` axis as a `StrCategory` one, and an axis's growth flag and name
-    are dropped (its label is kept). `to_root()` panics on the rare histogram
-    ROOT cannot hold at all (an axis of more than `i32::MAX` bins);
-    `try_to_root()` returns that as an error instead.
+    are dropped (its label is kept). `to_root()` returns an error for the rare histogram
+    ROOT cannot hold at all (an axis of more than `i32::MAX` bins).
 
 ## Construction without names
 
@@ -55,10 +53,10 @@ when you *persist* the object — it becomes the file key.
 use oxiroot::prelude::*;
 
 // Anonymous histograms — no gROOT, no gDirectory.
-let mut h = Hist::reg(100, 0.0, 100.0).double().to_root();
+let mut h = Hist::reg(100, 0.0, 100.0).double().to_root()?;
 
 // Name and title are fluent, chainable, and set whenever you like.
-let mut pt = Hist::reg(100, 0.0, 100.0).double().to_root()
+let mut pt = Hist::reg(100, 0.0, 100.0).double().to_root()?
     .named("pt")
     .titled("p_{T} spectrum");
 ```
@@ -68,24 +66,24 @@ return `Self`, so they chain off the constructor.
 
 ### Uniform vs variable (irregular) bins
 
-`Hist::reg(nbins, xmin, xmax).double().to_root()` builds uniform bins over `[xmin, xmax)`.
-For **irregular** bins of arbitrary width, `Hist::var(edges).double().to_root()` takes the
+`Hist::reg(nbins, xmin, xmax).double().to_root()?` builds uniform bins over `[xmin, xmax)`.
+For **irregular** bins of arbitrary width, `Hist::var(edges).double().to_root()?` takes the
 `nbins + 1` bin boundaries directly (they must be strictly ascending) — this is a
 real ROOT variable-binned histogram:
 
 ```rust
 use oxiroot::prelude::*;
 
-let uniform = Hist::reg(100, 0.0, 100.0).double().to_root();
+let uniform = Hist::reg(100, 0.0, 100.0).double().to_root()?;
 
 // Arbitrary edges → 5 bins of widths 1, 1, 3, 5, 90.
-let variable = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double().to_root();
+let variable = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0]).double().to_root()?;
 ```
 
 Chain another `reg`/`var` per axis for higher dimensions:
-`Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double().to_root()` is a `Hist2D`, and a third
+`Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double().to_root()?` is a `Hist2D`, and a third
 `.reg(nz, zlo, zhi)` makes it a `Hist3D`. `reg` and `var` mix freely on any axis, so
-`Hist::var(xedges).var(yedges).double().to_root()` gives variable bins on both axes of a
+`Hist::var(xedges).var(yedges).double().to_root()?` gives variable bins on both axes of a
 `Hist2D`, and a variable axis works on `Hist3D` too.
 
 ## Filling
@@ -97,7 +95,7 @@ the statistical moment sums accumulate only for in-range fills.
 ```rust
 use oxiroot::prelude::*;
 
-let mut pt = Hist::var(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).double().to_root().named("pt");
+let mut pt = Hist::var(&[0.0, 10.0, 20.0, 40.0, 80.0, 160.0]).double().to_root()?.named("pt");
 
 // The first weight other than 1 turns on per-bin error tracking (see below).
 for &(x, w) in &[(5.0, 1.2), (15.0, 0.8), (35.0, 1.5)] {
@@ -122,7 +120,7 @@ weights that you want to write with an `fSumw2` array. It returns `&mut Self`, s
 it chains:
 
 ```rust
-let mut h = Hist::reg(100, 0.0, 1.0).double().to_root();
+let mut h = Hist::reg(100, 0.0, 1.0).double().to_root()?;
 h.track_sumw2().fill(0.5); // chain enable + fill
 ```
 
@@ -133,7 +131,7 @@ underflow, `1..=nbins` are in range.
 !!! note
     Bin indexing is 1-based with flow bins, matching ROOT. Cell `0` is underflow,
     `nbins + 1` is overflow. `values()` returns the in-range contents only, while
-    indexing (`h[cell]`) and `contents` cover every cell including flow.
+    `contents()` covers every cell including flow.
 
 ## Bin content type and class names
 
@@ -141,15 +139,14 @@ A `Hist1D`/`Hist2D`/`Hist3D` keeps its bin contents as `f64` in memory regardles
 their on-disk type. The class suffix (`D`/`F`/`I`/`S`/`C`/`L`) is a typed
 [`BinContentType`](../api/oxiroot/index.html) value. `to_root()` picks it from
 the oxihist storage (`double()` and `weight()` → `TH1D`, `int64()` → `TH1L`),
-and `to_root_as(BinContentType::F32)` picks any other (`F32` → `TH1F`, `I32` →
-`TH1I`, `I16` → `TH1S`, `I8` → `TH1C`). To change the type of a histogram you
-already built or read back, use `with_bin_content_type`; either way the
-contents are narrowed only at write time.
+and `with_bin_content_type(BinContentType::F32)` picks any other (`F32` → `TH1F`,
+`I32` → `TH1I`, `I16` → `TH1S`, `I8` → `TH1C`), on a histogram you just
+converted or one you read back; the contents are narrowed only at write time.
 
 ```rust
 use oxiroot::prelude::*;
 
-let h = Hist::reg(100, 0.0, 1.0).double().to_root_as(BinContentType::F32).named("h");
+let h = Hist::reg(100, 0.0, 1.0).double().to_root()?.with_bin_content_type(BinContentType::F32).named("h");
 assert_eq!(h.class_name(), "TH1F"); // the finalizer picked the class
 
 // Retype an existing histogram (e.g. store a filled TH1D compactly):
@@ -172,12 +169,12 @@ Every type below reads and writes through the same `WriteRoot`/`ReadRoot` traits
 
 | Type | Class(es) | Construct with |
 | --- | --- | --- |
-| `Hist1D` | `TH1D/F/I/S/C/L` | `Hist::reg(nbins, xmin, xmax).double().to_root()`, `Hist::var(edges).double().to_root()` |
-| `Hist2D` | `TH2D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double().to_root()`, `Hist::var(xe).var(ye).double().to_root()` |
-| `Hist3D` | `TH3D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double().to_root()` |
-| `Profile1D` | `Profile1D` | `Hist::reg(nbins, xlo, xhi).mean().to_root()` |
-| `Profile2D` | `Profile2D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()` |
-| `Profile3D` | `Profile3D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).mean().to_root()` |
+| `Hist1D` | `TH1D/F/I/S/C/L` | `Hist::reg(nbins, xmin, xmax).double().to_root()?`, `Hist::var(edges).double().to_root()?` |
+| `Hist2D` | `TH2D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).double().to_root()?`, `Hist::var(xe).var(ye).double().to_root()?` |
+| `Hist3D` | `TH3D/F/I/S/C/L` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).double().to_root()?` |
+| `Profile1D` | `Profile1D` | `Hist::reg(nbins, xlo, xhi).mean().to_root()?` |
+| `Profile2D` | `Profile2D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()?` |
+| `Profile3D` | `Profile3D` | `Hist::reg(nx, xlo, xhi).reg(ny, ylo, yhi).reg(nz, zlo, zhi).mean().to_root()?` |
 | `Efficiency` | `Efficiency` | `Efficiency::new(nbins, xlo, xhi)`, then `fill(passed, x)` |
 | `SparseHist` | `THnSparseT<TArrayD>` | `SparseHist::new(&[(nbins, lo, hi), …])`, then `fill(&coords)` |
 | `PolyHist` | `PolyHist` | `PolyHist::new(xlow, xup, ylow, yup)`, then `add_bin`/`add_bin_rect` |
@@ -191,7 +188,7 @@ mapping ROOT's `fErrorMode`). `Profile2D::fill(x, y, z)` profiles `z` against
 ```rust
 use oxiroot::prelude::*;
 
-let mut prof = Hist::reg(5, 0.0, 5.0).mean().to_root().named("pt_prof").titled("<pt> per region");
+let mut prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("pt_prof").titled("<pt> per region");
 prof.fill(0.5, 91.2);
 prof.fill(1.5, 125.1);
 let profiled = prof.values(); // sum / entries per in-range bin
@@ -209,7 +206,7 @@ stay inherent and fallible; the infallible `scale` is also exposed as `*`/`*=`.
 
 | Operation | Signature | Notes |
 | --- | --- | --- |
-| scale | `h.scale(c)` | also `h *= c` and `h * c`; the mean is preserved |
+| scale | `h.scale(c)` | the mean is preserved |
 | add / merge | `h.add(&other, c)?` | adds `c·other`; `c = 1` is the bin-by-bin `hadd` merge |
 | multiply | `h.multiply(&other)?` | `Hist1D` only |
 | divide | `h.divide(&other)?` | `Hist1D` only; `0` where the denominator is `0` |
@@ -228,15 +225,15 @@ use oxiroot::prelude::*;
 let mut signal = pt.clone();
 let mut background = pt.clone();
 
-background *= 0.1;                 // MulAssign — scale background down
+background.scale(0.1);             // scale background down
 signal.add(&background, 1.0)?;     // stack background onto signal (a merge)
-signal *= 1.0 / signal.integral().max(1.0); // normalize to unit area
+signal.scale(1.0 / signal.integral().max(1.0)); // normalize to unit area
 ```
 
-### Indexing, iteration, and Display
+### Contents and Display
 
-`h[cell]` reads a bin content by flat cell index (`0` is the first under/overflow
-cell, x varies fastest); `for &c in &h` iterates every cell. The shared
+`h.contents()` is every cell by flat cell index (`0` is the first under/overflow
+cell, x varies fastest), as a slice to index or iterate. The shared
 `RootHistogram` trait abstracts over `Hist1D`/`Hist2D`/`Hist3D` with `contents()`,
 `entries()`, `sum()` (every cell, flow included), and `is_empty()`. Every
 histogram implements `Display` for a one-line summary.
@@ -244,7 +241,7 @@ histogram implements `Display` for a one-line summary.
 ```rust
 use oxiroot::prelude::*;
 
-let bin2 = h[2];        // Index: content of cell 2
+let bin2 = h.contents()[2]; // content of cell 2
 let total = h.sum();    // RootHistogram trait: every cell, flow included
 println!("{h}");        // e.g. TH1D "pt": 100 bins [0, 100), entries=4096
 ```
@@ -260,8 +257,6 @@ new on-disk state.
 | `std_dev()` | standard deviation, ROOT `GetStdDev`/`GetRMS` (`Hist2D`/`Hist3D`: `std_dev_x`/`_y`/`_z`) |
 | `maximum()` / `minimum()` | largest / smallest in-range bin content |
 | `maximum_bin()` / `minimum_bin()` | bin index of the extremum |
-| `find_bin(x)` | bin holding `x` (0 = underflow, `nbins+1` = overflow) |
-| `bin_center(bin)` / `bin_width(bin)` / `bin_low_edge(bin)` | 1-based bin geometry |
 | `effective_entries()` | `(Σw)² / Σw²` |
 | `reset()` | clear contents, errors, entries, and moments; keep the binning |
 | `interpolate(x)` | linear interpolation between adjacent bin centers |
@@ -284,8 +279,9 @@ let mid = mass.interpolate(50.0);                 // content at x = 50
     boundary returns that bin's center.
 
 The underlying axis is exposed as `xaxis`/`yaxis`/`zaxis` ([`Axis`](../api/oxiroot/index.html)),
-with `edges()`, the O(1) `edge(i)`, `find_bin(x)`, and the same
-`bin_center`/`bin_width`/`bin_low_edge` helpers.
+with `edges()`, the O(1) `edge(i)`, `find_bin(x)` (0 = underflow, `nbins+1` =
+overflow), and the 1-based `bin_center`/`bin_width`/`bin_low_edge`. Bin geometry
+lives on the axis: `h.xaxis().bin_center(3)`.
 
 ## Derived histograms
 
@@ -327,7 +323,7 @@ is provided (no `rand` dependency, reproducible draws).
 ```rust
 use oxiroot::prelude::*;
 
-let mut source = Hist::reg(100, -5.0, 5.0).double().to_root();
+let mut source = Hist::reg(100, -5.0, 5.0).double().to_root()?;
 for x in &data { source.fill(*x); }
 
 let mut rng = Random::seed(12345);
@@ -335,12 +331,12 @@ let x = source.get_random(&mut rng);        // one draw
 
 // Fill a new histogram with 100k draws from `source`'s shape (efficient — the
 // cumulative is built once):
-let mut resampled = Hist::reg(100, -5.0, 5.0).double().to_root();
+let mut resampled = Hist::reg(100, -5.0, 5.0).double().to_root()?;
 resampled.fill_random(&source, 100_000, &mut rng);
 
 // …or draw from a function over the histogram's range:
 resampled.fill_random_fn(|x| (-0.5 * x * x).exp(), 100_000, &mut rng);
-let g = Func1D::new("g", "gaus", -5.0, 5.0)?.with_params(vec![1.0, 0.0, 1.0]);
+let g = Func1D::new("g", "gaus", -5.0..=5.0)?.with_params(&[1.0, 0.0, 1.0])?;
 let y = g.get_random(&mut rng);             // Func1D::GetRandom
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -350,7 +346,7 @@ let y = g.get_random(&mut rng);             // Func1D::GetRandom
 
 ```rust
 use oxiroot::prelude::*;
-let mut h = Hist::reg(100, 0.0, 100.0).double().to_root();
+let mut h = Hist::reg(100, 0.0, 100.0).double().to_root()?;
 # for x in [1.0, 2.0, 3.0] { h.fill(x); }
 h.smooth(2);
 ```
@@ -388,7 +384,7 @@ ROOT files in both directions.
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().named("by_region");
+let mut h = Hist::reg(3, 0.0, 3.0).double().to_root()?.named("by_region");
 h.xaxis_mut().set_label(1, "barrel");
 h.xaxis_mut().set_label(2, "endcap");
 h.xaxis_mut().set_label(3, "forward");
@@ -411,7 +407,7 @@ after it names the epoch the values count from — exactly what ROOT writes:
 use oxiroot::prelude::*;
 
 // One bin per hour of 2024-01-01, x in seconds from the start of that day.
-let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().named("rate");
+let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root()?.named("rate");
 h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
 h.fill(3_600.0);
 
@@ -441,13 +437,13 @@ self-describing for ROOT and uproot.
 ```rust
 use oxiroot::prelude::*;
 
-let h = Hist::reg(100, 0.0, 1.0).double().to_root().named("h");
-h.write_root("out.root", Compression::Zstd(5))?; // works for any writable type
+let h = Hist::reg(100, 0.0, 1.0).double().to_root()?.named("h");
+FileWriter::create("out.root").add(&h).write()?; // works for any writable type
 
 let bytes = h.to_root_bytes(); // just the streamed object payload
 ```
 
-`write_root` requires a non-empty name; writing an unnamed object is an error.
+A stored object needs a non-empty name; writing an unnamed one is an error.
 `to_root_bytes` returns the streamed payload (no file/key framing).
 
 ### Several objects with `FileWriter`
@@ -455,18 +451,18 @@ let bytes = h.to_root_bytes(); // just the streamed object payload
 ```rust
 use oxiroot::prelude::*;
 
-let pt = Hist::reg(10, 0.0, 1.0).double().to_root().named("pt");
-let prof = Hist::reg(10, 0.0, 1.0).mean().to_root().named("prof");
-let signal = Hist::reg(10, 0.0, 1.0).double().to_root().named("sig");
+let pt = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("pt");
+let prof = Hist::reg(10, 0.0, 1.0).mean().to_root()?.named("prof");
+let signal = Hist::reg(10, 0.0, 1.0).double().to_root()?.named("sig");
 
 FileWriter::create("out.root")
     .add(&pt)                            // any &dyn WriteRoot: hist, profile, graph…
     .add(&prof)
     .dir("by_region", |d| d.add(&signal)) // a TDirectory holding `sig`
-    .write(Compression::Zstd(5))?;
+    .write()?;
 ```
 
-Append to an existing file with `FileWriter::open`. The append is *in place* —
+Append to an existing file with `FileUpdater::open`. The append is *in place* —
 existing objects never move — so files that already contain subdirectories or an
 RNTuple are preserved (added objects land in the top directory; only *creating*
 new subdirectories while appending is unsupported):
@@ -475,9 +471,9 @@ new subdirectories while appending is unsupported):
 ```rust
 use oxiroot::prelude::*;
 
-FileWriter::open("out.root")?
+FileUpdater::open("out.root")?
     .add(&extra)
-    .write(Compression::None)?;
+    .write()?;
 ```
 
 !!! warning "Loud collisions"
@@ -492,14 +488,13 @@ FileWriter::open("out.root")?
 use oxiroot::prelude::*;
 
 let f = FileReader::open("out.root")?;
-let h = Hist1D::read_root(&f, "pt")?;            // any of TH1D/F/I/S/C/L
-let sig = Hist1D::read_root_in(&f, "by_region", "sig")?; // from a subdirectory
+let h = f.get::<Hist1D>("pt")?;            // any of TH1D/F/I/S/C/L
+let sig = f.get::<Hist1D>("by_region/sig")?; // from a subdirectory
 ```
 
-`read_root` auto-detects the on-disk precision (every `TH1D/F/I/S/C/L` reads into
+`get` auto-detects the on-disk precision (every `TH1D/F/I/S/C/L` reads into
 a `Hist1D`, with the exact class preserved in `class_name()`); contents are widened
-to `f64`. `read_root_in(file, dir, name)` reads from a subdirectory written via
-`FileWriter::dir`.
+to `f64`. A path with `/` reads from a subdirectory written via `FileWriter::dir`.
 
 See [Compression](compression.md) for the codec options and
 [ROOT / uproot interop](interop.md) for the cross-language read/write guarantee.

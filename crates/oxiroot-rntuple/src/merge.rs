@@ -1,9 +1,9 @@
-//! Appending RNTuples — the `RNTuple` half of a `hadd`-style file merge, and
+//! Appending `RNTuples` — the `RNTuple` half of a `hadd`-style file merge, and
 //! the read → write round trip of one field.
 //!
 //! [`append_ntuples`] streams several [`NtupleReader`]s' entries into an
 //! [`NtupleWriter`], one cluster per input; the `oxiroot` facade's file merger
-//! uses it for RNTuple keys. An RNTuple field's type is fully determined by its
+//! uses it for `RNTuple` keys. An `RNTuple` field's type is fully determined by its
 //! [`FieldValues`] variant, so the mapping back to a [`Field`] is direct;
 //! [`FieldRead::to_field`] does it for one field.
 

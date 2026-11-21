@@ -17,10 +17,12 @@
 use crate::cast::SaturatingFrom;
 use std::borrow::Cow;
 
-use crate::buffer::{K_BYTE_COUNT_MASK, Patch, RBuffer, WBuffer};
+use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer, WBuffer};
 use crate::error::Result;
 use crate::file::STREAMER_INFO_KEY_LEN;
-use crate::streamer::{read_object_base, write_named, write_object_base};
+use crate::streamer::{
+    begin_object_any, end_object_any, read_object_base, write_named, write_object_base,
+};
 use crate::streamer_info::{StoredInfo, parse_stored_infos};
 
 /// ROOT `fType` codes for an object/string member and the base-class slots.
@@ -282,20 +284,6 @@ pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> El<'
 /// `fBits` ROOT writes for the embedded `TStreamerInfo`'s `Named`.
 const SI_BITS: u32 = 0x0001_0000;
 
-/// The byte-count + `kNewClassTag` + class-name header ROOT writes before each
-/// streamed object (`TStreamerInfo`, `TObjArray`, every `TStreamerElement`).
-fn begin_object_any(w: &mut WBuffer, class: &str) -> Patch {
-    let bc = w.reserve(4);
-    w.be_u32(0xFFFF_FFFF); // kNewClassTag
-    w.bytes(class.as_bytes());
-    w.u8(0); // NUL terminator
-    bc
-}
-fn end_object_any(w: &mut WBuffer, bc: Patch) {
-    let inner = u32::saturating_from(w.len() - w.patch_offset(bc) - 4);
-    w.patch_be_u32(bc, inner | K_BYTE_COUNT_MASK);
-}
-
 /// Write the `TStreamerElement` v4 base common to every element subclass.
 fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
     let se = w.begin_object(4); // TStreamerElement v4
@@ -386,6 +374,7 @@ fn write_info(w: &mut WBuffer, cls: &ClassDef<'_>) {
 /// Serialize a `TList<TStreamerInfo>` object body (no key header) describing
 /// `classes`, in the given order (bases before the classes that use them, as
 /// ROOT writes).
+#[must_use]
 pub fn streamer_info_list(classes: &[ClassDef<'_>]) -> Vec<u8> {
     let mut w = WBuffer::new();
 
@@ -504,8 +493,8 @@ impl StreamerInfoList {
     /// Parse `list`, the object bytes of a streamer-info record written under
     /// oxiroot's 64-byte streamer-info key (the list's class tags count from
     /// it).
-    pub fn parse(list: &[u8]) -> Result<StreamerInfoList> {
-        Ok(StreamerInfoList {
+    pub fn parse(list: &[u8]) -> Result<Self> {
+        Ok(Self {
             infos: parse_stored_infos(list, usize::from(STREAMER_INFO_KEY_LEN))?,
         })
     }
@@ -514,8 +503,8 @@ impl StreamerInfoList {
     /// file's own record says — rather than oxiroot's 64. The list's class tags
     /// count from the key, so a list copied out of another file needs the key
     /// length it was written under.
-    pub fn parse_keyed(list: &[u8], key_len: usize) -> Result<StreamerInfoList> {
-        Ok(StreamerInfoList {
+    pub fn parse_keyed(list: &[u8], key_len: usize) -> Result<Self> {
+        Ok(Self {
             infos: parse_stored_infos(list, key_len)?,
         })
     }

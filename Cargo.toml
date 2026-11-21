@@ -15,6 +15,8 @@ homepage = "https://oxihep.github.io/oxiroot/"
 # oxiroot-io-core (scoped `#[allow]` + SAFETY note). Deny keeps it that way.
 unsafe_code = "deny"
 missing_docs = "warn"
+# A borrowed type says so where it is named: `&mut RBuffer<'_>`.
+elided_lifetimes_in_paths = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
@@ -25,6 +27,15 @@ cast_possible_truncation = "warn"
 cast_sign_loss = "warn"
 cast_possible_wrap = "warn"
 cast_lossless = "warn"
+# A curated part of `clippy::pedantic`: the lints this code base holds to.
+# `missing_errors_doc` is not among them yet (about 130 functions to document).
+use_self = "warn"
+must_use_candidate = "warn"
+doc_markdown = "warn"
+missing_panics_doc = "warn"
+map_unwrap_or = "warn"
+redundant_closure_for_method_calls = "warn"
+format_push_string = "warn"
 
 [workspace.dependencies]
 # Internal crates. `version` must match `workspace.package.version` above: a

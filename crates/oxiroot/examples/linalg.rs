@@ -60,20 +60,20 @@ fn main() -> oxiroot::Result<()> {
         .add(&residuals)
         .add(&design)
         .add(&cov)
-        .write(Compression::Zstd(5))?;
+        .write()?;
     println!("wrote 3 objects -> {}", path.display());
 
-    // --- Read them back (idiomatic `ReadRoot::read_root`, keyed by name). ------
+    // --- Read them back (`file.get::<T>(name)`). -------------------------------
     let f = FileReader::open(&path)?;
-    let v = Vector::read_root(&f, "residuals")?;
-    let m = Matrix::read_root(&f, "design")?;
-    let s = SymMatrix::read_root(&f, "cov")?;
+    let v = f.get::<Vector>("residuals")?;
+    let m = f.get::<Matrix>("design")?;
+    let s = f.get::<SymMatrix>("cov")?;
 
     // Print the design matrix as rows via get(i, j) — teaching the accessor.
     println!("read back `design` as rows:");
     for i in 0..m.rows() {
         let row: Vec<String> = (0..m.cols())
-            .map(|j| format!("{:5.1}", m.get(i, j)))
+            .map(|j| format!("{:5.1}", m[(i, j)]))
             .collect();
         println!("  [ {} ]", row.join(", "));
     }
@@ -81,15 +81,15 @@ fn main() -> oxiroot::Result<()> {
     // The covariance is symmetric: cov(i, j) == cov(j, i), reflected across the
     // diagonal. Report the parameter uncertainties (√variance) from its diagonal.
     println!("read back `cov`: symmetric? {}", cov_is_symmetric(&s));
-    let sigmas: Vec<f64> = (0..s.dim()).map(|i| s.get(i, i).sqrt()).collect();
+    let sigmas: Vec<f64> = (0..s.dim()).map(|i| s[(i, i)].sqrt()).collect();
     println!(
         "  parameter sigmas (sqrt of diagonal): [{:.3}, {:.3}, {:.3}]",
         sigmas[0], sigmas[1], sigmas[2]
     );
     println!(
         "  cov(0,1) = {:.3} == cov(1,0) = {:.3}  (mirrored)",
-        s.get(0, 1),
-        s.get(1, 0)
+        s[(0, 1)],
+        s[(1, 0)]
     );
 
     // --- Assert the round-trip is exact. ---------------------------------------
@@ -98,8 +98,8 @@ fn main() -> oxiroot::Result<()> {
     assert_eq!(v, residuals, "TVectorD round-trip differs");
     assert_eq!(m, design, "TMatrixD round-trip differs");
     assert_eq!(s, cov, "TMatrixDSym round-trip differs");
-    assert_eq!(v.elements(), &[0.20, -0.15, 0.05]);
-    assert_eq!(m.get(1, 2), 3.0);
+    assert_eq!(v.as_slice(), &[0.20, -0.15, 0.05]);
+    assert_eq!(m[(1, 2)], 3.0);
     assert_eq!(s.get(1, 2), s.get(2, 1)); // symmetry survives disk
     println!("round-trip is byte-exact (asserted); ROOT and uproot read this file.");
 

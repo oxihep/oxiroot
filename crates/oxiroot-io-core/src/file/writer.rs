@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::Compression;
 use crate::error::{Error, Result, decompress_payload};
-use crate::object_io::{ObjectRecord, StreamerSet, WriteInto, WriteRoot, record_of};
+use crate::object_io::{ObjectRecord, StreamerSet, WriteInto, WriteRoot};
 use crate::streamer_gen::StreamerInfoList;
 
 use super::container::{ContainerWriter, DirId, KSTART_BIG_FILE};
@@ -25,24 +25,24 @@ enum Entry {
 impl Entry {
     fn class(&self) -> String {
         match self {
-            Entry::Object(r) => r.class_name.clone(),
-            Entry::Records(o) => o.root_class(),
+            Self::Object(r) => r.class_name.clone(),
+            Self::Records(o) => o.root_class(),
         }
     }
 
     fn name(&self) -> &str {
         match self {
-            Entry::Object(r) => &r.name,
-            Entry::Records(o) => o.root_name(),
+            Self::Object(r) => &r.name,
+            Self::Records(o) => o.root_name(),
         }
     }
 
     fn place(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
         match self {
-            Entry::Object(r) => file
+            Self::Object(r) => file
                 .place_key(dir, &r.class_name, &r.name, &r.title, &r.object)
                 .map(drop),
-            Entry::Records(o) => o.write_into(file, dir),
+            Self::Records(o) => o.write_into(file, dir),
         }
     }
 }
@@ -54,15 +54,67 @@ struct Entries {
     streamers: StreamerSet,
 }
 
-impl Entries {
-    fn add(&mut self, object: &dyn WriteRoot) {
-        self.streamers.add(object);
-        self.entries.push(Entry::Object(record_of(object)));
-    }
+/// One object on its way into a file, with the streamer info it needs: what
+/// [`Storable::into_stored`] hands to [`FileWriter::add`].
+pub struct Stored {
+    entry: Entry,
+    streamers: StreamerSet,
+}
 
-    fn put(&mut self, object: impl WriteInto + 'static) {
-        self.streamers.add_records(&object);
-        self.entries.push(Entry::Records(Box::new(object)));
+impl Stored {
+    /// An object stored as several records (a `TTree`, an `RNTuple`). It is laid
+    /// out when the file is written, so the file takes it over.
+    pub fn records(object: impl WriteInto + 'static) -> Self {
+        let mut streamers = StreamerSet::default();
+        streamers.add_records(&object);
+        Self {
+            entry: Entry::Records(Box::new(object)),
+            streamers,
+        }
+    }
+}
+
+impl std::fmt::Debug for Stored {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stored")
+            .field("class", &self.entry.class())
+            .field("name", &self.entry.name())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Something [`FileWriter::add`] stores in a file.
+///
+/// A reference to any [`WriteRoot`] object is one: a histogram, a graph, a
+/// matrix, a parameter. It is serialized when added, so it only needs to be
+/// borrowed. A dataset (a `TTree` or an `RNTuple`) is one by value, because its
+/// records are laid out when the file is written.
+pub trait Storable {
+    /// The object as the file stores it.
+    fn into_stored(self) -> Stored;
+}
+
+impl<T: WriteRoot + ?Sized> Storable for &T {
+    fn into_stored(self) -> Stored {
+        let mut streamers = StreamerSet::default();
+        streamers.add_classes(self.streamer_classes());
+        Stored {
+            entry: Entry::Object(ObjectRecord {
+                class_name: self.root_class(),
+                name: self.root_name().to_string(),
+                title: self.root_title().to_string(),
+                object: self.to_root_bytes(),
+            }),
+            streamers,
+        }
+    }
+}
+
+impl Entries {
+    fn add(&mut self, object: impl Storable) {
+        let stored = object.into_stored();
+        self.streamers.extend(&stored.streamers);
+        self.entries.push(stored.entry);
     }
 
     /// Reject keys that cannot be addressed: an empty name (it could never be
@@ -110,20 +162,15 @@ impl Entries {
     }
 }
 
-/// Composes a ROOT file from several objects — optionally organised into
-/// subdirectories, or appended to an existing file — and writes it with
-/// [`write`](FileWriter::write). [`FileReader`](crate::FileReader) reads files.
+/// Composes a new ROOT file from several objects, optionally organised into
+/// subdirectories, and writes it with [`write`](FileWriter::write).
+/// [`FileReader`](crate::FileReader) reads files, and [`FileUpdater`] changes an
+/// existing one.
 ///
-/// For the common case of a single object, prefer the
-/// [`WriteRoot::write_root`] shorthand. Reach for `FileWriter` when a file holds
-/// several objects, uses subdirectories, or is being appended to. Any mix of
-/// writable types can go in one file: [`add`](FileWriter::add) takes objects
-/// stored under a single key (histograms, matrices, parameters, …), and
-/// [`put`](FileWriter::put) takes ones stored as several records (a `TTree`, an
-/// RNTuple):
+/// Any mix of writable types goes in one file through [`add`](FileWriter::add):
 ///
 /// ```no_run
-/// use oxiroot_io_core::{Compression, FileWriter, ObjString, Parameter};
+/// use oxiroot_io_core::{FileWriter, ObjString, Parameter};
 /// let lumi = Parameter::f64("lumi", 137.5);
 /// let label = ObjString::new("2024 run").named("label");
 /// let cut = Parameter::f32("pt_min", 25.0);
@@ -131,18 +178,12 @@ impl Entries {
 ///     .add(&lumi)
 ///     .add(&label)
 ///     .dir("cuts", |d| d.add(&cut)) // a TDirectory holding `pt_min`
-///     .write(Compression::Zstd(5))?;
+///     .write()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 ///
-/// Append to an existing file with [`open`](FileWriter::open):
-///
-/// ```no_run
-/// # use oxiroot_io_core::{Compression, FileWriter, Parameter};
-/// # let extra = Parameter::i32("extra", 3);
-/// FileWriter::open("out.root")?.add(&extra).write(Compression::None)?;
-/// # Ok::<(), oxiroot_io_core::Error>(())
-/// ```
+/// The file is compressed with Zstd level 5 unless
+/// [`compression`](FileWriter::compression) says otherwise.
 #[doc(alias = "RootFile", alias = "TFile")]
 #[must_use = "a FileWriter does nothing until `.write(...)` is called"]
 pub struct FileWriter {
@@ -158,13 +199,16 @@ pub struct FileWriter {
     purge: bool,
     /// Rewrite the file from what survives, instead of appending to it.
     compact: bool,
+    compression: Compression,
+    /// The size past which the 64-bit container form is written.
+    threshold: u64,
 }
 
 impl FileWriter {
     /// Start a fresh ROOT file at `path` (any existing file is overwritten on
     /// [`write`](FileWriter::write)).
-    pub fn create(path: impl AsRef<Path>) -> FileWriter {
-        FileWriter {
+    pub fn create(path: impl AsRef<Path>) -> Self {
+        Self {
             path: path.as_ref().to_path_buf(),
             existing: None,
             top: Entries::default(),
@@ -172,130 +216,70 @@ impl FileWriter {
             deleted: Vec::new(),
             purge: false,
             compact: false,
+            compression: Compression::default(),
+            threshold: KSTART_BIG_FILE,
         }
     }
 
-    /// Open an existing ROOT file at `path` to append more objects to its top
-    /// directory: the current contents are kept (appended in place, so existing
-    /// objects never move) and the added objects written after them. A new object
-    /// whose name matches an existing one lands at a higher cycle, as ROOT does.
-    /// Files that contain subdirectories or an RNTuple are preserved — only
-    /// *adding* new subdirectories in this mode is unsupported. See
-    /// [`ContainerWriter::append`].
-    pub fn open(path: impl AsRef<Path>) -> Result<FileWriter> {
-        let path = path.as_ref().to_path_buf();
-        let existing = std::fs::read(&path)?;
-        Ok(FileWriter {
-            path,
-            existing: Some(existing),
-            top: Entries::default(),
-            dirs: Vec::new(),
-            deleted: Vec::new(),
-            purge: false,
-            compact: false,
-        })
-    }
-
-    /// Add an object to the file's top directory. It is serialized now, so it
-    /// only needs to be borrowed.
+    /// Add an object to the file's top directory: `.add(&histogram)` for an
+    /// object stored under one key, `.add(dataset)` for a `TTree` or an
+    /// `RNTuple`. See [`Storable`].
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> FileWriter {
+    pub fn add(mut self, object: impl Storable) -> Self {
         self.top.add(object);
         self
     }
 
-    /// Put a multi-record object (a `TTree`, an RNTuple) in the file's top
-    /// directory. It is laid out when the file is written, so the builder takes
-    /// it over.
-    pub fn put(mut self, object: impl WriteInto + 'static) -> FileWriter {
-        self.top.put(object);
-        self
-    }
-
-    /// Take `name` out of the file's top directory: every cycle of it, or the
-    /// one an explicit `"name;2"` asks for. Update mode only (see
-    /// [`open`](FileWriter::open)); writing fails if the file holds no such key,
-    /// rather than quietly doing nothing.
-    ///
-    /// The record stays where it is and the file does not shrink — what changes
-    /// is that the directory no longer lists it, so nothing reads it. This is
-    /// ROOT's `TFile::Delete`; to reclaim the space, write the objects you keep
-    /// to a fresh file with [`create`](FileWriter::create).
-    ///
-    /// ```no_run
-    /// # use oxiroot_io_core::{Compression, FileWriter};
-    /// # fn main() -> oxiroot_io_core::Result<()> {
-    /// FileWriter::open("out.root")?
-    ///     .delete("scratch")   // every cycle of `scratch`
-    ///     .delete("h;1")       // and the first cycle of `h`
-    ///     .write(Compression::None)?;
-    /// # Ok(()) }
-    /// ```
-    pub fn delete(mut self, name: impl Into<String>) -> FileWriter {
-        self.deleted.push(name.into());
-        self
-    }
-
-    /// Keep only the current (highest) cycle of each name in the file's top
-    /// directory, dropping the older ones — ROOT's `TFile::Purge`. Update mode
-    /// only, and, like [`delete`](FileWriter::delete), the file does not shrink.
-    pub fn purge(mut self) -> FileWriter {
-        self.purge = true;
-        self
-    }
-
-    /// Write the file afresh from what survives, rather than appending to it, so
-    /// that deleted and superseded objects stop taking up space. Update mode
-    /// only, and the objects keep their names, titles, cycles order and
-    /// subdirectories; the file describes the classes it still holds.
-    ///
-    /// A `TTree` or an RNTuple is more than its key — its baskets and pages sit
-    /// elsewhere in the file — so compacting a file that holds one is refused
-    /// rather than half-done. Merge those with `oxiroot::hadd` instead.
-    ///
-    /// ```no_run
-    /// # use oxiroot_io_core::{Compression, FileWriter};
-    /// # fn main() -> oxiroot_io_core::Result<()> {
-    /// FileWriter::open("out.root")?
-    ///     .purge()      // drop the superseded cycles …
-    ///     .compact()    // … and take back the space they held
-    ///     .write(Compression::Zstd(5))?;
-    /// # Ok(()) }
-    /// ```
-    pub fn compact(mut self) -> FileWriter {
-        self.compact = true;
-        self
-    }
-
     /// Add a `TDirectory` named `name` holding the objects added inside `build`
-    /// (e.g. one directory per analysis region). Only meaningful when creating a
-    /// file; see [`open`](FileWriter::open).
+    /// (e.g. one directory per analysis region).
     pub fn dir(
         mut self,
         name: impl Into<String>,
         build: impl FnOnce(SubdirWriter) -> SubdirWriter,
-    ) -> FileWriter {
+    ) -> Self {
         self.dirs.push(SubdirWriter::build(name, build));
         self
     }
 
-    /// Build the file bytes and write them to the path. A fresh builder writes a
-    /// new file; one from [`open`](FileWriter::open) rewrites the file with its
-    /// existing contents plus the additions. A file that grows past ~2 GiB is
-    /// written in ROOT's 64-bit ("big") container form automatically.
-    pub fn write(self, compression: Compression) -> Result<()> {
-        self.write_threshold(compression, KSTART_BIG_FILE)
+    /// Compress the file's records with `compression`. The default is Zstd
+    /// level 5.
+    pub const fn compression(mut self, compression: Compression) -> Self {
+        self.compression = compression;
+        self
     }
 
-    /// Like [`write`](FileWriter::write), but switch to the 64-bit container form
-    /// once the file would exceed `threshold` bytes rather than ROOT's ~2 GiB
-    /// ([`KSTART_BIG_FILE`]). A threshold of 0 always writes the 64-bit form,
-    /// which is useful for testing readers against it.
-    pub fn write_threshold(self, compression: Compression, threshold: u64) -> Result<()> {
-        let bytes = self.build(compression, threshold)?;
-        std::fs::write(&self.path, bytes)?;
+    /// Switch to the 64-bit container form once the file would exceed
+    /// `threshold` bytes rather than ROOT's ~2 GiB ([`KSTART_BIG_FILE`]). A
+    /// threshold of 0 always writes the 64-bit form, which is how tests check
+    /// readers against it; the form is otherwise chosen from the file's size.
+    #[doc(hidden)]
+    pub const fn large_above(mut self, threshold: u64) -> Self {
+        self.threshold = threshold;
+        self
+    }
+
+    /// Build the file and write it to the path, all or nothing. A file that
+    /// grows past ~2 GiB is written in ROOT's 64-bit ("big") container form
+    /// automatically.
+    ///
+    /// # Errors
+    ///
+    /// An unnamed object, two objects sharing a name in one directory, an
+    /// object too large for its record, or the file not being writable.
+    pub fn write(self) -> Result<()> {
+        let bytes = self.to_bytes()?;
+        write_atomic(&self.path, &bytes)?;
         Ok(())
+    }
+
+    /// The bytes [`write`](FileWriter::write) would write, without writing them.
+    ///
+    /// # Errors
+    ///
+    /// As [`write`](FileWriter::write), short of touching the file system.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        self.build(self.compression, self.threshold)
     }
 
     /// Which of `keys` survive this builder's deletions and purge, in their
@@ -343,11 +327,6 @@ impl FileWriter {
         Ok(())
     }
 
-    /// The bytes [`write`](FileWriter::write) would write, without writing them.
-    pub fn to_bytes(&self, compression: Compression) -> Result<Vec<u8>> {
-        self.build(compression, KSTART_BIG_FILE)
-    }
-
     fn build(&self, compression: Compression, threshold: u64) -> Result<Vec<u8>> {
         // Reject unnamed / clashing keys before writing — loudly, instead of
         // ROOT's silent shadow-on-read.
@@ -379,9 +358,7 @@ impl FileWriter {
         if !self.deleted.is_empty() || self.purge {
             if self.existing.is_none() {
                 return Err(Error::InvalidInput(
-                    "delete and purge need a file to work on: open it with \
-                     FileWriter::open, which writes in update mode"
-                        .to_string(),
+                    "delete and purge need a file to work on".to_string(),
                 ));
             }
             for name in &self.deleted {
@@ -408,7 +385,7 @@ impl FileWriter {
                 ContainerWriter::build_append(existing, file_name, compression, threshold, layout)
             }
             (None, true) => Err(Error::InvalidInput(
-                "compact needs a file to rewrite: open it with FileWriter::open".to_string(),
+                "compact needs a file to rewrite".to_string(),
             )),
             (None, false) => ContainerWriter::build(file_name, compression, threshold, layout),
         }
@@ -428,13 +405,12 @@ impl FileWriter {
         let top = CopiedDir::read(&file, &self.surviving(file.keys())?, "")?;
         // The file describes what it still holds: the classes of the copied
         // objects, with what those depend on, plus the added objects' own.
-        let described = match file.streamer_info_list()? {
+        let described = match file.streamer_info_bytes()? {
             Some((list, key_len)) => {
                 let classes = top.class_names();
                 let names: Vec<&str> = classes.iter().map(String::as_str).collect();
                 StreamerInfoList::parse_keyed(&list, key_len)
-                    .map(|list| list.classes_for(&names))
-                    .unwrap_or_default()
+                    .map_or_default(|list| list.classes_for(&names))
             }
             None => Vec::new(),
         };
@@ -453,18 +429,185 @@ impl FileWriter {
     }
 }
 
+/// Changes an existing ROOT file: adds objects to its top directory, takes
+/// some out, and optionally rewrites it to give back their space.
+///
+/// ```no_run
+/// # use oxiroot_io_core::{FileUpdater, Parameter};
+/// # let extra = Parameter::i32("extra", 3);
+/// FileUpdater::open("out.root")?
+///     .delete("scratch")
+///     .add(&extra)
+///     .write()?;
+/// # Ok::<(), oxiroot_io_core::Error>(())
+/// ```
+///
+/// Objects are appended in place, so what the file already holds never moves,
+/// and an added object whose name matches an existing one lands at a higher
+/// cycle, as in ROOT. Subdirectories and `RNTuple`s already in the file are
+/// kept. The file is replaced in one step: a failure part-way leaves it as it
+/// was.
+#[doc(alias = "UPDATE", alias = "TFile")]
+#[must_use = "a FileUpdater does nothing until `.write()` is called"]
+#[derive(Debug)]
+pub struct FileUpdater(FileWriter);
+
+impl FileUpdater {
+    /// Open the ROOT file at `path` to change it.
+    ///
+    /// # Errors
+    ///
+    /// If the file cannot be read.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let existing = std::fs::read(path.as_ref())?;
+        let mut writer = FileWriter::create(path);
+        writer.existing = Some(existing);
+        Ok(Self(writer))
+    }
+
+    /// Add an object to the file's top directory; see [`FileWriter::add`].
+    #[allow(clippy::should_implement_trait)]
+    pub fn add(mut self, object: impl Storable) -> Self {
+        self.0.top.add(object);
+        self
+    }
+
+    /// Take `name` out of the file's top directory: every cycle of it, or the
+    /// one an explicit `"name;2"` asks for. Writing fails if the file holds no
+    /// such key, rather than quietly doing nothing.
+    ///
+    /// The record stays where it is and the file does not shrink; what changes
+    /// is that the directory no longer lists it, so nothing reads it. This is
+    /// ROOT's `TFile::Delete`. [`compact`](Self::compact) takes the space back.
+    pub fn delete(mut self, name: impl Into<String>) -> Self {
+        self.0.deleted.push(name.into());
+        self
+    }
+
+    /// Keep only the current (highest) cycle of each name in the file's top
+    /// directory, dropping the older ones: ROOT's `TFile::Purge`. Like
+    /// [`delete`](Self::delete), the file does not shrink.
+    pub const fn purge(mut self) -> Self {
+        self.0.purge = true;
+        self
+    }
+
+    /// Write the file afresh from what survives, rather than appending to it, so
+    /// that deleted and superseded objects stop taking up space. The objects
+    /// keep their names, titles, cycle order and subdirectories; the file
+    /// describes the classes it still holds.
+    ///
+    /// A `TTree` or an `RNTuple` is more than its key (its baskets and pages
+    /// sit elsewhere in the file), so compacting a file that holds one is
+    /// refused rather than half-done. Merge those with `oxiroot::hadd` instead.
+    ///
+    /// ```no_run
+    /// # use oxiroot_io_core::FileUpdater;
+    /// # fn main() -> oxiroot_io_core::Result<()> {
+    /// FileUpdater::open("out.root")?
+    ///     .purge()      // drop the superseded cycles …
+    ///     .compact()    // … and take back the space they held
+    ///     .write()?;
+    /// # Ok(()) }
+    /// ```
+    pub const fn compact(mut self) -> Self {
+        self.0.compact = true;
+        self
+    }
+
+    /// Add a `TDirectory` named `name`; see [`FileWriter::dir`]. A new
+    /// subdirectory needs the file rewritten, so this goes with
+    /// [`compact`](Self::compact): without it, writing fails.
+    pub fn dir(
+        mut self,
+        name: impl Into<String>,
+        build: impl FnOnce(SubdirWriter) -> SubdirWriter,
+    ) -> Self {
+        self.0.dirs.push(SubdirWriter::build(name, build));
+        self
+    }
+
+    /// Compress the records this update writes with `compression`. The default
+    /// is Zstd level 5.
+    pub const fn compression(mut self, compression: Compression) -> Self {
+        self.0.compression = compression;
+        self
+    }
+
+    /// See [`FileWriter::large_above`].
+    #[doc(hidden)]
+    pub const fn large_above(mut self, threshold: u64) -> Self {
+        self.0.threshold = threshold;
+        self
+    }
+
+    /// Apply the changes and replace the file, all or nothing.
+    ///
+    /// # Errors
+    ///
+    /// As [`FileWriter::write`]; also a name to delete that the file does not
+    /// hold, a new subdirectory without [`compact`](Self::compact), or
+    /// compacting a file that holds a `TTree` or an `RNTuple`.
+    pub fn write(self) -> Result<()> {
+        self.0.write()
+    }
+
+    /// The bytes [`write`](Self::write) would write, without writing them.
+    ///
+    /// # Errors
+    ///
+    /// As [`write`](Self::write), short of touching the file system.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        self.0.to_bytes()
+    }
+}
+
+/// Write `bytes` as the file `path`, all or nothing: they go to a temporary
+/// file beside it, which then takes its name. An existing file — the one an
+/// update is rewriting — is replaced in one step, so a failure part-way
+/// leaves it as it was instead of cut short.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    // Replace the file a symbolic link names, not the link.
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let Some(name) = target.file_name() else {
+        return std::fs::write(&target, bytes);
+    };
+    let mut tmp_name = std::ffi::OsString::from(".");
+    tmp_name.push(name);
+    tmp_name.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let tmp = target.with_file_name(tmp_name);
+
+    let written = std::fs::write(&tmp, bytes)
+        .and_then(|()| match std::fs::metadata(&target) {
+            // Keep the permissions of the file being replaced.
+            Ok(existing) => std::fs::set_permissions(&tmp, existing.permissions()),
+            Err(_) => Ok(()),
+        })
+        .and_then(|()| std::fs::rename(&tmp, &target));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
 /// A directory being copied from one file into another: the objects it holds,
 /// read out whole, and the directories inside it.
 struct CopiedDir {
     name: String,
     objects: Vec<ObjectRecord>,
-    dirs: Vec<CopiedDir>,
+    dirs: Vec<Self>,
 }
 
 impl CopiedDir {
     /// Read `keys` — the surviving keys of the directory at `path` — and every
     /// directory below it, out of `file`.
-    fn read(file: &FileReader, keys: &[&Key], path: &str) -> Result<CopiedDir> {
+    fn read(file: &FileReader, keys: &[&Key], path: &str) -> Result<Self> {
         let mut objects = Vec::new();
         let mut dirs = Vec::new();
         for key in keys {
@@ -476,7 +619,7 @@ impl CopiedDir {
                 };
                 let sub = file.subdir(&below)?;
                 let live: Vec<&Key> = sub.keys.iter().filter(|k| !k.is_deleted()).collect();
-                dirs.push(CopiedDir::read(file, &live, &below)?);
+                dirs.push(Self::read(file, &live, &below)?);
                 continue;
             }
             // A TTree or an RNTuple is more than its key: its baskets and pages
@@ -502,7 +645,7 @@ impl CopiedDir {
                 object,
             });
         }
-        Ok(CopiedDir {
+        Ok(Self {
             name: path.rsplit('/').next().unwrap_or(path).to_string(),
             objects,
             dirs,
@@ -541,7 +684,7 @@ impl CopiedDir {
 }
 
 /// Whether a class writes records outside its own key (a tree's baskets, an
-/// RNTuple's pages), which a key-by-key copy would leave behind.
+/// `RNTuple`'s pages), which a key-by-key copy would leave behind.
 fn is_multi_record(class: &str) -> bool {
     matches!(class, "TTree" | "TNtuple" | "TNtupleD" | "TChain") || class.contains("RNTuple")
 }
@@ -551,7 +694,7 @@ fn is_multi_record(class: &str) -> bool {
 struct DirNode {
     name: String,
     entries: Entries,
-    dirs: Vec<DirNode>,
+    dirs: Vec<Self>,
 }
 
 impl DirNode {
@@ -604,34 +747,24 @@ pub struct SubdirWriter {
 }
 
 impl SubdirWriter {
-    /// Add an object to this subdirectory.
+    /// Add an object to this subdirectory; see [`FileWriter::add`].
     #[allow(clippy::should_implement_trait)]
-    pub fn add(mut self, object: &dyn WriteRoot) -> SubdirWriter {
+    pub fn add(mut self, object: impl Storable) -> Self {
         self.entries.add(object);
-        self
-    }
-
-    /// Put a multi-record object (a `TTree`, an RNTuple) in this subdirectory.
-    pub fn put(mut self, object: impl WriteInto + 'static) -> SubdirWriter {
-        self.entries.put(object);
         self
     }
 
     /// Add a `TDirectory` named `name` inside this one, holding what `build`
     /// adds — the same call as [`FileWriter::dir`], so directories nest as deep
     /// as you write them.
-    pub fn dir(
-        mut self,
-        name: impl Into<String>,
-        build: impl FnOnce(SubdirWriter) -> SubdirWriter,
-    ) -> SubdirWriter {
-        self.dirs.push(SubdirWriter::build(name, build));
+    pub fn dir(mut self, name: impl Into<String>, build: impl FnOnce(Self) -> Self) -> Self {
+        self.dirs.push(Self::build(name, build));
         self
     }
 
     /// Run `build` over a fresh subdirectory and take what it composed.
-    fn build(name: impl Into<String>, build: impl FnOnce(SubdirWriter) -> SubdirWriter) -> DirNode {
-        let dir = build(SubdirWriter {
+    fn build(name: impl Into<String>, build: impl FnOnce(Self) -> Self) -> DirNode {
+        let dir = build(Self {
             entries: Entries::default(),
             dirs: Vec::new(),
         });
@@ -658,5 +791,32 @@ impl std::fmt::Debug for SubdirWriter {
         f.debug_struct("SubdirWriter")
             .field("subdirs", &self.dirs.len())
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::write_atomic;
+
+    #[test]
+    fn a_file_is_replaced_whole_and_no_temporary_is_left() {
+        let dir = std::env::temp_dir().join(format!("oxiroot-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("out.root");
+
+        write_atomic(&path, b"first").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        write_atomic(&path, b"second, longer").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second, longer");
+
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["out.root"], "only the file itself remains");
+
+        // A directory that does not exist is an error, and leaves nothing.
+        assert!(write_atomic(&dir.join("missing/out.root"), b"x").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

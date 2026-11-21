@@ -87,7 +87,7 @@ Func1D "myfunc"
 `--json` emits the same tree as nested JSON. A member the reader can't decode
 (a class the file doesn't describe) is marked `<unsupported …>` rather than
 aborting the dump. The same decode is available in code via
-`FileReader::get_value`.
+`FileReader::get::<Value>`.
 
 ## `stat` — file summary
 

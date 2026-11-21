@@ -24,6 +24,7 @@ fn main() {
         Hist::reg(100, 0.0, 100.0)
             .double()
             .to_root()
+            .unwrap()
             .named("mass")
             .titled("toy mass [GeV]"),
     );
@@ -32,7 +33,7 @@ fn main() {
     let data: Vec<f64> = (0..1_000_000)
         .map(|i| (f64::from(i) * 0.61803) % 100.0)
         .collect();
-    let n_threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let n_threads = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
 
     std::thread::scope(|s| {
         for chunk in data.chunks(data.len().div_ceil(n_threads)) {
@@ -68,6 +69,7 @@ fn main() {
     let mut serial = Hist::reg(100, 0.0, 100.0)
         .double()
         .to_root()
+        .unwrap()
         .named("mass")
         .titled("toy mass [GeV]");
     for &x in &data {

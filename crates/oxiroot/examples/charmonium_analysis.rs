@@ -44,7 +44,7 @@ mod analysis {
     use oxiroot::stat::{crystal_ball, erf, erfc};
 
     // ---- The truth --------------------------------------------------------
-    /// PDG masses (GeV) and the ψ(2S) − J/ψ mass difference the fit keeps.
+    /// PDG masses (`GeV`) and the ψ(2S) − J/ψ mass difference the fit keeps.
     const M_JPSI: f64 = 3.096_900;
     const M_PSI2S: f64 = 3.686_097;
     const DELTA_M: f64 = M_PSI2S - M_JPSI;
@@ -167,7 +167,7 @@ mod analysis {
         let tree_path = dir.join("dimuons.root");
         let candidates = Batch::new().column("mass", mass)?.column("ctau", ct)?;
         let mut out = DatasetWriter::create(&tree_path, "dimuons", Format::Tree)?;
-        out.write(&candidates)?;
+        out.write(candidates)?;
         out.finish()?;
 
         let file = FileReader::open(&tree_path)?;
@@ -194,7 +194,7 @@ mod analysis {
         // ---- 2. The mass fit ----------------------------------------------
         let mut m_hist = Hist::reg(BINS, LO, HI)
             .double()
-            .to_root()
+            .to_root()?
             .named("m_mumu")
             .titled("dimuon mass");
         m_hist.track_sumw2();
@@ -428,7 +428,7 @@ mod analysis {
         let ct_width = (CT.1 - CT.0) / ct_bins as f64;
         let mut t_hist = Hist::reg(ct_bins, CT.0, CT.1)
             .double()
-            .to_root()
+            .to_root()?
             .named("ctau")
             .titled("decay length, J/#psi window");
         t_hist.track_sumw2();
@@ -510,7 +510,7 @@ mod analysis {
 
         let mut pulls = Hist::reg(24, -4.0, 4.0)
             .double()
-            .to_root()
+            .to_root()?
             .named("ratio_pull")
             .titled("ratio pulls");
         for &p in &ratio_pulls {
@@ -545,17 +545,17 @@ mod analysis {
             .add(&m_hist)
             .add(&t_hist)
             .add(&pulls)
-            .put(DatasetObject::new(
+            .add(DatasetObject::new(
                 "toys",
                 Format::Tree,
-                &Batch::new()
+                Batch::new()
                     .column("ratio_pull", ratio_pulls.clone())?
                     .column("mass_pull", mass_pulls.clone())?,
-            )?)
-            .write(Compression::Zstd(5))?;
+            ))
+            .write()?;
         let check = FileReader::open(&results)?;
         let toys = Dataset::open(&check, "toys")?;
-        let back = Hist1D::read_root(&check, "m_mumu")?;
+        let back = check.get::<Hist1D>("m_mumu")?;
         println!(
             "\n6. Results file {} — m_mumu ({:.0} entries) and {} toy pulls read back",
             results.display(),

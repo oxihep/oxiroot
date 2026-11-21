@@ -7,23 +7,21 @@ framing.
 
 ## Choosing compression on write
 
-Every write entry point — `obj.write_root(path, compression)`,
-[`FileWriter`](../getting-started/quickstart.md)'s `.write(compression)`,
-`Tree::write_root`, `Ntuple::write_root` — takes a single
-[`Compression`](../api/oxiroot/index.html) value. It is re-exported from the
+Every writer — [`FileWriter`](../getting-started/quickstart.md), `FileUpdater`,
+`DatasetWriter`, `Merger` — takes a single
+[`Compression`](../api/oxiroot/index.html) value through `.compression(…)`, and
+uses Zstd level 5 without it. It is re-exported from the
 prelude, so `use oxiroot::prelude::*;` is all you need.
 
 ```rust
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
 h.fill(42.0);
 
-// Zstandard at level 5 — ROOT's modern default.
-h.write_root("zstd.root", Compression::Zstd(5))?;
+// Zstandard at level 5 — ROOT's modern FileWriter::create("zstd.root").add(&default.h).write()?;
 
-// Or store the payload uncompressed.
-h.write_root("plain.root", Compression::None)?;
+// Or store the payload FileWriter::create("plain.root").add(&uncompressed.h).compression(Compression::Stored).write()?;
 ```
 
 The same value drives multi-object files and RNTuple/TTree writers:
@@ -31,20 +29,20 @@ The same value drives multi-object files and RNTuple/TTree writers:
 ```rust
 use oxiroot::prelude::*;
 
-let h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt");
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root().named("prof");
+let h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt");
+let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof");
 
 FileWriter::create("out.root")
     .add(&h)
     .add(&prof)
-    .write(Compression::Zlib(1))?;   // older-ROOT-style zlib default
+    .compression(Compression::Zlib(1)).write()?;   // older-ROOT-style zlib default
 ```
 
 ## The `Compression` enum
 
 `Compression` lives in `oxiroot-io-core` (`oxiroot::Compression`) and is
 re-exported through `oxiroot::prelude`. It is `Copy` and defaults to
-`Compression::None`.
+`Compression::Stored`.
 
 | Variant         | Algorithm     | Level range            | Encode | Decode |
 |-----------------|---------------|------------------------|:------:|:------:|
@@ -59,15 +57,15 @@ Two helpers are available on the enum:
 | Method            | Returns | Meaning                                              |
 |-------------------|---------|------------------------------------------------------|
 | `setting()`       | `u32`   | ROOT's setting integer (`algorithm*100 + level`, `0` = none) |
-| `is_enabled()`    | `bool`  | `false` only for `Compression::None`                 |
+| `is_enabled()`    | `bool`  | `false` only for `Compression::Stored`                 |
 
 ```rust
 use oxiroot::prelude::*;
 
 assert_eq!(Compression::Zstd(5).setting(), 505);
 assert_eq!(Compression::Zlib(1).setting(), 101);
-assert_eq!(Compression::None.setting(), 0);
-assert!(!Compression::None.is_enabled());
+assert_eq!(Compression::Stored.setting(), 0);
+assert!(!Compression::Stored.is_enabled());
 ```
 
 !!! note "Level handling differs per backend"
@@ -92,7 +90,7 @@ oxiroot decodes **and encodes every codec ROOT writes except the legacy `CS`**.
 
 Reading is fully automatic: a `Key`'s payload (or an RNTuple page) carries its
 own algorithm tag, so the reader picks the codec per block. Uncompressed
-payloads — written with `Compression::None` or where the compressed form would
+payloads — written with `Compression::Stored` or where the compressed form would
 not be smaller — pass through directly.
 
 `Compression::Lzma(level)` writes a complete XZ stream per block (block tag
@@ -145,37 +143,35 @@ page hashing.
 ## Low-level (de)compression
 
 The `oxiroot::compress` module exposes the raw round-trip functions for callers
-that hold ROOT block bytes directly. They operate on the same setting integer
-the `Compression` enum produces via `setting()`.
+that hold ROOT block bytes directly. They take the same `Compression` value the writers do.
 
 ```rust
-use oxiroot::compress::{compress, decompress, compression_settings};
+use oxiroot::compress::{compress, decompress};
+use oxiroot::Compression;
 
-// Settings integer: algorithm * 100 + level (Zstd = 5).
-let settings = compression_settings(5, 5);          // 505
 let payload = b"the quick brown fox ".repeat(64);
 
-let blocks = compress(&payload, settings)?;          // ROOT block framing
+let blocks = compress(&payload, Compression::Zstd(5))?; // ROOT block framing
 let back = decompress(&blocks, payload.len())?;      // needs the original length
 assert_eq!(back, payload);
 ```
 
 | Function                              | Purpose                                            |
 |---------------------------------------|----------------------------------------------------|
-| `compress(src, settings)`             | Encode into ROOT blocks; `settings == 0` stores as-is |
+| `compress(src, compression)`          | Encode into ROOT blocks; `Compression::Stored` stores as-is |
 | `decompress(src, uncompressed_len)`   | Decode; passthrough when `src.len() == uncompressed_len` |
-| `compression_settings(algo, level)`   | Build `algo*100 + level`                           |
-| `split_settings(settings)`            | Split back into `(algo, level)`                    |
+| `Compression::setting()`              | ROOT's `algo*100 + level` integer                  |
+| `Compression::try_from(setting)`      | The value a setting integer names                  |
 
 `decompress` needs the expected uncompressed length (ROOT stores it in the
 enclosing `Key` or RNTuple anchor) and validates the produced size against it,
 returning a `CompressError` on any truncation or size mismatch. For normal
-file IO you never call these directly — `write_root` / `FileReader::open` apply them
+file IO you never call these directly — `FileWriter` / `FileReader` apply them
 for you from the `Compression` value.
 
 ## See also
 
 - [Quick start](../getting-started/quickstart.md) — writing files with a chosen compression
-- [Histograms](histograms.md) — `write_root` and `FileWriter`
+- [Histograms](histograms.md) — writing with `FileWriter`
 - [RNTuple](rntuple.md) — per-page compression in the columnar format
 - [API reference](../api/oxiroot/index.html) — `Compression` and the `compress` module

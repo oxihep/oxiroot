@@ -5,7 +5,7 @@ use oxiroot_hist::ToRoot;
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FitExt, Hist, Hist1D, Model, ReadRoot};
+use oxiroot_hist::{FitExt, Hist, Hist1D, Model};
 use oxiroot_io_core::FileReader;
 
 fn read(name: &str) -> Hist1D {
@@ -13,7 +13,7 @@ fn read(name: &str) -> Hist1D {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
     )
     .expect("open");
-    Hist1D::read_root(&f, name).expect("read")
+    f.get::<Hist1D>(name).expect("read")
 }
 
 fn rel_close(a: f64, b: f64, tol: f64) -> bool {
@@ -28,11 +28,11 @@ fn gaussian_fit_matches_root() {
     let n = usize::saturating_from(hg.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents()[i])
+        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let var: f64 = (1..=n)
-        .map(|i| hg.contents()[i] * (hg.bin_center(i) - mean).powi(2))
+        .map(|i| hg.contents()[i] * (hg.xaxis().bin_center(i) - mean).powi(2))
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, var.sqrt()]);
@@ -64,9 +64,13 @@ fn gaussian_fit_matches_root() {
 #[test]
 fn polynomial_fit_recovers_a_line() {
     // y = 3 + 2x exactly on a fine grid -> a degree-1 fit recovers (3, 2).
-    let mut h = Hist::reg(100, 0.0, 10.0).double().to_root().named("line");
+    let mut h = Hist::reg(100, 0.0, 10.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("line");
     for i in 1..=100 {
-        let x = h.bin_center(i);
+        let x = h.xaxis().bin_center(i);
         h.contents_mut()[i] = 3.0 + 2.0 * x;
     }
     h.track_sumw2(); // give every bin a unit-ish error so all enter the fit
@@ -98,6 +102,7 @@ fn likelihood_fit_of_a_constant_equals_the_mean() {
     let mut h = Hist::reg(counts.len(), 0.0, counts.len() as f64)
         .double()
         .to_root()
+        .unwrap()
         .named("c");
     for (i, &c) in counts.iter().enumerate() {
         h.contents_mut()[i + 1] = c;
@@ -134,7 +139,7 @@ fn likelihood_gaussian_recovers_shape() {
     let n = usize::saturating_from(hg.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents()[i])
+        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -158,7 +163,7 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
     let n = usize::saturating_from(hgl.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hgl.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hgl.bin_center(i) * hgl.contents()[i])
+        .map(|i| hgl.xaxis().bin_center(i) * hgl.contents()[i])
         .sum::<f64>()
         / total;
     let model = || Model::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
@@ -176,7 +181,11 @@ fn likelihood_and_chi2_diverge_on_low_statistics() {
 #[test]
 fn under_determined_fit_is_flagged_invalid() {
     // 2 data points, 3-parameter Gaussian -> cannot be determined.
-    let mut h = Hist::reg(2, 0.0, 2.0).double().to_root().named("tiny");
+    let mut h = Hist::reg(2, 0.0, 2.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("tiny");
     h.contents_mut()[1] = 5.0;
     h.contents_mut()[2] = 7.0;
     let r = h.fit(&Model::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
@@ -191,7 +200,7 @@ fn bounded_and_fixed_parameters() {
     let n = usize::saturating_from(hg.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents()[i])
+        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
 
@@ -226,7 +235,7 @@ fn fit_range_pearson_and_p_value() {
     let n = usize::saturating_from(hg.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents()[i])
+        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = || Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -260,7 +269,7 @@ fn minos_errors_and_covariance() {
     let n = usize::saturating_from(hg.xaxis().nbins().max(0));
     let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
     let mean: f64 = (1..=n)
-        .map(|i| hg.bin_center(i) * hg.contents()[i])
+        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
         .sum::<f64>()
         / total;
     let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
@@ -348,7 +357,8 @@ fn fit_a_tgraph_with_errors() {
     let y: Vec<f64> = x.iter().map(|&x| 2.0 * x + 3.0).collect();
     let ex = vec![0.0; x.len()];
     let ey = vec![0.1; x.len()];
-    let g = Graph::with_errors(x, y, ex, ey)
+    let g = Graph::new(x, y)
+        .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Symmetric { ex, ey }))
         .unwrap()
         .named("g")
         .titled("line");
@@ -377,7 +387,7 @@ fn variable_bins_are_integrated_over_their_edges() {
     // bins, with 1 % errors: only a fit averaging the model over each bin's
     // real edges recovers the slope (ROOT's option "I").
     let edges = [0.0, 0.5, 1.5, 3.0, 5.0, 8.0];
-    let mut h = Hist::var(&edges).weight().to_root();
+    let mut h = Hist::var(&edges).weight().to_root().unwrap();
     for (i, w) in edges.windows(2).enumerate() {
         let average = 200.0 * ((-w[0] / 2.0).exp() - (-w[1] / 2.0).exp()) / (w[1] - w[0]);
         h.contents_mut()[i + 1] = average;

@@ -26,10 +26,11 @@
 //! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
 use oxiroot_io_core::raw::{TagReader, read_object_base, skip_versioned};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::axis::Axis;
-use crate::base::{check_len, object_bytes_keyed, read_th1_base};
+use crate::base::{check_len, read_th1_base};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 /// One polygon bin of a [`PolyHist`] (ROOT `TH2PolyBin`).
@@ -61,6 +62,7 @@ impl PolyBin {
     /// ROOT stores [`area`](Self::area) lazily (`0` until `TH2PolyBin::GetArea`
     /// is first called), so this matches ROOT's `GetArea()` for the common case
     /// where the stored value is `0`. Returns `0` for fewer than 3 vertices.
+    #[must_use]
     pub fn polygon_area(&self) -> f64 {
         let n = self.x.len().min(self.y.len());
         if n < 3 {
@@ -113,8 +115,9 @@ impl PolyHist {
     /// Create an empty `PolyHist` over the bounding box `[xlow, xup] × [ylow, yup]`,
     /// matching ROOT's `PolyHist(name, title, xlow, xup, ylow, yup)` constructor.
     /// Add bins with [`add_bin`](Self::add_bin) / [`add_bin_rect`](Self::add_bin_rect).
-    pub fn new(xlow: f64, xup: f64, ylow: f64, yup: f64) -> PolyHist {
-        PolyHist {
+    #[must_use]
+    pub fn new(xlow: f64, xup: f64, ylow: f64, yup: f64) -> Self {
+        Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", 100, xlow, xup),
@@ -133,11 +136,13 @@ impl PolyHist {
     }
 
     /// Number of polygon bins.
+    #[must_use]
     pub fn nbins(&self) -> usize {
         self.bins.len()
     }
 
     /// Look up a bin by its ROOT `fNumber`.
+    #[must_use]
     pub fn bin(&self, number: i32) -> Option<&PolyBin> {
         self.bins.iter().find(|b| b.number == number)
     }
@@ -220,7 +225,7 @@ impl PolyHist {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer, keylen: usize) -> Result<PolyHist> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, keylen: usize) -> Result<Self> {
         let mut tags = TagReader::new(keylen);
 
         let top = r.read_version()?; // PolyHist v3
@@ -273,7 +278,7 @@ impl PolyHist {
 
         bins.sort_by_key(|b| b.number);
         bins.dedup_by_key(|b| b.number);
-        Ok(PolyHist {
+        Ok(Self {
             name: core.name,
             title: core.title,
             xaxis: core.xaxis,
@@ -312,7 +317,7 @@ fn point_in_polygon(x: &[f64], y: &[f64], px: f64, py: f64) -> bool {
 
 /// Skip a `bool* //[n]` member: a 1-byte presence marker, then (if present)
 /// `n` bytes — one per element.
-fn read_bool_pointer_array(r: &mut RBuffer, n: usize) -> Result<()> {
+fn read_bool_pointer_array(r: &mut RBuffer<'_>, n: usize) -> Result<()> {
     let present = r.u8()?;
     if present != 0 {
         r.skip(n)?;
@@ -323,7 +328,7 @@ fn read_bool_pointer_array(r: &mut RBuffer, n: usize) -> Result<()> {
 /// Read one `fCells` entry: a full inline `TList` of `TH2PolyBin` object
 /// pointers. New bins are read in full and pushed; repeats are object
 /// back-references (resolved to "no object" — skipped).
-fn read_cell(r: &mut RBuffer, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> Result<()> {
+fn read_cell(r: &mut RBuffer<'_>, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> Result<()> {
     let tlist = r.read_version()?; // TList v5
     read_object_base(r)?;
     let _name = r.string()?; // fName (empty)
@@ -345,7 +350,7 @@ fn read_cell(r: &mut RBuffer, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> 
 }
 
 /// Read a `TH2PolyBin` body, after its object-pointer header was consumed.
-fn read_polybin(r: &mut RBuffer, tags: &mut TagReader) -> Result<PolyBin> {
+fn read_polybin(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<PolyBin> {
     r.read_version()?; // TH2PolyBin v1
     read_object_base(r)?;
     let _changed = r.u8()?; // fChanged
@@ -372,7 +377,7 @@ fn read_polybin(r: &mut RBuffer, tags: &mut TagReader) -> Result<PolyBin> {
 
 /// Read a `TH2PolyBin`'s `fPoly` (a `Graph` object pointer) and return the
 /// polygon's `(fX, fY)` vertices, then seek past the rest of the graph.
-fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, Vec<f64>)> {
+fn read_poly_graph(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(Vec<f64>, Vec<f64>)> {
     let header = tags.read_header(r)?;
     if header.class_name.is_none() {
         // A null or back-referenced graph; nothing to read inline.
@@ -402,23 +407,17 @@ fn read_poly_graph(r: &mut RBuffer, tags: &mut TagReader) -> Result<(Vec<f64>, V
     Ok((x, y))
 }
 
-/// Read a `PolyHist` named `name` from `file`.
-pub(crate) fn read_th2poly(file: &FileReader, name: &str) -> Result<PolyHist> {
-    let (object, keylen) = object_bytes_keyed(file, name, "TH2Poly")?;
-    decode_th2poly(name, &object, keylen)
-}
+impl ReadRoot for PolyHist {
+    const CLASS: &'static str = "TH2Poly";
 
-/// Read a `PolyHist` from subdirectory `subdir`.
-pub(crate) fn read_th2poly_in(file: &FileReader, subdir: &str, name: &str) -> Result<PolyHist> {
-    let (class, object, keylen) = file.object_in_keyed(subdir, name)?;
-    if class != "TH2Poly" {
-        return Err(Error::WrongClass {
-            name: format!("{}/{name}", subdir.trim_end_matches('/')),
-            found: class,
-            expected: "TH2Poly".to_string(),
-        });
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| {
+            let key_len = object.key_len.ok_or_else(|| {
+                Error::Unsupported("a TH2Poly inside a collection cannot be read".into())
+            })?;
+            decode_th2poly(object.name, object.bytes, key_len)
+        })
     }
-    decode_th2poly(name, &object, keylen)
 }
 
 fn decode_th2poly(name: &str, object: &[u8], keylen: usize) -> Result<PolyHist> {

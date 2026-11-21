@@ -1,8 +1,9 @@
-//! Reading a `TTree` from a nested subdirectory (`TreeReader::open_in`).
+//! Reading a `TTree` from a nested subdirectory (a `dir/name` path).
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_tree::{BranchValues, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 fn opens_a_tree_in_a_nested_subdirectory() {
     // fixtures/tree_subdir.root holds the tree at `cal/run2/Events` (ROOT-written).
     let f = FileReader::open(fixture("tree_subdir.root")).expect("open");
-    let t = TreeReader::open_in(&f, "cal/run2", "Events").expect("open nested tree");
+    let t = TreeReader::open(&f, "cal/run2/Events").expect("open nested tree");
     assert_eq!(t.entries(), 5);
     assert_eq!(
         t.branch("i").values().unwrap(),
@@ -26,6 +27,6 @@ fn opens_a_tree_in_a_nested_subdirectory() {
     );
 
     // A missing level / tree is a clean error, not a panic.
-    assert!(TreeReader::open_in(&f, "cal/nope", "Events").is_err());
-    assert!(TreeReader::open_in(&f, "cal/run2", "Missing").is_err());
+    assert!(TreeReader::open(&f, "cal/nope/Events").is_err());
+    assert!(TreeReader::open(&f, "cal/run2/Missing").is_err());
 }

@@ -33,6 +33,25 @@ use crate::value::Value;
 /// Guard against a cyclic or pathologically deep streamer graph.
 const MAX_DEPTH: usize = crate::raw::MAX_STREAMER_DEPTH;
 
+/// Any object, read from the file's `TStreamerInfo` with no typed model: the
+/// reader behind rootls / rootprint-style inspection. A class the reader cannot
+/// decode comes back as [`Value::Unsupported`] rather than an error.
+impl crate::ReadRoot for Value {
+    const CLASS: &'static str = "any class";
+
+    fn from_object(object: &crate::Object<'_>) -> Option<crate::Result<Self>> {
+        let (Some(file), Some(key_len)) = (object.file, object.key_len) else {
+            return Some(Err(crate::Error::Unsupported(
+                "a dynamic Value is read from a key, not from a collection member".into(),
+            )));
+        };
+        Some(
+            file.streamer_registry()
+                .map(|reg| read_object(reg, object.class, object.bytes, key_len)),
+        )
+    }
+}
+
 /// Read an object of `class` from its (decompressed) streamed `bytes` into a
 /// [`Value`] tree, using `reg` for the member layout. `keylen` is the source
 /// key's `fKeyLen` (needed to resolve object back-references).
@@ -42,6 +61,7 @@ const MAX_DEPTH: usize = crate::raw::MAX_STREAMER_DEPTH;
 /// it cannot decode (an unhandled `fType`, a class with no streamer info);
 /// because ROOT wraps objects and containers in byte counts, decoding
 /// resynchronises past it and continues.
+#[must_use]
 pub fn read_object(reg: &StreamerRegistry, class: &str, bytes: &[u8], keylen: usize) -> Value {
     let mut r = RBuffer::new(bytes);
     let mut tags = TagReader::new(keylen);
@@ -61,7 +81,7 @@ pub fn read_object(reg: &StreamerRegistry, class: &str, bytes: &[u8], keylen: us
 fn read_named_object(
     reg: &StreamerRegistry,
     class: &str,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Result<Value> {
@@ -122,7 +142,7 @@ fn read_named_object(
 fn walk(
     reg: &StreamerRegistry,
     elements: &[StreamerElement],
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     members: &mut Vec<(String, Value)>,
     depth: usize,
@@ -163,7 +183,7 @@ fn walk(
 fn read_base(
     reg: &StreamerRegistry,
     class: &str,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     out: &mut Vec<(String, Value)>,
     depth: usize,
@@ -221,7 +241,7 @@ fn read_base(
 fn read_member(
     reg: &StreamerRegistry,
     el: &StreamerElement,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     read_so_far: &[(String, Value)],
     depth: usize,
@@ -276,7 +296,7 @@ fn read_member(
 /// Read an element via `ReadObjectAny` (a pointer target or collection element).
 fn read_ref_object(
     reg: &StreamerRegistry,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Result<Value> {
@@ -322,7 +342,7 @@ fn read_ref_object(
 fn read_collection(
     reg: &StreamerRegistry,
     class: &str,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Result<Value> {
@@ -369,7 +389,7 @@ fn read_collection(
 }
 
 /// Read a `TArray{C,S,I,L,F,D}` member: `{Int_t n}{n elements}`, no version header.
-fn read_tarray(class: &str, r: &mut RBuffer) -> Result<Value> {
+fn read_tarray(class: &str, r: &mut RBuffer<'_>) -> Result<Value> {
     let base = tarray_elem(class).expect("caller checked");
     let n = usize::saturating_from(r.be_i32()?.max(0)).min(r.remaining());
     let mut items = Vec::with_capacity(n);
@@ -393,7 +413,7 @@ fn tarray_elem(class: &str) -> Option<i32> {
 }
 
 /// Read a fixed-length C array of `array_length` basic elements.
-fn read_fixed_array(el: &StreamerElement, base: i32, r: &mut RBuffer) -> Result<Option<Value>> {
+fn read_fixed_array(el: &StreamerElement, base: i32, r: &mut RBuffer<'_>) -> Result<Option<Value>> {
     let n = usize::saturating_from(el.array_length.max(0)).min(r.remaining());
     let mut items = Vec::with_capacity(n);
     for _ in 0..n {
@@ -420,7 +440,7 @@ fn counter_value(el: &StreamerElement, read_so_far: &[(String, Value)]) -> usize
 fn read_ptr_array(
     el: &StreamerElement,
     base: i32,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     read_so_far: &[(String, Value)],
 ) -> Result<Option<Value>> {
     let count = counter_value(el, read_so_far);
@@ -439,7 +459,7 @@ fn read_ptr_array(
 /// Read one basic-typed scalar. Returns `None` for a code that cannot be sized
 /// (a bare `char*`, or an unknown code); `Double32`/`Float16` are consumed at
 /// their on-disk width (a 4-byte float / a 2-byte packed half).
-fn read_basic(r: &mut RBuffer, t: i32) -> Result<Option<Value>> {
+fn read_basic(r: &mut RBuffer<'_>, t: i32) -> Result<Option<Value>> {
     Ok(Some(match t {
         1 => Value::I8(r.i8()?),                 // kChar
         11 => Value::U8(r.u8()?),                // kUChar
@@ -477,7 +497,7 @@ const K_MEMBERWISE: u16 = 0x4000;
 fn read_stl(
     reg: &StreamerRegistry,
     el: &StreamerElement,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Result<Value> {
@@ -513,7 +533,7 @@ fn stl_failure(decoded: bool, memberwise: bool) -> &'static str {
 fn read_stream_loop(
     reg: &StreamerRegistry,
     el: &StreamerElement,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     read_so_far: &[(String, Value)],
     depth: usize,
@@ -571,7 +591,7 @@ fn decode_stl(
     reg: &StreamerRegistry,
     type_name: &str,
     memberwise: bool,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Option<Value> {
@@ -614,7 +634,7 @@ fn decode_stl(
 
 /// An STL container's `{Int_t n}` element count, clamped to the bytes left (a
 /// corrupt count then shortens the decode, which the byte-count check catches).
-fn stl_count(r: &mut RBuffer) -> Option<usize> {
+fn stl_count(r: &mut RBuffer<'_>) -> Option<usize> {
     Some(usize::saturating_from(r.be_i32().ok()?.max(0)).min(r.remaining()))
 }
 
@@ -630,7 +650,7 @@ struct MemberwiseHeader {
 
 /// Read a memberwise container's header: the element class's version, then its
 /// checksum when it has no version, then the element count.
-fn read_memberwise_header(r: &mut RBuffer) -> Option<MemberwiseHeader> {
+fn read_memberwise_header(r: &mut RBuffer<'_>) -> Option<MemberwiseHeader> {
     let version = i32::from(r.be_i16().ok()?);
     if version <= 0 {
         r.be_u32().ok()?; // the element class's checksum, in place of a version
@@ -659,7 +679,7 @@ fn read_memberwise<'a>(
     reg: &'a StreamerRegistry,
     elem_type: &'a str,
     header: &MemberwiseHeader,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Option<Vec<Value>> {
@@ -722,7 +742,7 @@ fn read_stl_elements(
     reg: &StreamerRegistry,
     type_name: &str,
     n: usize,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Option<Vec<Value>> {
@@ -737,7 +757,7 @@ fn read_stl_elements(
 fn read_stl_element(
     reg: &StreamerRegistry,
     type_name: &str,
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
     depth: usize,
 ) -> Option<Value> {

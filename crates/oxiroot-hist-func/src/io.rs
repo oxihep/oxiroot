@@ -4,9 +4,8 @@
 
 use oxiroot_hist::{GraphFunction, hist_streamer_classes};
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::object_bytes_any;
 use oxiroot_io_core::streamer_gen::{ClassDef, any, base, basic, objanyptr, objptr, stl, strf};
-use oxiroot_io_core::{Error, FileReader, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
+use oxiroot_io_core::{Error, Object, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
 
 use crate::func::{Func1D, Func2D, Func3D, FuncCore};
 
@@ -80,7 +79,7 @@ impl WriteRoot for Func3D {
 /// `fNpx` = 30), then `fYmin`/`fYmax`, `fNpy`, and an empty `fContour`
 /// (`TArrayD`).
 fn write_tf2_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32, ymin: f64, ymax: f64) {
-    let obj = w.begin_object(4); // Func2D version 4
+    let obj = w.begin_object(4); // TF2 version 4
     f.write_tf1_body(w, ndim, 30); // Func1D base
     w.be_f64(ymin); // fYmin
     w.be_f64(ymax); // fYmax
@@ -92,7 +91,7 @@ fn write_tf2_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32, ymin: f64, ymax
 /// Write a `Func3D` object body (version 3): the `Func2D` base (`fNdim` = 3), then
 /// `fZmin`/`fZmax` and `fNpz`.
 fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin: f64, zmax: f64) {
-    let obj = w.begin_object(3); // Func3D version 3
+    let obj = w.begin_object(3); // TF3 version 3
     write_tf2_body(w, f, 3, ymin, ymax); // Func2D base
     w.be_f64(zmin); // fZmin
     w.be_f64(zmax); // fZmax
@@ -101,11 +100,9 @@ fn write_tf3_body(w: &mut WBuffer, f: &GraphFunction, ymin: f64, ymax: f64, zmin
 }
 
 // ROOT C++ has these classes compiled in; uproot builds a function model from
-// its streamer, so a file storing a Func1D/Func2D/Func3D embeds them (versions and
+// its streamer, so a file storing a TF1/TF2/TF3 embeds them (versions and
 // checksums as ROOT writes them).
 
-/// The `TStreamerInfo`s a `Func1D` (`dim` 1), `Func2D` or `Func3D` needs: its formula,
-/// then its base classes deepest first, then itself.
 /// The classes a `dim`-dimensional function needs: ROOT's captured `TF1`, with
 /// its `TFormula`, `TF1Parameters` and bases, then the generated `TF2`/`TF3`.
 /// The generated `TFormula` and `TF1` are the same class versions as the
@@ -202,7 +199,7 @@ fn tf_classes(dim: usize) -> Vec<ClassDef<'static>> {
 // --- read -------------------------------------------------------------------
 
 /// Read a `Func2D` object body (version 4): the `Func1D` base then `fYmin`/`fYmax`.
-fn read_tf2_body(r: &mut RBuffer) -> Result<(GraphFunction, f64, f64)> {
+fn read_tf2_body(r: &mut RBuffer<'_>) -> Result<(GraphFunction, f64, f64)> {
     let tf2 = r.read_version()?; // Func2D v4
     let base = GraphFunction::read_tf1_body(r)?;
     let ymin = r.be_f64()?;
@@ -277,34 +274,25 @@ fn decode_tf3(name: &str, class: &str, object: &[u8]) -> Result<Func3D> {
 }
 
 impl ReadRoot for Func1D {
-    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tf1(name, &class, &object)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tf1(name, &class, &object)
+    const CLASS: &'static str = "TF1";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| decode_tf1(object.name, object.class, object.bytes))
     }
 }
 
 impl ReadRoot for Func2D {
-    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tf2(name, &class, &object)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tf2(name, &class, &object)
+    const CLASS: &'static str = "TF2";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| decode_tf2(object.name, object.class, object.bytes))
     }
 }
 
 impl ReadRoot for Func3D {
-    fn read_root(file: &FileReader, name: &str) -> Result<Self> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tf3(name, &class, &object)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Self> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tf3(name, &class, &object)
+    const CLASS: &'static str = "TF3";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| decode_tf3(object.name, object.class, object.bytes))
     }
 }

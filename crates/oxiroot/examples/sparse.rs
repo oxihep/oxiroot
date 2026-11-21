@@ -105,11 +105,11 @@ fn main() -> oxiroot::Result<()> {
     // Under std::env::temp_dir(), named for THIS example, and removed before we
     // return — never litter the repo or cwd.
     let path = std::env::temp_dir().join("oxiroot_ex_sparse.root");
-    hs.write_root(&path, Compression::Zstd(5))?; // WriteRoot trait
+    oxiroot::FileWriter::create(&path).add(&hs).write()?; // WriteRoot trait
     println!("\nwrote THnSparse -> {}", path.display());
 
     let f = FileReader::open(&path)?;
-    let back = SparseHist::read_root(&f, "cutspace")?; // ReadRoot trait
+    let back = f.get::<SparseHist>("cutspace")?; // ReadRoot trait
     println!(
         "read back `cutspace`: {} dims, {} entries, {} filled cells",
         back.ndim(),

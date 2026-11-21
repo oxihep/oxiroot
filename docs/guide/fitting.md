@@ -51,7 +51,7 @@ moment loop is needed.
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let mut peak = Hist::reg(60, 80.0, 100.0).double().to_root().named("mass");
+let mut peak = Hist::reg(60, 80.0, 100.0).double().to_root()?.named("mass");
 peak.track_sumw2(); // track per-bin errors for the chi-square
 for _ in 0..10_000 {
     peak.fill(/* sample */ 91.2);
@@ -440,7 +440,7 @@ integrals:
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().to_root().named("map");
+let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().to_root()?.named("map");
 // … fill map with (x, y) pairs …
 let blob = Model::product(
     "blob",
@@ -449,7 +449,7 @@ let blob = Model::product(
 let fit = map.fit_opts(&blob, &FitOptions::new().method(FitMethod::Likelihood));
 
 // A ROOT TF2 converts too:
-let tf2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", -4.0, 4.0, -4.0, 4.0)?;
+let tf2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", -4.0..=4.0, -4.0..=4.0)?;
 let plane_fit = map.fit(&tf2.to_model());
 
 // Unbinned: events of two variables, normalized over x × y ranges.

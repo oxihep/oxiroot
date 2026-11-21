@@ -4,10 +4,13 @@
 //! (its `vector<pair<double,double>>` member uses memberwise serialization), so
 //! ROOT C++ is the interop oracle here.
 
-use oxiroot_io_core::raw::{read_named, skip_versioned};
-use oxiroot_io_core::{FileReader, RBuffer, Result};
+use oxiroot_io_core::raw::{
+    K_BYTE_COUNT_MASK, K_CLASS_MASK, read_named, read_pointer_header, skip_versioned,
+};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::{BinContentType, object_bytes, object_bytes_in};
+use crate::base::BinContentType;
 use crate::hist1d::Hist1D;
 
 /// An efficiency plot (ROOT `TEfficiency`).
@@ -40,10 +43,11 @@ impl Efficiency {
 
     /// Create an empty `Efficiency` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and ROOT's default interval parameters.
-    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> Efficiency {
+    #[must_use]
+    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> Self {
         let total = Hist1D::new(nbins, xlo, xhi).named("total");
         let passed = Hist1D::new(nbins, xlo, xhi).named("passed");
-        Efficiency {
+        Self {
             name: String::new(),
             title: String::new(),
             passed,
@@ -67,6 +71,7 @@ impl Efficiency {
 
     /// Efficiency in bin `bin` (1-based): `passed / total`, or `0` when the bin
     /// has no trials.
+    #[must_use]
     pub fn efficiency(&self, bin: usize) -> f64 {
         let t = self.total.contents.get(bin).copied().unwrap_or(0.0);
         if t != 0.0 {
@@ -76,7 +81,7 @@ impl Efficiency {
         }
     }
 
-    pub(crate) fn read(r: &mut RBuffer) -> Result<Efficiency> {
+    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
         let te = r.read_version()?; // Efficiency wrapper (v2)
         let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
@@ -97,7 +102,7 @@ impl Efficiency {
             r.seek(end)?;
         }
 
-        Ok(Efficiency {
+        Ok(Self {
             name: named.name,
             title: named.title,
             passed,
@@ -112,40 +117,26 @@ impl Efficiency {
 }
 
 /// Skip a byte-counted member (`{kByteCountMask | len}{len bytes}`).
-fn skip_byte_counted(r: &mut RBuffer) -> Result<()> {
-    let bc = r.be_i32()?.cast_unsigned();
-    r.skip((bc & 0x3fff_ffff) as usize)
+fn skip_byte_counted(r: &mut RBuffer<'_>) -> Result<()> {
+    let count = r.be_u32()?;
+    r.skip((count & !(K_BYTE_COUNT_MASK | K_CLASS_MASK)) as usize)
 }
 
-/// Read an embedded `Hist1D*` object pointer: `{byte count}{class tag}{TH1D object}`.
-/// The tag is `kNewClassTag` + the class name on first use, or a class
-/// back-reference afterwards (the two histograms share the `TH1D` class).
-fn read_embedded_th1d(r: &mut RBuffer) -> Result<Hist1D> {
-    let _bc = r.be_i32()?.cast_unsigned(); // object byte count
-    let tag = r.be_i32()?.cast_unsigned(); // class tag
-    if tag == 0xFFFF_FFFF {
-        // kNewClassTag: a NUL-terminated class name follows.
-        while r.u8()? != 0 {}
+/// Read an embedded `TH1D*`: an object pointer whose class is known from the
+/// member (the second histogram names it by a back-reference to the first).
+fn read_embedded_th1d(r: &mut RBuffer<'_>) -> Result<Hist1D> {
+    if read_pointer_header(r)?.is_none() {
+        return Err(Error::Format(
+            "a TEfficiency histogram pointer is null".into(),
+        ));
     }
-    // Otherwise `tag` was a class back-reference (already consumed).
     Hist1D::read(r, BinContentType::F64)
 }
 
-/// Read an `Efficiency` named `name` from `file`.
-pub(crate) fn read_tefficiency(file: &FileReader, name: &str) -> Result<Efficiency> {
-    Efficiency::read(&mut RBuffer::new(&object_bytes(file, name, "TEfficiency")?))
-}
+impl ReadRoot for Efficiency {
+    const CLASS: &'static str = "TEfficiency";
 
-/// Read an `Efficiency` from subdirectory `subdir`.
-pub(crate) fn read_tefficiency_in(
-    file: &FileReader,
-    subdir: &str,
-    name: &str,
-) -> Result<Efficiency> {
-    Efficiency::read(&mut RBuffer::new(&object_bytes_in(
-        file,
-        subdir,
-        name,
-        "TEfficiency",
-    )?))
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+    }
 }

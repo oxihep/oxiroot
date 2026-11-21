@@ -6,7 +6,8 @@ use crate::support::write_tree_file;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, Error, FileReader};
-use oxiroot_tree::{Branch, BranchValues, SplitMember, TreeReader};
+use oxiroot_tree::TreeReader;
+use oxiroot_tree::raw::{Branch, BranchValues, SplitMember};
 
 fn split_branch() -> Branch {
     // Mirrors `fixtures/tree_split.root`: Hit = {float x; float y; int id;}.
@@ -50,7 +51,7 @@ fn writes_split_vector_zstd() {
 #[test]
 fn writes_split_vector_of_struct() {
     let out = PathBuf::from("/tmp/oxiroot_tree_split.root");
-    write_tree_file(&out, "T", &[split_branch()], Compression::None).expect("write");
+    write_tree_file(&out, "T", &[split_branch()], Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
@@ -71,7 +72,7 @@ fn writes_split_vector_of_struct() {
     );
 }
 
-/// A different struct (double/float/Long64_t members, an empty entry, more
+/// A different struct (`double/float/Long64_t` members, an empty entry, more
 /// entries) to prove the writer is not specialised to the `Hit` fixture.
 #[test]
 fn writes_split_vector_general_struct() {
@@ -114,7 +115,7 @@ fn writes_split_vector_general_struct() {
         ],
     );
     let out = PathBuf::from("/tmp/oxiroot_tree_split_particle.root");
-    write_tree_file(&out, "T", &[branch], Compression::None).expect("write");
+    write_tree_file(&out, "T", &[branch], Compression::Stored).expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
@@ -144,7 +145,7 @@ fn writes_split_vector_general_struct() {
 #[test]
 fn empty_split_member_list_errors_instead_of_panicking() {
     let branch = Branch::split_vector("hits", "Hit", Vec::new());
-    let err = crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+    let err = crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::Stored)
         .expect_err("an empty member list must be rejected");
     let msg = err.to_string();
     assert!(
@@ -160,7 +161,7 @@ fn empty_split_member_list_errors_instead_of_panicking() {
 fn inconsistent_split_members_are_rejected() {
     let write = |members: Vec<SplitMember>| {
         let branch = Branch::split_vector("hits", "Hit", members);
-        crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::None)
+        crate::support::tree_file_bytes("f.root", "T", &[branch], Compression::Stored)
     };
     let x = || SplitMember::f32("x", vec![vec![1.0], vec![2.0, 3.0]]);
 

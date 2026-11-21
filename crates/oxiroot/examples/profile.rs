@@ -43,7 +43,7 @@ fn main() -> oxiroot::Result<()> {
     // running mean of y and the count needed for its error on the mean.
     let mut prof = Hist::reg(10, 0.0, 10.0)
         .mean()
-        .to_root()
+        .to_root()?
         .named("resp")
         .titled("detector response vs true energy");
 
@@ -81,15 +81,12 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Write it to a ROOT file and read it straight back. --------------------
     // `FileWriter::create(...).add(...)` is the one way to compose a file; a single
-    // profile could also use `prof.write_root(path, comp)`.
     let path = dir.join("oxiroot_ex_profile.root");
-    FileWriter::create(&path)
-        .add(&prof)
-        .write(Compression::Zstd(5))?;
+    FileWriter::create(&path).add(&prof).write()?;
     println!("wrote profile -> {}", path.display());
 
     let f = FileReader::open(&path)?;
-    let back = Profile1D::read_root(&f, "resp")?;
+    let back = f.get::<Profile1D>("resp")?;
     // Profile1D derives PartialEq, so a full round-trip is a single comparison.
     println!(
         "read back `{}`: identical to what we wrote? {}",
@@ -105,11 +102,11 @@ fn main() -> oxiroot::Result<()> {
     // --- A 2-D profile: mean z over an (x, y) grid. ----------------------------
     // Same idea, one dimension up. Each (x, y) cell holds the mean of a third
     // quantity z; here z is a smooth surface plus scatter. `.reg(...).reg(...)`
-    // gives two axes, then `.mean().to_root()` makes it a Profile2D.
+    // gives two axes, then `.mean().to_root()?` makes it a Profile2D.
     let mut prof2d = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
         .mean()
-        .to_root()
+        .to_root()?
         .named("surface")
         .titled("mean z over (x, y)");
 

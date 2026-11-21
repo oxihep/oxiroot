@@ -4,7 +4,7 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::FileReader;
 
 #[test]
@@ -12,6 +12,7 @@ fn weighted_sumw2_round_trips() {
     let mut h = Hist::reg(3, 0.0, 3.0)
         .double()
         .to_root()
+        .unwrap()
         .named("hw")
         .titled("weighted");
     h.track_sumw2(); // enable per-bin error tracking before filling
@@ -26,10 +27,13 @@ fn weighted_sumw2_round_trips() {
     assert_eq!(h.bin_error(2), 1.0);
 
     let out = PathBuf::from("/tmp/rootrs_weighted.root");
-    h.write_root(&out, oxiroot_io_core::Compression::None)
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&h)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    let h2 = Hist1D::read_root(&f, "hw").expect("read back");
+    let h2 = f.get::<Hist1D>("hw").expect("read back");
     assert_eq!(h2, h, "weighted histogram (incl. Sumw2) must round-trip");
     assert_eq!(
         h2.sumw2().expect("error tracking is on")[1],
@@ -44,6 +48,7 @@ fn variable_bins_round_trip() {
     let mut h = Hist::var(&edges)
         .double()
         .to_root()
+        .unwrap()
         .named("hv")
         .titled("var");
     h.fill(0.5); // bin 1
@@ -58,10 +63,13 @@ fn variable_bins_round_trip() {
     assert_eq!(h.entries(), 6.0);
 
     let out = PathBuf::from("/tmp/rootrs_varbins.root");
-    h.write_root(&out, oxiroot_io_core::Compression::None)
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&h)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
     let f = FileReader::open(&out).expect("reopen");
-    let h2 = Hist1D::read_root(&f, "hv").expect("read back");
+    let h2 = f.get::<Hist1D>("hv").expect("read back");
     assert_eq!(h2, h, "variable-bin histogram must round-trip");
     assert_eq!(h2.edges(), edges, "edges survived write->read");
 }

@@ -1,17 +1,18 @@
-//! M6: streaming, multi-cluster RNTuple write. Each batch becomes one cluster;
+//! M6: streaming, multi-cluster `RNTuple` write. Each batch becomes one cluster;
 //! the file must read back with all entries in order through our reader (and, as
 //! separately verified, official ROOT and uproot).
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::{Column, Field, FieldValues, NtupleReader, NtupleWriter};
+use oxiroot_rntuple::NtupleReader;
+use oxiroot_rntuple::raw::{Column, Field, FieldValues, NtupleWriter};
 
 #[test]
 fn streams_multiple_clusters() {
     let out = PathBuf::from("/tmp/rootrs_stream_ntuple.root");
     let mut w =
-        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
+        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::Stored).expect("create");
 
     // Three clusters of 4 entries each (12 total), pushed one batch at a time.
     let mut expect_x = Vec::new();
@@ -90,7 +91,7 @@ fn streams_collections_and_strings_across_clusters() {
 fn write_batch_rejects_changed_schema() {
     let out = PathBuf::from("/tmp/rootrs_stream_schema_change.root");
     let mut w =
-        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::None).expect("create");
+        NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::Stored).expect("create");
 
     w.write_batch(&[Field::i32("x", vec![1, 2, 3])])
         .expect("first batch fixes the schema");
@@ -116,7 +117,7 @@ fn write_batch_rejects_changed_schema() {
 #[test]
 fn streaming_large_writes_big_format() {
     let out = PathBuf::from("/tmp/rootrs_stream_large.root");
-    let mut w = NtupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::None)
+    let mut w = NtupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::Stored)
         .expect("create_large");
     w.write_batch(&[
         Field::i32("x", vec![1, 2, 3]),

@@ -1,4 +1,4 @@
-//! Branch introspection (B1): type/len/title accessors, BranchValues helpers,
+//! Branch introspection (B1): type/len/title accessors, `BranchValues` helpers,
 //! and the unsupported-branch diagnostics, on a flat primitive tree.
 
 use std::path::PathBuf;

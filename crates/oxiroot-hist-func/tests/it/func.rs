@@ -8,9 +8,9 @@
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, ReadRoot, WriteRoot};
 use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 use oxiroot_io_core::{Compression, FileReader};
+use oxiroot_io_core::{FileWriter, WriteRoot};
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(
@@ -24,7 +24,7 @@ fn fixture(name: &str) -> FileReader {
 #[test]
 fn reads_root_written_tf1() {
     let f = fixture("tf1.root");
-    let g = Func1D::read_root(&f, "myfunc").unwrap();
+    let g = f.get::<Func1D>("myfunc").unwrap();
     assert_eq!(g.name(), "myfunc");
     assert_eq!(g.title(), "[0]*sin([1]*x) + [2]");
     assert_eq!(g.formula(), "[p0]*sin([p1]*x)+[p2]");
@@ -39,12 +39,12 @@ fn reads_root_written_tf1() {
 #[test]
 fn reads_root_written_tf2_and_tf3() {
     let f = fixture("tf23.root");
-    let f2 = Func2D::read_root(&f, "f2").unwrap();
+    let f2 = f.get::<Func2D>("f2").unwrap();
     assert_eq!(f2.title(), "[0]*sin(x) + [1]*y*y");
     assert_eq!(f2.params(), &[1.5, 0.7]);
     assert!((f2.eval(1.0, 1.0) - 1.962_206).abs() < 1e-5); // ROOT Eval(1,1)
 
-    let f3 = Func3D::read_root(&f, "f3").unwrap();
+    let f3 = f.get::<Func3D>("f3").unwrap();
     assert_eq!(f3.title(), "[0]*x + y*z");
     assert_eq!(f3.params(), &[2.0]);
     assert_eq!(f3.eval(1.0, 1.0, 1.0), 3.0); // ROOT Eval(1,1,1)
@@ -59,11 +59,12 @@ fn tf1_bytes_are_byte_exact_against_root() {
     // the canonical `1`. Both read back as `true`, so we accept `(1, non-zero)`
     // at a single position and require every other byte to match exactly.
     let f = fixture("tf1.root");
-    let obj = Func1D::new("myfunc", "[0]*sin([1]*x) + [2]", 0.0, 6.283)
+    let obj = Func1D::new("myfunc", "[0]*sin([1]*x) + [2]", 0.0..=6.283)
         .unwrap()
-        .with_params(vec![2.0, 1.5, 0.5])
+        .with_params(&[2.0, 1.5, 0.5])
+        .unwrap()
         .to_root_bytes();
-    let (_, root) = oxiroot_io_core::raw::object_bytes_any(&f, "myfunc").unwrap();
+    let (_, root, _) = oxiroot_io_core::raw::object_bytes(&f, "myfunc").unwrap();
     assert_eq!(obj.len(), root.len(), "TF1 object length differs from ROOT");
     for (i, (&a, &b)) in obj.iter().zip(&root).enumerate() {
         if a != b {
@@ -79,31 +80,33 @@ fn tf1_bytes_are_byte_exact_against_root() {
 #[test]
 fn round_trips_tf1_tf2_tf3_through_oxiroot() {
     let out = std::env::temp_dir().join("oxiroot_tf_rt.root");
-    let f1 = Func1D::new("f1", "[0]*exp(-[1]*x)", 0.0, 5.0)
+    let f1 = Func1D::new("f1", "[0]*exp(-[1]*x)", 0.0..=5.0)
         .unwrap()
-        .with_params(vec![10.0, 0.5]);
-    let f2 = Func2D::new("f2", "[0]*x + y", -2.0, 2.0, -2.0, 2.0)
+        .with_params(&[10.0, 0.5])
+        .unwrap();
+    let f2 = Func2D::new("f2", "[0]*x + y", -2.0..=2.0, -2.0..=2.0)
         .unwrap()
-        .with_params(vec![3.0]);
-    let f3 = Func3D::new("f3", "x + y + z + [0]", 0.0, 1.0, 0.0, 1.0, 0.0, 1.0)
+        .with_params(&[3.0])
+        .unwrap();
+    let f3 = Func3D::new("f3", "x + y + z + [0]", 0.0..=1.0, 0.0..=1.0, 0.0..=1.0)
         .unwrap()
-        .with_params(vec![0.25]);
+        .with_params(&[0.25])
+        .unwrap();
 
     FileWriter::create(&out)
         .add(&f1)
         .add(&f2)
         .add(&f3)
-        .write(Compression::None)
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(Func1D::read_root(&f, "f1").unwrap(), f1);
-    assert_eq!(Func2D::read_root(&f, "f2").unwrap(), f2);
-    assert_eq!(Func3D::read_root(&f, "f3").unwrap(), f3);
+    assert_eq!(f.get::<Func1D>("f1").unwrap(), f1);
+    assert_eq!(f.get::<Func2D>("f2").unwrap(), f2);
+    assert_eq!(f.get::<Func3D>("f3").unwrap(), f3);
     // and the evaluation survives the round trip.
-    assert!(
-        (Func1D::read_root(&f, "f1").unwrap().eval(2.0) - 10.0 * (-1.0f64).exp()).abs() < 1e-12
-    );
+    assert!((f.get::<Func1D>("f1").unwrap().eval(2.0) - 10.0 * (-1.0f64).exp()).abs() < 1e-12);
     let _ = std::fs::remove_file(&out);
 }
 
@@ -113,10 +116,15 @@ fn written_file_embeds_function_streamer_info() {
     // Verify the writer emits it: with no compression the class/member names
     // appear literally in the file.
     let out = std::env::temp_dir().join("oxiroot_tf_streamer.root");
-    Func2D::new("f2", "[0]*x + y", 0.0, 1.0, 0.0, 1.0)
-        .unwrap()
-        .with_params(vec![2.0])
-        .write_root(&out, Compression::None)
+    FileWriter::create(&out)
+        .add(
+            &Func2D::new("f2", "[0]*x + y", 0.0..=1.0, 0.0..=1.0)
+                .unwrap()
+                .with_params(&[2.0])
+                .unwrap(),
+        )
+        .compression(Compression::Stored)
+        .write()
         .unwrap();
     let bytes = std::fs::read(&out).unwrap();
     let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
@@ -128,9 +136,10 @@ fn written_file_embeds_function_streamer_info() {
 
 #[test]
 fn builds_and_evaluates_shortcuts() {
-    let g = Func1D::new("g", "gaus", -5.0, 5.0)
+    let g = Func1D::new("g", "gaus", -5.0..=5.0)
         .unwrap()
-        .with_params(vec![2.0, 0.0, 1.0]);
+        .with_params(&[2.0, 0.0, 1.0])
+        .unwrap();
     assert_eq!(g.eval(0.0), 2.0);
     assert!((g.integral(-10.0, 10.0) - 2.0 * (2.0 * std::f64::consts::PI).sqrt()).abs() < 1e-4);
 }

@@ -1,5 +1,5 @@
 //! Write throughput: the same 1M-entry dataset — two scalars and a
-//! `std::vector<double>` — written to memory as a `TTree` and an RNTuple, by
+//! `std::vector<double>` — written to memory as a `TTree` and an `RNTuple`, by
 //! `DatasetWriter` from a `Batch` and by the format's own writer from
 //! per-entry rows.
 //!
@@ -9,9 +9,9 @@ use std::hint::black_box;
 use std::io::Cursor;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use oxiroot::ntuple::{Field, NtupleWriter};
+use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
-use oxiroot::tree::{Branch, TreeWriter};
+use oxiroot::tree::raw::{Branch, TreeWriter};
 
 const ENTRIES: usize = 1_000_000;
 
@@ -44,7 +44,7 @@ fn bench(c: &mut Criterion) {
             b.iter(|| {
                 let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "w.root", "events", format)
                     .compression(Compression::Zstd(1));
-                w.write(&batch).unwrap();
+                w.write(batch.clone()).unwrap();
                 black_box(w.finish().unwrap())
             });
         });

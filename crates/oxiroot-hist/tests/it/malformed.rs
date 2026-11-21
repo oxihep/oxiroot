@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use oxiroot_hist::{
-    Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D, ReadRoot,
+    Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D,
     SparseHist,
 };
 use oxiroot_io_core::FileReader;
@@ -40,16 +40,16 @@ fn fixture(name: &str) -> Vec<u8> {
 
 /// Try every reader; the point is that none panics regardless of the bytes.
 fn poke_hist(f: &FileReader, name: &str) {
-    let _ = Hist1D::read_root(f, name);
-    let _ = Hist2D::read_root(f, name);
-    let _ = Hist3D::read_root(f, name);
-    let _ = Profile1D::read_root(f, name);
-    let _ = Profile2D::read_root(f, name);
-    let _ = Profile3D::read_root(f, name);
-    let _ = Efficiency::read_root(f, name);
-    let _ = SparseHist::read_root(f, name);
-    let _ = PolyHist::read_root(f, name);
-    let _ = Graph::read_root(f, name);
+    let _ = f.get::<Hist1D>(name);
+    let _ = f.get::<Hist2D>(name);
+    let _ = f.get::<Hist3D>(name);
+    let _ = f.get::<Profile1D>(name);
+    let _ = f.get::<Profile2D>(name);
+    let _ = f.get::<Profile3D>(name);
+    let _ = f.get::<Efficiency>(name);
+    let _ = f.get::<SparseHist>(name);
+    let _ = f.get::<PolyHist>(name);
+    let _ = f.get::<Graph>(name);
 }
 
 /// Stride that keeps each fixture to roughly `samples` probes regardless of size.

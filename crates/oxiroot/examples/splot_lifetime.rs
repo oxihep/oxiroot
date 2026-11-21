@@ -10,7 +10,7 @@
 //! 3. **Compute sWeights** (sPlot) and **write** them as a second tree, one
 //!    entry per candidate — a friend of the first.
 //! 4. **Fit the lifetime** to the sWeighted decay times with the signal model
-//!    alone, with three error estimates: naive, SumW2, and the asymptotically
+//!    alone, with three error estimates: naive, `SumW2`, and the asymptotically
 //!    correct one (Langenbruch).
 //! 5. **Check the errors with toys** of the whole procedure: only the
 //!    asymptotic ones give pulls of unit width.
@@ -171,6 +171,7 @@ mod splot {
         let mut h = Hist::reg(n, lo, hi)
             .weight()
             .to_root()
+            .unwrap()
             .named(name)
             .titled(title);
         match weights {
@@ -192,7 +193,7 @@ mod splot {
         let (m, t) = sample(2026);
         let tree_path = dir.join("b0_candidates.root");
         let mut out = DatasetWriter::create(&tree_path, "b0", Format::Tree)?;
-        out.write(&Batch::new().column("mass", m)?.column("time", t)?)?;
+        out.write(Batch::new().column("mass", m)?.column("time", t)?)?;
         out.finish()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "b0")?;
@@ -221,7 +222,7 @@ mod splot {
         let sw_path = dir.join("b0_sweights.root");
         let mut out = DatasetWriter::create(&sw_path, "sweights", Format::Tree)?;
         out.write(
-            &Batch::new()
+            Batch::new()
                 .column("n_sig_sw", w_sig.clone())?
                 .column("n_bkg_sw", w_bkg.clone())?,
         )?;
@@ -423,8 +424,8 @@ mod splot {
             .add(&t_hist)
             .add(&naive)
             .add(&asym)
-            .write(Compression::Zstd(5))?;
-        let back = Hist1D::read_root(&FileReader::open(&results)?, "time_sweighted")?;
+            .write()?;
+        let back = FileReader::open(&results)?.get::<Hist1D>("time_sweighted")?;
         println!(
             "\n6. Results file {} (sWeighted time histogram: {:.1} signal read back)",
             results.display(),

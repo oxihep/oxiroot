@@ -68,15 +68,17 @@ impl StreamerRegistry {
     /// hand-made layout in a test.
     #[must_use]
     pub fn from_infos(infos: Vec<StreamerInfo>) -> Self {
-        StreamerRegistry { infos }
+        Self { infos }
     }
 
     /// All streamer infos, in file order.
+    #[must_use]
     pub fn infos(&self) -> &[StreamerInfo] {
         &self.infos
     }
 
     /// Look up the (first) streamer info for a class.
+    #[must_use]
     pub fn get(&self, class: &str) -> Option<&StreamerInfo> {
         self.infos.iter().find(|i| i.class_name == class)
     }
@@ -85,6 +87,7 @@ impl StreamerRegistry {
     /// first one for `class` if the file has none for that version. A file
     /// describes each version of a class it holds objects of, and the layouts
     /// can differ, so decode an object with the description of its own version.
+    #[must_use]
     pub fn get_at(&self, class: &str, version: i32) -> Option<&StreamerInfo> {
         self.infos
             .iter()
@@ -93,6 +96,7 @@ impl StreamerRegistry {
     }
 
     /// The names of all described classes.
+    #[must_use]
     pub fn class_names(&self) -> Vec<&str> {
         self.infos.iter().map(|i| i.class_name.as_str()).collect()
     }
@@ -171,7 +175,10 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
 
 /// Parse a `TStreamerInfo` body (after its `ReadObjectAny` header), with the
 /// byte range of each element's body.
-fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<(StreamerInfo, ElementRanges)> {
+fn parse_one_info(
+    r: &mut RBuffer<'_>,
+    tags: &mut TagReader,
+) -> Result<(StreamerInfo, ElementRanges)> {
     let _version = r.read_version()?;
     let named = read_named(r)?;
     let checksum = r.be_u32()?;
@@ -201,7 +208,7 @@ fn parse_one_info(r: &mut RBuffer, tags: &mut TagReader) -> Result<(StreamerInfo
 /// with each element's subclass name and body range.
 #[allow(clippy::type_complexity)]
 fn parse_element_array(
-    r: &mut RBuffer,
+    r: &mut RBuffer<'_>,
     tags: &mut TagReader,
 ) -> Result<Vec<(StreamerElement, (String, Option<Range<usize>>))>> {
     let _version = r.read_version()?;
@@ -227,7 +234,7 @@ fn parse_element_array(
 
 /// Parse a single `TStreamerElement` (or subclass) body. The element class's own
 /// version wraps the `TStreamerElement` base, which carries the common members.
-fn parse_one_element(r: &mut RBuffer, element_class: &str) -> Result<StreamerElement> {
+fn parse_one_element(r: &mut RBuffer<'_>, element_class: &str) -> Result<StreamerElement> {
     let _subclass_version = r.read_version()?;
     // `TStreamerSTLstring` wraps `TStreamerSTL`, which wraps `TStreamerElement`,
     // so it carries one more version level than the other element subclasses

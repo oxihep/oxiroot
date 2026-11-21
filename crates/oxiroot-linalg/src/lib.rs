@@ -6,16 +6,14 @@
 //!
 //! This is a leaf crate: it owns these three types and their ROOT persistence,
 //! and depends only on [`oxiroot_io_core`]. Read one back with
-//! [`ReadRoot::read_root`]; write one with [`WriteRoot::write_root`] (or put
+//! `FileReader::get`; write one with `FileWriter::add` (or put
 //! several objects in a file via the builder in `oxiroot-hist` / the `oxiroot`
 //! facade).
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{object_bytes_any, read_object_base, write_object_base};
+use oxiroot_io_core::raw::{check_len, read_object_base, write_object_base};
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, basicptr, basicptr_in};
-use oxiroot_io_core::{
-    Error, FileReader, FromMember, RBuffer, ReadRoot, Result, WBuffer, WriteRoot,
-};
+use oxiroot_io_core::{Error, Object, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
 
 /// `fTol` ROOT stores in a matrix base (`TMatrixTBase::fTol`), its default
 /// `DBL_EPSILON`. Matched so written files equal ROOT's byte-for-byte.
@@ -39,21 +37,8 @@ fn element_count(what: &str, nrows: usize, ncols: usize) -> Result<usize> {
         })
 }
 
-/// `Ok` if `elements` has the `expected` length, else [`Error::LengthMismatch`].
-fn check_len(what: String, expected: usize, found: usize) -> Result<()> {
-    if found == expected {
-        Ok(())
-    } else {
-        Err(Error::LengthMismatch {
-            what,
-            expected,
-            found,
-        })
-    }
-}
-
 /// A dimension read from a file: ROOT's `Int_t`, which must not be negative.
-fn read_dim(r: &mut RBuffer, field: &str) -> Result<usize> {
+fn read_dim(r: &mut RBuffer<'_>, field: &str) -> Result<usize> {
     let v = r.be_i32()?;
     usize::try_from(v).map_err(|_| Error::Format(format!("negative matrix {field} ({v})")))
 }
@@ -75,7 +60,7 @@ fn write_matrix_base(w: &mut WBuffer, nrows: usize, ncols: usize) {
 
 /// Read the `TMatrixTBase<double>` dimension fields, returning `(nrows, ncols)`.
 /// The cursor must sit at the base's version header.
-fn read_matrix_base(r: &mut RBuffer) -> Result<(usize, usize)> {
+fn read_matrix_base(r: &mut RBuffer<'_>) -> Result<(usize, usize)> {
     r.read_version()?; // TMatrixTBase version
     read_object_base(r)?;
     let nrows = read_dim(r, "fNrows")?;
@@ -101,8 +86,8 @@ pub struct Vector {
 
 impl Vector {
     /// A vector holding `elements` (give it a key name with [`named`](Self::named)).
-    pub fn new(elements: impl Into<Vec<f64>>) -> Vector {
-        Vector {
+    pub fn new(elements: impl Into<Vec<f64>>) -> Self {
+        Self {
             name: String::new(),
             elements: elements.into(),
         }
@@ -110,24 +95,28 @@ impl Vector {
 
     /// Set the key name this vector is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Vector {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The elements.
-    pub fn elements(&self) -> &[f64] {
+    #[must_use]
+    pub fn as_slice(&self) -> &[f64] {
         &self.elements
     }
     /// The number of elements.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.elements.len()
     }
     /// Whether the vector is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
@@ -161,14 +150,60 @@ impl WriteRoot for Vector {
     }
 }
 
-impl ReadRoot for Vector {
-    fn read_root(file: &FileReader, name: &str) -> Result<Vector> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tvectord(name, &class, &object)
+impl std::ops::Index<(usize, usize)> for Matrix {
+    type Output = f64;
+
+    /// Element `(row, column)`.
+    ///
+    /// # Panics
+    /// If either index is out of range.
+    fn index(&self, (i, j): (usize, usize)) -> &f64 {
+        assert!(
+            i < self.nrows && j < self.ncols,
+            "({i}, {j}) is out of range for a {}x{} matrix",
+            self.nrows,
+            self.ncols
+        );
+        &self.elements[i * self.ncols + j]
     }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Vector> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tvectord(name, &class, &object)
+}
+
+impl std::ops::Index<(usize, usize)> for SymMatrix {
+    type Output = f64;
+
+    /// Element `(row, column)`.
+    ///
+    /// # Panics
+    /// If either index is out of range.
+    fn index(&self, (i, j): (usize, usize)) -> &f64 {
+        assert!(
+            i < self.n && j < self.n,
+            "({i}, {j}) is out of range for a {n}x{n} matrix",
+            n = self.n
+        );
+        &self.elements[i * self.n + j]
+    }
+}
+
+impl From<Vec<f64>> for Vector {
+    /// An unnamed vector holding `elements`.
+    fn from(elements: Vec<f64>) -> Self {
+        Self::new(elements)
+    }
+}
+
+impl AsRef<[f64]> for Vector {
+    fn as_ref(&self) -> &[f64] {
+        &self.elements
+    }
+}
+
+impl ReadRoot for Vector {
+    const CLASS: &'static str = "TVectorT<double>";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS)
+            .then(|| decode_tvectord(object.name, object.class, object.bytes))
     }
 }
 
@@ -215,15 +250,15 @@ impl Matrix {
     /// [`Error::LengthMismatch`] if `elements.len() != nrows * ncols`, and
     /// [`Error::Format`] if the matrix has more rows, columns or elements than
     /// ROOT can store (`i32::MAX`).
-    pub fn new(nrows: usize, ncols: usize, elements: impl Into<Vec<f64>>) -> Result<Matrix> {
+    pub fn new(nrows: usize, ncols: usize, elements: impl Into<Vec<f64>>) -> Result<Self> {
         let elements = elements.into();
         let expected = element_count("TMatrixD", nrows, ncols)?;
         check_len(
-            format!("TMatrixD {nrows}x{ncols} elements"),
+            format_args!("TMatrixD {nrows}x{ncols} elements"),
             expected,
             elements.len(),
         )?;
-        Ok(Matrix {
+        Ok(Self {
             name: String::new(),
             nrows,
             ncols,
@@ -233,38 +268,35 @@ impl Matrix {
 
     /// Set the key name this matrix is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Matrix {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The number of rows.
+    #[must_use]
     pub fn rows(&self) -> usize {
         self.nrows
     }
     /// The number of columns.
+    #[must_use]
     pub fn cols(&self) -> usize {
         self.ncols
     }
-    /// The element at row `i`, column `j`.
-    ///
-    /// # Panics
-    /// If `i` or `j` is out of range.
-    pub fn get(&self, i: usize, j: usize) -> f64 {
-        assert!(
-            i < self.nrows && j < self.ncols,
-            "TMatrixD::get({i}, {j}) out of range for a {}x{} matrix",
-            self.nrows,
-            self.ncols
-        );
-        self.elements[i * self.ncols + j]
+    /// Element `(i, j)` (row, column), or `None` if either is out of range.
+    /// `m[(i, j)]` is the form that panics instead.
+    #[must_use]
+    pub fn get(&self, i: usize, j: usize) -> Option<f64> {
+        (i < self.nrows && j < self.ncols).then(|| self.elements[i * self.ncols + j])
     }
     /// The elements, row-major.
-    pub fn elements(&self) -> &[f64] {
+    #[must_use]
+    pub fn as_slice(&self) -> &[f64] {
         &self.elements
     }
 }
@@ -296,13 +328,11 @@ impl WriteRoot for Matrix {
 }
 
 impl ReadRoot for Matrix {
-    fn read_root(file: &FileReader, name: &str) -> Result<Matrix> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tmatrixd(name, &class, &object)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<Matrix> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tmatrixd(name, &class, &object)
+    const CLASS: &'static str = "TMatrixT<double>";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS)
+            .then(|| decode_tmatrixd(object.name, object.class, object.bytes))
     }
 }
 
@@ -355,11 +385,11 @@ impl SymMatrix {
     /// [`Error::LengthMismatch`] if `elements.len() != n * n`, and
     /// [`Error::Format`] if the matrix has more rows or elements than ROOT can
     /// store (`i32::MAX`).
-    pub fn new(n: usize, elements: impl Into<Vec<f64>>) -> Result<SymMatrix> {
+    pub fn new(n: usize, elements: impl Into<Vec<f64>>) -> Result<Self> {
         let mut elements = elements.into();
         let expected = element_count("TMatrixDSym", n, n)?;
         check_len(
-            format!("TMatrixDSym {n}x{n} elements"),
+            format_args!("TMatrixDSym {n}x{n} elements"),
             expected,
             elements.len(),
         )?;
@@ -368,7 +398,7 @@ impl SymMatrix {
                 elements[i * n + j] = elements[j * n + i];
             }
         }
-        Ok(SymMatrix {
+        Ok(Self {
             name: String::new(),
             n,
             elements,
@@ -377,33 +407,30 @@ impl SymMatrix {
 
     /// Set the key name this matrix is stored under.
     #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> SymMatrix {
+    pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// The key name.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
     /// The dimension `n` (the matrix is `n`×`n`).
+    #[must_use]
     pub fn dim(&self) -> usize {
         self.n
     }
-    /// The element at row `i`, column `j`.
-    ///
-    /// # Panics
-    /// If `i` or `j` is out of range.
-    pub fn get(&self, i: usize, j: usize) -> f64 {
-        assert!(
-            i < self.n && j < self.n,
-            "TMatrixDSym::get({i}, {j}) out of range for a {n}x{n} matrix",
-            n = self.n
-        );
-        self.elements[i * self.n + j]
+    /// Element `(i, j)` (row, column), or `None` if either is out of range.
+    /// `m[(i, j)]` is the form that panics instead.
+    #[must_use]
+    pub fn get(&self, i: usize, j: usize) -> Option<f64> {
+        (i < self.n && j < self.n).then(|| self.elements[i * self.n + j])
     }
     /// The full `n*n` elements, row-major.
-    pub fn elements(&self) -> &[f64] {
+    #[must_use]
+    pub fn as_slice(&self) -> &[f64] {
         &self.elements
     }
 }
@@ -437,13 +464,11 @@ impl WriteRoot for SymMatrix {
 }
 
 impl ReadRoot for SymMatrix {
-    fn read_root(file: &FileReader, name: &str) -> Result<SymMatrix> {
-        let (class, object) = object_bytes_any(file, name)?;
-        decode_tmatrixdsym(name, &class, &object)
-    }
-    fn read_root_in(file: &FileReader, dir: &str, name: &str) -> Result<SymMatrix> {
-        let (class, object) = file.object_in(dir, name)?;
-        decode_tmatrixdsym(name, &class, &object)
+    const CLASS: &'static str = "TMatrixTSym<double>";
+
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS)
+            .then(|| decode_tmatrixdsym(object.name, object.class, object.bytes))
     }
 }
 
@@ -492,26 +517,6 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<SymM
     })
 }
 
-// --- Collection members -----------------------------------------------------
-
-impl FromMember for Vector {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TVectorT<double>").then(|| decode_tvectord("", class, bytes))
-    }
-}
-
-impl FromMember for Matrix {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TMatrixT<double>").then(|| decode_tmatrixd("", class, bytes))
-    }
-}
-
-impl FromMember for SymMatrix {
-    fn from_member(class: &str, bytes: &[u8]) -> Option<Result<Self>> {
-        (class == "TMatrixTSym<double>").then(|| decode_tmatrixdsym("", class, bytes))
-    }
-}
-
 // --- Streamer info ----------------------------------------------------------
 
 /// The `TStreamerInfo` [`ClassDef`] entries describing a matrix/vector `class` — the
@@ -519,6 +524,7 @@ impl FromMember for SymMatrix {
 /// ROOT C++ uses its own compiled streamers). Returns an empty vector for a
 /// non-matrix class. Each matrix/vector type's
 /// [`WriteRoot::streamer_classes`] returns these.
+#[must_use]
 pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
     let matrix_base = || ClassDef {
@@ -629,7 +635,7 @@ mod tests {
 
     #[test]
     fn empty_matrices_are_fine() {
-        assert_eq!(Matrix::new(0, 0, vec![]).unwrap().elements(), &[] as &[f64]);
+        assert_eq!(Matrix::new(0, 0, vec![]).unwrap().as_slice(), &[] as &[f64]);
         assert_eq!(Matrix::new(3, 0, vec![]).unwrap().rows(), 3);
         assert_eq!(SymMatrix::new(0, vec![]).unwrap().dim(), 0);
     }
@@ -641,16 +647,24 @@ mod tests {
         let s = SymMatrix::new(2, vec![1.0, 0.5, 0.25, 2.0])
             .unwrap()
             .named("s");
-        assert_eq!(s.elements(), &[1.0, 0.5, 0.5, 2.0]);
+        assert_eq!(s.as_slice(), &[1.0, 0.5, 0.5, 2.0]);
         let back = decode_tmatrixdsym("s", "TMatrixTSym<double>", &s.to_root_bytes()).unwrap();
         assert_eq!(back, s);
     }
 
     #[test]
-    #[should_panic(expected = "out of range")]
-    fn get_rejects_a_column_past_the_end() {
+    fn get_has_no_element_past_the_end_of_a_row() {
         // (0, 3) of a 2x3 matrix is not element (1, 0).
-        Matrix::new(2, 3, vec![0.0; 6]).unwrap().get(0, 3);
+        let m = Matrix::new(2, 3, vec![1.0; 6]).unwrap();
+        assert_eq!(m.get(0, 3), None);
+        assert_eq!(m.get(2, 0), None);
+        assert_eq!(m.get(1, 2), Some(1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn indexing_rejects_a_column_past_the_end() {
+        let _ = Matrix::new(2, 3, vec![0.0; 6]).unwrap()[(0, 3)];
     }
 
     /// A `TMatrixTSym<double>` body claiming an `n`×`ncols` matrix, followed by

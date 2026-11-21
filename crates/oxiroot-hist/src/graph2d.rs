@@ -9,9 +9,11 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{read_named, skip_versioned};
-use oxiroot_io_core::{Error, FileReader, RBuffer, Result};
+use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::{check_len, object_bytes_any};
+use crate::base::check_len;
+use crate::graph::read_basic_array;
 
 /// An (x, y, z) graph (ROOT `TGraph2D`).
 #[derive(Debug, Clone, PartialEq)]
@@ -34,10 +36,10 @@ impl Graph2D {
     ///
     /// # Errors
     /// [`Error::LengthMismatch`] if `y` or `z` is not as long as `x`.
-    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> Result<Graph2D> {
+    pub fn new(x: Vec<f64>, y: Vec<f64>, z: Vec<f64>) -> Result<Self> {
         check_len("TGraph2D y", x.len(), y.len())?;
         check_len("TGraph2D z", x.len(), z.len())?;
-        Ok(Graph2D {
+        Ok(Self {
             name: String::new(),
             title: String::new(),
             x,
@@ -47,24 +49,16 @@ impl Graph2D {
     }
 
     /// Number of points (`fNpoints`).
+    #[must_use]
     pub fn len(&self) -> usize {
         self.x.len().min(self.y.len()).min(self.z.len())
     }
 
     /// Whether the graph has no points.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-}
-
-/// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)
-/// `n` big-endian doubles.
-fn read_basic_array(r: &mut RBuffer, n: usize) -> Result<Vec<f64>> {
-    let present = r.u8()?;
-    if present == 0 {
-        return Ok(Vec::new());
-    }
-    (0..n).map(|_| r.be_f64()).collect()
 }
 
 fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<Graph2D> {
@@ -100,14 +94,11 @@ fn decode_tgraph2d(name: &str, class: &str, object: &[u8]) -> Result<Graph2D> {
     })
 }
 
-/// Read a `Graph2D` named `name`.
-pub(crate) fn read_tgraph2d(file: &FileReader, name: &str) -> Result<Graph2D> {
-    let (class, object) = object_bytes_any(file, name)?;
-    decode_tgraph2d(name, &class, &object)
-}
+impl ReadRoot for Graph2D {
+    const CLASS: &'static str = "TGraph2D";
 
-/// Read a `Graph2D` from subdirectory `subdir`.
-pub(crate) fn read_tgraph2d_in(file: &FileReader, subdir: &str, name: &str) -> Result<Graph2D> {
-    let (class, object) = file.object_in(subdir, name)?;
-    decode_tgraph2d(name, &class, &object)
+    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
+        (object.class == Self::CLASS)
+            .then(|| decode_tgraph2d(object.name, object.class, object.bytes))
+    }
 }

@@ -1,4 +1,4 @@
-//! The RNTuple footer envelope: cluster groups and their page-list locators.
+//! The `RNTuple` footer envelope: cluster groups and their page-list locators.
 
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -28,7 +28,7 @@ pub struct Footer {
     /// XXH3-64 of the header envelope (cross-check).
     pub header_checksum: u64,
     /// Fields added after the header via the schema-extension record (the late
-    /// fields of a schema-extended RNTuple); empty for an unextended one. Their
+    /// fields of a schema-extended `RNTuple`); empty for an unextended one. Their
     /// field IDs continue the header's numbering.
     pub ext_fields: Vec<FieldDescriptor>,
     /// Columns added via the schema-extension record (deferred columns of the
@@ -40,7 +40,7 @@ pub struct Footer {
 
 impl Footer {
     /// Parse the footer from its envelope payload.
-    pub fn parse(payload: &[u8]) -> Result<Footer> {
+    pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut r = RBuffer::new(payload);
 
         read_feature_flags(&mut r)?;
@@ -84,7 +84,7 @@ impl Footer {
         }
         r.seek(list.end)?;
 
-        Ok(Footer {
+        Ok(Self {
             header_checksum,
             ext_fields,
             ext_columns,

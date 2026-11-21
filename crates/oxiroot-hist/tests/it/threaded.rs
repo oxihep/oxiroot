@@ -11,7 +11,11 @@ fn data() -> Vec<f64> {
 }
 
 fn serial(data: &[f64]) -> Hist1D {
-    let mut h = Hist::reg(100, 0.0, 100.0).double().to_root().named("h");
+    let mut h = Hist::reg(100, 0.0, 100.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     for &x in data {
         h.fill(x);
     }
@@ -23,7 +27,13 @@ fn threaded_fill_matches_serial() {
     let data = data();
     let want = serial(&data);
 
-    let acc = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().named("h"));
+    let acc = ThreadedHist::new(
+        Hist::reg(100, 0.0, 100.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h"),
+    );
     std::thread::scope(|s| {
         for chunk in data.chunks(data.len().div_ceil(4)) {
             let acc = &acc;
@@ -54,7 +64,13 @@ fn threaded_fill_matches_serial() {
 #[test]
 fn merge_with_no_work_returns_empty_prototype() {
     // No thread filled → an empty histogram with the template's binning.
-    let acc = ThreadedHist::new(Hist::reg(4, 0.0, 4.0).double().to_root().named("h"));
+    let acc = ThreadedHist::new(
+        Hist::reg(4, 0.0, 4.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h"),
+    );
     let h = acc.merge().unwrap();
     assert_eq!(h.entries(), 0.0);
     assert_eq!(h.values(), &[0.0, 0.0, 0.0, 0.0]);
@@ -65,7 +81,13 @@ fn merge_with_no_work_returns_empty_prototype() {
 fn fill_and_with_local_share_one_copy_per_thread() {
     // Repeated fills from the same thread route to a single copy (not one per
     // call), and `with_local` batches share it too.
-    let acc = ThreadedHist::new(Hist::reg(10, 0.0, 10.0).double().to_root().named("h"));
+    let acc = ThreadedHist::new(
+        Hist::reg(10, 0.0, 10.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h"),
+    );
     acc.fill(1.5);
     acc.fill(1.5);
     acc.with_local(|h| {
@@ -87,6 +109,7 @@ fn threaded_fill_2d_merges() {
             .reg(4, 0.0, 4.0)
             .double()
             .to_root()
+            .unwrap()
             .named("h2"),
     );
     std::thread::scope(|s| {
@@ -121,8 +144,16 @@ fn merge_all_folds_or_none() {
 
 #[test]
 fn merge_rejects_mismatched_binning() {
-    let a = Hist::reg(4, 0.0, 4.0).double().to_root().named("h");
-    let b = Hist::reg(5, 0.0, 5.0).double().to_root().named("h");
+    let a = Hist::reg(4, 0.0, 4.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
+    let b = Hist::reg(5, 0.0, 5.0)
+        .double()
+        .to_root()
+        .unwrap()
+        .named("h");
     assert!(
         Hist1D::merge_all(vec![a, b]).is_err(),
         "incompatible binnings error"
@@ -136,7 +167,11 @@ fn fill_par_matches_serial() {
     let data = data();
     let want = serial(&data);
     let got = fill_par(
-        &Hist::reg(100, 0.0, 100.0).double().to_root().named("h"),
+        &Hist::reg(100, 0.0, 100.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .named("h"),
         &data,
         |h, &x| h.fill(x),
     );

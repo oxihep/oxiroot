@@ -12,17 +12,17 @@ use oxiroot::prelude::*;
 
 ## One histogram
 
-A histogram is just data. Construct it with `Hist::reg(nbins, lo, hi).double().to_root()`, fill it,
-and name it only when you persist it. The `WriteRoot` / `ReadRoot` traits give
-every writable object a `write_root` and every readable object a `read_root`.
+A histogram is just data. Construct it with `Hist::reg(nbins, lo, hi).double().to_root()?`, fill it,
+and name it only when you persist it. `FileWriter::add` stores any writable object, and `file.get::<T>(path)` reads
+any readable one.
 
 ```rust
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root().named("pt").titled("p_{T}");
+let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
 h.track_sumw2();                                  // per-bin (weighted) errors
 h.fill_weight(42.0, 1.5);
-h.write_root("hist.root", Compression::Zstd(5))?;        // any single writable object
+FileWriter::create("hist.root").add(&h).write()?;        // any single writable object
 
-let same = Hist1D::read_root(&FileReader::open("hist.root")?, "pt")?;  // any readable object
+let same = FileReader::open("hist.root")?.get::<Hist1D>("pt")?;  // any readable object
 ```
 
 ## Several objects, subdirectories, appending
@@ -31,14 +31,14 @@ For more than one object, a `TDirectory`, or appending to an existing file, use
 `FileWriter` — the single entry point for file composition.
 
 ```rust
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root().named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof").titled("<pt> per region");
 FileWriter::create("out.root")
     .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
-    .write(Compression::Zstd(5))?;
+    .write()?;
 
 let g = FileReader::open("out.root")?;
-let p = Profile1D::read_root_in(&g, "by_region", "prof")?;   // read from a subdirectory
+let p = g.get::<Profile1D>("by_region/prof")?;   // read from a subdirectory
 ```
 
 ## A TTree or an RNTuple
@@ -52,7 +52,7 @@ let batch = Batch::new()
     .column("pt", vec![10.5_f64, 20.1, 33.7])?
     .column("jets", vec![vec![30.0_f32], vec![], vec![55.0, 41.2]])?;
 let mut out = DatasetWriter::create("tree.root", "Events", Format::Tree)?; // or Format::Ntuple
-out.write(&batch)?;
+out.write(batch)?;
 out.finish()?;
 
 let f = FileReader::open("tree.root")?;

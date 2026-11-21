@@ -4,14 +4,16 @@
 use oxiroot_hist::ToRoot;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FileWriter, Hist, Hist1D, Hist2D, ReadRoot};
+use oxiroot_hist::{Hist, Hist1D, Hist2D};
 use oxiroot_io_core::FileReader;
+use oxiroot_io_core::FileWriter;
 
 #[test]
 fn writes_multiple_histograms_into_one_file() {
     let mut h1 = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()
+        .unwrap()
         .named("hx")
         .titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
@@ -21,6 +23,7 @@ fn writes_multiple_histograms_into_one_file() {
         .reg(2, 0.0, 2.0)
         .double()
         .to_root()
+        .unwrap()
         .named("hxy")
         .titled("2-D");
     h2.fill(0.5, 0.5);
@@ -31,7 +34,8 @@ fn writes_multiple_histograms_into_one_file() {
     FileWriter::create(&out)
         .add(&h1)
         .add(&h2)
-        .write(oxiroot_io_core::Compression::None)
+        .compression(oxiroot_io_core::Compression::Stored)
+        .write()
         .expect("write");
 
     let f = FileReader::open(&out).expect("reopen");
@@ -42,6 +46,6 @@ fn writes_multiple_histograms_into_one_file() {
         .collect();
     assert_eq!(keys, vec![("hx", "TH1D"), ("hxy", "TH2D")]);
 
-    assert_eq!(Hist1D::read_root(&f, "hx").expect("read hx"), h1);
-    assert_eq!(Hist2D::read_root(&f, "hxy").expect("read hxy"), h2);
+    assert_eq!(f.get::<Hist1D>("hx").expect("read hx"), h1);
+    assert_eq!(f.get::<Hist2D>("hxy").expect("read hxy"), h2);
 }

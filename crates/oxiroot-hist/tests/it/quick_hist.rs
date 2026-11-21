@@ -3,49 +3,69 @@
 //! and ROOT C++ reads the axis label — checked out of band).
 
 use oxiroot_hist::ToRoot;
-use oxiroot_hist::{Hist, Hist1D, ReadRoot, WriteRoot};
+use oxiroot_hist::{Hist, Hist1D};
 use oxiroot_io_core::{Compression, FileReader};
 
 #[test]
 fn builder_maps_storage_to_root_classes() {
     assert_eq!(
-        Hist::reg(4, 0.0, 4.0).double().to_root().class_name(),
+        Hist::reg(4, 0.0, 4.0)
+            .double()
+            .to_root()
+            .unwrap()
+            .class_name(),
         "TH1D"
     );
     assert_eq!(
         Hist::reg(4, 0.0, 4.0)
             .double()
-            .to_root_as(oxiroot_hist::BinContentType::F32)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(oxiroot_hist::BinContentType::F32)
             .class_name(),
         "TH1F"
     );
     assert_eq!(
-        Hist::reg(4, 0.0, 4.0).int64().to_root().class_name(),
+        Hist::reg(4, 0.0, 4.0)
+            .int64()
+            .to_root()
+            .unwrap()
+            .class_name(),
         "TH1L"
     );
     assert_eq!(
         Hist::reg(4, 0.0, 4.0)
             .double()
-            .to_root_as(oxiroot_hist::BinContentType::I32)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(oxiroot_hist::BinContentType::I32)
             .class_name(),
         "TH1I"
     );
     assert_eq!(
         Hist::reg(4, 0.0, 4.0)
             .double()
-            .to_root_as(oxiroot_hist::BinContentType::I16)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(oxiroot_hist::BinContentType::I16)
             .class_name(),
         "TH1S"
     );
     assert_eq!(
         Hist::reg(4, 0.0, 4.0)
             .double()
-            .to_root_as(oxiroot_hist::BinContentType::I8)
+            .to_root()
+            .unwrap()
+            .with_bin_content_type(oxiroot_hist::BinContentType::I8)
             .class_name(),
         "TH1C"
     );
     assert_eq!(
-        Hist::reg(4, 0.0, 4.0).weight().to_root().class_name(),
+        Hist::reg(4, 0.0, 4.0)
+            .weight()
+            .to_root()
+            .unwrap()
+            .class_name(),
         "TH1D"
     ); // + Sumw2
 
@@ -55,6 +75,7 @@ fn builder_maps_storage_to_root_classes() {
             .reg(3, 0., 3.)
             .weight()
             .to_root()
+            .unwrap()
             .class_name(),
         "TH2D"
     );
@@ -64,6 +85,7 @@ fn builder_maps_storage_to_root_classes() {
             .reg(2, 0., 2.)
             .double()
             .to_root()
+            .unwrap()
             .class_name(),
         "TH3D"
     );
@@ -71,6 +93,7 @@ fn builder_maps_storage_to_root_classes() {
         Hist::var(&[0.0, 1.0, 4.0, 10.0])
             .double()
             .to_root()
+            .unwrap()
             .values()
             .len(),
         3
@@ -84,7 +107,8 @@ fn builder_sets_name_title_and_axis_labels() {
         .title("transverse momentum")
         .label("$p_T$ [GeV]")
         .double()
-        .to_root();
+        .to_root()
+        .unwrap();
     assert_eq!(h.name(), "pt");
     assert_eq!(h.title(), "transverse momentum");
     assert_eq!(h.x_label(), "$p_T$ [GeV]");
@@ -95,14 +119,15 @@ fn builder_sets_name_title_and_axis_labels() {
         .reg(3, 0., 3.)
         .label("y [cm]")
         .double()
-        .to_root();
+        .to_root()
+        .unwrap();
     assert_eq!(h2.xaxis().title, "x [cm]");
     assert_eq!(h2.yaxis().title, "y [cm]");
 }
 
 #[test]
 fn hist_style_accessors() {
-    let mut h = Hist::reg(4, 0.0, 4.0).weight().to_root();
+    let mut h = Hist::reg(4, 0.0, 4.0).weight().to_root().unwrap();
     h.fill_weight(0.5, 2.0);
     h.fill_weight(1.5, 3.0);
 
@@ -115,7 +140,7 @@ fn hist_style_accessors() {
     assert_eq!(h.at(1.5), 3.0);
 
     // An unweighted histogram: variances default to the bin content (Poisson).
-    let mut p = Hist::reg(3, 0.0, 3.0).double().to_root();
+    let mut p = Hist::reg(3, 0.0, 3.0).double().to_root().unwrap();
     p.fill(0.5);
     p.fill(0.5);
     assert_eq!(p.variances(), vec![2.0, 0.0, 0.0]);
@@ -125,17 +150,17 @@ fn hist_style_accessors() {
 #[test]
 fn batch_fill_and_uhi_slicing() {
     // hist's array fill.
-    let mut h = Hist::reg(10, 0.0, 10.0).double().to_root();
+    let mut h = Hist::reg(10, 0.0, 10.0).double().to_root().unwrap();
     h.fill_many(&[0.5, 0.5, 1.5, 9.5]);
     assert_eq!(h.values()[0], 2.0);
-    let mut hw = Hist::reg(4, 0.0, 4.0).double().to_root();
+    let mut hw = Hist::reg(4, 0.0, 4.0).double().to_root().unwrap();
     hw.track_sumw2();
     hw.fill_many_weighted(&[0.5, 1.5], &[2.0, 3.0]).unwrap();
     assert_eq!(hw.variances(), vec![4.0, 9.0, 0.0, 0.0]);
 
     // UHI: the integral over a coordinate range (h[a:b:sum]) and a sub-range copy
     // (h[a:b]) where the cropped content folds into the flow.
-    let mut g = Hist::reg(10, 0.0, 10.0).double().to_root();
+    let mut g = Hist::reg(10, 0.0, 10.0).double().to_root().unwrap();
     for i in 0..10 {
         g.fill(f64::from(i) + 0.5); // one entry per bin
     }
@@ -155,7 +180,8 @@ fn profile_finalizer_builds_a_tprofile() {
         .name("prof")
         .label("x [cm]")
         .mean()
-        .to_root();
+        .to_root()
+        .unwrap();
     p.fill(0.5, 10.0);
     p.fill(0.5, 20.0);
     assert_eq!(p.values()[0], 15.0); // the mean of (10, 20)
@@ -163,8 +189,15 @@ fn profile_finalizer_builds_a_tprofile() {
 
     // It is an ordinary Profile1D and writes to ROOT.
     let out = std::env::temp_dir().join("oxiroot_quick_profile.root");
-    p.write_root(&out, Compression::None).unwrap();
-    let back = Profile1D::read_root(&FileReader::open(&out).unwrap(), "prof").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&p)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<Profile1D>("prof")
+        .unwrap();
     assert_eq!(back.values()[0], 15.0);
     let _ = std::fs::remove_file(&out);
 }
@@ -175,15 +208,20 @@ fn builder_output_round_trips_through_root() {
         .name("pt")
         .label("$p_T$ [GeV]")
         .weight()
-        .to_root();
+        .to_root()
+        .unwrap();
     h.fill_weight(0.5, 2.0);
     h.fill_weight(1.5, 3.0);
 
     let out = std::env::temp_dir().join("oxiroot_quick_hist.root");
-    h.write_root(&out, Compression::None).unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&h)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
 
     let f = FileReader::open(&out).unwrap();
-    let back = Hist1D::read_root(&f, "pt").unwrap();
+    let back = f.get::<Hist1D>("pt").unwrap();
     assert_eq!(back.x_label(), "$p_T$ [GeV]"); // axis label survives ROOT
     assert_eq!(back.values(), &[2.0, 3.0, 0.0, 0.0]);
     assert_eq!(back.variances(), vec![4.0, 9.0, 0.0, 0.0]); // Sumw2 survives
@@ -198,6 +236,7 @@ fn variable_axis_takes_arbitrary_irregular_edges() {
     let mut h = Hist::var(&edges)
         .double()
         .to_root()
+        .unwrap()
         .named("hv")
         .titled("irregular");
     for x in [0.5, 1.5, 3.0, 3.0, 7.0, 50.0, 50.0, 50.0] {
@@ -210,9 +249,13 @@ fn variable_axis_takes_arbitrary_irregular_edges() {
 
     // The exact edges and contents round-trip through the writer.
     let out = std::env::temp_dir().join("oxiroot_quick_varbins.root");
-    h.write_root(&out, Compression::None).unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&h)
+        .compression(Compression::Stored)
+        .write()
+        .unwrap();
     let f = FileReader::open(&out).unwrap();
-    let back = Hist1D::read_root(&f, "hv").unwrap();
+    let back = f.get::<Hist1D>("hv").unwrap();
     assert_eq!(back.edges(), edges);
     assert_eq!(back.values(), &[1.0, 1.0, 2.0, 1.0, 3.0]);
     let _ = std::fs::remove_file(&out);

@@ -1,5 +1,5 @@
 //! ROOT block (de)compression throughput for every codec, on a payload shaped
-//! like a TTree basket of doubles.
+//! like a `TTree` basket of doubles.
 //!
 //!   cargo bench -p oxiroot --bench decompress
 
@@ -34,7 +34,7 @@ fn bench(c: &mut Criterion) {
     g.throughput(Throughput::Bytes(raw.len() as u64));
     g.sample_size(20);
     for (name, codec) in CODECS {
-        let packed = compress(&raw, codec.setting()).expect("compress");
+        let packed = compress(&raw, codec).expect("compress");
         g.bench_with_input(BenchmarkId::from_parameter(name), &packed, |b, packed| {
             b.iter(|| black_box(decompress(packed, raw.len()).expect("decompress")));
         });
@@ -46,7 +46,7 @@ fn bench(c: &mut Criterion) {
     g.sample_size(10);
     for (name, codec) in CODECS {
         g.bench_function(BenchmarkId::from_parameter(name), |b| {
-            b.iter(|| black_box(compress(&raw, codec.setting()).expect("compress")));
+            b.iter(|| black_box(compress(&raw, codec).expect("compress")));
         });
     }
     g.finish();

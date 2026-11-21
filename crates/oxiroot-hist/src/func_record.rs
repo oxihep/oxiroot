@@ -3,7 +3,9 @@
 //! `oxiroot-hist-func`) share.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, skip_versioned, write_named};
+use oxiroot_io_core::raw::{
+    K_BYTE_COUNT_MASK, PointerHeader, read_named, read_pointer_header, skip_versioned, write_named,
+};
 use oxiroot_io_core::{RBuffer, Result, WBuffer};
 
 use crate::graph::GraphFunction;
@@ -16,7 +18,7 @@ impl GraphFunction {
     ///
     /// # Errors
     /// Returns an error if the buffer ends early or a header is malformed.
-    pub fn read_tf1_body(r: &mut RBuffer) -> Result<GraphFunction> {
+    pub fn read_tf1_body(r: &mut RBuffer<'_>) -> Result<Self> {
         let tf1 = r.read_version()?; // Func1D v12
         let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
@@ -43,7 +45,7 @@ impl GraphFunction {
         if let Some(end) = tf1.end {
             r.seek(end)?; // skip fParams + fComposition
         }
-        Ok(GraphFunction {
+        Ok(Self {
             name: named.name,
             title: named.title,
             formula,
@@ -112,7 +114,7 @@ impl GraphFunction {
 // --- read -------------------------------------------------------------------
 
 /// Read an objectwise `vector<double>` (`[bc][ver][count][count×f64]`).
-fn read_vector_f64(r: &mut RBuffer) -> Result<Vec<f64>> {
+fn read_vector_f64(r: &mut RBuffer<'_>) -> Result<Vec<f64>> {
     let _bc = r.be_i32()?;
     let _ver = r.be_i16()?;
     let count = usize::saturating_from(r.be_i32()?.max(0));
@@ -121,17 +123,11 @@ fn read_vector_f64(r: &mut RBuffer) -> Result<Vec<f64>> {
 
 /// Read the `fFormula` (`TFormula*`) object pointer, returning
 /// `(fFormula string, fClingParameters)`.
-fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
-    let bc = r.be_i32()?.cast_unsigned();
-    if bc == 0 {
+fn read_tformula_ptr(r: &mut RBuffer<'_>) -> Result<(String, Vec<f64>)> {
+    // The member's type fixes the class, so its tag needs no map.
+    let Some(PointerHeader { end, .. }) = read_pointer_header(r)? else {
         return Ok((String::new(), Vec::new()));
-    }
-    let end = r.pos() + (bc & 0x3fff_ffff) as usize;
-    let tag = r.be_i32()?.cast_unsigned();
-    if tag == 0xFFFF_FFFF {
-        // NUL-terminated class name "TFormula\0".
-        while r.u8()? != 0 {}
-    }
+    };
     let _ver = r.read_version()?; // TFormula v14
     let _named = read_named(r)?;
     let params = read_vector_f64(r)?; // fClingParameters
@@ -143,7 +139,7 @@ fn read_tformula_ptr(r: &mut RBuffer) -> Result<(String, Vec<f64>)> {
 }
 
 /// Skip a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`).
-fn skip_param_map(r: &mut RBuffer) -> Result<()> {
+fn skip_param_map(r: &mut RBuffer<'_>) -> Result<()> {
     let _bc = r.be_i32()?;
     let _ver = r.be_i16()?;
     let count = usize::saturating_from(r.be_i32()?.max(0));
@@ -176,19 +172,19 @@ fn write_tformula_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32) {
     w.be_i32(ndim); // fNdim
     w.be_i32(0); // fNumber
     // fLinearParts: an empty objectwise vector<TObject*>.
-    let lp = w.reserve(4);
+    let lp = w.reserve::<4>();
     let start = w.len();
     w.be_i16(0x000a); // streamer version
     w.be_i32(0); // count
     let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(lp, 0x4000_0000 | len);
+    w.patch_be_u32(lp, K_BYTE_COUNT_MASK | len);
     w.u8(0); // fVectorized
     w.end_object(obj);
 }
 
 /// Write an objectwise `vector<double>`: `{byte count}{ver 0x000a}{count}{f64s}`.
 fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
-    let bc = w.reserve(4);
+    let bc = w.reserve::<4>();
     let start = w.len();
     w.be_i16(0x000a); // streamer version
     w.be_i32(i32::saturating_from(data.len()));
@@ -196,13 +192,13 @@ fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
         w.be_f64(d);
     }
     let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(bc, 0x4000_0000 | len);
+    w.patch_be_u32(bc, K_BYTE_COUNT_MASK | len);
 }
 
 /// Write a `TFormula::fParams` `map<TString,int>` for `n` parameters: the entries
 /// `p0→0, p1→1, …` in index order (ROOT re-sorts on read by its own comparator).
 fn write_param_map(w: &mut WBuffer, n: usize) {
-    let bc = w.reserve(4);
+    let bc = w.reserve::<4>();
     let start = w.len();
     w.be_i16(0x000a); // streamer version
     w.be_i32(i32::saturating_from(n)); // count
@@ -211,5 +207,5 @@ fn write_param_map(w: &mut WBuffer, n: usize) {
         w.be_i32(i32::saturating_from(i));
     }
     let len = u32::saturating_from(w.len() - start);
-    w.patch_be_u32(bc, 0x4000_0000 | len);
+    w.patch_be_u32(bc, K_BYTE_COUNT_MASK | len);
 }

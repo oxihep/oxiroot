@@ -1,10 +1,11 @@
-//! MultiErrorGraph: read a ROOT fixture, self round-trip, and build from
+//! `MultiErrorGraph`: read a ROOT fixture, self round-trip, and build from
 //! scratch. (Cross-checked against compiled ROOT C++ — uproot cannot decode the
 //! memberwise-streamed attribute vectors, so ROOT C++ is the oracle here.)
 
 use std::path::PathBuf;
 
-use oxiroot_hist::{Compression, MultiErrorGraph, ReadRoot, WriteRoot};
+use oxiroot_hist::MultiErrorGraph;
+use oxiroot_io_core::Compression;
 use oxiroot_io_core::FileReader;
 
 fn fixture(name: &str) -> PathBuf {
@@ -16,7 +17,7 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn reads_root_written_graphmultierrors() {
     let f = FileReader::open(fixture("graphmultierrors.root")).expect("open");
-    let g = MultiErrorGraph::read_root(&f, "gme").expect("read gme");
+    let g = f.get::<MultiErrorGraph>("gme").expect("read gme");
     assert_eq!(g.name, "gme");
     assert_eq!(g.title, "multi");
     assert_eq!(g.x(), vec![1.0, 2.0, 3.0]);
@@ -31,10 +32,17 @@ fn reads_root_written_graphmultierrors() {
 #[test]
 fn graphmultierrors_round_trip_from_fixture() {
     let f = FileReader::open(fixture("graphmultierrors.root")).expect("open");
-    let g = MultiErrorGraph::read_root(&f, "gme").unwrap();
+    let g = f.get::<MultiErrorGraph>("gme").unwrap();
     let out = std::env::temp_dir().join("oxiroot_gme_rt.root");
-    g.write_root(&out, Compression::None).expect("write");
-    let back = MultiErrorGraph::read_root(&FileReader::open(&out).unwrap(), "gme").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<MultiErrorGraph>("gme")
+        .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -50,15 +58,22 @@ fn graphmultierrors_build_from_scratch() {
         vec![1.0, 2.0, 3.0],
     )
     .unwrap()
-    .add_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])
+    .with_y_error(vec![0.5, 0.5, 0.5], vec![0.5, 0.5, 0.5])
     .unwrap() // systematic layer
     .named("multi")
     .titled("two error sources");
     assert_eq!(g.n_y_errors(), 2);
 
     let out = std::env::temp_dir().join("oxiroot_gme_scratch.root");
-    g.write_root(&out, Compression::Zstd(3)).expect("write");
-    let back = MultiErrorGraph::read_root(&FileReader::open(&out).unwrap(), "multi").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Zstd(3))
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<MultiErrorGraph>("multi")
+        .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
@@ -70,8 +85,15 @@ fn empty_graphmultierrors_round_trip() {
         .named("empty");
     assert!(g.is_empty());
     let out = std::env::temp_dir().join("oxiroot_gme_empty.root");
-    g.write_root(&out, Compression::None).expect("write");
-    let back = MultiErrorGraph::read_root(&FileReader::open(&out).unwrap(), "empty").unwrap();
+    oxiroot_io_core::FileWriter::create(&out)
+        .add(&g)
+        .compression(Compression::Stored)
+        .write()
+        .expect("write");
+    let back = FileReader::open(&out)
+        .unwrap()
+        .get::<MultiErrorGraph>("empty")
+        .unwrap();
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }
