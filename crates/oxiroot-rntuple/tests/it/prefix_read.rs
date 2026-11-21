@@ -64,8 +64,7 @@ fn prefix_read_equals_truncated_full_read() {
                     .range(0..m as u64)
                     .values()
                     .expect("prefix read");
-                let mut want = full.clone();
-                want.truncate(m);
+                let want = full.slice(0, m);
 
                 assert_eq!(
                     prefix, want,

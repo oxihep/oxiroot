@@ -39,9 +39,8 @@ pub use reader::NtupleReader;
 /// or an `RNTuple` alike. These are what it is built on, for tools that work
 /// at the level of the format (a merger, an inspector).
 pub mod raw {
-    pub use crate::field::{FieldValues, FromField, Jagged};
     pub use crate::page::ColumnValues;
     pub use crate::reader::FieldRead;
     pub use crate::writer::raw::*;
-    pub use crate::writer::{Column, Field, NtupleWriter};
+    pub use crate::writer::{Field, NtupleWriter};
 }

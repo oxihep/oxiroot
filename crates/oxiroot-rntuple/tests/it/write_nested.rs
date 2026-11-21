@@ -1,10 +1,11 @@
 //! Write nested collection fields — `std::vector<std::string>`,
 //! `std::vector<std::vector<T>>`, a vector of records, and a top-level record —
 //! then read them back through our own reader.
+use oxiroot_io_core::Column;
 
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::{Column, Field, FieldValues};
+use oxiroot_rntuple::raw::Field;
 
 fn round_trip(fields: &[Field], tag: &str) -> FileReader {
     let out = std::env::temp_dir().join(format!("oxiroot_write_nested_{tag}.root"));
@@ -19,26 +20,23 @@ fn writes_vector_of_strings() {
         vec!["a".to_string()],
         vec!["b".to_string(), "c".to_string()],
     ];
-    let fields = vec![Field::vector_string("vs", vs.clone())];
+    let fields = vec![Field::new("vs", vs.clone())];
     let file = round_trip(&fields, "vs");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
-    assert_eq!(
-        ntpl.field("vs").values().expect("vs"),
-        FieldValues::VecStr(vs)
-    );
+    assert_eq!(ntpl.field("vs").values().expect("vs"), Column::from(vs));
 }
 
 #[test]
 fn writes_vector_of_vectors() {
     let vvi = vec![vec![], vec![vec![1]], vec![vec![2], vec![3, 3]]];
-    let fields = vec![Field::vector_vector_i32("vvi", vvi)];
+    let fields = vec![Field::new("vvi", vvi)];
     let file = round_trip(&fields, "vvi");
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
         ntpl.field("vvi").values().expect("vvi"),
-        FieldValues::Nested {
+        Column::List {
             offsets: vec![0, 0, 1, 3],
-            items: Box::new(FieldValues::VecI32(vec![vec![1], vec![2], vec![3, 3]])),
+            values: Box::new(Column::from(vec![vec![1], vec![2], vec![3, 3]])),
         }
     );
 }
@@ -46,9 +44,9 @@ fn writes_vector_of_vectors() {
 #[test]
 fn writes_vector_of_records() {
     // 3 entries of std::pair<int32,double>: [], [(10,1.5)], [(20,2.5),(21,3.5)].
-    let vp = Column::Nested {
+    let vp = Column::List {
         offsets: vec![0, 0, 1, 3],
-        items: Box::new(Column::Record(vec![
+        values: Box::new(Column::Struct(vec![
             ("_0".to_string(), Column::I32(vec![10, 20, 21])),
             ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
         ])),
@@ -58,11 +56,11 @@ fn writes_vector_of_records() {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open");
     assert_eq!(
         ntpl.field("vp").values().expect("vp"),
-        FieldValues::Nested {
+        Column::List {
             offsets: vec![0, 0, 1, 3],
-            items: Box::new(FieldValues::Record(vec![
-                ("_0".to_string(), FieldValues::I32(vec![10, 20, 21])),
-                ("_1".to_string(), FieldValues::F64(vec![1.5, 2.5, 3.5])),
+            values: Box::new(Column::Struct(vec![
+                ("_0".to_string(), Column::I32(vec![10, 20, 21])),
+                ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
             ])),
         }
     );
@@ -71,7 +69,7 @@ fn writes_vector_of_records() {
 #[test]
 fn writes_a_top_level_record() {
     // A struct field { _0: int32, _1: double } directly at top level.
-    let rec = Column::Record(vec![
+    let rec = Column::Struct(vec![
         ("_0".to_string(), Column::I32(vec![1, 2, 3])),
         ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
     ]);
@@ -81,9 +79,9 @@ fn writes_a_top_level_record() {
     assert_eq!(ntpl.entries(), 3);
     assert_eq!(
         ntpl.field("p").values().expect("p"),
-        FieldValues::Record(vec![
-            ("_0".to_string(), FieldValues::I32(vec![1, 2, 3])),
-            ("_1".to_string(), FieldValues::F64(vec![1.5, 2.5, 3.5])),
+        Column::Struct(vec![
+            ("_0".to_string(), Column::I32(vec![1, 2, 3])),
+            ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
         ])
     );
 }

@@ -147,6 +147,35 @@ impl Column {
         T::slice(self)
     }
 
+    /// A `std::variant` column: `alternatives` each hold the values of the
+    /// entries that chose them, in entry order, and `tags` says which one
+    /// each entry holds, counted from 1 (`0` for none). The alternatives are
+    /// named `_0`, `_1`, …, as ROOT names them.
+    #[must_use]
+    pub fn variant(alternatives: Vec<Self>, tags: Vec<u32>) -> Self {
+        // An entry's value is the next one of its alternative.
+        let mut next = vec![0u64; alternatives.len()];
+        let indices = tags
+            .iter()
+            .map(|&tag| match next.get_mut((tag as usize).wrapping_sub(1)) {
+                Some(n) => {
+                    *n += 1;
+                    *n - 1
+                }
+                None => 0,
+            })
+            .collect();
+        Self::Union {
+            tags,
+            indices,
+            alternatives: alternatives
+                .into_iter()
+                .enumerate()
+                .map(|(k, c)| (format!("_{k}"), c))
+                .collect(),
+        }
+    }
+
     /// A list of structs, from one list per member: `members` are list
     /// columns with the same entries, and the result has one struct per
     /// element, its members the lists' values.
@@ -718,6 +747,151 @@ impl From<Vec<Vec<String>>> for Column {
         Self::List {
             offsets,
             values: Box::new(strings_column(&flat)),
+        }
+    }
+}
+
+/// A Rust type a column's entries can be taken as, one value per entry: the
+/// scalar types for a scalar column, `String` for strings, `Vec<T>` for a
+/// list or an array of `T`, `Option<T>` for an optional. They nest:
+/// `Vec<Vec<f32>>` is a list of lists. What the tree and `RNTuple` readers'
+/// typed `read` returns.
+pub trait FromColumn: Sized {
+    /// How the type is named in a type-mismatch error.
+    fn type_name() -> String;
+
+    /// Take the values out of `column`, one per entry, or hand the column
+    /// back if it holds another type.
+    ///
+    /// # Errors
+    ///
+    /// The column, unchanged, if it does not hold this type.
+    fn from_column(column: Column) -> std::result::Result<Vec<Self>, Column>;
+}
+
+/// The entries of column `name` as `T`.
+///
+/// # Errors
+///
+/// [`Error::TypeMismatch`], saying what the column holds, if it is not `T`.
+pub fn typed<T: FromColumn>(name: &str, column: Column) -> Result<Vec<T>> {
+    T::from_column(column).map_err(|found| Error::TypeMismatch {
+        name: name.to_string(),
+        found: found.type_name(),
+        expected: T::type_name(),
+    })
+}
+
+/// The rows of a list or array column whose values are `inner`.
+fn rows<T>(
+    column: Column,
+    inner: impl FnOnce(Column) -> std::result::Result<Vec<T>, Column>,
+) -> std::result::Result<Vec<Vec<T>>, Column> {
+    match column {
+        Column::List { offsets, values } => match inner(*values) {
+            Ok(values) => Ok(split_by_offsets(&offsets, values)),
+            Err(values) => Err(Column::List {
+                offsets,
+                values: Box::new(values),
+            }),
+        },
+        Column::Array { len, values } => match inner(*values) {
+            Ok(values) => {
+                let mut values = values.into_iter();
+                let entries = values.len().checked_div(len).unwrap_or(0);
+                Ok((0..entries)
+                    .map(|_| values.by_ref().take(len).collect())
+                    .collect())
+            }
+            Err(values) => Err(Column::Array {
+                len,
+                values: Box::new(values),
+            }),
+        },
+        other => Err(other),
+    }
+}
+
+/// Split `items` into one `Vec` per entry at the cumulative `offsets`.
+fn split_by_offsets<T>(offsets: &[u64], items: Vec<T>) -> Vec<Vec<T>> {
+    let mut out = Vec::with_capacity(offsets.len().saturating_sub(1));
+    let mut items = items.into_iter();
+    for w in offsets.windows(2) {
+        let n = usize::try_from(w[1].saturating_sub(w[0])).unwrap_or(usize::MAX);
+        out.push(items.by_ref().take(n).collect());
+    }
+    out
+}
+
+macro_rules! from_column {
+    ($($t:ty => $variant:ident;)*) => {$(
+        impl FromColumn for $t {
+            fn type_name() -> String {
+                <$t as Primitive>::NAME.to_string()
+            }
+            fn from_column(column: Column) -> std::result::Result<Vec<Self>, Column> {
+                match column {
+                    Column::$variant(v) => Ok(v),
+                    other => Err(other),
+                }
+            }
+        }
+    )*};
+}
+
+from_column! {
+    bool => Bool; i8 => I8; u8 => U8; i16 => I16; u16 => U16; i32 => I32;
+    u32 => U32; i64 => I64; u64 => U64; f32 => F32; f64 => F64;
+}
+
+impl FromColumn for String {
+    fn type_name() -> String {
+        "String".to_string()
+    }
+    fn from_column(column: Column) -> std::result::Result<Vec<Self>, Column> {
+        match column {
+            Column::String { offsets, text } => Ok(offsets
+                .windows(2)
+                .map(|w| {
+                    let range = usize::try_from(w[0]).unwrap_or(usize::MAX)
+                        ..usize::try_from(w[1]).unwrap_or(usize::MAX);
+                    text.get(range).unwrap_or_default().to_owned()
+                })
+                .collect()),
+            other => Err(other),
+        }
+    }
+}
+
+impl<T: FromColumn> FromColumn for Vec<T> {
+    fn type_name() -> String {
+        format!("Vec<{}>", T::type_name())
+    }
+    fn from_column(column: Column) -> std::result::Result<Vec<Self>, Column> {
+        rows(column, T::from_column)
+    }
+}
+
+impl<T: FromColumn> FromColumn for Option<T> {
+    fn type_name() -> String {
+        format!("Option<{}>", T::type_name())
+    }
+    fn from_column(column: Column) -> std::result::Result<Vec<Self>, Column> {
+        match column {
+            Column::Optional { valid, values } => match T::from_column(*values) {
+                Ok(present) => {
+                    let mut present = present.into_iter();
+                    Ok(valid
+                        .iter()
+                        .map(|&has| if has { present.next() } else { None })
+                        .collect())
+                }
+                Err(values) => Err(Column::Optional {
+                    valid,
+                    values: Box::new(values),
+                }),
+            },
+            other => Err(other),
         }
     }
 }

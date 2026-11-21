@@ -3,12 +3,14 @@
 //! interop matrix has ROOT read oxiroot's own output; uproot reads the map too.
 //! (ROOT 6.40 needs the map's dictionary compiled in to write or read a
 //! `std::map` `RNTuple`: `scripts/rntuple_map_LinkDef.h`.)
+use oxiroot_io_core::Column;
+use oxiroot_io_core::DataType;
 
 use crate::support::NtupleObject;
 use std::path::PathBuf;
 
 use oxiroot_io_core::{Compression, FileReader};
-use oxiroot_rntuple::raw::{Field, FieldValues};
+use oxiroot_rntuple::raw::Field;
 use oxiroot_rntuple::{NtupleReader, StructRole};
 
 fn open(name: &str) -> FileReader {
@@ -29,7 +31,7 @@ fn check_set_fixture(name: &str) {
     assert_eq!(s.type_name, "std::set<std::int32_t>");
     assert_eq!(
         ntpl.field("s").values().unwrap(),
-        FieldValues::VecI32(vec![
+        Column::from(vec![
             vec![1, 2, 3],
             vec![4, 5],
             vec![],
@@ -59,16 +61,13 @@ fn check_map_fixture(name: &str) {
     assert_eq!(m.struct_role, StructRole::Collection);
     assert_eq!(m.type_name, "std::map<std::int32_t,double>");
     match ntpl.field("m").values().unwrap() {
-        FieldValues::Nested { offsets, items } => {
+        Column::List { offsets, values } => {
             assert_eq!(offsets, vec![0, 2, 2, 5], "{name}");
             assert_eq!(
-                *items,
-                FieldValues::Record(vec![
-                    ("_0".into(), FieldValues::I32(vec![1, 2, -7, 3, 40])),
-                    (
-                        "_1".into(),
-                        FieldValues::F64(vec![1.5, 2.5, 0.25, 3.5, -1.0])
-                    ),
+                *values,
+                Column::Struct(vec![
+                    ("_0".into(), Column::I32(vec![1, 2, -7, 3, 40])),
+                    ("_1".into(), Column::F64(vec![1.5, 2.5, 0.25, 3.5, -1.0])),
                 ]),
                 "{name}"
             );
@@ -93,7 +92,10 @@ fn reads_root_map_zstd() {
 fn writes_set_round_trip() {
     let nt = NtupleObject::new(
         "ntpl",
-        vec![Field::set_i32("s", vec![vec![1, 2, 3], vec![4, 5]])],
+        vec![
+            Field::new("s", vec![vec![1, 2, 3], vec![4, 5]])
+                .stored_as(DataType::Set(Box::new(DataType::I32))),
+        ],
     );
     let out = std::env::temp_dir().join("oxiroot_set_rt.root");
     oxiroot_io_core::FileWriter::create(&out)
@@ -106,7 +108,7 @@ fn writes_set_round_trip() {
     assert_eq!(ntpl.header().fields[0].type_name, "std::set<std::int32_t>");
     assert_eq!(
         ntpl.field("s").values().unwrap(),
-        FieldValues::VecI32(vec![vec![1, 2, 3], vec![4, 5]])
+        Column::from(vec![vec![1, 2, 3], vec![4, 5]])
     );
     let _ = std::fs::remove_file(&out);
 }
@@ -117,10 +119,22 @@ fn writes_set_round_trip() {
 fn writes_map_round_trip() {
     let nt = NtupleObject::new(
         "ntpl",
-        vec![Field::map_i32_f64(
-            "m",
-            vec![vec![(1, 1.5), (2, 2.5)], vec![(3, 3.5)]],
-        )],
+        vec![
+            Field::new(
+                "m",
+                Column::List {
+                    offsets: vec![0, 2, 3],
+                    values: Box::new(Column::Struct(vec![
+                        ("_0".into(), Column::I32(vec![1, 2, 3])),
+                        ("_1".into(), Column::F64(vec![1.5, 2.5, 3.5])),
+                    ])),
+                },
+            )
+            .stored_as(DataType::Map(
+                Box::new(DataType::I32),
+                Box::new(DataType::F64),
+            )),
+        ],
     );
     let out = std::env::temp_dir().join("oxiroot_map_rt.root");
     oxiroot_io_core::FileWriter::create(&out)
@@ -142,13 +156,13 @@ fn writes_map_round_trip() {
 
     // Read back as a nested collection of key/value records.
     match ntpl.field("m").values().unwrap() {
-        FieldValues::Nested { offsets, items } => {
+        Column::List { offsets, values } => {
             assert_eq!(offsets, vec![0, 2, 3]);
             assert_eq!(
-                *items,
-                FieldValues::Record(vec![
-                    ("_0".into(), FieldValues::I32(vec![1, 2, 3])),
-                    ("_1".into(), FieldValues::F64(vec![1.5, 2.5, 3.5])),
+                *values,
+                Column::Struct(vec![
+                    ("_0".into(), Column::I32(vec![1, 2, 3])),
+                    ("_1".into(), Column::F64(vec![1.5, 2.5, 3.5])),
                 ])
             );
         }

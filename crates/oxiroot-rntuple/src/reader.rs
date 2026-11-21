@@ -3,18 +3,19 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::decompress_payload;
-use oxiroot_io_core::{Error, FileReader, Result};
+use oxiroot_io_core::{Column, Error, FileReader, Result};
 
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
 use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::field::{self, FieldValues, FromField, Jagged};
+use crate::field;
 use crate::footer::Footer;
 use crate::header::{Header, StructRole};
 use crate::page::{ColumnValues, read_column};
 use crate::pagelist::{ClusterPages, ClusterSummary, PageInfo, PageList};
+use oxiroot_io_core::column::{FromColumn, typed};
 
 /// Reads an `RNTuple` from a [`FileReader`]. Opening verifies the anchor and
 /// parses the schema, cluster summaries, and per-cluster page locations; column
@@ -266,7 +267,7 @@ impl<'f> NtupleReader<'f> {
 
     /// Read the top-level field `name`: set a [`range`](FieldRead::range) of
     /// entries on the returned [`FieldRead`], then take the values typed
-    /// ([`read`](FieldRead::read)) or as the [`FieldValues`] enum
+    /// ([`read`](FieldRead::read)) or as a [`Column`]
     /// ([`values`](FieldRead::values)).
     ///
     /// ```no_run
@@ -297,7 +298,7 @@ impl<'f> NtupleReader<'f> {
         bounds
     }
 
-    fn read_top(&self, file: &FileReader, name: &str) -> Result<FieldValues> {
+    fn read_top(&self, file: &FileReader, name: &str) -> Result<Column> {
         let idx = self
             .header
             .top_level_field(name)
@@ -319,108 +320,22 @@ impl<'f> NtupleReader<'f> {
         Ok(values)
     }
 
-    /// The top-level field `name` if it is a `std::vector` of a scalar type:
-    /// its offsets and its element column, decoded straight from the two
-    /// columns with no per-entry allocation. `Ok(None)` for any other shape.
-    fn read_flat_top(&self, file: &FileReader, name: &str) -> Result<Option<Jagged>> {
-        let Some(idx) = self.top_field(name) else {
-            return Err(Error::NotFound {
-                what: "top-level field",
-                name: name.to_string(),
-            });
-        };
-        let fld = &self.header.fields[idx];
-        if fld.struct_role != StructRole::Collection
-            || fld.array_size.is_some()
-            || is_late_field(&fld.type_name)
-        {
-            return Ok(None);
-        }
-        let children = self.child_fields(idx);
-        let [child] = children[..] else {
-            return Ok(None);
-        };
-        let cfld = &self.header.fields[child];
-        let child_cols = self.field_columns(child);
-        if cfld.struct_role != StructRole::Leaf
-            || cfld.type_name == "std::string"
-            || cfld.array_size.is_some()
-            || child_cols.len() != 1
-        {
-            return Ok(None);
-        }
-        let Some(index_ci) = self.index_column(self.field_columns(idx)) else {
-            return Ok(None);
-        };
-        let offsets = self.read_offsets(file, index_ci, true)?;
-        let values = field::scalar(self.column_values(file, child_cols[0])?)?;
-        let monotonic = offsets.windows(2).all(|w| w[0] <= w[1]);
-        if !monotonic || offsets.last().copied() != Some(values.len() as u64) {
-            return Err(Error::Format(format!(
-                "field {name:?}: collection offsets do not partition its {} elements",
-                values.len()
-            )));
-        }
-        if offsets.len() as u64 != self.entries() + 1 {
-            return Err(Error::Format(format!(
-                "field {name:?}: decoded {} entries, expected {}",
-                offsets.len() - 1,
-                self.entries()
-            )));
-        }
-        Ok(Some(Jagged { offsets, values }))
-    }
-
-    fn top_field(&self, name: &str) -> Option<usize> {
-        self.header.top_level_field(name)
-    }
-
-    /// Entries `[start, stop)` (clamped) of `name` in flat form, reading only
-    /// the clusters the window overlaps.
-    fn read_flat_range(&self, name: &str, start: u64, stop: u64) -> Result<Option<Jagged>> {
-        let stop = stop.min(self.entries());
-        let start = start.min(stop);
-        if start == 0 && stop == self.entries() {
-            return self.read_flat_top(self.file, name);
-        }
-        let (jagged, from) = match self.entry_window(start, stop) {
-            Some((view, from)) => (view.read_flat_top(self.file, name)?, from),
-            None => (self.read_flat_top(self.file, name)?, 0),
-        };
-        let Some(Jagged {
-            offsets,
-            mut values,
-        }) = jagged
-        else {
-            return Ok(None);
-        };
-        let a = usize::saturating_from(start - from);
-        let b = usize::saturating_from(stop - from).min(offsets.len() - 1);
-        let lo = offsets[a];
-        let window: Vec<u64> = offsets[a..=b].iter().map(|&o| o - lo).collect();
-        values.skip(usize::saturating_from(lo));
-        values.truncate(usize::saturating_from(offsets[b] - lo));
-        Ok(Some(Jagged {
-            offsets: window,
-            values,
-        }))
-    }
-
     /// Entries `[start, stop)` (clamped) of field `name`, reading only the
     /// clusters the window overlaps.
-    fn read_range(&self, name: &str, start: u64, stop: u64) -> Result<FieldValues> {
+    fn read_range(&self, name: &str, start: u64, stop: u64) -> Result<Column> {
         let stop = stop.min(self.entries());
         let start = start.min(stop);
         if start == 0 && stop == self.entries() {
             return self.read_top(self.file, name);
         }
-        let (mut values, from) = match self.entry_window(start, stop) {
+        let (values, from) = match self.entry_window(start, stop) {
             Some((view, from)) => (view.read_top(self.file, name)?, from),
             None => (self.read_top(self.file, name)?, 0),
         };
-        values.skip(usize::saturating_from(start - from));
-        values.truncate(usize::saturating_from(stop - start));
-        Ok(values)
+        Ok(values.slice(
+            usize::saturating_from(start - from),
+            usize::saturating_from(stop - from),
+        ))
     }
 
     /// A lightweight view of this `RNTuple` limited to clusters `[k0, k1)`: the
@@ -470,8 +385,9 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// Recursively reconstruct the values of field `field_idx` (a leaf, string,
-    /// collection, or record) as flattened-at-this-level [`FieldValues`].
-    fn read_field_tree(&self, file: &FileReader, field_idx: usize) -> Result<FieldValues> {
+    /// collection, or record) as a [`Column`], one value per element at this
+    /// level.
+    fn read_field_tree(&self, file: &FileReader, field_idx: usize) -> Result<Column> {
         let fld = self
             .header
             .fields
@@ -516,7 +432,7 @@ impl<'f> NtupleReader<'f> {
                         return Err(Error::Format(format!("string chars decoded as {other:?}")));
                     }
                 };
-                field::strings(&offsets, &bytes)
+                field::strings(offsets, bytes)
             }
             StructRole::Leaf => {
                 // A `std::atomic<T>` (and similar transparent wrappers) is a Leaf
@@ -549,7 +465,7 @@ impl<'f> NtupleReader<'f> {
                 // `std::optional<T>` / `std::unique_ptr<T>` use the collection
                 // shape (0 or 1 element per entry) but read back as a nullable.
                 if is_late_field(&fld.type_name) {
-                    return Ok(field::optional(&offsets, items));
+                    return field::optional(&offsets, items);
                 }
                 field::collect(offsets, items)
             }
@@ -566,7 +482,7 @@ impl<'f> NtupleReader<'f> {
                     let sub_name = self.header.fields[c].name.clone();
                     out.push((sub_name, self.read_field_tree(file, c)?));
                 }
-                Ok(FieldValues::Record(out))
+                Ok(Column::Struct(out))
             }
             StructRole::Streamer => {
                 // An unsplit class blob: a per-entry Index column over a single
@@ -625,10 +541,10 @@ impl<'f> NtupleReader<'f> {
                     let sub_name = self.header.fields[c].name.clone();
                     alternatives.push((sub_name, self.read_field_tree(file, c)?));
                 }
-                Ok(FieldValues::Variant {
-                    alternatives,
+                Ok(Column::Union {
                     tags,
                     indices,
+                    alternatives,
                 })
             }
             other => Err(Error::Unsupported(format!(
@@ -729,7 +645,7 @@ impl<'f> NtupleReader<'f> {
 }
 
 /// Whether `type_name` is a nullable / "late" field (`std::optional<T>` or
-/// `std::unique_ptr<T>`) — read back as [`FieldValues::Opt`], not a collection.
+/// `std::unique_ptr<T>`) — read back as an optional column, not a list.
 fn is_late_field(type_name: &str) -> bool {
     type_name.starts_with("std::optional<") || type_name.starts_with("std::unique_ptr<")
 }
@@ -838,18 +754,20 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     ///
     /// [`Error::NotFound`] if there is no such field, [`Error::TypeMismatch`] if it does not
     /// hold `T`, and any error reading its pages.
-    pub fn read<T: FromField>(self) -> Result<Vec<T>> {
+    pub fn read<T: FromColumn>(self) -> Result<Vec<T>> {
         let name = self.name;
-        T::from_values(name, self.values()?)
+        typed(name, self.values()?)
     }
 
-    /// The values as the [`FieldValues`] enum, for code that does not know the
-    /// field's type in advance.
+    /// The values as a [`Column`], stored flat as the pages are: a
+    /// `std::vector<T>` is offsets over one buffer, a record a struct of
+    /// columns, an optional a validity mask over the values present, a
+    /// `std::variant` a union.
     ///
     /// # Errors
     ///
     /// [`Error::NotFound`] if there is no such field, and any error reading its pages.
-    pub fn values(self) -> Result<FieldValues> {
+    pub fn values(self) -> Result<Column> {
         let reader = self.reader();
         match self.range {
             None => reader.read_top(reader.file, self.name),
@@ -857,29 +775,13 @@ impl<'a, 'f> FieldRead<'a, 'f> {
         }
     }
 
-    /// A `std::vector<T>` field flat: one buffer of every element plus
-    /// per-entry offsets, decoded straight from the field's two columns with
-    /// no allocation per entry. Only for `std::vector` of a scalar type; other
-    /// fields are an [`Error::Unsupported`].
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Unsupported`] for a field that is not a `std::vector` of a scalar, and any
-    /// error reading its pages.
-    pub fn flat(self) -> Result<Jagged> {
-        let r = self.range.clone().unwrap_or(0..u64::MAX);
-        self.reader()
-            .read_flat_range(self.name, r.start, r.end)?
-            .ok_or_else(|| {
-                Error::Unsupported(format!(
-                    "field {:?} is not a std::vector of a scalar type; use values()",
-                    self.name
-                ))
-            })
-    }
-
     pub(crate) fn name(&self) -> &'a str {
         self.name
+    }
+
+    /// The schema of the `RNTuple` the field is read from.
+    pub(crate) fn header(&self) -> Arc<Header> {
+        Arc::clone(&self.ntuple.header)
     }
 }
 

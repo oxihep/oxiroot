@@ -30,7 +30,6 @@ pub use value::LeafType;
 /// at the level of the format (a merger, an inspector).
 pub mod raw {
     pub use crate::reader::BranchRead;
-    pub use crate::value::FromBranch;
     pub use crate::writer::raw::*;
     pub use crate::writer::{Branch, TreeWriter};
 }

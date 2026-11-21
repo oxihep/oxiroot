@@ -2,12 +2,12 @@
 //! `std::vector<std::vector<int32_t>>`, and `std::vector<std::pair<int32,double>>`
 //! (a vector of records). Read on both the uncompressed (non-split) and Zstd
 //! (split index/leaf) fixtures.
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::FieldValues;
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -30,9 +30,9 @@ fn check_nested(name: &str) {
     // std::vector<std::string>: one Vec<String> per entry.
     assert_eq!(
         field("vs"),
-        FieldValues::VecStr(vec![
+        Column::from(vec![
             vec![],
-            vec!["r1_0".into()],
+            vec!["r1_0".to_string()],
             vec!["r2_0".into(), "r2_1".into()],
             vec!["r3_0".into(), "r3_1".into(), "r3_2".into()],
             vec!["r4_0".into(), "r4_1".into(), "r4_2".into(), "r4_3".into()],
@@ -45,9 +45,9 @@ fn check_nested(name: &str) {
     // i*10+j.
     assert_eq!(
         field("vvi"),
-        FieldValues::Nested {
+        Column::List {
             offsets: vec![0, 0, 1, 3, 6, 10],
-            items: Box::new(FieldValues::VecI32(vec![
+            values: Box::new(Column::from(vec![
                 vec![10], // entry 1
                 vec![20], // entry 2
                 vec![21, 21],
@@ -68,16 +68,16 @@ fn check_nested(name: &str) {
     // is (i*100+j, i + 0.5*j).
     assert_eq!(
         field("vp"),
-        FieldValues::Nested {
+        Column::List {
             offsets: vec![0, 0, 1, 3, 6, 10],
-            items: Box::new(FieldValues::Record(vec![
+            values: Box::new(Column::Struct(vec![
                 (
                     "_0".into(),
-                    FieldValues::I32(vec![100, 200, 201, 300, 301, 302, 400, 401, 402, 403]),
+                    Column::I32(vec![100, 200, 201, 300, 301, 302, 400, 401, 402, 403]),
                 ),
                 (
                     "_1".into(),
-                    FieldValues::F64(vec![1.0, 2.0, 2.5, 3.0, 3.5, 4.0, 4.0, 4.5, 5.0, 5.5]),
+                    Column::F64(vec![1.0, 2.0, 2.5, 3.0, 3.5, 4.0, 4.0, 4.5, 5.0, 5.5]),
                 ),
             ])),
         },

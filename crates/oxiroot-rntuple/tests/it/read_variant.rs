@@ -1,12 +1,12 @@
 //! A `std::variant<int32_t, float>` field written by official ROOT: the Switch
 //! column (index + alternative tag) and the Variant field role.
+use oxiroot_io_core::Column;
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::FieldValues;
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -26,10 +26,10 @@ fn reads_variant_field() {
     // Raw columnar form: two densely-packed alternatives, per-entry tags+indices.
     assert_eq!(
         v,
-        FieldValues::Variant {
+        Column::Union {
             alternatives: vec![
-                ("_0".to_string(), FieldValues::I32(vec![0, 20, 40])),
-                ("_1".to_string(), FieldValues::F32(vec![1.5, 3.5])),
+                ("_0".to_string(), Column::I32(vec![0, 20, 40])),
+                ("_1".to_string(), Column::F32(vec![1.5, 3.5])),
             ],
             tags: vec![1, 2, 1, 2, 1],
             indices: vec![0, 0, 1, 1, 2],
@@ -38,7 +38,7 @@ fn reads_variant_field() {
 
     // Resolving each entry (alternatives[tag-1] at index) gives the original
     // alternating int / float sequence: 0, 1.5, 20, 3.5, 40.
-    let FieldValues::Variant {
+    let Column::Union {
         alternatives,
         tags,
         indices,
@@ -54,8 +54,8 @@ fn reads_variant_field() {
                 &alternatives[(tag - 1) as usize].1,
                 usize::saturating_from(idx),
             ) {
-                (FieldValues::I32(xs), i) => xs[i].to_string(),
-                (FieldValues::F32(xs), i) => xs[i].to_string(),
+                (Column::I32(xs), i) => xs[i].to_string(),
+                (Column::F32(xs), i) => xs[i].to_string(),
                 _ => unreachable!(),
             }
         })

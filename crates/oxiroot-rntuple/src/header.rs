@@ -1,5 +1,6 @@
 //! The `RNTuple` header envelope: the schema (fields + columns).
 
+use oxiroot_io_core::DataType;
 use oxiroot_io_core::{RBuffer, Result};
 
 use crate::column::ColumnType;
@@ -125,6 +126,18 @@ pub struct Header {
 }
 
 impl Header {
+    /// How the top-level field `name` is stored, given the `shape` its
+    /// values read as: the same type with the storage choices the schema
+    /// records put back in, so a half-precision float is `Half` and a
+    /// `std::set` a `Set`. A field the schema does not have keeps its shape.
+    #[must_use]
+    pub fn stored_type(&self, name: &str, shape: DataType) -> DataType {
+        match self.top_level_field(name) {
+            Some(id) => field_type(self, id, shape),
+            None => shape,
+        }
+    }
+
     /// The top-level fields with their index in [`fields`](Self::fields), in
     /// schema order. A field is top-level when it is its own parent.
     pub fn top_level_fields(&self) -> impl Iterator<Item = (usize, &FieldDescriptor)> + Clone {
@@ -262,4 +275,94 @@ pub(crate) fn read_column_list(r: &mut RBuffer<'_>) -> Result<Vec<ColumnDescript
     }
     r.seek(list.end)?;
     Ok(columns)
+}
+
+/// Whether the C++ type `name` is the template `template` (`std::set`) or its
+/// unordered or multi form.
+fn is_template(name: &str, template: &str) -> bool {
+    let base = name.split('<').next().unwrap_or(name);
+    let base = base.strip_prefix("std::").unwrap_or(base);
+    [
+        template.to_string(),
+        format!("unordered_{template}"),
+        format!("multi{template}"),
+        format!("unordered_multi{template}"),
+    ]
+    .iter()
+    .any(|t| t == base)
+}
+
+/// Refine `shape` with how field `id` and the fields inside it are stored.
+/// Where the header and the shape do not line up, the shape is kept as it is.
+fn field_type(header: &Header, id: usize, shape: DataType) -> DataType {
+    let field = &header.fields[id];
+    let kids: Vec<usize> = header.child_fields(id).collect();
+    let type_name = field.type_name.as_str();
+    let inner = |kid: Option<&usize>, shape: DataType| match kid {
+        Some(&kid) => field_type(header, kid, shape),
+        None => shape,
+    };
+    if is_template(type_name, "atomic") && kids.len() == 1 {
+        return DataType::Atomic(Box::new(field_type(header, kids[0], shape)));
+    }
+    match shape {
+        DataType::F32 => {
+            let column = header.columns.iter().find(|c| c.field() == id);
+            match column.map(|c| (c.column_type, c.bits_on_storage, c.value_range)) {
+                Some((ColumnType::Real16 | ColumnType::SplitReal16, ..)) => DataType::Half,
+                Some((ColumnType::Real32Trunc, bits, _)) => DataType::Truncated { bits },
+                Some((ColumnType::Real32Quant, bits, Some((min, max)))) => {
+                    DataType::Quantized { bits, min, max }
+                }
+                _ => DataType::F32,
+            }
+        }
+        DataType::List(item) if is_template(type_name, "set") => {
+            DataType::Set(Box::new(inner(kids.first(), *item)))
+        }
+        DataType::List(item) if is_template(type_name, "map") => {
+            // A map is a collection of `std::pair<K, V>` records.
+            let pair: Option<Vec<usize>> = kids.first().map(|&k| header.child_fields(k).collect());
+            match (*item, pair.as_deref()) {
+                (DataType::Struct(members), Some([key, value])) if members.len() == 2 => {
+                    let mut members = members.into_iter().map(|(_, t)| t);
+                    let (k, v) = (members.next(), members.next());
+                    match (k, v) {
+                        (Some(k), Some(v)) => DataType::Map(
+                            Box::new(field_type(header, *key, k)),
+                            Box::new(field_type(header, *value, v)),
+                        ),
+                        _ => unreachable!("two members were counted"),
+                    }
+                }
+                (item, _) => DataType::List(Box::new(item)),
+            }
+        }
+        DataType::List(item) => DataType::List(Box::new(inner(kids.first(), *item))),
+        DataType::Array(len, item)
+            if type_name.starts_with("std::bitset<") && *item == DataType::Bool =>
+        {
+            DataType::Bitset(len)
+        }
+        DataType::Array(len, item) => DataType::Array(len, Box::new(inner(kids.first(), *item))),
+        DataType::Optional(item) if type_name.starts_with("std::unique_ptr<") => {
+            DataType::UniquePtr(Box::new(inner(kids.first(), *item)))
+        }
+        DataType::Optional(item) => DataType::Optional(Box::new(inner(kids.first(), *item))),
+        DataType::Struct(members) if members.len() == kids.len() => DataType::Struct(
+            members
+                .into_iter()
+                .zip(&kids)
+                .map(|((name, t), &kid)| (name, field_type(header, kid, t)))
+                .collect(),
+        ),
+        DataType::Variant(alternatives) if alternatives.len() == kids.len() => DataType::Variant(
+            alternatives
+                .into_iter()
+                .zip(&kids)
+                .map(|(t, &kid)| field_type(header, kid, t))
+                .collect(),
+        ),
+        other => other,
+    }
 }

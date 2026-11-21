@@ -18,7 +18,8 @@ use oxiroot_io_core::{Column, Error, FileReader, Result};
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::value::{FromBranch, LeafType, integers, typed};
+use crate::value::{LeafType, integers};
+use oxiroot_io_core::column::{FromColumn, typed};
 use oxiroot_io_core::cast::SaturatingFrom;
 
 mod decode;
@@ -775,7 +776,7 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     ///
     /// [`Error::NotFound`] if there is no such branch, [`Error::TypeMismatch`] if it does not
     /// hold `T`, and any error reading its baskets.
-    pub fn read<T: FromBranch>(self) -> Result<Vec<T>> {
+    pub fn read<T: FromColumn>(self) -> Result<Vec<T>> {
         let name = self.name;
         typed(name, self.values()?)
     }

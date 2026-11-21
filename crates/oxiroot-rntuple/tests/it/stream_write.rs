@@ -1,12 +1,13 @@
 //! M6: streaming, multi-cluster `RNTuple` write. Each batch becomes one cluster;
 //! the file must read back with all entries in order through our reader (and, as
 //! separately verified, official ROOT and uproot).
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::{Column, Field, FieldValues, NtupleWriter};
+use oxiroot_rntuple::raw::{Field, NtupleWriter};
 
 #[test]
 fn streams_multiple_clusters() {
@@ -33,14 +34,8 @@ fn streams_multiple_clusters() {
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), 12, "all entries across clusters");
-    assert_eq!(
-        ntpl.field("x").values().unwrap(),
-        FieldValues::I32(expect_x)
-    );
-    assert_eq!(
-        ntpl.field("y").values().unwrap(),
-        FieldValues::F64(expect_y)
-    );
+    assert_eq!(ntpl.field("x").values().unwrap(), Column::I32(expect_x));
+    assert_eq!(ntpl.field("y").values().unwrap(), Column::F64(expect_y));
 }
 
 #[test]
@@ -55,16 +50,16 @@ fn streams_collections_and_strings_across_clusters() {
     let v0 = vec![vec![], vec![1.0f32], vec![2.0, 2.0]];
     let s0 = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
     w.write_batch(&[
-        Field::new("v", Column::VecF32(v0.clone())),
-        Field::new("s", Column::Str(s0.clone())),
+        Field::new("v", Column::from(v0.clone())),
+        Field::new("s", Column::from(s0.clone())),
     ])
     .expect("batch 0");
 
     let v1 = vec![vec![3.0f32, 3.0, 3.0], vec![]];
     let s1 = vec!["dddd".to_string(), String::new()];
     w.write_batch(&[
-        Field::new("v", Column::VecF32(v1.clone())),
-        Field::new("s", Column::Str(s1.clone())),
+        Field::new("v", Column::from(v1.clone())),
+        Field::new("s", Column::from(s1.clone())),
     ])
     .expect("batch 1");
     w.finish().expect("finish");
@@ -77,14 +72,8 @@ fn streams_collections_and_strings_across_clusters() {
     expect_v.extend(v1);
     let mut expect_s = s0;
     expect_s.extend(s1);
-    assert_eq!(
-        ntpl.field("v").values().unwrap(),
-        FieldValues::VecF32(expect_v)
-    );
-    assert_eq!(
-        ntpl.field("s").values().unwrap(),
-        FieldValues::Str(expect_s)
-    );
+    assert_eq!(ntpl.field("v").values().unwrap(), Column::from(expect_v));
+    assert_eq!(ntpl.field("s").values().unwrap(), Column::from(expect_s));
 }
 
 #[test]
@@ -93,14 +82,14 @@ fn write_batch_rejects_changed_schema() {
     let mut w =
         NtupleWriter::create(&out, "ntpl", oxiroot_io_core::Compression::Stored).expect("create");
 
-    w.write_batch(&[Field::i32("x", vec![1, 2, 3])])
+    w.write_batch(&[Field::new("x", vec![1, 2, 3])])
         .expect("first batch fixes the schema");
 
     // Same physical column type (Int32) but a different field name: the weak
     // (type, bits) signature would have accepted this and silently mislabeled
     // the data. The full schema signature rejects it.
     let err = w
-        .write_batch(&[Field::i32("y", vec![4, 5, 6])])
+        .write_batch(&[Field::new("y", vec![4, 5, 6])])
         .expect_err("renamed field must be rejected");
     assert!(
         matches!(err, oxiroot_io_core::Error::SchemaChanged { .. }),
@@ -109,7 +98,7 @@ fn write_batch_rejects_changed_schema() {
 
     // A different field count is likewise rejected.
     assert!(
-        w.write_batch(&[Field::i32("x", vec![7]), Field::f64("z", vec![1.0])])
+        w.write_batch(&[Field::new("x", vec![7]), Field::new("z", vec![1.0])])
             .is_err()
     );
 }
@@ -120,11 +109,11 @@ fn streaming_large_writes_big_format() {
     let mut w = NtupleWriter::create_large(&out, "ntpl", oxiroot_io_core::Compression::Stored)
         .expect("create_large");
     w.write_batch(&[
-        Field::i32("x", vec![1, 2, 3]),
-        Field::f64("y", vec![1.0, 2.0, 3.0]),
+        Field::new("x", vec![1, 2, 3]),
+        Field::new("y", vec![1.0, 2.0, 3.0]),
     ])
     .expect("batch 1");
-    w.write_batch(&[Field::i32("x", vec![4, 5]), Field::f64("y", vec![4.0, 5.0])])
+    w.write_batch(&[Field::new("x", vec![4, 5]), Field::new("y", vec![4.0, 5.0])])
         .expect("batch 2");
     w.finish().expect("finish");
 
@@ -139,10 +128,10 @@ fn streaming_large_writes_big_format() {
     assert_eq!(ntpl.entries(), 5);
     assert_eq!(
         ntpl.field("x").values().unwrap(),
-        FieldValues::I32(vec![1, 2, 3, 4, 5])
+        Column::I32(vec![1, 2, 3, 4, 5])
     );
     assert_eq!(
         ntpl.field("y").values().unwrap(),
-        FieldValues::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0])
+        Column::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0])
     );
 }

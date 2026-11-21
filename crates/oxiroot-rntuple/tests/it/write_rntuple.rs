@@ -1,12 +1,13 @@
 //! M5/#2: write an `RNTuple` with scalar, string, and vector fields, then read it
 //! back through our own reader.
+use oxiroot_io_core::Column;
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::{Column, Field, FieldValues};
+use oxiroot_rntuple::raw::Field;
 
 #[test]
 fn writes_a_rich_rntuple_that_round_trips() {
@@ -16,20 +17,12 @@ fn writes_a_rich_rntuple_that_round_trips() {
         Field::new("f32", Column::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5])),
         Field::new("f64", Column::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0])),
         Field::new("b", Column::Bool(vec![true, false, true, false, true])),
-        Field::new(
-            "s",
-            Column::Str(
-                ["row0", "row1", "row2", "row3", "row4"]
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect(),
-            ),
-        ),
+        Field::new("s", vec!["row0", "row1", "row2", "row3", "row4"]),
         Field::new(
             "vf",
-            Column::VecF32(vec![
+            Column::from(vec![
                 vec![],
-                vec![1.0],
+                vec![1.0_f32],
                 vec![2.0, 2.0],
                 vec![3.0, 3.0, 3.0],
                 vec![4.0, 4.0, 4.0, 4.0],
@@ -46,34 +39,23 @@ fn writes_a_rich_rntuple_that_round_trips() {
     assert_eq!(ntpl.entries(), 5);
 
     let field = |n| ntpl.field(n).values().expect("read field");
-    assert_eq!(field("i32"), FieldValues::I32(vec![0, 10, 20, 30, 40]));
-    assert_eq!(field("i64"), FieldValues::I64(vec![-1, -2, -3, -4, -5]));
-    assert_eq!(
-        field("f32"),
-        FieldValues::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5])
-    );
-    assert_eq!(
-        field("f64"),
-        FieldValues::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0])
-    );
+    assert_eq!(field("i32"), Column::I32(vec![0, 10, 20, 30, 40]));
+    assert_eq!(field("i64"), Column::I64(vec![-1, -2, -3, -4, -5]));
+    assert_eq!(field("f32"), Column::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]));
+    assert_eq!(field("f64"), Column::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0]));
     assert_eq!(
         field("b"),
-        FieldValues::Bool(vec![true, false, true, false, true])
+        Column::Bool(vec![true, false, true, false, true])
     );
     assert_eq!(
         field("s"),
-        FieldValues::Str(
-            ["row0", "row1", "row2", "row3", "row4"]
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect()
-        )
+        Column::from(vec!["row0", "row1", "row2", "row3", "row4"])
     );
     assert_eq!(
         field("vf"),
-        FieldValues::VecF32(vec![
+        Column::from(vec![
             vec![],
-            vec![1.0],
+            vec![1.0_f32],
             vec![2.0, 2.0],
             vec![3.0, 3.0, 3.0],
             vec![4.0, 4.0, 4.0, 4.0],
@@ -87,10 +69,10 @@ fn writes_unsigned_and_more_vector_types() {
         // > i32::MAX, exercises unsigned
         Field::new("u32", Column::U32(vec![1, 2, 3_000_000_000])),
         Field::new("u64", Column::U64(vec![1, 2, 10_000_000_000])),
-        Field::new("vi64", Column::VecI64(vec![vec![], vec![-1], vec![2, 3]])),
+        Field::new("vi64", Column::from(vec![vec![], vec![-1_i64], vec![2, 3]])),
         Field::new(
             "vb",
-            Column::VecBool(vec![vec![true], vec![], vec![false, true]]),
+            Column::from(vec![vec![true], vec![], vec![false, true]]),
         ),
     ];
 
@@ -102,15 +84,15 @@ fn writes_unsigned_and_more_vector_types() {
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     let field = |n| ntpl.field(n).values().expect("read field");
     // u32 round-trips with its 32-bit identity intact (not widened to u64).
-    assert_eq!(field("u32"), FieldValues::U32(vec![1, 2, 3_000_000_000]));
-    assert_eq!(field("u64"), FieldValues::U64(vec![1, 2, 10_000_000_000]));
+    assert_eq!(field("u32"), Column::U32(vec![1, 2, 3_000_000_000]));
+    assert_eq!(field("u64"), Column::U64(vec![1, 2, 10_000_000_000]));
     assert_eq!(
         field("vi64"),
-        FieldValues::VecI64(vec![vec![], vec![-1], vec![2, 3]])
+        Column::from(vec![vec![], vec![-1_i64], vec![2, 3]])
     );
     assert_eq!(
         field("vb"),
-        FieldValues::VecBool(vec![vec![true], vec![], vec![false, true]])
+        Column::from(vec![vec![true], vec![], vec![false, true]])
     );
 }
 
@@ -144,6 +126,6 @@ fn writes_a_zstd_compressed_rntuple_that_round_trips() {
     let f = FileReader::open(&out).expect("reopen");
     let ntpl = NtupleReader::open(&f, "ntpl").expect("open RNTuple");
     assert_eq!(ntpl.entries(), n as u64);
-    assert_eq!(ntpl.field("x").values().expect("x"), FieldValues::I32(x));
-    assert_eq!(ntpl.field("y").values().expect("y"), FieldValues::F64(y));
+    assert_eq!(ntpl.field("x").values().expect("x"), Column::I32(x));
+    assert_eq!(ntpl.field("y").values().expect("y"), Column::F64(y));
 }
