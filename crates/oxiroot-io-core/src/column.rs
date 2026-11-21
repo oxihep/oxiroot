@@ -1,8 +1,9 @@
-//! The flat, Arrow-style column a [`Batch`](crate::Batch) holds, and the typed
-//! views over it.
+//! [`Column`]: one column's values, stored flat, Arrow style, and the typed
+//! views over it. It is what the tree and `RNTuple` readers return and their
+//! writers take, and what a dataset's batch holds.
 
-use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, Result};
+use crate::cast::SaturatingFrom;
+use crate::{Error, Result};
 
 /// One column's values for every entry of a batch, stored flat.
 ///
@@ -10,7 +11,7 @@ use oxiroot_io_core::{Error, Result};
 /// leading `0`) into a single child, so a column of `std::vector<float>`
 /// is two buffers however many entries it has. The variants' fields are
 /// public for code that builds or walks columns directly; a
-/// [`Batch`](crate::Batch) checks their invariants when a column is added.
+/// batch checks their invariants when a column is added.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Column {
@@ -72,6 +73,19 @@ pub enum Column {
     /// entry (a struct of arrays). An `RNTuple` record or user class; a
     /// `std::vector<Struct>` is a [`List`](Self::List) of these.
     Struct(Vec<(String, Self)>),
+    /// One of several alternatives per entry, a `std::variant`: entry `i`
+    /// holds alternative `tags[i] - 1`, at position `indices[i]` of that
+    /// alternative's column, or nothing when `tags[i]` is `0`. Each
+    /// alternative's column holds only the entries that chose it.
+    Union {
+        /// Per entry: the alternative it holds, counted from 1; `0` for none.
+        tags: Vec<u32>,
+        /// Per entry: where its value is in the alternative's column.
+        indices: Vec<u64>,
+        /// The alternatives, in order, each with the values of the entries
+        /// that hold it.
+        alternatives: Vec<(String, Self)>,
+    },
 }
 
 /// Apply `$body` to the vector inside any scalar variant (bound as `$v`), and
@@ -123,6 +137,7 @@ impl Column {
             Self::Array { len, values } => values.len().checked_div(*len).unwrap_or(0),
             Self::Optional { valid, .. } => valid.len(),
             Self::Struct(members) => members.first().map_or(0, |(_, c)| c.len()),
+            Self::Union { tags, .. } => tags.len(),
         }
     }
 
@@ -168,6 +183,10 @@ impl Column {
                     .collect();
                 format!("{{{}}}", inner.join(", "))
             }
+            Self::Union { alternatives, .. } => {
+                let inner: Vec<String> = alternatives.iter().map(|(_, c)| c.type_name()).collect();
+                format!("variant<{}>", inner.join(", "))
+            }
         }
     }
 
@@ -192,14 +211,29 @@ impl Column {
             Self::Array { values, .. } => values.byte_size(),
             Self::Optional { valid, values } => valid.len() + values.byte_size(),
             Self::Struct(members) => members.iter().map(|(_, c)| c.byte_size()).sum(),
+            Self::Union {
+                tags, alternatives, ..
+            } => {
+                12 * tags.len()
+                    + alternatives
+                        .iter()
+                        .map(|(_, c)| c.byte_size())
+                        .sum::<usize>()
+            }
         }
     }
 
     /// Check the column's invariants: offsets start at `0`, never decrease
     /// and end at the child's length; an array's child holds a whole number of
-    /// entries; an optional's child holds one value per valid entry; strings
-    /// are UTF-8 entry by entry.
-    pub(crate) fn validate(&self, name: &str) -> Result<()> {
+    /// entries; an optional's child holds one value per valid entry; a
+    /// string's offsets fall between characters; a union's entries point inside their
+    /// alternatives.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidInput`], naming the column `name`, for the first
+    /// invariant that does not hold.
+    pub fn validate(&self, name: &str) -> Result<()> {
         let bad = |why: String| Err(Error::InvalidInput(format!("column {name:?}: {why}")));
         let check_offsets = |offsets: &[u64], inner: usize| -> Result<()> {
             if offsets.first() != Some(&0) {
@@ -252,6 +286,29 @@ impl Column {
                     if c.len() != n {
                         return bad(format!("member {m:?} has {} entries, not {n}", c.len()));
                     }
+                    c.validate(&format!("{name}.{m}"))?;
+                }
+                Ok(())
+            }
+            Self::Union {
+                tags,
+                indices,
+                alternatives,
+            } => {
+                if tags.len() != indices.len() {
+                    return bad(format!("{} tags but {} indices", tags.len(), indices.len()));
+                }
+                for (&tag, &index) in tags.iter().zip(indices) {
+                    let Some(k) = (tag as usize).checked_sub(1) else {
+                        continue; // holds nothing
+                    };
+                    match alternatives.get(k) {
+                        Some((_, c)) if to_usize(index) < c.len() => {}
+                        Some(_) => return bad(format!("alternative {tag} has no value {index}")),
+                        None => return bad(format!("no alternative {tag}")),
+                    }
+                }
+                for (m, c) in alternatives {
                     c.validate(&format!("{name}.{m}"))?;
                 }
                 Ok(())
@@ -322,12 +379,19 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.slice(start, end))).collect(),
             ),
+            // The alternatives stay whole: the kept entries still point into them.
+            Self::Union { tags, indices, alternatives } => Self::Union {
+                tags: tags.get(start..end).unwrap_or(&[]).to_vec(),
+                indices: indices.get(start..end).unwrap_or(&[]).to_vec(),
+                alternatives: alternatives.clone(),
+            },
         })
     }
 
     /// The entries whose `mask` value is `true`, as a new column. `mask` must
     /// have one value per entry.
-    pub(crate) fn filter(&self, mask: &[bool]) -> Self {
+    #[must_use]
+    pub fn filter(&self, mask: &[bool]) -> Self {
         fn keep<T: Copy>(v: &[T], mask: &[bool]) -> Vec<T> {
             v.iter()
                 .zip(mask)
@@ -368,11 +432,22 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.filter(mask))).collect(),
             ),
+            Self::Union { tags, indices, alternatives } => Self::Union {
+                tags: keep(tags, mask),
+                indices: keep(indices, mask),
+                alternatives: alternatives.clone(),
+            },
         })
     }
 
     /// Append `other`'s entries; it must be the same type.
-    pub(crate) fn append(&mut self, other: Self) -> std::result::Result<(), Self> {
+    ///
+    /// # Errors
+    ///
+    /// `other`, handed back, when it is another type than this column. This
+    /// column may then hold part of it; the caller compares types first when
+    /// that matters.
+    pub fn append(&mut self, other: Self) -> std::result::Result<(), Self> {
         fn rebase(offsets: &mut Vec<u64>, more: &[u64]) {
             let base = offsets.last().copied().unwrap_or(0);
             offsets.extend(more.iter().skip(1).map(|&o| o + base));
@@ -433,6 +508,34 @@ impl Column {
                     && members.iter().zip(&more).all(|((a, _), (b, _))| a == b) =>
             {
                 for ((_, c), (_, m)) in members.iter_mut().zip(more) {
+                    c.append(m)?;
+                }
+            }
+            (
+                Self::Union {
+                    tags,
+                    indices,
+                    alternatives,
+                },
+                Self::Union {
+                    tags: t2,
+                    indices: i2,
+                    alternatives: more,
+                },
+            ) if alternatives.len() == more.len()
+                && alternatives
+                    .iter()
+                    .zip(&more)
+                    .all(|((a, _), (b, _))| a == b) =>
+            {
+                // The appended entries point past what each alternative held.
+                let held: Vec<u64> = alternatives.iter().map(|(_, c)| c.len() as u64).collect();
+                for (&tag, index) in t2.iter().zip(i2) {
+                    let base = (tag as usize).checked_sub(1).and_then(|k| held.get(k));
+                    indices.push(index + base.copied().unwrap_or(0));
+                }
+                tags.extend(t2);
+                for ((_, c), (_, m)) in alternatives.iter_mut().zip(more) {
                     c.append(m)?;
                 }
             }
@@ -573,7 +676,7 @@ impl From<Vec<Vec<String>>> for Column {
 }
 
 /// A list column viewed in place: per-entry offsets over one slice of values.
-/// From [`Batch::jagged`](crate::Batch::jagged).
+/// From a batch's `jagged`.
 #[derive(Debug, Clone, Copy)]
 pub struct Jagged<'a, T> {
     offsets: &'a [u64],
@@ -581,7 +684,9 @@ pub struct Jagged<'a, T> {
 }
 
 impl<'a, T> Jagged<'a, T> {
-    pub(crate) fn new(offsets: &'a [u64], values: &'a [T]) -> Self {
+    /// A view of `values` cut into entries at `offsets`.
+    #[must_use]
+    pub fn new(offsets: &'a [u64], values: &'a [T]) -> Self {
         Jagged { offsets, values }
     }
 
@@ -625,7 +730,7 @@ impl<'a, T> Jagged<'a, T> {
 }
 
 /// A string column viewed in place. From
-/// [`Batch::strings`](crate::Batch::strings).
+/// a batch's `strings`.
 #[derive(Debug, Clone, Copy)]
 pub struct Strings<'a> {
     offsets: &'a [u64],
@@ -633,7 +738,9 @@ pub struct Strings<'a> {
 }
 
 impl<'a> Strings<'a> {
-    pub(crate) fn new(offsets: &'a [u64], text: &'a str) -> Self {
+    /// A view of `text` cut into entries at `offsets`.
+    #[must_use]
+    pub fn new(offsets: &'a [u64], text: &'a str) -> Self {
         Strings { offsets, text }
     }
 

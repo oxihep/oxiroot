@@ -18,8 +18,8 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::OffsetsBuffer;
 
+use crate::Column;
 use crate::batch::Batch;
-use crate::column::Column;
 
 impl Batch {
     /// This batch as a Polars [`DataFrame`], copying the values.
@@ -152,6 +152,12 @@ fn to_array(column: Column) -> Result<Box<dyn Array>> {
                     .map_err(Error::other)?,
             )
         }
+        other => {
+            return Err(Error::Unsupported(format!(
+                "a {} column has no Polars form",
+                other.type_name()
+            )));
+        }
     })
 }
 
@@ -247,6 +253,7 @@ fn spread(dense: Column, valid: &[bool]) -> Result<Column> {
                 values: Box::new(values),
             }
         }
+        other => other,
     })
 }
 

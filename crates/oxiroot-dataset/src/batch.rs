@@ -5,8 +5,8 @@ use std::ops::Range;
 
 use oxiroot_io_core::{Error, Result};
 
-use crate::column::{Column, Jagged, Primitive, Strings};
 use crate::schema::Schema;
+use crate::{Column, Jagged, Primitive, Strings};
 
 /// Named columns, all holding the same number of entries: what
 /// [`Dataset`](crate::Dataset) reads and [`DatasetWriter`](crate::DatasetWriter)

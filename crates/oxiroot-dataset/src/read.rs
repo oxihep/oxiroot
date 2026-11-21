@@ -11,9 +11,10 @@ use oxiroot_rntuple::{ANCHOR_CLASS, ColumnType, Header, NtupleReader};
 use oxiroot_tree::raw::BranchValues;
 use oxiroot_tree::{BranchLayout, LeafType, TreeReader};
 
+use crate::Column;
+use crate::DataType;
 use crate::batch::Batch;
-use crate::column::Column;
-use crate::schema::{DataType, Schema};
+use crate::schema::Schema;
 
 /// Which of ROOT's two columnar formats a dataset is stored in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

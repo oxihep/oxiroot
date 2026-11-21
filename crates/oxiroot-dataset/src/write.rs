@@ -15,10 +15,11 @@ use oxiroot_rntuple::ANCHOR_CLASS;
 use oxiroot_rntuple::raw::{Column as RnColumn, Field, NtupleWriter};
 use oxiroot_tree::raw::{Branch, SplitMember, TreeWriter};
 
+use crate::Column;
+use crate::DataType;
 use crate::batch::Batch;
-use crate::column::Column;
 use crate::read::Format;
-use crate::schema::{DataType, Schema};
+use crate::schema::Schema;
 
 /// The uncompressed size at which a writer closes a cluster, unless set.
 const DEFAULT_CLUSTER_BYTES: usize = 32 * 1024 * 1024;
@@ -835,6 +836,8 @@ fn ntuple_column(c: Column, class: &str, data_type: &DataType) -> RnColumn {
                 }
             }
         }
+        // Refused by `check_batch` before this is reached.
+        _ => RnColumn::Bool(Vec::new()),
     }
 }
 

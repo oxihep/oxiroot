@@ -80,7 +80,6 @@
 #[cfg(feature = "arrow")]
 mod arrow_conv;
 mod batch;
-mod column;
 #[cfg(feature = "polars")]
 mod polars_conv;
 mod read;
@@ -88,9 +87,10 @@ mod schema;
 mod write;
 
 pub use batch::Batch;
-pub use column::{Column, Jagged, Primitive, Strings};
+pub use oxiroot_io_core::DataType;
+pub use oxiroot_io_core::column::{Column, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
-pub use schema::{DataType, Schema};
+pub use schema::Schema;
 pub use write::{DatasetObject, DatasetWriter};
 
 /// The arrow-rs crates the `arrow` feature converts to and from, re-exported
