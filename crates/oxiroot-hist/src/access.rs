@@ -43,28 +43,28 @@ macro_rules! accessor {
         /// Σw over the fills.
         #[must_use]
         pub fn tsumw(&self) -> f64 {
-            self.tsumw
+            self.moments.w
         }
     };
     (tsumw2) => {
         /// Σw² over the fills.
         #[must_use]
         pub fn tsumw2(&self) -> f64 {
-            self.tsumw2
+            self.moments.w2
         }
     };
     (tsumwx) => {
         /// The `tsumwx` moment sum.
         #[must_use]
         pub fn tsumwx(&self) -> f64 {
-            self.tsumwx
+            self.moments.wx
         }
     };
     (tsumwx2) => {
         /// The `tsumwx2` moment sum.
         #[must_use]
         pub fn tsumwx2(&self) -> f64 {
-            self.tsumwx2
+            self.moments.wx2
         }
     };
     (contents) => {
@@ -110,57 +110,57 @@ macro_rules! accessor {
         /// The `tsumwy` moment sum.
         #[must_use]
         pub fn tsumwy(&self) -> f64 {
-            self.tsumwy
+            self.moments.wy
         }
     };
     (tsumwy2) => {
         /// The `tsumwy2` moment sum.
         #[must_use]
         pub fn tsumwy2(&self) -> f64 {
-            self.tsumwy2
+            self.moments.wy2
         }
     };
     (tsumwxy) => {
         /// The `tsumwxy` moment sum.
         #[must_use]
         pub fn tsumwxy(&self) -> f64 {
-            self.tsumwxy
+            self.moments.wxy
         }
     };
     (tsumwz) => {
         /// The `tsumwz` moment sum.
         #[must_use]
         pub fn tsumwz(&self) -> f64 {
-            self.tsumwz
+            self.moments.wz
         }
     };
     (tsumwz2) => {
         /// The `tsumwz2` moment sum.
         #[must_use]
         pub fn tsumwz2(&self) -> f64 {
-            self.tsumwz2
+            self.moments.wz2
         }
     };
     (tsumwxz) => {
         /// The `tsumwxz` moment sum.
         #[must_use]
         pub fn tsumwxz(&self) -> f64 {
-            self.tsumwxz
+            self.moments.wxz
         }
     };
     (tsumwyz) => {
         /// The `tsumwyz` moment sum.
         #[must_use]
         pub fn tsumwyz(&self) -> f64 {
-            self.tsumwyz
+            self.moments.wyz
         }
     };
     (ncells) => {
         /// Total cells, flow included (ROOT's `fNcells`): the length of the
         /// per-cell vectors, so it cannot disagree with them.
         #[must_use]
-        pub fn ncells(&self) -> i32 {
-            i32::try_from(self.bin_entries.len()).unwrap_or(i32::MAX)
+        pub fn ncells(&self) -> usize {
+            self.bin_entries.len()
         }
     };
     (sums) => {
@@ -231,21 +231,25 @@ macro_rules! accessors {
     };
 }
 
-accessors!(
-    Hist1D:
-    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, contents, sumw2,
-    xaxis_mut, yaxis_mut, zaxis_mut
-);
-accessors!(
-    Hist2D:
-    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
-    tsumwxy, contents, sumw2, xaxis_mut, yaxis_mut, zaxis_mut
-);
+impl<const D: usize> HistRecord<D> {
+    accessor!(xaxis);
+    accessor!(yaxis);
+    accessor!(zaxis);
+    accessor!(entries);
+    accessor!(tsumw);
+    accessor!(tsumw2);
+    accessor!(tsumwx);
+    accessor!(tsumwx2);
+    accessor!(contents);
+    accessor!(sumw2);
+    accessor!(xaxis_mut);
+    accessor!(yaxis_mut);
+    accessor!(zaxis_mut);
+}
+accessors!(Hist2D: tsumwy, tsumwy2, tsumwxy);
 accessors!(
     Hist3D:
-    xaxis, yaxis, zaxis, entries, tsumw, tsumw2, tsumwx, tsumwx2, tsumwy, tsumwy2,
-    tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz, contents, sumw2, xaxis_mut, yaxis_mut,
-    zaxis_mut
+    tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz
 );
 accessors!(
     Profile1D:
@@ -282,8 +286,16 @@ accessors!(
 );
 accessors!(
     SparseHist:
-    entries, tsumw, set_entries
+    entries, set_entries
 );
+
+impl SparseHist {
+    /// Σw over the fills.
+    #[must_use]
+    pub fn tsumw(&self) -> f64 {
+        self.tsumw
+    }
+}
 
 impl Profile1D {
     /// `sumy2`.
@@ -324,7 +336,7 @@ impl Profile3D {
 impl Axis {
     /// The number of in-range bins.
     #[must_use]
-    pub fn nbins(&self) -> i32 {
+    pub fn nbins(&self) -> usize {
         self.nbins
     }
 

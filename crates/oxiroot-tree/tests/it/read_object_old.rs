@@ -25,7 +25,7 @@ fn reads_tbranchobject_members() {
     assert_eq!(t.entries(), 3);
     // Each TBranchObject expands into one column per (basic/string) member.
     assert_eq!(
-        t.branch_names(),
+        t.branch_names().collect::<Vec<_>>(),
         vec![
             "nm.fName",
             "nm.fTitle",
@@ -35,7 +35,7 @@ fn reads_tbranchobject_members() {
             "pi.fVal"
         ]
     );
-    assert!(t.unsupported_branches().is_empty());
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     // Named: two string members.
     assert_eq!(

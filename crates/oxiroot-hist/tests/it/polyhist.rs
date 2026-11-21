@@ -29,13 +29,13 @@ fn reads_root_written_th2poly() {
 
     let b1 = h.bin(1).expect("bin 1");
     assert_eq!(b1.content, 1.0);
-    assert_eq!((b1.xmin, b1.ymin, b1.xmax, b1.ymax), (0.0, 0.0, 1.0, 1.0));
+    assert_eq!(b1.bounds(), (0.0..=1.0, 0.0..=1.0));
     assert_eq!(b1.x, vec![0.0, 0.0, 1.0, 1.0, 0.0]);
     assert_eq!(b1.y, vec![0.0, 1.0, 1.0, 0.0, 0.0]);
 
     let b2 = h.bin(2).expect("bin 2");
     assert_eq!(b2.content, 3.0);
-    assert_eq!((b2.xmin, b2.ymin, b2.xmax, b2.ymax), (1.0, 1.0, 2.0, 2.0));
+    assert_eq!(b2.bounds(), (1.0..=2.0, 1.0..=2.0));
     assert_eq!(b2.x, vec![1.0, 1.0, 2.0, 2.0, 1.0]);
     assert_eq!(b2.y, vec![1.0, 2.0, 2.0, 1.0, 1.0]);
 }

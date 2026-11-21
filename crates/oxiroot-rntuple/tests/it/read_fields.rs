@@ -19,7 +19,7 @@ fn check_fields(name: &str) {
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open RNTuple");
 
     assert_eq!(
-        ntpl.field_names(),
+        ntpl.field_names().collect::<Vec<_>>(),
         ["i32", "f32", "f64", "b", "s", "vf"],
         "{name} field names"
     );

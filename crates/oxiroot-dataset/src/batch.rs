@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use oxiroot_io_core::{Error, Result};
 
-use crate::column::{Column, IntoColumn, Jagged, Primitive, Strings};
+use crate::column::{Column, Jagged, Primitive, Strings};
 use crate::schema::Schema;
 
 /// Named columns, all holding the same number of entries: what
@@ -73,14 +73,14 @@ impl Batch {
     }
 
     /// This batch plus a column `name` holding `data` (a `Vec` of scalars,
-    /// strings, vectors, arrays or optionals; see [`IntoColumn`]).
+    /// strings, vectors, arrays or optionals; or a [`Column`] itself).
     ///
     /// # Errors
     ///
     /// The name is taken, or the column has another entry count than the
     /// batch.
-    pub fn column(mut self, name: impl Into<String>, data: impl IntoColumn) -> Result<Self> {
-        self.insert(name, data.into_column())?;
+    pub fn column(mut self, name: impl Into<String>, data: impl Into<Column>) -> Result<Self> {
+        self.insert(name, data.into())?;
         Ok(self)
     }
 
@@ -212,7 +212,7 @@ impl Batch {
     pub fn strings(&self, name: &str) -> Result<Strings<'_>> {
         let column = self.require(name)?;
         match column {
-            Column::String { offsets, bytes } => Ok(Strings::new(offsets, bytes)),
+            Column::String { offsets, text } => Ok(Strings::new(offsets, text)),
             _ => Err(Self::mismatch(name, column, "String".to_string())),
         }
     }

@@ -1,5 +1,7 @@
 //! Reading an object member by member, following the file's `TStreamerInfo`.
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::raw::ElementKind;
+use oxiroot_io_core::streamer_types::*;
 
 use oxiroot_io_core::raw::{StreamerElement, read_named, read_object_base};
 use oxiroot_io_core::{Error, RBuffer, Result, StreamerRegistry};
@@ -63,12 +65,12 @@ pub(super) fn member_str(m: &Members, name: &str) -> String {
 /// (e.g. `Double32`/`Float16`), so the walker errors rather than misparsing.
 fn basic_kind(t: i32) -> Option<(usize, bool)> {
     Some(match t {
-        1 | 11 | 18 => (1, false),      // Char / UChar / Bool
-        2 | 12 => (2, false),           // Short / UShort
-        3 | 13 | 6 | 15 => (4, false),  // Int / UInt / Counter / Bits
-        4 | 14 | 16 | 17 => (8, false), // Long / ULong / Long64 / ULong64
-        5 => (4, true),                 // Float
-        8 => (8, true),                 // Double
+        K_CHAR | K_UCHAR | K_BOOL => (1, false),
+        K_SHORT | K_USHORT => (2, false),
+        K_INT | K_UINT | K_COUNTER | K_BITS => (4, false),
+        K_LONG | K_ULONG | K_LONG64 | K_ULONG64 => (8, false),
+        K_FLOAT => (4, true),
+        K_DOUBLE => (8, true),
         _ => return None,
     })
 }
@@ -133,18 +135,22 @@ fn walk_members_at(
     }
     for el in elements {
         let t = el.el_type;
-        if el.element_class == "TStreamerBase" {
+        if el.kind() == ElementKind::Base {
             read_base(r, reg, &el.name, out, on_object, stop_after, depth)?;
-        } else if t == 65 {
-            // kTString
+        } else if t == K_TSTRING {
             out.insert(el.name.clone(), MemberVal::Str(r.string()?));
-        } else if (61..=71).contains(&t) || (300..=365).contains(&t) || t == 500 || t == 501 {
+        } else if (K_OBJECT..=71).contains(&t)
+            || (K_STL_FIRST..=K_STL_STRING).contains(&t)
+            || t == K_STL
+            || t == K_STREAM_LOOP
+        {
             // Object / object-pointer / STL / streamer member: the caller reads
             // the ones it needs (e.g. fBranches/fLeaves) and skips the rest.
             on_object(&el.name, r)?;
-        } else if (40..61).contains(&t) {
+        } else if (K_OFFSET_P..K_OBJECT).contains(&t) {
             // kOffsetP + basic: a `T* //[fCount]` variable-length array.
-            let (width, is_float) = basic_kind(t - 40).ok_or_else(|| unsupported_element(el))?;
+            let (width, is_float) =
+                basic_kind(t - K_OFFSET_P).ok_or_else(|| unsupported_element(el))?;
             let count = el
                 .count_name
                 .as_deref()
@@ -155,9 +161,10 @@ fn walk_members_at(
                 vals.push(read_basic(r, width, is_float)?.int());
             }
             out.insert(el.name.clone(), MemberVal::IntArray(vals));
-        } else if (20..40).contains(&t) {
+        } else if (K_OFFSET_L..K_OFFSET_P).contains(&t) {
             // kOffsetL + basic: a fixed `T[fArrayLength]` member (read, not kept).
-            let (width, is_float) = basic_kind(t - 20).ok_or_else(|| unsupported_element(el))?;
+            let (width, is_float) =
+                basic_kind(t - K_OFFSET_L).ok_or_else(|| unsupported_element(el))?;
             for _ in 0..el.array_length.max(0) {
                 read_basic(r, width, is_float)?;
             }

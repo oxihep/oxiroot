@@ -16,6 +16,7 @@
 //! auto merged = hist.Merge();
 //! ```
 
+use oxiroot::hist::ThreadedHist;
 use oxiroot::prelude::*;
 
 fn main() {

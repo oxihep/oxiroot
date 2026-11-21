@@ -283,6 +283,8 @@ cargo run -p oxiroot --example analysis
   exactly (contents, variances and fill statistics), identical to a serial fill:
   <!-- fragment -->
   ```rust
+use oxiroot::hist::ThreadedHist;
+
   let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
   std::thread::scope(|s| for chunk in data.chunks(n) {
       let hist = &hist;
@@ -358,12 +360,16 @@ numerical Hessian; no MINOS), a handy independent cross-check.
 
 <!-- fragment -->
 ```rust
+use oxiroot::fit::{FitExt, FitOptions, Minimizer};
+
 let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMead));
 ```
 
 <!-- fragment -->
 ```rust
 use oxiroot::prelude::*; // the `fit` feature is on by default
+use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model, Points};
+use oxiroot::hist::GraphErrors;
 
 let mut h = Hist::reg(60, 80.0, 100.0).weight().named("mass").titled("di-muon mass");
 // … fill h with events …
@@ -419,6 +425,7 @@ separate types with the same read/write traits.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphErrors;
 let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?
     .with_errors(GraphErrors::Symmetric {
         ex: vec![0.1, 0.1, 0.1],
@@ -436,6 +443,7 @@ functions ROOT stores in `fFunctions` — read back as `GraphFunction`s (faithfu
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphFunction;
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
@@ -472,6 +480,7 @@ them, through the same `WriteRoot`/`ReadRoot` traits as everything else.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::file::{ObjString, Parameter};
 FileWriter::create("meta.root")
     .add(&ObjString::new("v2.1").named("version"))
     .add(&Parameter::f64("lumi", 137.5))      // Parameter<double>
@@ -500,6 +509,7 @@ member types).
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::{GraphStack, HistStack};
 let stack = HistStack::new().named("hs").titled("backgrounds")
     .add(Hist::reg(50, 0.0, 100.0).double().to_root()?.named("zjets"))
     .add(Hist::reg(50, 0.0, 100.0).double().to_root()?.named("ttbar"));
@@ -509,8 +519,8 @@ let graphs = GraphStack::new().named("mg")
 FileWriter::create("plots.root").add(&stack).add(&graphs).compression(Compression::Stored).write()?;
 
 let f = FileReader::open("plots.root")?;
-assert_eq!(f.get::<HistStack>("hs")?.hists().len(), 2);
-assert_eq!(f.get::<GraphStack>("mg")?.graphs()[0].name(), "obs");
+assert_eq!(f.get::<HistStack>("hs")?.members().len(), 2);
+assert_eq!(f.get::<GraphStack>("mg")?.members()[0].name(), "obs");
 ```
 
 ### Linear algebra (`oxiroot::linalg`)
@@ -525,6 +535,7 @@ lower one, so the matrix reads back exactly as built. The constructors return
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::linalg::{SymMatrix, Vector};
 FileWriter::create("fit.root")
     .add(&Vector::new(vec![91.2, 2.1]).named("pars"))
     .add(&SymMatrix::new(2, vec![0.04, 0.01, 0.01, 0.09])?.named("cov")) // covariance
@@ -576,6 +587,7 @@ writable objects; on read, pull the members back out by type with
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::file::{ListKind, ObjList, ObjString, Parameter};
 let list = ObjList::new(ListKind::List).named("systematics")
     .add(&Hist::reg(50, 0.0, 100.0).double().to_root()?.named("nominal"))
     .add(&ObjString::new("2024-data").named("tag"))
@@ -599,6 +611,7 @@ key with `get::<T>(key)`:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::file::{ObjMap, ObjString, Parameter};
 let meta = ObjMap::new().named("meta")
     .insert("version", &ObjString::new("2.1"))
     .insert("lumi", &Parameter::f64("lumi", 137.5));

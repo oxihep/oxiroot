@@ -5,6 +5,7 @@
 //! byte-transposed back ("unsplit"), then signed-integer columns are
 //! zigzag-decoded and index columns are delta-decoded (cumulative sum).
 
+use crate::header::ColumnDescriptor;
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::decompress_payload;
 use oxiroot_io_core::{ByteSource, Error, Result};
@@ -87,6 +88,7 @@ fn read_page_bytes(file: &dyn ByteSource, page: &PageInfo, bits: u16) -> Result<
 
     let n = page.num_elements as usize;
     decompress_payload(compressed, uncompressed_size(bits, n), "RNTuple page")
+        .map(std::borrow::Cow::into_owned)
 }
 
 /// Read and decompress every page of a column, in order — concurrently on
@@ -164,13 +166,16 @@ fn delta_decode(mut deltas: Vec<u64>, pages: &[PageInfo]) -> Vec<u64> {
 )]
 pub fn read_column(
     file: &dyn ByteSource,
-    column_type: ColumnType,
-    bits: u16,
+    column: &ColumnDescriptor,
     pages: &[PageInfo],
-    value_range: Option<(f64, f64)>,
     parallel: bool,
 ) -> Result<ColumnValues> {
     use ColumnType::*;
+    let (column_type, bits, value_range) = (
+        column.column_type,
+        column.bits_on_storage,
+        column.value_range,
+    );
     // Reject a header whose declared bit width contradicts the column type
     // before it is used to size pages — otherwise a hostile `bits_on_storage`
     // (e.g. 0 or 64 for an Int32 column) panics in the decode below.
@@ -493,6 +498,22 @@ mod tests {
     use crate::pagelist::PageInfo;
     use oxiroot_io_core::BytesSource;
 
+    fn descriptor(
+        column_type: ColumnType,
+        bits_on_storage: u16,
+        value_range: Option<(f64, f64)>,
+    ) -> ColumnDescriptor {
+        ColumnDescriptor {
+            column_type,
+            bits_on_storage,
+            field_id: 0,
+            flags: 0,
+            representation_index: 0,
+            first_element_index: None,
+            value_range,
+        }
+    }
+
     /// A forged width for the variable-width reals is an error, not a shift
     /// overflow while decoding.
     #[test]
@@ -509,13 +530,21 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    read_column(&src, ty, bits, &[], Some((0.0, 1.0)), false),
+                    read_column(&src, &descriptor(ty, bits, Some((0.0, 1.0))), &[], false),
                     Err(Error::Format(_))
                 ),
                 "{ty:?} with {bits} bits"
             );
         }
-        assert!(read_column(&src, ColumnType::Real32Trunc, 16, &[], None, false).is_ok());
+        assert!(
+            read_column(
+                &src,
+                &descriptor(ColumnType::Real32Trunc, 16, None),
+                &[],
+                false
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -534,7 +563,15 @@ mod tests {
 
         // Int32 declared with 64 bits would slice 8-byte chunks into a 4-byte type
         // (try_into().unwrap() panic) — the guard rejects it first.
-        assert!(read_column(&src, ColumnType::Int32, 64, &pages, None, false).is_err());
+        assert!(
+            read_column(
+                &src,
+                &descriptor(ColumnType::Int32, 64, None),
+                &pages,
+                false
+            )
+            .is_err()
+        );
 
         // Bit declared with 0 bits would size the page to 0 and index out of range.
         let bit_pages = vec![PageInfo {
@@ -542,9 +579,25 @@ mod tests {
             has_checksum: false,
             locator: Locator { size: 1, offset: 0 },
         }];
-        assert!(read_column(&src, ColumnType::Bit, 0, &bit_pages, None, false).is_err());
+        assert!(
+            read_column(
+                &src,
+                &descriptor(ColumnType::Bit, 0, None),
+                &bit_pages,
+                false
+            )
+            .is_err()
+        );
 
         // The matching width still decodes.
-        assert!(read_column(&src, ColumnType::Int32, 32, &pages, None, false).is_ok());
+        assert!(
+            read_column(
+                &src,
+                &descriptor(ColumnType::Int32, 32, None),
+                &pages,
+                false
+            )
+            .is_ok()
+        );
     }
 }

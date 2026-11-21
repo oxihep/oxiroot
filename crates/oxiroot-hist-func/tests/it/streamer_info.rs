@@ -17,7 +17,7 @@ fn a_function_file_describes_the_function_classes_only() {
         .unwrap();
     let file = FileReader::open(&path).unwrap();
     let reg = file.streamer_registry().unwrap();
-    let classes = reg.class_names();
+    let classes = reg.class_names().collect::<Vec<_>>();
     for class in [
         "TF2",
         "TF1",

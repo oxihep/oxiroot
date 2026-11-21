@@ -4,15 +4,13 @@
 //! the `Hist3D` `fSumw2`). On disk it is a `TH3D` plus the profile members, exactly as
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
-use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::skip_versioned;
-use oxiroot_io_core::{Error, RBuffer, Result};
+use crate::base::Moments;
 use oxiroot_io_core::{Object, ReadRoot};
+use oxiroot_io_core::{RBuffer, Result};
 
 use crate::axis::Axis;
 use crate::base::{
-    BinContentType, cell_count, check_cells, end_record, read_tarray, read_th1_base,
-    unsupported_version,
+    BinContentType, cell_count, check_cells, end_record, read_tarray, unsupported_version,
 };
 use crate::profile1d::ErrorMode;
 
@@ -32,28 +30,8 @@ pub struct Profile3D {
     pub(crate) zaxis: Axis,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of squared weights (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of `w·x` (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of `w·x²` (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
-    /// Sum of `w·y` (`fTsumwy`).
-    pub(crate) tsumwy: f64,
-    /// Sum of `w·y²` (`fTsumwy2`).
-    pub(crate) tsumwy2: f64,
-    /// Sum of `w·x·y` (`fTsumwxy`).
-    pub(crate) tsumwxy: f64,
-    /// Sum of `w·z` (`fTsumwz`).
-    pub(crate) tsumwz: f64,
-    /// Sum of `w·z²` (`fTsumwz2`).
-    pub(crate) tsumwz2: f64,
-    /// Sum of `w·x·z` (`fTsumwxz`).
-    pub(crate) tsumwxz: f64,
-    /// Sum of `w·y·z` (`fTsumwyz`).
-    pub(crate) tsumwyz: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    pub(crate) moments: Moments,
     /// Per-cell `Σ(w·t)` (the `Hist3D` contents, `fArray`); length `ncells`.
     pub(crate) sums: Vec<f64>,
     /// Per-cell `Σ(w·t²)` (the `Hist3D` `fSumw2`); length `ncells`.
@@ -78,8 +56,8 @@ impl Profile3D {
     /// Total cells including the flow bins (`fNcells`), derived from the per-bin
     /// vectors so it cannot disagree with them.
     #[must_use]
-    pub fn ncells(&self) -> i32 {
-        i32::saturating_from(self.bin_entries.len())
+    pub fn ncells(&self) -> usize {
+        self.bin_entries.len()
     }
 
     /// Create an empty `Profile3D` with uniform x/y/z bins and no t
@@ -87,17 +65,17 @@ impl Profile3D {
     /// [`Hist::reg`](crate::Hist::reg)`(nx, ..).reg(ny, ..).reg(nz, ..).mean().to_root()?`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        nx: i32,
+        nx: usize,
         xlo: f64,
         xhi: f64,
-        ny: i32,
+        ny: usize,
         ylo: f64,
         yhi: f64,
-        nz: i32,
+        nz: usize,
         zlo: f64,
         zhi: f64,
     ) -> Self {
-        let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2) * (nz.max(0) + 2));
+        let ncells = (nx + 2) * (ny + 2) * (nz + 2);
         Self {
             name: String::new(),
             title: String::new(),
@@ -105,17 +83,7 @@ impl Profile3D {
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", nz, zlo, zhi),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
-            tsumwxy: 0.0,
-            tsumwz: 0.0,
-            tsumwz2: 0.0,
-            tsumwxz: 0.0,
-            tsumwyz: 0.0,
+            moments: Moments::default(),
             sums: vec![0.0; ncells],
             sumt2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
@@ -131,17 +99,17 @@ impl Profile3D {
     /// Number of x bins (excluding flow).
     #[must_use]
     pub fn nx(&self) -> usize {
-        usize::saturating_from(self.xaxis.nbins.max(0))
+        self.xaxis.nbins
     }
     /// Number of y bins (excluding flow).
     #[must_use]
     pub fn ny(&self) -> usize {
-        usize::saturating_from(self.yaxis.nbins.max(0))
+        self.yaxis.nbins
     }
     /// Number of z bins (excluding flow).
     #[must_use]
     pub fn nz(&self) -> usize {
-        usize::saturating_from(self.zaxis.nbins.max(0))
+        self.zaxis.nbins
     }
 
     /// Profiled `t` value per in-range cell as `values[ix][iy][iz]`:
@@ -172,21 +140,8 @@ impl Profile3D {
             return Err(unsupported_version("TProfile3D", version));
         }
         let _th3d = r.read_version()?; // TH3D wrapper
-        let th3 = r.read_version()?; // Hist3D wrapper
-
-        let c = read_th1_base(r, None)?;
-        skip_versioned(r)?; // TAtt3D base (empty)
-        let tsumwy = r.be_f64()?;
-        let tsumwy2 = r.be_f64()?;
-        let tsumwxy = r.be_f64()?;
-        let tsumwz = r.be_f64()?;
-        let tsumwz2 = r.be_f64()?;
-        let tsumwxz = r.be_f64()?;
-        let tsumwyz = r.be_f64()?;
-        let end = th3
-            .end
-            .ok_or_else(|| Error::Format("TH3 record has no byte count".into()))?;
-        r.seek(end)?;
+        let (c, [tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz]) =
+            crate::hist3d::read_th3_base(r)?;
 
         let sums = read_tarray(r, BinContentType::F64)?; // TH3D TArrayD = Σ(w·t)
         let bin_entries = read_tarray(r, BinContentType::F64)?;
@@ -215,17 +170,16 @@ impl Profile3D {
             yaxis: c.yaxis,
             zaxis: c.zaxis,
             entries: c.entries,
-            tsumw: c.tsumw,
-            tsumw2: c.tsumw2,
-            tsumwx: c.tsumwx,
-            tsumwx2: c.tsumwx2,
-            tsumwy,
-            tsumwy2,
-            tsumwxy,
-            tsumwz,
-            tsumwz2,
-            tsumwxz,
-            tsumwyz,
+            moments: Moments {
+                wy: tsumwy,
+                wy2: tsumwy2,
+                wxy: tsumwxy,
+                wz: tsumwz,
+                wz2: tsumwz2,
+                wxz: tsumwxz,
+                wyz: tsumwyz,
+                ..c.moments
+            },
             sums,
             sumt2: c.sumw2,
             bin_entries,

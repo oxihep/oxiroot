@@ -8,6 +8,8 @@
 //! ```
 
 // the prelude (Model/Hist1D/FitOptions) is only used by the fit at the very end
+use oxiroot::fit::FitExt;
+use oxiroot::fit::{FitOptions, Model};
 #[cfg(feature = "fit")]
 use oxiroot::prelude::*;
 use oxiroot::stat;

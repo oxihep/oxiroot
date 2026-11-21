@@ -36,13 +36,14 @@ pub enum Column {
     F32(Vec<f32>),
     /// `f64`.
     F64(Vec<f64>),
-    /// One UTF-8 string per entry: entry `i` is
-    /// `bytes[offsets[i]..offsets[i + 1]]`.
+    /// One string per entry: entry `i` is
+    /// `text[offsets[i]..offsets[i + 1]]`.
     String {
         /// Cumulative byte boundaries, one per entry plus a leading `0`.
+        /// Each falls between two characters of `text`.
         offsets: Vec<u64>,
-        /// Every entry's bytes, back to back.
-        bytes: Vec<u8>,
+        /// Every entry's text, back to back.
+        text: String,
     },
     /// A variable number of values per entry: entry `i` is
     /// `values[offsets[i]..offsets[i + 1]]`.
@@ -186,7 +187,7 @@ impl Column {
             Self::I64(v) => 8 * v.len(),
             Self::U64(v) => 8 * v.len(),
             Self::F64(v) => 8 * v.len(),
-            Self::String { offsets, bytes } => 8 * offsets.len() + bytes.len(),
+            Self::String { offsets, text } => 8 * offsets.len() + text.len(),
             Self::List { offsets, values } => 8 * offsets.len() + values.byte_size(),
             Self::Array { values, .. } => values.byte_size(),
             Self::Optional { valid, values } => valid.len() + values.byte_size(),
@@ -213,12 +214,10 @@ impl Column {
             Ok(())
         };
         match self {
-            Self::String { offsets, bytes } => {
-                check_offsets(offsets, bytes.len())?;
-                for w in offsets.windows(2) {
-                    if std::str::from_utf8(&bytes[to_usize(w[0])..to_usize(w[1])]).is_err() {
-                        return bad("an entry is not UTF-8".into());
-                    }
+            Self::String { offsets, text } => {
+                check_offsets(offsets, text.len())?;
+                if offsets.iter().any(|&o| !text.is_char_boundary(to_usize(o))) {
+                    return bad("an entry starts or ends inside a character".into());
                 }
                 Ok(())
             }
@@ -292,11 +291,13 @@ impl Column {
         let end = end.min(self.len());
         let start = start.min(end);
         map_scalar!(self, v => v[start..end].to_vec(), {
-            Self::String { offsets, bytes } => {
-                let (offsets, lo, hi) = window(offsets, start, end, bytes.len());
+            Self::String { offsets, text } => {
+                let (offsets, lo, hi) = window(offsets, start, end, text.len());
                 Self::String {
                     offsets,
-                    bytes: bytes[lo..hi].to_vec(),
+                    // Empty for a window that cuts a character, which only
+                    // a column no batch accepts can have.
+                    text: text.get(lo..hi).unwrap_or_default().to_owned(),
                 }
             }
             Self::List { offsets, values } => {
@@ -335,14 +336,14 @@ impl Column {
                 .collect()
         }
         map_scalar!(self, v => keep(v, mask), {
-            Self::String { offsets, bytes } => {
+            Self::String { offsets, text } => {
                 let mut out_off = vec![0u64];
-                let mut out = Vec::new();
+                let mut out = String::new();
                 for (w, _) in offsets.windows(2).zip(mask).filter(|&(_, &m)| m) {
-                    out.extend_from_slice(&bytes[to_usize(w[0])..to_usize(w[1])]);
+                    out.push_str(&text[to_usize(w[0])..to_usize(w[1])]);
                     out_off.push(out.len() as u64);
                 }
-                Self::String { offsets: out_off, bytes: out }
+                Self::String { offsets: out_off, text: out }
             }
             Self::List { offsets, values } => {
                 let mut out_off = vec![0u64];
@@ -389,14 +390,14 @@ impl Column {
             (Self::F32(a), Self::F32(b)) => a.extend(b),
             (Self::F64(a), Self::F64(b)) => a.extend(b),
             (
-                Self::String { offsets, bytes },
+                Self::String { offsets, text },
                 Self::String {
                     offsets: o2,
-                    bytes: b2,
+                    text: t2,
                 },
             ) => {
                 rebase(offsets, &o2);
-                bytes.extend(b2);
+                text.push_str(&t2);
             }
             (
                 Self::List { offsets, values },
@@ -493,89 +494,78 @@ fn offsets_of(lengths: impl Iterator<Item = usize>) -> Vec<u64> {
 
 fn strings_column<S: AsRef<str>>(values: &[S]) -> Column {
     let offsets = offsets_of(values.iter().map(|s| s.as_ref().len()));
-    let mut bytes = Vec::with_capacity(offsets.last().map_or(0, |&o| to_usize(o)));
+    let mut text = String::with_capacity(offsets.last().map_or(0, |&o| to_usize(o)));
     for s in values {
-        bytes.extend_from_slice(s.as_ref().as_bytes());
+        text.push_str(s.as_ref());
     }
-    Column::String { offsets, bytes }
+    Column::String { offsets, text }
 }
 
-/// Data that becomes a [`Column`]: `Vec<T>`, `Vec<Vec<T>>`,
-/// `Vec<Vec<Vec<T>>>`, `Vec<[T; N]>` and `Vec<Option<T>>` of a
-/// [`Primitive`] `T`; `Vec<String>`, `Vec<&str>` and `Vec<Vec<String>>`; or
-/// a [`Column`] itself.
-pub trait IntoColumn {
-    /// The column.
-    fn into_column(self) -> Column;
-}
+// What becomes a [`Column`] with `Column::from` or `.into()`: `Vec<T>`,
+// `Vec<Vec<T>>`, `Vec<Vec<Vec<T>>>`, `Vec<[T; N]>` and `Vec<Option<T>>` of a
+// [`Primitive`] `T`; `Vec<String>`, `Vec<&str>` and `Vec<Vec<String>>`.
 
-impl IntoColumn for Column {
-    fn into_column(self) -> Column {
-        self
+impl<T: Primitive> From<Vec<T>> for Column {
+    fn from(data: Vec<T>) -> Self {
+        T::into_column(data)
     }
 }
 
-impl<T: Primitive> IntoColumn for Vec<T> {
-    fn into_column(self) -> Column {
-        T::into_column(self)
-    }
-}
-
-impl<T: Primitive> IntoColumn for Vec<Vec<T>> {
-    fn into_column(self) -> Column {
-        let offsets = offsets_of(self.iter().map(Vec::len));
-        Column::List {
+impl<T: Primitive> From<Vec<Vec<T>>> for Column {
+    fn from(data: Vec<Vec<T>>) -> Self {
+        let offsets = offsets_of(data.iter().map(Vec::len));
+        Self::List {
             offsets,
-            values: Box::new(T::into_column(self.concat())),
+            values: Box::new(T::into_column(data.concat())),
         }
     }
 }
 
-impl<T: Primitive> IntoColumn for Vec<Vec<Vec<T>>> {
-    fn into_column(self) -> Column {
-        let offsets = offsets_of(self.iter().map(Vec::len));
-        Column::List {
+impl<T: Primitive> From<Vec<Vec<Vec<T>>>> for Column {
+    fn from(data: Vec<Vec<Vec<T>>>) -> Self {
+        let offsets = offsets_of(data.iter().map(Vec::len));
+        Self::List {
             offsets,
-            values: Box::new(self.into_iter().flatten().collect::<Vec<_>>().into_column()),
+            values: Box::new(Self::from(data.into_iter().flatten().collect::<Vec<_>>())),
         }
     }
 }
 
-impl<T: Primitive, const N: usize> IntoColumn for Vec<[T; N]> {
-    fn into_column(self) -> Column {
-        Column::Array {
+impl<T: Primitive, const N: usize> From<Vec<[T; N]>> for Column {
+    fn from(data: Vec<[T; N]>) -> Self {
+        Self::Array {
             len: N,
-            values: Box::new(T::into_column(self.concat())),
+            values: Box::new(T::into_column(data.concat())),
         }
     }
 }
 
-impl<T: Primitive> IntoColumn for Vec<Option<T>> {
-    fn into_column(self) -> Column {
-        Column::Optional {
-            valid: self.iter().map(Option::is_some).collect(),
-            values: Box::new(T::into_column(self.into_iter().flatten().collect())),
+impl<T: Primitive> From<Vec<Option<T>>> for Column {
+    fn from(data: Vec<Option<T>>) -> Self {
+        Self::Optional {
+            valid: data.iter().map(Option::is_some).collect(),
+            values: Box::new(T::into_column(data.into_iter().flatten().collect())),
         }
     }
 }
 
-impl IntoColumn for Vec<String> {
-    fn into_column(self) -> Column {
-        strings_column(&self)
+impl From<Vec<String>> for Column {
+    fn from(data: Vec<String>) -> Self {
+        strings_column(&data)
     }
 }
 
-impl IntoColumn for Vec<&str> {
-    fn into_column(self) -> Column {
-        strings_column(&self)
+impl From<Vec<&str>> for Column {
+    fn from(data: Vec<&str>) -> Self {
+        strings_column(&data)
     }
 }
 
-impl IntoColumn for Vec<Vec<String>> {
-    fn into_column(self) -> Column {
-        let offsets = offsets_of(self.iter().map(Vec::len));
-        let flat: Vec<String> = self.into_iter().flatten().collect();
-        Column::List {
+impl From<Vec<Vec<String>>> for Column {
+    fn from(data: Vec<Vec<String>>) -> Self {
+        let offsets = offsets_of(data.iter().map(Vec::len));
+        let flat: Vec<String> = data.into_iter().flatten().collect();
+        Self::List {
             offsets,
             values: Box::new(strings_column(&flat)),
         }
@@ -639,12 +629,12 @@ impl<'a, T> Jagged<'a, T> {
 #[derive(Debug, Clone, Copy)]
 pub struct Strings<'a> {
     offsets: &'a [u64],
-    bytes: &'a [u8],
+    text: &'a str,
 }
 
 impl<'a> Strings<'a> {
-    pub(crate) fn new(offsets: &'a [u64], bytes: &'a [u8]) -> Self {
-        Strings { offsets, bytes }
+    pub(crate) fn new(offsets: &'a [u64], text: &'a str) -> Self {
+        Strings { offsets, text }
     }
 
     /// The number of entries.
@@ -662,9 +652,7 @@ impl<'a> Strings<'a> {
     /// Entry `i`'s string. Panics if `i` is out of range, like slice indexing.
     #[must_use]
     pub fn get(&self, i: usize) -> &'a str {
-        let b = &self.bytes[to_usize(self.offsets[i])..to_usize(self.offsets[i + 1])];
-        // A batch checks every entry is UTF-8 when the column is added.
-        std::str::from_utf8(b).unwrap_or_default()
+        &self.text[to_usize(self.offsets[i])..to_usize(self.offsets[i + 1])]
     }
 
     /// Every entry's string, in order.
@@ -698,7 +686,7 @@ mod slice_tests {
     fn slicing_an_inconsistent_column_does_not_panic() {
         let no_offsets = Column::String {
             offsets: vec![],
-            bytes: b"abc".to_vec(),
+            text: "abc".into(),
         };
         assert_eq!(no_offsets.slice(0, 4).len(), 0);
 
@@ -710,7 +698,7 @@ mod slice_tests {
 
         let decreasing = Column::String {
             offsets: vec![3, 1, 2],
-            bytes: b"abc".to_vec(),
+            text: "abc".into(),
         };
         assert_eq!(decreasing.slice(0, 2).len(), 2);
 

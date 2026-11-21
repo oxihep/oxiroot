@@ -10,7 +10,7 @@ use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::TreeReader;
 
 use crate::json::Json;
-use crate::util::{CmdResult, Kind, Table, classify, parse_spec};
+use crate::util::{CmdResult, Kind, Report, Table, classify, parse_spec};
 
 /// Arguments for `oxroot ls`.
 #[derive(ClapArgs)]
@@ -31,36 +31,60 @@ const MAX_DEPTH: usize = 64;
 
 /// One listed object.
 struct Row {
+    /// The name shown: the path, with `;cycle` when the name alone is not
+    /// enough to tell two keys apart.
     name: String,
+    /// The object's path in the file, `dir/sub/name`.
+    path: String,
     class: String,
     title: String,
     cycle: u16,
-    entries: Option<u64>,
 }
 
-/// Run `oxroot ls`.
-pub fn run(args: Args, json: bool) -> CmdResult {
-    let (path, _) = parse_spec(&args.file);
-    let file = crate::util::open_root(&path)?;
-    let want_entries = args.long || json;
+impl Row {
+    /// The entry count of a `TTree` or `RNTuple`; `None` for any other class,
+    /// or one that cannot be opened.
+    fn entries(&self, file: &FileReader) -> Option<u64> {
+        match classify(&self.class) {
+            Kind::Tree => (TreeReader::open(file, &self.path).ok()).map(|t| t.entries()),
+            Kind::RNtuple => (NtupleReader::open(file, &self.path).ok()).map(|n| n.entries()),
+            _ => None,
+        }
+    }
+}
 
-    let mut rows = Vec::new();
-    collect(
-        &file,
-        "",
-        file.keys(),
-        want_entries,
-        args.recursive,
-        0,
-        &mut rows,
-    );
+/// The keys of a file. Counting entries opens every tree and `RNTuple`, so
+/// it waits until a form that shows the counts is asked for.
+struct Listing {
+    file: FileReader,
+    rows: Vec<Row>,
+    long: bool,
+}
 
-    name_ambiguous_cycles(&mut rows);
+impl Report for Listing {
+    fn text(self: Box<Self>) -> String {
+        let mut table = if self.long {
+            Table::new(&["name", "class", "title", "cycle", "entries"]).right_align(&[3, 4])
+        } else {
+            Table::new(&["name", "class", "title"])
+        };
+        for r in &self.rows {
+            let mut cells = vec![r.name.clone(), r.class.clone(), r.title.clone()];
+            if self.long {
+                cells.push(r.cycle.to_string());
+                let entries = r.entries(&self.file);
+                cells.push(entries.map_or_else(|| "-".to_string(), |e| e.to_string()));
+            }
+            table.row(cells);
+        }
+        table.render()
+    }
 
-    if json {
-        let array = Json::Array(
-            rows.iter()
+    fn json(self: Box<Self>) -> Json {
+        Json::Array(
+            (self.rows.iter())
                 .map(|r| {
+                    let entries = r.entries(&self.file);
                     Json::Object(vec![
                         ("name", Json::s(r.name.clone())),
                         ("class", Json::s(r.class.clone())),
@@ -68,36 +92,27 @@ pub fn run(args: Args, json: bool) -> CmdResult {
                         ("cycle", Json::Int(i64::from(r.cycle))),
                         (
                             "entries",
-                            r.entries.map_or(Json::Null, |e| Json::Int(e.cast_signed())),
+                            entries.map_or(Json::Null, |e| Json::Int(e.cast_signed())),
                         ),
                     ])
                 })
                 .collect(),
-        );
-        println!("{}", array.render());
-        return Ok(());
+        )
     }
+}
 
-    let mut table = if args.long {
-        Table::new(&["name", "class", "title", "cycle", "entries"]).right_align(&[3, 4])
-    } else {
-        Table::new(&["name", "class", "title"])
-    };
-    for r in &rows {
-        if args.long {
-            table.row(vec![
-                r.name.clone(),
-                r.class.clone(),
-                r.title.clone(),
-                r.cycle.to_string(),
-                r.entries.map_or_else(|| "-".to_string(), |e| e.to_string()),
-            ]);
-        } else {
-            table.row(vec![r.name.clone(), r.class.clone(), r.title.clone()]);
-        }
-    }
-    table.print();
-    Ok(())
+/// Run `oxroot ls`.
+pub fn run(args: &Args) -> CmdResult {
+    let (path, _) = parse_spec(&args.file);
+    let file = crate::util::open_root(&path)?;
+    let mut rows = Vec::new();
+    collect(&file, "", file.keys(), args.recursive, 0, &mut rows);
+    name_ambiguous_cycles(&mut rows);
+    Ok(Box::new(Listing {
+        file,
+        rows,
+        long: args.long,
+    }))
 }
 
 /// Name a key `name;cycle` when the directory holds more than one cycle of it,
@@ -127,7 +142,6 @@ fn collect(
     file: &FileReader,
     dir_path: &str,
     keys: &[Key],
-    want_entries: bool,
     recursive: bool,
     depth: usize,
     rows: &mut Vec<Row>,
@@ -140,57 +154,17 @@ fn collect(
         };
         rows.push(Row {
             name: full.clone(),
+            path: full.clone(),
             class: key.class_name.clone(),
             title: key.title.clone(),
             cycle: key.cycle,
-            entries: want_entries
-                .then(|| entry_count(file, &key.class_name, &key.name, dir_path))
-                .flatten(),
         });
         if recursive
             && depth < MAX_DEPTH
             && ClassKind::of(&key.class_name) == ClassKind::Directory
             && let Ok(sub) = file.subdir(&full)
         {
-            collect(
-                file,
-                &full,
-                &sub.keys,
-                want_entries,
-                recursive,
-                depth + 1,
-                rows,
-            );
+            collect(file, &full, &sub.keys, recursive, depth + 1, rows);
         }
     }
-}
-
-/// The entry count of a `TTree`/`RNTuple` key named `leaf` inside `dir_path`
-/// (`""` for the root directory), or `None` for any other class.
-fn entry_count(file: &FileReader, class: &str, leaf: &str, dir_path: &str) -> Option<u64> {
-    match classify(class) {
-        Kind::Tree => open_tree(file, dir_path, leaf).map(|t| t.entries()),
-        Kind::RNtuple => open_ntuple(file, dir_path, leaf).map(|n| n.entries()),
-        _ => None,
-    }
-}
-
-/// Open a `TTree` from the root directory or a subdirectory (`Ok`s only).
-fn open_tree<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<TreeReader<'f>> {
-    if dir_path.is_empty() {
-        TreeReader::open(file, leaf)
-    } else {
-        TreeReader::open(file, &format!("{}/{}", dir_path, leaf))
-    }
-    .ok()
-}
-
-/// Open an `RNTuple` from the root directory or a subdirectory (`Ok`s only).
-fn open_ntuple<'f>(file: &'f FileReader, dir_path: &str, leaf: &str) -> Option<NtupleReader<'f>> {
-    if dir_path.is_empty() {
-        NtupleReader::open(file, leaf)
-    } else {
-        NtupleReader::open(file, &format!("{}/{}", dir_path, leaf))
-    }
-    .ok()
 }

@@ -177,11 +177,7 @@ fn class(name: &str) -> ClassDef<'_> {
 /// The class names in a file's streamer info.
 fn described(f: &FileReader) -> Vec<String> {
     let registry = f.streamer_registry().unwrap();
-    registry
-        .class_names()
-        .into_iter()
-        .map(String::from)
-        .collect()
+    registry.class_names().map(String::from).collect()
 }
 
 /// The `KeyLen` of a file's streamer-info record.
@@ -308,7 +304,7 @@ fn append_keeps_existing_bytes_and_adds_keys() {
         // A different (longer) file name than the one stored: the top directory's
         // reserved record is measured from the stored name.
         let bytes = ContainerWriter::build_append(
-            &existing,
+            &bytes::Bytes::from(existing.clone()),
             "a-much-longer-name-than-before.root",
             Compression::Stored,
             threshold,
@@ -361,11 +357,14 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
         .unwrap()
         .header()
         .seek_info;
-    let bytes =
-        ContainerWriter::build_append(&existing, "orig.root", Compression::Stored, u64::MAX, |c| {
-            c.place_streamer_info(&[], &[class("A")])
-        })
-        .unwrap();
+    let bytes = ContainerWriter::build_append(
+        &bytes::Bytes::from(existing.clone()),
+        "orig.root",
+        Compression::Stored,
+        u64::MAX,
+        |c| c.place_streamer_info(&[], &[class("A")]),
+    )
+    .unwrap();
     assert_eq!(
         FileReader::from_bytes(bytes).unwrap().header().seek_info,
         before
@@ -373,11 +372,14 @@ fn append_keeps_complete_or_unreadable_streamer_info_as_is() {
 
     // A record that does not parse is kept rather than extended.
     let existing = existing_file_with(b"not a streamer info list");
-    let bytes =
-        ContainerWriter::build_append(&existing, "orig.root", Compression::Stored, u64::MAX, |c| {
-            c.place_streamer_info(&[], &[class("B")])
-        })
-        .unwrap();
+    let bytes = ContainerWriter::build_append(
+        &bytes::Bytes::from(existing.clone()),
+        "orig.root",
+        Compression::Stored,
+        u64::MAX,
+        |c| c.place_streamer_info(&[], &[class("B")]),
+    )
+    .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(
         oxiroot_io_core::raw::streamer_info_bytes(&f)
@@ -395,12 +397,17 @@ fn a_big_file_stays_big_when_appended() {
             .map(drop)
     })
     .unwrap();
-    let appended =
-        ContainerWriter::build_append(&big, "b.root", Compression::Stored, u64::MAX, |c| {
+    let appended = ContainerWriter::build_append(
+        &bytes::Bytes::from(big.clone()),
+        "b.root",
+        Compression::Stored,
+        u64::MAX,
+        |c| {
             c.place_key(DirId::TOP, "TObjString", "b", "", b"beta")
                 .map(drop)
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let f = FileReader::from_bytes(appended).unwrap();
     assert!(f.header().is_big());
     assert_eq!(payload(&f, "", "a"), b"alpha");
@@ -426,7 +433,7 @@ fn a_big_file_stays_big_when_appended() {
 fn append_rejects_a_truncated_file() {
     let existing = existing_file();
     let err = ContainerWriter::build_append(
-        &existing[..existing.len() - 1],
+        &bytes::Bytes::copy_from_slice(&existing[..existing.len() - 1]),
         "orig.root",
         Compression::Stored,
         u64::MAX,

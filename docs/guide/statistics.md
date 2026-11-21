@@ -342,6 +342,7 @@ parameter — `Model::crystal_ball`, `voigtian`, `double_crystal_ball`,
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, Model};
 
 let mut h = Hist::reg(80, 90.0, 110.0).double().named("mass");
 // … fill h …

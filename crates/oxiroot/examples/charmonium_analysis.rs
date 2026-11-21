@@ -39,6 +39,8 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod analysis {
+    use oxiroot::data::DatasetObject;
+    use oxiroot::fit::{Events2, FitExt, FitMethod, FitOptions, Model, Toys};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Scale, Style};
     use oxiroot::prelude::*;
     use oxiroot::stat::{crystal_ball, erf, erfc};

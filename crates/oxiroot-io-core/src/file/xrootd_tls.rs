@@ -189,9 +189,11 @@ pub(super) fn ztn_credential(token: &str, parms: &str) -> Result<Vec<u8>> {
         .nth(1)
         .and_then(|m| m.parse::<usize>().ok())
         .filter(|&m| m > 0)
-        .ok_or_else(|| Error::Io {
-            kind: std::io::ErrorKind::InvalidData,
-            message: format!("root://: malformed ztn parameters from the server: {parms:?}"),
+        .ok_or_else(|| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("root://: malformed ztn parameters from the server: {parms:?}"),
+            ))
         })?;
     if token.len() >= max {
         return Err(Error::InvalidInput(format!(
@@ -233,10 +235,9 @@ pub(super) fn connect(tcp: TcpStream, host: &str, opts: &XrootdOptions) -> Resul
 }
 
 fn tls_err(host: &str, why: &str) -> Error {
-    Error::Io {
-        kind: std::io::ErrorKind::Other,
-        message: format!("root://{host}: TLS handshake: {why}"),
-    }
+    Error::Io(std::io::Error::other(format!(
+        "root://{host}: TLS handshake: {why}"
+    )))
 }
 
 fn client_config(opts: &XrootdOptions) -> Result<Arc<ClientConfig>> {
@@ -248,10 +249,7 @@ fn client_config(opts: &XrootdOptions) -> Result<Arc<ClientConfig>> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let config = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
-        .map_err(|e| Error::Io {
-            kind: std::io::ErrorKind::Other,
-            message: format!("TLS setup: {e}"),
-        })?
+        .map_err(|e| Error::Io(std::io::Error::other(format!("TLS setup: {e}"))))?
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(Arc::new(config))

@@ -143,7 +143,7 @@ use oxiroot::tree::raw::{BranchValues};
 let file = FileReader::open("tree.root")?;
 let t = TreeReader::open(&file, "Events")?;
 
-println!("{} entries: {:?}", t.entries(), t.branch_names());
+println!("{} entries: {:?}", t.entries(), t.branch_names().collect::<Vec<_>>());
 
 let energy: Vec<f64> = t.branch("energy").read()?;
 ```

@@ -36,6 +36,9 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod search {
+    use oxiroot::fit::Cost;
+    use oxiroot::fit::ModelCost;
+    use oxiroot::fit::{FitExt, FitMethod, FitOptions, Fitter, HypoTest, Model};
     use oxiroot::fit::{FitResult, UpperLimit, global_significance, upcrossings};
     use oxiroot::plot::{
         Axes, Color, CurveOpts, HAlign, HistOpts, HistType, Scale, Style, TextOpts, VAlign,

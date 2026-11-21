@@ -92,6 +92,23 @@ pub struct ColumnDescriptor {
     pub value_range: Option<(f64, f64)>,
 }
 
+impl FieldDescriptor {
+    /// The index, in [`Header::fields`], of the field this one is inside. A
+    /// top-level field is its own parent.
+    #[must_use]
+    pub fn parent(&self) -> usize {
+        self.parent_field_id as usize
+    }
+}
+
+impl ColumnDescriptor {
+    /// The index, in [`Header::fields`], of the field this column belongs to.
+    #[must_use]
+    pub fn field(&self) -> usize {
+        self.field_id as usize
+    }
+}
+
 /// The parsed header: the `RNTuple`'s name/description and full schema.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Header {
@@ -108,6 +125,33 @@ pub struct Header {
 }
 
 impl Header {
+    /// The top-level fields with their index in [`fields`](Self::fields), in
+    /// schema order. A field is top-level when it is its own parent.
+    pub fn top_level_fields(&self) -> impl Iterator<Item = (usize, &FieldDescriptor)> + Clone {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter(|(i, f)| f.parent() == *i)
+    }
+
+    /// The index of the top-level field `name`, if there is one. A field
+    /// nested in another can have the same name; it is not what this finds.
+    #[must_use]
+    pub fn top_level_field(&self, name: &str) -> Option<usize> {
+        self.top_level_fields()
+            .find(|(_, f)| f.name == name)
+            .map(|(i, _)| i)
+    }
+
+    /// The fields directly inside field `id`, in order.
+    pub fn child_fields(&self, id: usize) -> impl Iterator<Item = usize> + '_ {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter(move |&(i, f)| i != id && f.parent() == id)
+            .map(|(i, _)| i)
+    }
+
     /// Parse the header from the envelope payload (after the 8-byte type/length
     /// word, before the checksum).
     ///

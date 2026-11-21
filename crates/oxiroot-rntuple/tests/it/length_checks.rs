@@ -36,7 +36,10 @@ fn fields_of_different_lengths_are_rejected() {
         Field::f64("y", vec![1.0, 2.0]),
     ])
     .unwrap_err();
-    assert_eq!(err, mismatch("field \"y\" entries", 3, 2));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"y\" entries", 3, 2))
+    );
 }
 
 #[test]
@@ -46,7 +49,10 @@ fn record_members_of_different_lengths_are_rejected() {
         ("b".into(), Column::F64(vec![1.0])),
     ]);
     let err = write(&[Field::new("r", record)]).unwrap_err();
-    assert_eq!(err, mismatch("field \"r\" member \"b\"", 2, 1));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"r\" member \"b\"", 2, 1))
+    );
 }
 
 #[test]
@@ -56,7 +62,10 @@ fn collection_offsets_must_end_at_the_item_count() {
         items: Box::new(Column::VecF64(vec![vec![1.0], vec![2.0]])),
     };
     let err = write(&[Field::new("v", nested)]).unwrap_err();
-    assert_eq!(err, mismatch("field \"v\" items", 3, 2));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"v\" items", 3, 2))
+    );
 
     // The offsets bound each entry, so they start at the first entry's start.
     let no_zero = Column::Nested {
@@ -89,7 +98,10 @@ fn collection_offsets_must_end_at_the_item_count() {
         Column::F64(vec![0.5]),
     );
     let err = write(&[map]).unwrap_err();
-    assert_eq!(err, mismatch("field \"m\" items member \"_1\"", 2, 1));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"m\" items member \"_1\"", 2, 1))
+    );
 }
 
 #[test]
@@ -100,7 +112,10 @@ fn variant_tags_must_match_their_alternatives() {
         vec![1, 2],
     )])
     .unwrap_err();
-    assert_eq!(err, mismatch("field \"v\" alternative 1", 1, 0));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"v\" alternative 1", 1, 0))
+    );
 
     let err = write(&[Field::variant("v", vec![Column::I32(vec![1])], vec![3])]).unwrap_err();
     assert!(
@@ -117,15 +132,24 @@ fn optional_values_must_match_the_presence_mask() {
         values: Box::new(Column::F64(vec![1.0])),
     };
     let err = write(&[Field::new("o", optional)]).unwrap_err();
-    assert_eq!(err, mismatch("field \"o\" values", 2, 1));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"o\" values", 2, 1))
+    );
 }
 
 #[test]
 fn fixed_size_fields_reject_ragged_entries() {
     let err = err(Field::array_f64("a", vec![vec![1.0, 2.0], vec![3.0]]));
-    assert_eq!(err, mismatch("field \"a\" entry 1", 2, 1));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"a\" entry 1", 2, 1))
+    );
     let err = self::err(Field::bitset("b", vec![vec![true], vec![true, false]]));
-    assert_eq!(err, mismatch("field \"b\" entry 1", 1, 2));
+    assert_eq!(
+        format!("{:?}", err),
+        format!("{:?}", mismatch("field \"b\" entry 1", 1, 2))
+    );
 
     // A hand-built array whose items do not divide into whole arrays.
     let array = Column::Array {

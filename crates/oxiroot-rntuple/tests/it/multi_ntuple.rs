@@ -41,7 +41,7 @@ fn several_rntuples_in_top_directory() {
     // Both top-directory RNTuples open and read.
     let events = NtupleReader::open(&f, "events").unwrap();
     assert_eq!(events.entries(), 3);
-    assert_eq!(events.field_names(), vec!["x", "y"]);
+    assert_eq!(events.field_names().collect::<Vec<_>>(), vec!["x", "y"]);
     assert_eq!(
         events.field("x").values().unwrap(),
         FieldValues::I32(vec![1, 2, 3])

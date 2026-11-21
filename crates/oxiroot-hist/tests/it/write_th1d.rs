@@ -116,7 +116,7 @@ fn written_file_embeds_self_describing_streamer_info() {
 
     let f = FileReader::open(&out).expect("reopen");
     let reg = f.streamer_registry().expect("parse embedded streamer info");
-    let classes = reg.class_names();
+    let classes = reg.class_names().collect::<Vec<_>>();
     for expected in ["TH1D", "TH1", "TAxis", "TAttAxis", "TNamed", "TObject"] {
         assert!(
             classes.contains(&expected),

@@ -8,9 +8,7 @@ use oxiroot_io_core::raw::{Key, begin_object_any, end_object_any, write_named, w
 use oxiroot_io_core::{CountToken, WBuffer};
 
 use super::baskets::BasketRec;
-use super::branch::{
-    Branch, BranchKind, SplitMember, class_checksum, member_type_info, vec_row_lengths,
-};
+use super::branch::{Branch, BranchKind, SplitMember, class_checksum, member_type_info};
 use super::layout::Kind;
 use super::{K_MAP_OFFSET, LeafRefs, OBJ_BITS};
 
@@ -251,10 +249,7 @@ fn write_split_parent(
     let count_baskets: Vec<BasketRec> = group.iter().step_by(stride).copied().collect();
     let tot_bytes: i64 = count_baskets.iter().map(|b| i64::from(b.nbytes)).sum();
     let checksum = class_checksum(&spec.class_name, &spec.members);
-    let max_count = vec_row_lengths(&spec.members[0].values)
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+    let max_count = branch.split_max_count();
     let max_baskets = i32::saturating_from(count_baskets.len()).max(10);
 
     let te = w.begin_object(10); // TBranchElement v10

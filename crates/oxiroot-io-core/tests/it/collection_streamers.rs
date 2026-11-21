@@ -7,6 +7,7 @@ use oxiroot_io_core::streamer_gen::{ClassDef, any, base, basic};
 use oxiroot_io_core::{
     Compression, FileReader, FileWriter, ObjList, ObjMap, ObjString, WBuffer, WriteRoot,
 };
+use std::borrow::Cow;
 
 /// An object of a class only this test knows: `MyEvent` (version 3), a `Named`
 /// with an `int` and a `MyHit` member. Its streamer info comes with it.
@@ -37,8 +38,8 @@ fn my_event() -> ClassDef<'static> {
 }
 
 impl WriteRoot for MyEvent {
-    fn root_class(&self) -> String {
-        "MyEvent".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("MyEvent")
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -46,16 +47,14 @@ impl WriteRoot for MyEvent {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
+    fn write_body(&self, w: &mut WBuffer) {
         let event = w.begin_object(3);
-        write_named(&mut w, 0, &self.name, "");
+        write_named(w, 0, &self.name, "");
         w.be_i32(7); // fRun
         let hit = w.begin_object(1);
         w.be_f64(2.5); // fHit.fE
         w.end_object(hit);
         w.end_object(event);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![my_hit(), my_event()]
@@ -154,8 +153,8 @@ fn two_versions_of_a_class_are_both_described() {
     // a file may need both descriptions; neither may shadow the other.
     struct Versioned(i32);
     impl WriteRoot for Versioned {
-        fn root_class(&self) -> String {
-            "MyHit".to_string()
+        fn root_class(&self) -> Cow<'static, str> {
+            Cow::Borrowed("MyHit")
         }
         fn root_name(&self) -> &str {
             if self.0 == 1 { "old" } else { "new" }
@@ -163,12 +162,10 @@ fn two_versions_of_a_class_are_both_described() {
         fn root_title(&self) -> &str {
             ""
         }
-        fn to_root_bytes(&self) -> Vec<u8> {
-            let mut w = WBuffer::new();
+        fn write_body(&self, w: &mut WBuffer) {
             let hit = w.begin_object(u16::try_from(self.0).expect("a small test tag"));
             w.be_f64(1.0);
             w.end_object(hit);
-            w.into_vec()
         }
         fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
             let mut cls = my_hit();
@@ -197,8 +194,8 @@ fn a_list_stored_without_a_name_takes_its_key_name() {
     // list takes the key's name, so it can be written again as it is.
     struct Unnamed(Vec<u8>);
     impl WriteRoot for Unnamed {
-        fn root_class(&self) -> String {
-            "TList".to_string()
+        fn root_class(&self) -> Cow<'static, str> {
+            Cow::Borrowed("TList")
         }
         fn root_name(&self) -> &str {
             "things"
@@ -206,8 +203,8 @@ fn a_list_stored_without_a_name_takes_its_key_name() {
         fn root_title(&self) -> &str {
             ""
         }
-        fn to_root_bytes(&self) -> Vec<u8> {
-            self.0.clone()
+        fn write_body(&self, w: &mut WBuffer) {
+            w.bytes(&self.0);
         }
     }
     let path = temp("unnamed");

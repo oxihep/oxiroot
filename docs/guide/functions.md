@@ -130,6 +130,7 @@ graph, or point set:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, Model};
 let mut h = Hist::reg(60, 80.0, 100.0).double().named("mass");
 // … fill h …
 let model = Model::from_formula("peak", "gaus(0) + pol1(3)")?

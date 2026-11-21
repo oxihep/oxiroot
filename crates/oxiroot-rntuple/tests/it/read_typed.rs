@@ -57,12 +57,15 @@ fn reads_typed_values() {
     );
     let err = n.field("x").read::<f32>().unwrap_err();
     assert_eq!(
-        err,
-        Error::TypeMismatch {
-            name: "x".into(),
-            found: "f64".into(),
-            expected: "f32".into(),
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::TypeMismatch {
+                name: "x".into(),
+                found: "f64".into(),
+                expected: "f32".into(),
+            }
+        )
     );
 }
 
@@ -221,6 +224,6 @@ fn an_empty_first_batch_writes_an_rntuple_with_no_entries() {
     let f = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
     let n = NtupleReader::open(&f, "ntpl").unwrap();
     assert_eq!(n.entries(), 0);
-    assert_eq!(n.field_names(), ["x", "v"]);
+    assert_eq!(n.field_names().collect::<Vec<_>>(), ["x", "v"]);
     assert_eq!(n.field("x").read::<f64>().unwrap(), Vec::<f64>::new());
 }

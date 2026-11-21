@@ -3,6 +3,7 @@
 //! [`raw::write_tree`]: a tree written in one go (every branch kind, split
 //! branches included) to a file, to bytes, or into a `FileWriter`.
 
+use std::borrow::Cow;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -99,8 +100,8 @@ impl oxiroot_io_core::Storable for TreeObject {
 }
 
 impl WriteInto for TreeObject {
-    fn root_class(&self) -> String {
-        "TTree".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("TTree")
     }
     fn root_name(&self) -> &str {
         &self.name

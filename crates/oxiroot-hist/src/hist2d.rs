@@ -4,7 +4,7 @@
 //! fTsumwxy }, TArray }`. The inline `TArray` holds the `(nx+2)*(ny+2)` cells
 //! with the x index varying fastest.
 
-use oxiroot_io_core::cast::SaturatingFrom;
+use crate::base::Moments;
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
@@ -14,45 +14,7 @@ use crate::base::{
     read_th1_base, unsupported_version,
 };
 
-/// A 2-D classic histogram (`TH2D` or `TH2F`); contents are widened to `f64`.
-#[derive(Debug, Clone, PartialEq)]
-#[doc(alias = "TH2", alias = "TH2D", alias = "TH2F")]
-pub struct Hist2D {
-    /// On-disk [`BinContentType`] (the class suffix); read the class name via
-    /// [`class_name`](Hist2D::class_name).
-    pub(crate) bin_content_type: BinContentType,
-    /// Histogram name (`fName`).
-    pub(crate) name: String,
-    /// Histogram title (`fTitle`).
-    pub(crate) title: String,
-    /// X axis.
-    pub(crate) xaxis: Axis,
-    /// Y axis.
-    pub(crate) yaxis: Axis,
-    /// Z axis (degenerate for 2-D).
-    pub(crate) zaxis: Axis,
-    /// Number of entries (`fEntries`).
-    pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of weight^2 (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of weight*x (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of weight*x^2 (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
-    /// Sum of weight*y (`fTsumwy`).
-    pub(crate) tsumwy: f64,
-    /// Sum of weight*y^2 (`fTsumwy2`).
-    pub(crate) tsumwy2: f64,
-    /// Sum of weight*x*y (`fTsumwxy`).
-    pub(crate) tsumwxy: f64,
-    /// Bin contents including flow (length `ncells`, x fastest).
-    pub(crate) contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty when the histogram
-    /// does not track errors.
-    pub(crate) sumw2: Vec<f64>,
-}
+use crate::record::Hist2D;
 
 impl Hist2D {
     pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
@@ -88,28 +50,28 @@ impl Hist2D {
             yaxis: c.yaxis,
             zaxis: c.zaxis,
             entries: c.entries,
-            tsumw: c.tsumw,
-            tsumw2: c.tsumw2,
-            tsumwx: c.tsumwx,
-            tsumwx2: c.tsumwx2,
-            tsumwy,
-            tsumwy2,
-            tsumwxy,
+            moments: Moments {
+                wy: tsumwy,
+                wy2: tsumwy2,
+                wxy: tsumwxy,
+                ..c.moments
+            },
             contents,
             sumw2: c.sumw2,
+            functions: Vec::new(),
         })
     }
 
     /// Number of x bins (excluding flow).
     #[must_use]
     pub fn nx(&self) -> usize {
-        usize::saturating_from(self.xaxis.nbins.max(0))
+        self.xaxis.nbins
     }
 
     /// Number of y bins (excluding flow).
     #[must_use]
     pub fn ny(&self) -> usize {
-        usize::saturating_from(self.yaxis.nbins.max(0))
+        self.yaxis.nbins
     }
 
     /// Bin contents excluding flow as `values[ix][iy]` (`nx` rows, `ny` cols),
@@ -128,8 +90,8 @@ impl Hist2D {
     /// and `ny` bins over `[ylo, yhi)`. Internal primitive behind the public
     /// builder: [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).double()`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Self {
-        let ncells = (nx.max(0) + 2) * (ny.max(0) + 2);
+    pub(crate) fn new(nx: usize, xlo: f64, xhi: f64, ny: usize, ylo: f64, yhi: f64) -> Self {
+        let ncells = (nx + 2) * (ny + 2);
         Self {
             bin_content_type: BinContentType::F64,
             name: String::new(),
@@ -138,15 +100,10 @@ impl Hist2D {
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
-            tsumwxy: 0.0,
-            contents: vec![0.0; usize::saturating_from(ncells.max(0))],
+            moments: Moments::default(),
+            contents: vec![0.0; ncells],
             sumw2: Vec::new(),
+            functions: Vec::new(),
         }
     }
 }

@@ -8,9 +8,48 @@ use std::path::Path;
 use oxiroot::FileReader;
 use oxiroot::tree::LeafType;
 
-/// Every command returns this: `Ok(())` on success, else a boxed error printed
-/// by `main`.
-pub type CmdResult = Result<(), Box<dyn Error>>;
+use crate::json::Json;
+
+/// What a command found, to print as text or as JSON. `main` picks one and
+/// prints it; a command never prints.
+pub trait Report {
+    /// The table or lines a person reads, each line ended.
+    fn text(self: Box<Self>) -> String;
+    /// The same facts for a program.
+    fn json(self: Box<Self>) -> Json;
+}
+
+/// A report with both forms already built, for a command whose two forms
+/// cost about the same.
+pub struct Both {
+    pub text: String,
+    pub json: Json,
+}
+
+impl Both {
+    /// The report as a command's result.
+    pub fn done(text: String, json: Json) -> CmdResult {
+        Ok(Box::new(Self { text, json }))
+    }
+}
+
+impl Report for Both {
+    fn text(self: Box<Self>) -> String {
+        self.text
+    }
+    fn json(self: Box<Self>) -> Json {
+        self.json
+    }
+}
+
+/// Every command returns this: its report, else a boxed error printed by
+/// `main`.
+pub type CmdResult = Result<Box<dyn Report>, Box<dyn Error>>;
+
+/// A count as a JSON integer.
+pub fn count(n: usize) -> Json {
+    Json::Int(i64::try_from(n).unwrap_or(i64::MAX))
+}
 
 /// Whether `target` is a remote URL (`http(s)://` or `root://`) rather than a
 /// local path.
@@ -179,8 +218,9 @@ impl Table {
         self.rows.push(cells);
     }
 
-    /// Print the table to stdout, padding each column to its widest cell.
-    pub fn print(&self) {
+    /// The table as lines, each column padded to its widest cell.
+    pub fn render(&self) -> String {
+        let mut out = String::new();
         let ncol = self.headers.len();
         let mut width = vec![0usize; ncol];
         for (c, h) in self.headers.iter().enumerate() {
@@ -191,19 +231,21 @@ impl Table {
                 width[c] = width[c].max(cell.chars().count());
             }
         }
-        let line = |cells: &[String]| {
+        let mut line = |cells: &[String]| {
             let parts: Vec<String> = (0..ncol)
                 .map(|c| {
                     let cell = cells.get(c).map_or("", String::as_str);
                     pad(cell, width[c], self.right[c])
                 })
                 .collect();
-            println!("{}", parts.join("  ").trim_end());
+            out.push_str(parts.join("  ").trim_end());
+            out.push('\n');
         };
         line(&self.headers);
         for row in &self.rows {
             line(row);
         }
+        out
     }
 }
 

@@ -2,6 +2,7 @@
 //! [`Batch`]es; and [`DatasetObject`], a dataset placed in a
 //! [`FileWriter`](oxiroot_io_core::FileWriter) next to other objects.
 
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Cursor, Seek, Write};
 use std::path::Path;
@@ -394,7 +395,32 @@ enum Content {
 struct Records {
     name: String,
     format: Format,
-    content: Result<Content>,
+    content: std::result::Result<Content, Deferred>,
+}
+
+/// An error found when the object was built, reported when the file is
+/// written. An error is handed over once, whole; the writer lays a file out
+/// at most twice, and a second request gets the same message.
+struct Deferred {
+    error: std::sync::Mutex<Option<Error>>,
+    message: String,
+}
+
+impl Deferred {
+    fn new(error: Error) -> Self {
+        Self {
+            message: error.to_string(),
+            error: std::sync::Mutex::new(Some(error)),
+        }
+    }
+
+    fn take(&self) -> Error {
+        self.error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .unwrap_or_else(|| Error::InvalidInput(self.message.clone()))
+    }
 }
 
 impl oxiroot_io_core::Storable for DatasetObject {
@@ -402,16 +428,16 @@ impl oxiroot_io_core::Storable for DatasetObject {
         oxiroot_io_core::Stored::records(Records {
             name: self.name.clone(),
             format: self.format,
-            content: self.content(),
+            content: self.content().map_err(Deferred::new),
         })
     }
 }
 
 impl WriteInto for Records {
-    fn root_class(&self) -> String {
+    fn root_class(&self) -> Cow<'static, str> {
         match self.format {
-            Format::Tree => "TTree".to_string(),
-            Format::Ntuple => ANCHOR_CLASS.to_string(),
+            Format::Tree => Cow::Borrowed("TTree"),
+            Format::Ntuple => Cow::Borrowed(ANCHOR_CLASS),
         }
     }
     fn root_name(&self) -> &str {
@@ -423,7 +449,7 @@ impl WriteInto for Records {
             Ok(Content::Ntuple(f)) => {
                 oxiroot_rntuple::raw::write_ntuple(file, dir, &self.name, f, &[])
             }
-            Err(e) => Err(e.clone()),
+            Err(deferred) => Err(deferred.take()),
         }
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
@@ -617,15 +643,9 @@ fn rows<T: Clone>(offsets: &[u64], values: &[T]) -> Vec<Vec<T>> {
         .collect()
 }
 
-fn strings(offsets: &[u64], bytes: &[u8]) -> Vec<String> {
-    offsets
-        .windows(2)
-        .map(|w| {
-            String::from_utf8_lossy(
-                &bytes[usize::saturating_from(w[0])..usize::saturating_from(w[1])],
-            )
-            .into_owned()
-        })
+fn strings(offsets: &[u64], text: &str) -> Vec<String> {
+    (offsets.windows(2))
+        .map(|w| text[usize::saturating_from(w[0])..usize::saturating_from(w[1])].to_owned())
         .collect()
 }
 
@@ -653,7 +673,7 @@ macro_rules! by_type {
 fn tree_branch(name: &str, c: &Column, data_type: &DataType) -> Result<Branch> {
     const WHAT: &str = "a TTree";
     match c {
-        Column::String { offsets, bytes } => Ok(Branch::string(name, strings(offsets, bytes))),
+        Column::String { offsets, text } => Ok(Branch::string(name, strings(offsets, text))),
         Column::List { offsets, values } if matches!(data_type, DataType::CArray(_)) => {
             by_type!(Branch, name, c, WHAT, &**values, x => rows(offsets, x);
                 Bool => jagged_bool, I8 => jagged_i8, U8 => jagged_u8, I16 => jagged_i16,
@@ -675,9 +695,9 @@ fn tree_branch(name: &str, c: &Column, data_type: &DataType) -> Result<Branch> {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Branch::split_vector(name, class_name(name), members))
             }
-            Column::String { offsets: o2, bytes } => Ok(Branch::vector_string(
+            Column::String { offsets: o2, text } => Ok(Branch::vector_string(
                 name,
-                rows(offsets, &strings(o2, bytes)),
+                rows(offsets, &strings(o2, text)),
             )),
             Column::List {
                 offsets: o2,
@@ -752,7 +772,7 @@ fn ntuple_column(c: Column, class: &str, data_type: &DataType) -> RnColumn {
             _ => RnColumn::F32(values),
         },
         Column::F64(v) => RnColumn::F64(v),
-        Column::String { offsets, bytes } => RnColumn::Str(strings(&offsets, &bytes)),
+        Column::String { offsets, text } => RnColumn::Str(strings(&offsets, &text)),
         Column::List { offsets, values } => {
             let item = match (data_type, &*values) {
                 // A map's `{_0, _1}` entries take the key and value types.

@@ -17,41 +17,50 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
     let two = || vec![1.0, 2.0];
     let one = || vec![1.0];
     assert_eq!(
-        Graph::new(two(), one()).unwrap_err(),
-        mismatch("TGraph y", 2, 1)
+        format!("{:?}", Graph::new(two(), one()).unwrap_err()),
+        format!("{:?}", mismatch("TGraph y", 2, 1))
     );
     assert_eq!(
-        Graph::new(two(), two())
-            .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Symmetric {
-                ex: one(),
-                ey: two()
-            }))
-            .unwrap_err(),
-        mismatch("TGraphErrors ex", 2, 1)
+        format!(
+            "{:?}",
+            Graph::new(two(), two())
+                .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Symmetric {
+                    ex: one(),
+                    ey: two()
+                }))
+                .unwrap_err()
+        ),
+        format!("{:?}", mismatch("TGraphErrors ex", 2, 1))
     );
     assert_eq!(
-        Graph::new(two(), two())
-            .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Asymmetric {
-                ex_low: two(),
-                ex_high: two(),
-                ey_low: two(),
-                ey_high: one()
-            }))
-            .unwrap_err(),
-        mismatch("TGraphAsymmErrors ey_high", 2, 1)
+        format!(
+            "{:?}",
+            Graph::new(two(), two())
+                .and_then(|g| g.with_errors(oxiroot_hist::GraphErrors::Asymmetric {
+                    ex_low: two(),
+                    ex_high: two(),
+                    ey_low: two(),
+                    ey_high: one()
+                }))
+                .unwrap_err()
+        ),
+        format!("{:?}", mismatch("TGraphAsymmErrors ey_high", 2, 1))
     );
     assert_eq!(
-        Graph2D::new(two(), two(), one()).unwrap_err(),
-        mismatch("TGraph2D z", 2, 1)
+        format!("{:?}", Graph2D::new(two(), two(), one()).unwrap_err()),
+        format!("{:?}", mismatch("TGraph2D z", 2, 1))
     );
     assert_eq!(
-        MultiErrorGraph::new(two(), two(), one(), two(), two(), two()).unwrap_err(),
-        mismatch("TGraphMultiErrors ex_low", 2, 1)
+        format!(
+            "{:?}",
+            MultiErrorGraph::new(two(), two(), one(), two(), two(), two()).unwrap_err()
+        ),
+        format!("{:?}", mismatch("TGraphMultiErrors ex_low", 2, 1))
     );
     let g = MultiErrorGraph::new(two(), two(), two(), two(), two(), two()).unwrap();
     assert_eq!(
-        g.with_y_error(two(), one()).unwrap_err(),
-        mismatch("TGraphMultiErrors ey_high", 2, 1)
+        format!("{:?}", g.with_y_error(two(), one()).unwrap_err()),
+        format!("{:?}", mismatch("TGraphMultiErrors ey_high", 2, 1))
     );
     // Equal lengths still build.
     assert_eq!(Graph::new(two(), vec![3.0, 4.0]).unwrap().len(), 2);
@@ -62,8 +71,11 @@ fn graph_constructors_reject_vectors_of_different_lengths() {
 fn th2poly_add_bin_adds_nothing_on_a_mismatch() {
     let mut h = PolyHist::new(0.0, 1.0, 0.0, 1.0);
     assert_eq!(
-        h.add_bin(&[0.0, 1.0, 1.0], &[0.0, 0.0]).unwrap_err(),
-        mismatch("TH2Poly bin y", 3, 2)
+        format!(
+            "{:?}",
+            h.add_bin(&[0.0, 1.0, 1.0], &[0.0, 0.0]).unwrap_err()
+        ),
+        format!("{:?}", mismatch("TH2Poly bin y", 3, 2))
     );
     assert!(h.bins().is_empty());
     assert_eq!(h.add_bin(&[0.0, 1.0, 1.0], &[0.0, 0.0, 1.0]).unwrap(), 1);
@@ -74,12 +86,12 @@ fn th2poly_add_bin_adds_nothing_on_a_mismatch() {
 fn thnsparse_fill_needs_one_coordinate_per_dimension() {
     let mut h = SparseHist::new(&[(2, 0.0, 2.0), (2, 0.0, 2.0)]);
     assert_eq!(
-        h.fill(&[0.5]).unwrap_err(),
-        mismatch("THnSparse fill coordinates", 2, 1)
+        format!("{:?}", h.fill(&[0.5]).unwrap_err()),
+        format!("{:?}", mismatch("THnSparse fill coordinates", 2, 1))
     );
     assert_eq!(
-        h.fill(&[0.5, 0.5, 0.5]).unwrap_err(),
-        mismatch("THnSparse fill coordinates", 2, 3)
+        format!("{:?}", h.fill(&[0.5, 0.5, 0.5]).unwrap_err()),
+        format!("{:?}", mismatch("THnSparse fill coordinates", 2, 3))
     );
     assert_eq!(h.entries(), 0.0);
     assert!(h.bins().is_empty());

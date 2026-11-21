@@ -6,7 +6,7 @@ use oxiroot::ntuple::NtupleReader;
 use oxiroot::tree::{BranchLayout, LeafType, TreeReader};
 
 use crate::json::Json;
-use crate::util::{CmdResult, Kind, Table, classify, leaf_type_name, parse_spec};
+use crate::util::{Both, CmdResult, Kind, Table, classify, leaf_type_name, parse_spec};
 
 /// Arguments for `oxroot show`.
 #[derive(ClapArgs)]
@@ -16,7 +16,7 @@ pub struct Args {
 }
 
 /// Run `oxroot show`.
-pub fn run(args: Args, json: bool) -> CmdResult {
+pub fn run(args: &Args) -> CmdResult {
     let (path, obj) = parse_spec(&args.spec);
     let obj = obj.ok_or("show needs an object: `file.root:name`")?;
     let file = crate::util::open_root(&path)?;
@@ -25,23 +25,19 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     let (name, class) = (key.name.as_str(), key.class_name.clone());
 
     match classify(&class) {
-        Kind::Tree => show_tree(&file, path, name, json),
-        Kind::RNtuple => show_rntuple(&file, path, name, json),
-        _ => {
-            if json {
-                let out = Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]);
-                println!("{}", out.render());
-            } else {
-                println!("{name}  {class}");
-                println!("(not a TTree or RNTuple — use `oxroot dump` to see its contents)");
-            }
-            Ok(())
-        }
+        Kind::Tree => show_tree(&file, path, name),
+        Kind::RNtuple => show_rntuple(&file, path, name),
+        _ => Both::done(
+            format!(
+                "{name}  {class}\n(not a TTree or RNTuple — use `oxroot dump` to see its contents)\n"
+            ),
+            Json::Object(vec![("name", Json::s(name)), ("class", Json::s(class))]),
+        ),
     }
 }
 
 /// Show a `TTree`'s branches, their types, and any unreadable branches.
-fn show_tree(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult {
+fn show_tree(file: &FileReader, path: &str, name: &str) -> CmdResult {
     let tree = TreeReader::open(file, path)?;
     let mut branches = Vec::new();
     for b in tree.branch_names() {
@@ -49,37 +45,34 @@ fn show_tree(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult
     }
     let unreadable: Vec<(String, String)> = tree
         .unsupported_branches()
+        .collect::<Vec<_>>()
         .iter()
         .map(|(n, r)| ((*n).to_string(), (*r).to_string()))
         .collect();
 
-    if json {
-        let out = Json::Object(vec![
-            ("name", Json::s(name)),
-            ("class", Json::s("TTree")),
-            ("entries", Json::Int(tree.entries().cast_signed())),
-            ("branches", named_type_array(&branches)),
-            (
-                "unreadable",
-                Json::Array(
-                    unreadable
-                        .iter()
-                        .map(|(n, r)| {
-                            Json::Object(vec![
-                                ("name", Json::s(n.clone())),
-                                ("reason", Json::s(r.clone())),
-                            ])
-                        })
-                        .collect(),
-                ),
+    let json = Json::Object(vec![
+        ("name", Json::s(name)),
+        ("class", Json::s("TTree")),
+        ("entries", Json::Int(tree.entries().cast_signed())),
+        ("branches", named_type_array(&branches)),
+        (
+            "unreadable",
+            Json::Array(
+                unreadable
+                    .iter()
+                    .map(|(n, r)| {
+                        Json::Object(vec![
+                            ("name", Json::s(n.clone())),
+                            ("reason", Json::s(r.clone())),
+                        ])
+                    })
+                    .collect(),
             ),
-        ]);
-        println!("{}", out.render());
-        return Ok(());
-    }
+        ),
+    ]);
 
-    println!(
-        "TTree {name:?}  ({} entries, {} branches)",
+    let mut text = format!(
+        "TTree {name:?}  ({} entries, {} branches)\n",
         tree.entries(),
         branches.len()
     );
@@ -90,37 +83,30 @@ fn show_tree(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult
     for (n, r) in &unreadable {
         table.row(vec![format!("! {n}"), format!("unreadable ({r})")]);
     }
-    table.print();
-    Ok(())
+    text.push_str(&table.render());
+    Both::done(text, json)
 }
 
 /// Show an `RNTuple`'s top-level fields and their C++ types.
-fn show_rntuple(file: &FileReader, path: &str, name: &str, json: bool) -> CmdResult {
+fn show_rntuple(file: &FileReader, path: &str, name: &str) -> CmdResult {
     let ntuple = NtupleReader::open(file, path)?;
     // A top-level field is its own parent. A field nested in another can have
     // the same name, so the name alone does not find the right descriptor.
     let fields: Vec<(String, String)> = ntuple
         .header()
-        .fields
-        .iter()
-        .enumerate()
-        .filter(|(i, fd)| fd.parent_field_id as usize == *i)
+        .top_level_fields()
         .map(|(_, fd)| (fd.name.clone(), fd.type_name.clone()))
         .collect();
 
-    if json {
-        let out = Json::Object(vec![
-            ("name", Json::s(name)),
-            ("class", Json::s("RNTuple")),
-            ("entries", Json::Int(ntuple.entries().cast_signed())),
-            ("fields", named_type_array(&fields)),
-        ]);
-        println!("{}", out.render());
-        return Ok(());
-    }
+    let json = Json::Object(vec![
+        ("name", Json::s(name)),
+        ("class", Json::s("RNTuple")),
+        ("entries", Json::Int(ntuple.entries().cast_signed())),
+        ("fields", named_type_array(&fields)),
+    ]);
 
-    println!(
-        "RNTuple {name:?}  ({} entries, {} fields)",
+    let mut text = format!(
+        "RNTuple {name:?}  ({} entries, {} fields)\n",
         ntuple.entries(),
         fields.len()
     );
@@ -128,8 +114,8 @@ fn show_rntuple(file: &FileReader, path: &str, name: &str, json: bool) -> CmdRes
     for (n, t) in &fields {
         table.row(vec![n.clone(), t.clone()]);
     }
-    table.print();
-    Ok(())
+    text.push_str(&table.render());
+    Both::done(text, json)
 }
 
 /// A JSON array of `{name, type}` objects.

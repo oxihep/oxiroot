@@ -2,10 +2,13 @@
 //! Fuzz the typed object readers (histograms, profiles, graphs, functions,
 //! collections): every reader must reject malformed bytes, never panic.
 use libfuzzer_sys::fuzz_target;
-use oxiroot_hist::{Efficiency, Graph, Graph2D, MultiErrorGraph, PolyHist, HistStack, SparseHist, GraphStack, Profile1D, Profile2D, Profile3D, Hist1D, Hist2D, Hist3D};
-use oxiroot_io_core::{ObjList, ObjMap, ObjString, Parameter};
+use oxiroot_hist::{
+    Efficiency, Graph, Graph2D, GraphStack, Hist1D, Hist2D, Hist3D, HistStack, MultiErrorGraph,
+    PolyHist, Profile1D, Profile2D, Profile3D, SparseHist,
+};
 use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 use oxiroot_io_core::FileReader;
+use oxiroot_io_core::{ObjList, ObjMap, ObjString, Parameter};
 
 /// Try every typed reader on `name`; each checks the key's class first, so the
 /// matching one does the real parsing.
@@ -14,9 +17,27 @@ fn read_all(f: &FileReader, name: &str) {
         ($($t:ty),+ $(,)?) => {$( let _ = f.get::<$t>(name); )+};
     }
     try_read!(
-        Hist1D, Hist2D, Hist3D, Profile1D, Profile2D, Profile3D, Efficiency, SparseHist, PolyHist,
-        Graph, Graph2D, MultiErrorGraph, Func1D, Func2D, Func3D, ObjList, ObjMap, HistStack, GraphStack,
-        ObjString, Parameter,
+        Hist1D,
+        Hist2D,
+        Hist3D,
+        Profile1D,
+        Profile2D,
+        Profile3D,
+        Efficiency,
+        SparseHist,
+        PolyHist,
+        Graph,
+        Graph2D,
+        MultiErrorGraph,
+        Func1D,
+        Func2D,
+        Func3D,
+        ObjList,
+        ObjMap,
+        HistStack,
+        GraphStack,
+        ObjString,
+        Parameter,
     );
 }
 

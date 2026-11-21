@@ -7,6 +7,20 @@ use oxiroot_io_core::{Error, Result};
 
 use crate::value::BranchValues;
 
+/// What a leaf's header records about every value of its column. A streaming
+/// writer tracks it across batches instead of keeping the values; the
+/// one-batch writer leaves it unset and reads the values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct LeafMeta {
+    /// `fMaximum`: the largest value of a count leaf; for a string leaf, the
+    /// longest length + 1.
+    pub(super) max: i64,
+    /// `fLen` of a string leaf: the longest length + 1.
+    pub(super) str_len: i32,
+    /// The largest element count of a split `std::vector<Struct>` branch.
+    pub(super) split_max: i32,
+}
+
 /// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
 /// scalars, [`Branch::array_f64`] … for fixed-size arrays (`x[N]`),
 /// [`Branch::jagged_f64`] … for C-style variable-length arrays (`x[n]`),
@@ -24,6 +38,9 @@ pub struct Branch {
     /// How the branch is serialized; one private enum instead of three
     /// independent flags, so an invalid combination is unrepresentable.
     pub(super) kind: BranchKind,
+    /// What the leaf's header says of the values, when the writer knows it
+    /// without holding them all: see [`LeafMeta`].
+    pub(super) meta: Option<LeafMeta>,
 }
 
 /// How a [`Branch`] is written, replacing the old `jagged`/`stl_vector`/`split`
@@ -120,7 +137,7 @@ macro_rules! branch_ctors {
             $(
                 #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
                 pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain, meta: None }
                 }
             )*
         }
@@ -142,7 +159,7 @@ macro_rules! vec_ctors {
                 #[doc = "all as long as the first (give a branch with no rows its width with [`Branch::with_width`])."]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
                     let width = values.first().map_or(0, Vec::len);
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Array(width) }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Array(width), meta: None }
                 }
             )*
         }
@@ -164,7 +181,7 @@ macro_rules! jagged_ctors {
             $(
                 #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Jagged }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Jagged, meta: None }
                 }
             )*
         }
@@ -185,7 +202,7 @@ macro_rules! vector_ctors {
             $(
                 #[doc = concat!("A `std::vector<", stringify!($elem), ">` branch (a `TBranchElement`).")]
                 pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::StlVector }
+                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::StlVector, meta: None }
                 }
             )*
         }
@@ -218,6 +235,7 @@ macro_rules! vector_vector_ctors {
                         name: name.into(),
                         values: BranchValues::Nested { offsets, items: Box::new(BranchValues::$variant(items)) },
                         kind: BranchKind::StlVector,
+                        meta: None,
                     }
                 }
             )*
@@ -253,6 +271,7 @@ impl Branch {
             name: name.into(),
             values: BranchValues::VecStr(values),
             kind: BranchKind::StlVector,
+            meta: None,
         }
     }
 
@@ -262,6 +281,7 @@ impl Branch {
             name: name.into(),
             values: BranchValues::Str(values),
             kind: BranchKind::Plain,
+            meta: None,
         }
     }
 
@@ -281,6 +301,7 @@ impl Branch {
                 class_name: class_name.into(),
                 members,
             }),
+            meta: None,
         }
     }
 }

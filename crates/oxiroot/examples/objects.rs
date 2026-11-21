@@ -12,6 +12,7 @@
 //! cargo run -p oxiroot --example objects
 //! ```
 
+use oxiroot::file::{ListKind, ObjList, ObjString, ParamValue, Parameter};
 use oxiroot::prelude::*;
 
 #[allow(

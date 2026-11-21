@@ -31,9 +31,16 @@ fn an_unknown_codec_is_a_matchable_error() {
 
 #[test]
 fn a_bare_compress_error_converts() {
-    let err: Error = CompressError::Codec("bad frame".into()).into();
+    let err: Error = CompressError::Codec {
+        algorithm: Algorithm::Zstd,
+        source: "bad frame".into(),
+    }
+    .into();
     assert_eq!(
         err.to_string(),
-        "decompression failed: codec error: bad frame"
+        "decompression failed: Zstandard codec error: bad frame"
     );
+    // The codec's own error is still there, two levels down.
+    let codec = err.source().and_then(std::error::Error::source);
+    assert_eq!(codec.map(ToString::to_string).as_deref(), Some("bad frame"));
 }

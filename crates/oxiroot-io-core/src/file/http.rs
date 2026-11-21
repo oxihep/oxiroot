@@ -35,7 +35,7 @@ impl std::fmt::Debug for HttpSource {
         f.debug_struct("HttpSource")
             .field("url", &self.url)
             .field("len", &self.len)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -58,13 +58,13 @@ impl HttpSource {
                 200 => std::io::ErrorKind::Unsupported,
                 _ => status_kind(status),
             };
-            return Err(Error::Io {
+            return Err(Error::Io(std::io::Error::new(
                 kind,
-                message: format!(
+                format!(
                     "remote {url}: server must support HTTP Range requests \
                      (expected 206 Partial Content, got {status})"
                 ),
-            });
+            )));
         }
         let total = content_range_total(&res, url)?;
         // Drain the (one-byte) body so the connection returns to the pool.
@@ -104,18 +104,20 @@ impl HttpSource {
             .map_err(|e| http_err(&format!("range {range} of {}", self.url), &e))?;
         let status = res.status().as_u16();
         if status != 206 && status != 200 {
-            return Err(Error::Io {
-                kind: status_kind(status),
-                message: format!("remote {}: range {range} returned HTTP {status}", self.url),
-            });
+            return Err(Error::Io(std::io::Error::new(
+                status_kind(status),
+                format!("remote {}: range {range} returned HTTP {status}", self.url),
+            )));
         }
         let mut buf = Vec::with_capacity(len);
         res.into_body()
             .into_reader()
             .read_to_end(&mut buf)
-            .map_err(|e| Error::Io {
-                kind: e.kind(),
-                message: format!("reading range {range}: {e}"),
+            .map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("reading range {range}: {e}"),
+                ))
             })?;
         if buf.len() != len {
             return Err(Error::UnexpectedEof {
@@ -174,13 +176,10 @@ impl ByteSource for HttpSource {
                 r.into_inner()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .unwrap_or_else(|| {
-                        Err(Error::Io {
-                            kind: std::io::ErrorKind::Interrupted,
-                            message: format!(
-                                "remote {}: a batched range was not fetched",
-                                self.url
-                            ),
-                        })
+                        Err(Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::Interrupted,
+                            format!("remote {}: a batched range was not fetched", self.url),
+                        )))
                     })
             })
             .collect()
@@ -231,16 +230,20 @@ fn content_range_total(res: &ureq::http::Response<ureq::Body>, url: &str) -> Res
         .headers()
         .get("content-range")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| Error::Io {
-            kind: std::io::ErrorKind::InvalidData,
-            message: format!("remote {url}: 206 without Content-Range"),
+        .ok_or_else(|| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("remote {url}: 206 without Content-Range"),
+            ))
         })?;
     cr.rsplit('/')
         .next()
         .and_then(|s| s.trim().parse::<u64>().ok())
-        .ok_or_else(|| Error::Io {
-            kind: std::io::ErrorKind::InvalidData,
-            message: format!("remote {url}: unparseable Content-Range {cr:?}"),
+        .ok_or_else(|| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("remote {url}: unparseable Content-Range {cr:?}"),
+            ))
         })
 }
 
@@ -255,8 +258,5 @@ fn status_kind(status: u16) -> std::io::ErrorKind {
 
 /// Map a ureq transport error to an [`Error`] with context.
 fn http_err(ctx: &str, e: &ureq::Error) -> Error {
-    Error::Io {
-        kind: std::io::ErrorKind::Other,
-        message: format!("{ctx}: {e}"),
-    }
+    Error::Io(std::io::Error::other(format!("{ctx}: {e}")))
 }

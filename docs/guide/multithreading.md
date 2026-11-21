@@ -31,6 +31,7 @@ combines every copy into the final histogram.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::ThreadedHist;
 
 let data: Vec<f64> = (0..1_000_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
 
@@ -95,6 +96,7 @@ acquisition instead of one per value:
 <!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::ThreadedHist;
 
 let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
 
@@ -169,6 +171,7 @@ items into a private `template.clone()`, and the partials reduce with
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::fill_par;
 
 let data: Vec<f64> = (0..1_000_000).map(|i| i as f64 % 100.0).collect();
 let template = Hist::reg(100, 0.0, 100.0).double().named("h");

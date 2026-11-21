@@ -27,7 +27,7 @@ impl Entry {
     fn class(&self) -> String {
         match self {
             Self::Object(r) => r.class_name.clone(),
-            Self::Records(o) => o.root_class(),
+            Self::Records(o) => o.root_class().into_owned(),
         }
     }
 
@@ -104,7 +104,7 @@ impl<T: WriteRoot + ?Sized> Storable for &T {
         streamers.add_classes(self.streamer_classes());
         Stored {
             entry: Entry::Object(ObjectRecord {
-                class_name: self.root_class(),
+                class_name: self.root_class().into_owned(),
                 name: self.root_name().to_string(),
                 title: self.root_title().to_string(),
                 object: self.to_root_bytes(),
@@ -194,7 +194,7 @@ impl Entries {
 pub struct FileWriter {
     path: std::path::PathBuf,
     /// `Some` in append mode (the existing file bytes); `None` for a fresh file.
-    existing: Option<Vec<u8>>,
+    existing: Option<bytes::Bytes>,
     top: Entries,
     dirs: Vec<DirNode>,
     /// Names to take out of the top directory, `"h"` or `"h;2"`, before the
@@ -320,15 +320,19 @@ impl FileWriter {
         if self.deleted.is_empty() && !self.purge {
             return Ok(());
         }
-        let keys = c.keys(DirId::TOP)?.to_vec();
-        let kept: HashSet<(String, u16)> = self
-            .surviving(&keys)?
+        // The keys to keep, by position: nothing is cloned to decide.
+        let keys = c.keys(DirId::TOP)?;
+        let kept: HashSet<(&str, u16)> = self
+            .surviving(keys)?
             .iter()
-            .map(|key| (key.name.clone(), key.cycle))
+            .map(|key| (key.name.as_str(), key.cycle))
             .collect();
-        c.drop_keys(DirId::TOP, |key| {
-            kept.contains(&(key.name.clone(), key.cycle))
-        })?;
+        let keep: Vec<bool> = keys
+            .iter()
+            .map(|key| kept.contains(&(key.name.as_str(), key.cycle)))
+            .collect();
+        let mut keep = keep.into_iter();
+        c.drop_keys(DirId::TOP, |_| keep.next().unwrap_or(true))?;
         Ok(())
     }
 
@@ -400,13 +404,13 @@ impl FileWriter {
     /// plus whatever this builder adds, so the space the rest held is given up.
     fn rebuild(
         &self,
-        existing: &[u8],
+        existing: &bytes::Bytes,
         file_name: &str,
         compression: Compression,
         threshold: u64,
         streamers: &StreamerSet,
     ) -> Result<Vec<u8>> {
-        let file = FileReader::from_bytes(existing.to_vec())?;
+        let file = FileReader::from_bytes(existing.clone())?;
         let top = CopiedDir::read(&file, &self.surviving(file.keys())?, "")?;
         // The file describes what it still holds: the classes of the copied
         // objects, with what those depend on, plus the added objects' own.
@@ -466,7 +470,7 @@ impl FileUpdater {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let existing = std::fs::read(path.as_ref())?;
         let mut writer = FileWriter::create(path);
-        writer.existing = Some(existing);
+        writer.existing = Some(existing.into());
         Ok(Self(writer))
     }
 
@@ -651,7 +655,7 @@ impl CopiedDir {
                 class_name: key.class_name.clone(),
                 name: key.name.clone(),
                 title: key.title.clone(),
-                object,
+                object: object.into_owned(),
                 // Copied as it is: valid under a key of the same header length.
                 key_check: KeyCheck::HeaderLen(key.key_len as usize),
             });

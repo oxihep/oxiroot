@@ -1,6 +1,7 @@
 //! Mapping ROOT type names and streamer element types to [`LeafType`].
 
 use oxiroot_io_core::raw::StreamerElement;
+use oxiroot_io_core::streamer_types::*;
 
 use crate::value::LeafType;
 
@@ -8,7 +9,7 @@ use crate::value::LeafType;
 /// [`streamer_type_to_leaf`]) and `TString` (`fType` 65). `None` for member types
 /// we don't surface from a `TBranchObject` (objects, arrays, pointers).
 pub(super) fn member_leaf_type(el: &StreamerElement) -> Option<LeafType> {
-    if el.el_type == 65 {
+    if el.el_type == K_TSTRING {
         return Some(LeafType::Str);
     }
     streamer_type_to_leaf(el.el_type)
@@ -18,17 +19,17 @@ pub(super) fn member_leaf_type(el: &StreamerElement) -> Option<LeafType> {
 /// to its [`LeafType`], for split member sub-branches. `None` for unsupported.
 pub(super) fn streamer_type_to_leaf(st: i32) -> Option<LeafType> {
     Some(match st {
-        1 => LeafType::I8,        // kChar
-        2 => LeafType::I16,       // kShort
-        3 => LeafType::I32,       // kInt
-        4 | 16 => LeafType::I64,  // kLong / kLong64
-        5 => LeafType::F32,       // kFloat
-        8 => LeafType::F64,       // kDouble
-        11 => LeafType::U8,       // kUChar
-        12 => LeafType::U16,      // kUShort
-        13 => LeafType::U32,      // kUInt
-        14 | 17 => LeafType::U64, // kULong / kULong64
-        18 => LeafType::Bool,     // kBool
+        K_CHAR => LeafType::I8,
+        K_SHORT => LeafType::I16,
+        K_INT => LeafType::I32,
+        K_LONG | K_LONG64 => LeafType::I64,
+        K_FLOAT => LeafType::F32,
+        K_DOUBLE => LeafType::F64,
+        K_UCHAR => LeafType::U8,
+        K_USHORT => LeafType::U16,
+        K_UINT => LeafType::U32,
+        K_ULONG | K_ULONG64 => LeafType::U64,
+        K_BOOL => LeafType::Bool,
         _ => return None,
     })
 }

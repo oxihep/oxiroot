@@ -40,6 +40,11 @@ fn reads_tclonesarray_subbranches() {
     );
 
     // The TObject `fBits` member is the only unsupported sub-branch.
-    let unsupported: Vec<&str> = t.unsupported_branches().iter().map(|(n, _)| *n).collect();
+    let unsupported: Vec<&str> = t
+        .unsupported_branches()
+        .collect::<Vec<_>>()
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
     assert_eq!(unsupported, vec!["parts.fBits"]);
 }

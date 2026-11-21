@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::exit;
 
+use oxiroot::hist::BinContentType;
 use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
@@ -130,11 +131,8 @@ fn jvi64_2(v: &[Vec<i64>]) -> J {
 // including TH*L's 2^40-scale contents that are infeasible to reach via fill()).
 // ---------------------------------------------------------------------------
 
-fn th1_with(nbins: i32, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
-    let mut h = Hist::reg(usize::saturating_from(nbins), xmin, xmax)
-        .double()
-        .named("h")
-        .titled("m");
+fn th1_with(nbins: usize, xmin: f64, xmax: f64, contents: &[f64]) -> Hist1D {
+    let mut h = Hist::reg(nbins, xmin, xmax).double().named("h").titled("m");
     for (i, &c) in contents.iter().enumerate() {
         *h.bin_mut([bin(i)]).expect("in range") = c;
     }

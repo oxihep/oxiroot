@@ -99,6 +99,14 @@ impl WBuffer {
         self.buf.push(v.cast_unsigned());
     }
 
+    /// Append zero bytes until the buffer is `len` bytes long. A buffer
+    /// already that long is left as it is.
+    pub fn pad_to(&mut self, len: usize) {
+        if self.buf.len() < len {
+            self.buf.resize(len, 0);
+        }
+    }
+
     /// Append raw bytes.
     pub fn bytes(&mut self, b: &[u8]) {
         self.buf.extend_from_slice(b);
@@ -139,6 +147,18 @@ impl WBuffer {
         be_i64,
         i64,
         to_be_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `i16`.
+        le_i16,
+        i16,
+        to_le_bytes
+    );
+    num_writer!(
+        /// Append a little-endian `i32`.
+        le_i32,
+        i32,
+        to_le_bytes
     );
     num_writer!(
         /// Append a big-endian `f32`.
@@ -228,6 +248,15 @@ impl WBuffer {
     )]
     pub fn patch_be_u64(&mut self, p: Patch<8>, v: u64) {
         self.buf[p.offset..p.offset + 8].copy_from_slice(&v.to_be_bytes());
+    }
+
+    /// Fill a reserved 8-byte region with a little-endian `u64`.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "taking the handle is what makes a region fillable once"
+    )]
+    pub fn patch_le_u64(&mut self, p: Patch<8>, v: u64) {
+        self.buf[p.offset..p.offset + 8].copy_from_slice(&v.to_le_bytes());
     }
 
     /// Begin a streamed object: writes a placeholder byte count and the class

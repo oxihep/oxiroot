@@ -18,7 +18,10 @@ fn write_then_read_roundtrips() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 5);
-    assert_eq!(t.branch_names(), ["i4", "f8", "b1", "u4"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["i4", "f8", "b1", "u4"]
+    );
     assert_eq!(
         t.branch("i4").values().unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3, 4])
@@ -61,7 +64,7 @@ fn write_then_read_arrays_and_strings() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 3);
-    assert_eq!(t.branch_names(), ["x", "s", "n"]);
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), ["x", "s", "n"]);
     assert_eq!(t.branch("x").values().unwrap(), BranchValues::VecF64(xs));
     assert_eq!(t.branch("s").values().unwrap(), BranchValues::Str(ss));
     assert_eq!(t.branch("n").values().unwrap(), BranchValues::VecI32(ns));
@@ -83,7 +86,10 @@ fn write_then_read_jagged() {
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 4);
     // The writer inserts the count branch (ny / nn) before each jagged branch.
-    assert_eq!(t.branch_names(), ["e", "ny", "y", "nn", "n"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["e", "ny", "y", "nn", "n"]
+    );
     assert_eq!(t.branch("y").values().unwrap(), BranchValues::VecF64(ys));
     assert_eq!(t.branch("n").values().unwrap(), BranchValues::VecI32(ns));
     // The auto count branches hold the per-row lengths.
@@ -140,7 +146,7 @@ fn write_then_read_std_vector() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 4);
-    assert_eq!(t.branch_names(), ["n", "vf", "vi"]);
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), ["n", "vf", "vi"]);
     assert_eq!(
         t.branch("n").values().unwrap(),
         BranchValues::I32(vec![0, 1, 2, 3])
@@ -169,7 +175,7 @@ fn write_then_read_empty_tree() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 0);
-    assert_eq!(t.branch_names(), ["i4", "f8"]);
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), ["i4", "f8"]);
     assert_eq!(t.branch("i4").values().unwrap(), BranchValues::I32(vec![]));
     assert_eq!(t.branch("f8").values().unwrap(), BranchValues::F64(vec![]));
 }
@@ -186,12 +192,15 @@ fn branches_with_different_entry_counts_are_rejected() {
     let out = std::env::temp_dir().join("oxiroot_tree_uneven_branches.root");
     let err = write_tree_file(&out, "T", &branches(), Compression::Stored).unwrap_err();
     assert_eq!(
-        err,
-        Error::LengthMismatch {
-            what: "branch \"y\" entries".into(),
-            expected: 3,
-            found: 2
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::LengthMismatch {
+                what: "branch \"y\" entries".into(),
+                expected: 3,
+                found: 2
+            }
+        )
     );
     // The builder path (`FileWriter::put`) goes through the same check.
     let err = FileWriter::create(&out)

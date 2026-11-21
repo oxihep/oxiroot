@@ -57,7 +57,7 @@ fn appends_objects_to_an_existing_file() {
 
     // The embedded streamer info is preserved across the update.
     let reg = f.streamer_registry().expect("streamer info");
-    assert!(reg.class_names().contains(&"TH2D"));
+    assert!(reg.class_names().collect::<Vec<_>>().contains(&"TH2D"));
 }
 
 #[test]

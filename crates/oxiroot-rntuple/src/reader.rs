@@ -8,6 +8,7 @@ use oxiroot_io_core::{Error, FileReader, Result};
 use crate::anchor::{ANCHOR_CLASS, RNTupleAnchor};
 use crate::envelope::{ENVELOPE_FOOTER, ENVELOPE_HEADER, ENVELOPE_PAGELIST, read_envelope};
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::field::{self, FieldValues, FromField, Jagged};
 use crate::footer::Footer;
@@ -26,12 +27,20 @@ pub struct NtupleReader<'f> {
     /// Decompress a column's pages in parallel (a per-read view's setting).
     parallel: bool,
     anchor: RNTupleAnchor,
-    header: Header,
-    footer: Footer,
-    summaries: Vec<ClusterSummary>,
-    page_clusters: Vec<ClusterPages>,
-    header_bytes: Vec<u8>,
-    footer_bytes: Vec<u8>,
+    /// The schema and the page lists, shared: a view of some of the clusters,
+    /// or one that reads in parallel, costs a few reference counts.
+    header: Arc<Header>,
+    footer: Arc<Footer>,
+    all_summaries: Arc<[ClusterSummary]>,
+    all_page_clusters: Arc<[ClusterPages]>,
+    header_bytes: Arc<[u8]>,
+    footer_bytes: Arc<[u8]>,
+    /// The clusters this reader covers: all of them, or a window of entries.
+    clusters: Range<usize>,
+    /// For each field, the columns it owns and the fields inside it, in
+    /// order: looked up for every field read, so built once.
+    columns_of: Arc<[Vec<usize>]>,
+    children_of: Arc<[Vec<usize>]>,
 }
 
 impl<'f> NtupleReader<'f> {
@@ -122,16 +131,35 @@ impl<'f> NtupleReader<'f> {
             page_clusters.extend(page_list.clusters);
         }
 
+        let mut columns_of = vec![Vec::new(); header.fields.len()];
+        for (ci, column) in header.columns.iter().enumerate() {
+            if let Some(owned) = columns_of.get_mut(column.field()) {
+                owned.push(ci);
+            }
+        }
+        let mut children_of = vec![Vec::new(); header.fields.len()];
+        for (fi, field) in header.fields.iter().enumerate() {
+            // A top-level field is its own parent, and not its own child.
+            let parent = field.parent();
+            if parent != fi
+                && let Some(children) = children_of.get_mut(parent)
+            {
+                children.push(fi);
+            }
+        }
         Ok(NtupleReader {
             file,
             parallel: false,
             anchor,
-            header,
-            footer,
-            summaries,
-            page_clusters,
-            header_bytes,
-            footer_bytes,
+            header: Arc::new(header),
+            footer: Arc::new(footer),
+            clusters: 0..summaries.len(),
+            all_summaries: summaries.into(),
+            all_page_clusters: page_clusters.into(),
+            header_bytes: header_bytes.into(),
+            footer_bytes: footer_bytes.into(),
+            columns_of: columns_of.into(),
+            children_of: children_of.into(),
         })
     }
 
@@ -168,7 +196,7 @@ impl<'f> NtupleReader<'f> {
     /// Total number of entries across all clusters.
     #[must_use]
     pub fn entries(&self) -> u64 {
-        self.summaries.iter().map(|s| s.num_entries).sum()
+        self.summaries().iter().map(|s| s.num_entries).sum()
     }
 
     /// Decode physical column `column_index` across all clusters.
@@ -191,7 +219,7 @@ impl<'f> NtupleReader<'f> {
             })?;
 
         let mut pages: Vec<PageInfo> = Vec::new();
-        for cluster in &self.page_clusters {
+        for cluster in self.page_clusters() {
             // A deferred (schema-extension) column is absent from the clusters
             // written before it existed; those contribute no pages and are
             // back-filled with defaults below.
@@ -200,14 +228,7 @@ impl<'f> NtupleReader<'f> {
             }
         }
 
-        let values = read_column(
-            file,
-            descriptor.column_type,
-            descriptor.bits_on_storage,
-            &pages,
-            descriptor.value_range,
-            self.parallel,
-        )?;
+        let values = read_column(file, descriptor, &pages, self.parallel)?;
 
         // A deferred (schema-extension) column carries a non-zero
         // `first_element_index`: its pages cover only the elements from that
@@ -239,15 +260,8 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// Names of the top-level fields, in schema order.
-    #[must_use]
-    pub fn field_names(&self) -> Vec<&str> {
-        self.header
-            .fields
-            .iter()
-            .enumerate()
-            .filter(|(i, f)| f.parent_field_id as usize == *i)
-            .map(|(_, f)| f.name.as_str())
-            .collect()
+    pub fn field_names(&self) -> impl Iterator<Item = &str> + Clone {
+        self.header.top_level_fields().map(|(_, f)| f.name.as_str())
     }
 
     /// Read the top-level field `name`: set a [`range`](FieldRead::range) of
@@ -277,7 +291,7 @@ impl<'f> NtupleReader<'f> {
     /// that starts and ends on these decompresses no page twice.
     #[must_use]
     pub fn cluster_boundaries(&self) -> Vec<u64> {
-        let mut bounds: Vec<u64> = self.summaries.iter().map(|s| s.first_entry).collect();
+        let mut bounds: Vec<u64> = self.summaries().iter().map(|s| s.first_entry).collect();
         bounds.push(self.entries());
         bounds.dedup();
         bounds
@@ -286,10 +300,7 @@ impl<'f> NtupleReader<'f> {
     fn read_top(&self, file: &FileReader, name: &str) -> Result<FieldValues> {
         let idx = self
             .header
-            .fields
-            .iter()
-            .enumerate()
-            .position(|(i, f)| f.name == name && f.parent_field_id as usize == i)
+            .top_level_field(name)
             .ok_or_else(|| Error::NotFound {
                 what: "top-level field",
                 name: name.to_string(),
@@ -338,11 +349,10 @@ impl<'f> NtupleReader<'f> {
         {
             return Ok(None);
         }
-        let Some(index_ci) = self.index_column(&self.field_columns(idx)) else {
+        let Some(index_ci) = self.index_column(self.field_columns(idx)) else {
             return Ok(None);
         };
-        let mut offsets = self.read_offsets(file, index_ci)?;
-        offsets.insert(0, 0);
+        let offsets = self.read_offsets(file, index_ci, true)?;
         let values = field::scalar(self.column_values(file, child_cols[0])?)?;
         let monotonic = offsets.windows(2).all(|w| w[0] <= w[1]);
         if !monotonic || offsets.last().copied() != Some(values.len() as u64) {
@@ -362,11 +372,7 @@ impl<'f> NtupleReader<'f> {
     }
 
     fn top_field(&self, name: &str) -> Option<usize> {
-        self.header
-            .fields
-            .iter()
-            .enumerate()
-            .position(|(i, f)| f.name == name && f.parent_field_id as usize == i)
+        self.header.top_level_field(name)
     }
 
     /// Entries `[start, stop)` (clamped) of `name` in flat form, reading only
@@ -377,23 +383,9 @@ impl<'f> NtupleReader<'f> {
         if start == 0 && stop == self.entries() {
             return self.read_flat_top(self.file, name);
         }
-        let deferred = self
-            .header
-            .columns
-            .iter()
-            .any(|c| c.first_element_index.is_some_and(|f| f > 0));
-        let first = self
-            .summaries
-            .iter()
-            .position(|s| s.first_entry + s.num_entries > start);
-        let last = self.summaries.iter().rposition(|s| s.first_entry < stop);
-        let (jagged, from) = match (deferred, first, last) {
-            (false, Some(k0), Some(k1)) if k0 <= k1 => (
-                self.cluster_window(k0, k1 + 1)
-                    .read_flat_top(self.file, name)?,
-                self.summaries[k0].first_entry,
-            ),
-            _ => (self.read_flat_top(self.file, name)?, 0),
+        let (jagged, from) = match self.entry_window(start, stop) {
+            Some((view, from)) => (view.read_flat_top(self.file, name)?, from),
+            None => (self.read_flat_top(self.file, name)?, 0),
         };
         let Some(Jagged {
             offsets,
@@ -422,25 +414,9 @@ impl<'f> NtupleReader<'f> {
         if start == 0 && stop == self.entries() {
             return self.read_top(self.file, name);
         }
-        // A deferred (schema-extension) column back-fills from its first
-        // element index, which a window not starting at the first cluster
-        // would misplace: read whole, then cut.
-        let deferred = self
-            .header
-            .columns
-            .iter()
-            .any(|c| c.first_element_index.is_some_and(|f| f > 0));
-        let first = self
-            .summaries
-            .iter()
-            .position(|s| s.first_entry + s.num_entries > start);
-        let last = self.summaries.iter().rposition(|s| s.first_entry < stop);
-        let (mut values, from) = match (deferred, first, last) {
-            (false, Some(k0), Some(k1)) if k0 <= k1 => (
-                self.cluster_window(k0, k1 + 1).read_top(self.file, name)?,
-                self.summaries[k0].first_entry,
-            ),
-            _ => (self.read_top(self.file, name)?, 0),
+        let (mut values, from) = match self.entry_window(start, stop) {
+            Some((view, from)) => (view.read_top(self.file, name)?, from),
+            None => (self.read_top(self.file, name)?, 0),
         };
         values.skip(usize::saturating_from(start - from));
         values.truncate(usize::saturating_from(stop - start));
@@ -451,17 +427,46 @@ impl<'f> NtupleReader<'f> {
     /// same schema, but `entries` and every column read cover only those
     /// clusters. Cloning the schema is cheap next to decoding pages.
     fn cluster_window(&self, k0: usize, k1: usize) -> Self {
-        NtupleReader {
-            file: self.file,
-            parallel: self.parallel,
-            anchor: self.anchor.clone(),
-            header: self.header.clone(),
-            footer: self.footer.clone(),
-            summaries: self.summaries[k0..k1].to_vec(),
-            page_clusters: self.page_clusters[k0..k1].to_vec(),
-            header_bytes: self.header_bytes.clone(),
-            footer_bytes: self.footer_bytes.clone(),
+        let base = self.clusters.start;
+        Self {
+            clusters: base + k0..(base + k1).min(self.clusters.end),
+            ..self.clone()
         }
+    }
+
+    /// The summaries of the clusters this reader covers.
+    fn summaries(&self) -> &[ClusterSummary] {
+        self.all_summaries.get(self.clusters.clone()).unwrap_or(&[])
+    }
+
+    /// The page lists of the clusters this reader covers.
+    fn page_clusters(&self) -> &[ClusterPages] {
+        self.all_page_clusters
+            .get(self.clusters.clone())
+            .unwrap_or(&[])
+    }
+
+    /// The clusters that hold entries `[start, stop)`, as a view of this
+    /// reader, and the first entry that view holds; or `None` when the window
+    /// has to be cut from a read of everything.
+    ///
+    /// A deferred (schema-extension) column back-fills from its first element
+    /// index, which a view not starting at the first cluster would misplace.
+    fn entry_window(&self, start: u64, stop: u64) -> Option<(Self, u64)> {
+        let deferred = self
+            .header
+            .columns
+            .iter()
+            .any(|c| c.first_element_index.is_some_and(|f| f > 0));
+        if deferred {
+            return None;
+        }
+        let summaries = self.summaries();
+        let k0 = summaries
+            .iter()
+            .position(|s| s.first_entry + s.num_entries > start)?;
+        let k1 = summaries.iter().rposition(|s| s.first_entry < stop)?;
+        (k0 <= k1).then(|| (self.cluster_window(k0, k1 + 1), summaries[k0].first_entry))
     }
 
     /// Recursively reconstruct the values of field `field_idx` (a leaf, string,
@@ -495,7 +500,7 @@ impl<'f> NtupleReader<'f> {
 
         match fld.struct_role {
             StructRole::Leaf if fld.type_name == "std::string" => {
-                let index_ci = self.index_column(&columns).ok_or_else(|| {
+                let index_ci = self.index_column(columns).ok_or_else(|| {
                     Error::Format(format!("string field {:?} has no index column", fld.name))
                 })?;
                 let char_ci = *columns
@@ -504,7 +509,7 @@ impl<'f> NtupleReader<'f> {
                     .ok_or_else(|| {
                         Error::Format(format!("string field {:?} has no char column", fld.name))
                     })?;
-                let offsets = self.read_offsets(file, index_ci)?;
+                let offsets = self.read_offsets(file, index_ci, false)?;
                 let bytes = match self.column_values(file, char_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
@@ -527,13 +532,13 @@ impl<'f> NtupleReader<'f> {
                 field::scalar(self.column_values(file, ci)?)
             }
             StructRole::Collection => {
-                let index_ci = self.index_column(&columns).ok_or_else(|| {
+                let index_ci = self.index_column(columns).ok_or_else(|| {
                     Error::Format(format!(
                         "collection field {:?} has no index column",
                         fld.name
                     ))
                 })?;
-                let offsets = self.read_offsets(file, index_ci)?;
+                let offsets = self.read_offsets(file, index_ci, false)?;
                 let child = *self.child_fields(field_idx).first().ok_or_else(|| {
                     Error::Format(format!(
                         "collection field {:?} has no element field",
@@ -544,7 +549,7 @@ impl<'f> NtupleReader<'f> {
                 // `std::optional<T>` / `std::unique_ptr<T>` use the collection
                 // shape (0 or 1 element per entry) but read back as a nullable.
                 if is_late_field(&fld.type_name) {
-                    return field::optional(&offsets, items);
+                    return Ok(field::optional(&offsets, items));
                 }
                 field::collect(offsets, items)
             }
@@ -557,7 +562,7 @@ impl<'f> NtupleReader<'f> {
                     )));
                 }
                 let mut out = Vec::with_capacity(children.len());
-                for c in children {
+                for &c in children {
                     let sub_name = self.header.fields[c].name.clone();
                     out.push((sub_name, self.read_field_tree(file, c)?));
                 }
@@ -566,7 +571,7 @@ impl<'f> NtupleReader<'f> {
             StructRole::Streamer => {
                 // An unsplit class blob: a per-entry Index column over a single
                 // Byte column. Interpret each blob with the class TStreamerInfo.
-                let index_ci = self.index_column(&columns).ok_or_else(|| {
+                let index_ci = self.index_column(columns).ok_or_else(|| {
                     Error::Format(format!("streamer field {:?} has no index column", fld.name))
                 })?;
                 let byte_ci = *columns
@@ -575,7 +580,7 @@ impl<'f> NtupleReader<'f> {
                     .ok_or_else(|| {
                         Error::Format(format!("streamer field {:?} has no byte column", fld.name))
                     })?;
-                let offsets = self.read_offsets(file, index_ci)?;
+                let offsets = self.read_offsets(file, index_ci, false)?;
                 let bytes = match self.column_values(file, byte_ci)? {
                     ColumnValues::Bytes(v) => v,
                     other => {
@@ -600,11 +605,8 @@ impl<'f> NtupleReader<'f> {
                 let switch_ci = *columns.first().ok_or_else(|| {
                     Error::Format(format!("variant field {:?} has no switch column", fld.name))
                 })?;
-                let (tags, indices) = match self.column_values(file, switch_ci)? {
-                    ColumnValues::Switch(v) => (
-                        v.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
-                        v.iter().map(|&(i, _)| i).collect::<Vec<_>>(),
-                    ),
+                let (indices, tags): (Vec<_>, Vec<_>) = match self.column_values(file, switch_ci)? {
+                    ColumnValues::Switch(v) => v.into_iter().unzip(),
                     other => {
                         return Err(Error::Format(format!(
                             "variant switch column decoded as {other:?}"
@@ -619,7 +621,7 @@ impl<'f> NtupleReader<'f> {
                     )));
                 }
                 let mut alternatives = Vec::with_capacity(children.len());
-                for c in children {
+                for &c in children {
                     let sub_name = self.header.fields[c].name.clone();
                     alternatives.push((sub_name, self.read_field_tree(file, c)?));
                 }
@@ -636,27 +638,15 @@ impl<'f> NtupleReader<'f> {
     }
 
     /// Column indices belonging to field `field_idx`, in column order.
-    fn field_columns(&self, field_idx: usize) -> Vec<usize> {
-        self.header
-            .columns
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.field_id as usize == field_idx)
-            .map(|(ci, _)| ci)
-            .collect()
+    fn field_columns(&self, field_idx: usize) -> &[usize] {
+        self.columns_of.get(field_idx).map_or(&[], Vec::as_slice)
     }
 
     /// Sub-field ids of `field_idx` (children whose parent is `field_idx`),
     /// excluding the field itself (a top-level field is its own parent), in
     /// declaration order.
-    fn child_fields(&self, field_idx: usize) -> Vec<usize> {
-        self.header
-            .fields
-            .iter()
-            .enumerate()
-            .filter(|(ci, f)| *ci != field_idx && f.parent_field_id as usize == field_idx)
-            .map(|(ci, _)| ci)
-            .collect()
+    fn child_fields(&self, field_idx: usize) -> &[usize] {
+        self.children_of.get(field_idx).map_or(&[], Vec::as_slice)
     }
 
     fn index_column(&self, columns: &[usize]) -> Option<usize> {
@@ -675,7 +665,12 @@ impl<'f> NtupleReader<'f> {
     /// The decoded count is one offset per element of the *enclosing* level —
     /// the entry count for a top-level collection, but the parent-element count
     /// for a nested one — so it is validated by the caller, not here.
-    fn read_offsets(&self, file: &FileReader, column_index: usize) -> Result<Vec<u64>> {
+    fn read_offsets(
+        &self,
+        file: &FileReader,
+        column_index: usize,
+        from_zero: bool,
+    ) -> Result<Vec<u64>> {
         let descriptor = self
             .header
             .columns
@@ -692,14 +687,7 @@ impl<'f> NtupleReader<'f> {
                 .columns
                 .get(column_index)
                 .ok_or_else(|| Error::Format(format!("cluster missing column {column_index}")))?;
-            match read_column(
-                file,
-                descriptor.column_type,
-                descriptor.bits_on_storage,
-                &column.pages,
-                descriptor.value_range,
-                false,
-            )? {
+            match read_column(file, descriptor, &column.pages, false)? {
                 ColumnValues::U64(v) => Ok(v),
                 other => Err(Error::Format(format!(
                     "expected index offsets, got {other:?}"
@@ -709,23 +697,27 @@ impl<'f> NtupleReader<'f> {
         #[cfg(feature = "rayon")]
         let clusters: Vec<Vec<u64>> = if self.parallel {
             use rayon::prelude::*;
-            self.page_clusters
+            self.page_clusters()
                 .par_iter()
                 .map(decode)
                 .collect::<Result<_>>()?
         } else {
-            self.page_clusters
+            self.page_clusters()
                 .iter()
                 .map(decode)
                 .collect::<Result<_>>()?
         };
         #[cfg(not(feature = "rayon"))]
         let clusters: Vec<Vec<u64>> = self
-            .page_clusters
+            .page_clusters()
             .iter()
             .map(decode)
             .collect::<Result<_>>()?;
-        let mut out = Vec::with_capacity(clusters.iter().map(Vec::len).sum());
+        let total: usize = clusters.iter().map(Vec::len).sum();
+        let mut out = Vec::with_capacity(total + usize::from(from_zero));
+        if from_zero {
+            out.push(0);
+        }
         let mut base = 0u64;
         for local in clusters {
             let cluster_total = local.last().copied().unwrap_or(0);
@@ -796,7 +788,7 @@ fn read_blob(file: &FileReader, seek: u64, nbytes: u64, len: u64, what: &str) ->
             }
             other => other,
         })?;
-    decompress_payload(&win, usize::saturating_from(len), what)
+    decompress_payload(&win, usize::saturating_from(len), what).map(std::borrow::Cow::into_owned)
 }
 
 /// One field read, set up by [`NtupleReader::field`]: the entries to read,
@@ -819,8 +811,8 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     }
 
     /// Decompress each column's pages in parallel, on rayon's global thread
-    /// pool.
-    #[cfg(feature = "rayon")]
+    /// pool. Without the `rayon` feature there is no pool, and the read
+    /// stays on the calling thread whatever is asked.
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
@@ -829,7 +821,7 @@ impl<'a, 'f> FieldRead<'a, 'f> {
     /// The reader to read through: this one, or a parallel view of it.
     fn reader(&self) -> std::borrow::Cow<'a, NtupleReader<'f>> {
         if self.parallel {
-            let mut view = self.ntuple.cluster_window(0, self.ntuple.summaries.len());
+            let mut view = self.ntuple.cluster_window(0, self.ntuple.summaries().len());
             view.parallel = true;
             std::borrow::Cow::Owned(view)
         } else {
@@ -894,7 +886,7 @@ impl<'a, 'f> FieldRead<'a, 'f> {
 impl std::fmt::Debug for NtupleReader<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NtupleReader")
-            .field("clusters", &self.summaries.len())
+            .field("clusters", &self.summaries().len())
             .finish_non_exhaustive()
     }
 }

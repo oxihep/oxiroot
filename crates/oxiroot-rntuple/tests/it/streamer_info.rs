@@ -56,7 +56,10 @@ fn one_shot_file_describes_the_anchor_and_user_classes_like_root() {
         .unwrap();
     let ours = registry(bytes);
     let root = root_written();
-    assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
+    assert_eq!(
+        ours.class_names().collect::<Vec<_>>(),
+        ["ROOT::RNTuple", "Hit"]
+    );
     assert_eq!(ours.get("ROOT::RNTuple"), root.get("ROOT::RNTuple"));
     assert_eq!(ours.get("Hit"), root.get("Hit"));
 }
@@ -76,7 +79,10 @@ fn streamed_file_describes_the_anchor_and_user_classes() {
         .unwrap()
         .clone();
     let root = root_written();
-    assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
+    assert_eq!(
+        ours.class_names().collect::<Vec<_>>(),
+        ["ROOT::RNTuple", "Hit"]
+    );
     assert_eq!(ours.get("Hit"), root.get("Hit"));
 }
 
@@ -102,7 +108,10 @@ fn classes_with_other_members_are_not_described() {
         .compression(Compression::Stored)
         .to_bytes()
         .unwrap();
-    assert_eq!(registry(bytes).class_names(), ["ROOT::RNTuple", "Hit"]);
+    assert_eq!(
+        registry(bytes).class_names().collect::<Vec<_>>(),
+        ["ROOT::RNTuple", "Hit"]
+    );
 }
 
 #[test]
@@ -120,5 +129,8 @@ fn schema_extended_files_are_described_too() {
         .streamer_registry()
         .unwrap()
         .clone();
-    assert_eq!(ours.class_names(), ["ROOT::RNTuple", "Hit"]);
+    assert_eq!(
+        ours.class_names().collect::<Vec<_>>(),
+        ["ROOT::RNTuple", "Hit"]
+    );
 }

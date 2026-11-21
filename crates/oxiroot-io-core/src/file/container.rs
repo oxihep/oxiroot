@@ -71,7 +71,7 @@ pub fn compress_if_smaller(bytes: &[u8], compression: Compression) -> Cow<'_, [u
         return Cow::Borrowed(bytes);
     }
     match oxiroot_compress::compress(bytes, compression) {
-        Ok(compressed) if compressed.len() < bytes.len() => Cow::Owned(compressed),
+        Ok(Cow::Owned(compressed)) if compressed.len() < bytes.len() => Cow::Owned(compressed),
         _ => Cow::Borrowed(bytes),
     }
 }
@@ -97,6 +97,53 @@ impl Form {
     pub const fn big_if(big: bool) -> Self {
         if big { Self::Big } else { Self::Small }
     }
+    /// Where `fNbytesKeys` is in a directory record, in either form.
+    const DIR_NBYTES_KEYS: u64 = 10;
+
+    /// Where `fSeekKeys` is in a directory record: after `fNbytesName`,
+    /// `fSeekDir` and `fSeekParent`, whose width the form sets.
+    const fn dir_seek_keys(self) -> u64 {
+        match self {
+            Self::Small => 26,
+            Self::Big => 34,
+        }
+    }
+
+    /// Where the file header keeps the fields that are filled in at the end.
+    const fn header_offsets(self) -> HeaderOffsets {
+        match self {
+            Self::Small => HeaderOffsets {
+                end: 12,
+                seek_free: 16,
+                nbytes_free: 20,
+                nfree: 24,
+                nbytes_name: 28,
+                seek_info: 37,
+                nbytes_info: 41,
+            },
+            Self::Big => HeaderOffsets {
+                end: 12,
+                seek_free: 20,
+                nbytes_free: 28,
+                nfree: 32,
+                nbytes_name: 36,
+                seek_info: 45,
+                nbytes_info: 53,
+            },
+        }
+    }
+}
+
+/// The offsets of the file header's pointer fields: `fEND`, `fSeekFree`,
+/// `fNbytesFree`, `nfree`, `fNbytesName`, `fSeekInfo` and `fNbytesInfo`.
+struct HeaderOffsets {
+    end: u64,
+    seek_free: u64,
+    nbytes_free: u64,
+    nfree: u64,
+    nbytes_name: u64,
+    seek_info: u64,
+    nbytes_info: u64,
 }
 
 /// A directory inside a [`ContainerWriter`]: the top directory is
@@ -228,9 +275,7 @@ impl<W: Write + Seek> ContainerWriter<W> {
         w.be_u32(0); // fNbytesInfo
         w.be_u16(1); // fUUID version
         w.bytes(&[0u8; 16]); // fUUID
-        while (w.len() as u64) < BEGIN {
-            w.u8(0);
-        }
+        w.pad_to(usize::saturating_from(BEGIN));
 
         // The top directory: its key, then its name and title, then its record.
         // The record is reserved at the big width even in a small file, as ROOT
@@ -239,16 +284,18 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let name_title_len = (1 + file_name.len()) + 1;
         let nbytes_name = u32::from(key_len) + u32::saturating_from(name_title_len);
         let obj_len = u32::saturating_from(name_title_len) + dir_record_len(Form::Big);
-        write_key_header_fmt(
+        write_key_header(
             &mut w,
-            TOP_DIR_CLASS,
-            file_name,
-            "",
-            obj_len,
-            obj_len,
-            BEGIN,
-            0,
-            1,
+            &KeySpec {
+                class: TOP_DIR_CLASS,
+                name: file_name,
+                title: "",
+                obj_len,
+                payload_len: obj_len,
+                seek_key: BEGIN,
+                seek_pdir: 0,
+                cycle: 1,
+            },
             form,
         );
         w.string(file_name);
@@ -538,16 +585,18 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let payload = compress_if_smaller(list, self.compression);
         let seek = self.pos;
         let mut w = WBuffer::new();
-        write_key_header_fmt(
+        write_key_header(
             &mut w,
-            STREAMER_INFO_CLASS,
-            STREAMER_INFO_NAME,
-            title,
-            checked_len(list.len(), STREAMER_INFO_NAME)?,
-            checked_len(payload.len(), STREAMER_INFO_NAME)?,
-            seek,
-            self.begin,
-            1,
+            &KeySpec {
+                class: STREAMER_INFO_CLASS,
+                name: STREAMER_INFO_NAME,
+                title,
+                obj_len: checked_len(list.len(), STREAMER_INFO_NAME)?,
+                payload_len: checked_len(payload.len(), STREAMER_INFO_NAME)?,
+                seek_key: seek,
+                seek_pdir: self.begin,
+                cycle: 1,
+            },
             self.form,
         );
         self.put(w.as_slice())?;
@@ -576,16 +625,18 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let cycle = self.next_cycle(parent, name);
 
         let mut w = WBuffer::new();
-        write_key_header_fmt(
+        write_key_header(
             &mut w,
-            SUBDIR_CLASS,
-            name,
-            name,
-            record_len,
-            record_len,
-            seek,
-            parent_seek,
-            cycle,
+            &KeySpec {
+                class: SUBDIR_CLASS,
+                name,
+                title: name,
+                obj_len: record_len,
+                payload_len: record_len,
+                seek_key: seek,
+                seek_pdir: parent_seek,
+                cycle,
+            },
             form,
         );
         let record = seek + w.len() as u64;
@@ -769,16 +820,18 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let cycle = self.next_cycle(dir, name);
 
         let mut w = WBuffer::new();
-        write_key_header_fmt(
+        write_key_header(
             &mut w,
-            class,
-            name,
-            title,
-            obj_len,
-            payload_len,
-            seek,
-            seek_pdir,
-            cycle,
+            &KeySpec {
+                class,
+                name,
+                title,
+                obj_len,
+                payload_len,
+                seek_key: seek,
+                seek_pdir,
+                cycle,
+            },
             form,
         );
         self.put(w.as_slice())?;
@@ -809,26 +862,39 @@ impl<W: Write + Seek> ContainerWriter<W> {
         let obj_len = checked_len(4 + headers, &d.name)?;
 
         let mut w = WBuffer::new();
-        write_key_header_fmt(
-            &mut w, d.class, &d.name, &d.title, obj_len, obj_len, seek, d.seek, 1, form,
+        write_key_header(
+            &mut w,
+            &KeySpec {
+                class: d.class,
+                name: &d.name,
+                title: &d.title,
+                obj_len,
+                payload_len: obj_len,
+                seek_key: seek,
+                seek_pdir: d.seek,
+                cycle: 1,
+            },
+            form,
         );
         w.be_i32(i32::saturating_from(d.keys.len()));
         for k in &d.keys {
             // Each entry keeps the form of the key it copies: a small key read from
             // an existing file stays small even in a big file's list, since its
             // `KeyLen` tells a reader where the payload starts.
-            write_key_header_fmt(
+            write_key_header(
                 &mut w,
-                &k.class_name,
-                &k.name,
-                &k.title,
-                k.obj_len,
-                (k.nbytes)
-                    .cast_unsigned()
-                    .saturating_sub(u32::from(k.key_len)),
-                k.seek_key,
-                d.seek,
-                k.cycle,
+                &KeySpec {
+                    class: &k.class_name,
+                    name: &k.name,
+                    title: &k.title,
+                    obj_len: k.obj_len,
+                    payload_len: (k.nbytes)
+                        .cast_unsigned()
+                        .saturating_sub(u32::from(k.key_len)),
+                    seek_key: k.seek_key,
+                    seek_pdir: d.seek,
+                    cycle: k.cycle,
+                },
                 Form::big_if(k.version > 1000),
             );
         }
@@ -837,28 +903,22 @@ impl<W: Write + Seek> ContainerWriter<W> {
         self.put(w.as_slice())?;
 
         // fNbytesKeys, then fSeekKeys after fNbytesName, fSeekDir and fSeekParent.
-        self.patch(record + 10, &nbytes.to_be_bytes())?;
-        self.patch_seek(record + if form.is_big() { 34 } else { 26 }, seek)?;
+        self.patch(record + Form::DIR_NBYTES_KEYS, &nbytes.to_be_bytes())?;
+        self.patch_seek(record + form.dir_seek_keys(), seek)?;
         Ok((seek, nbytes))
     }
 
     /// Fill in the header's pointers, in whichever form it was written.
     fn patch_header(&mut self, end: u64) -> Result<()> {
-        // Offsets of fEND, fSeekFree, fNbytesFree, nfree, fNbytesName, fSeekInfo
-        // and fNbytesInfo.
-        let [
-            p_end,
-            p_seek_free,
-            p_nbytes_free,
-            p_nfree,
-            p_nbytes_name,
-            p_seek_info,
-            p_nbytes_info,
-        ] = if self.form.is_big() {
-            [12, 20, 28, 32, 36, 45, 53]
-        } else {
-            [12, 16, 20, 24, 28, 37, 41]
-        };
+        let HeaderOffsets {
+            end: p_end,
+            seek_free: p_seek_free,
+            nbytes_free: p_nbytes_free,
+            nfree: p_nfree,
+            nbytes_name: p_nbytes_name,
+            seek_info: p_seek_info,
+            nbytes_info: p_nbytes_info,
+        } = self.form.header_offsets();
         self.patch_seek(p_end, end)?;
         // The free-segment list is not maintained, so declare it empty.
         self.patch_seek(p_seek_free, 0)?;
@@ -950,13 +1010,15 @@ impl ContainerWriter<Cursor<Vec<u8>>> {
     /// If `existing` is not a ROOT file this writer can continue; any error `layout` returns,
     /// and any error finishing the file.
     pub fn build_append(
-        existing: &[u8],
+        existing: &bytes::Bytes,
         file_name: &str,
         compression: Compression,
         big_threshold: u64,
         mut layout: impl FnMut(&mut Self) -> Result<()>,
     ) -> Result<Vec<u8>> {
-        let file = FileReader::from_bytes(existing.to_vec())?;
+        // The reader shares `existing`: the file is in memory once, plus the
+        // output being built from it.
+        let file = FileReader::from_bytes(existing.clone())?;
         let end = usize::try_from(file.header().end).unwrap_or(usize::MAX);
         let prefix = existing.get(..end).ok_or_else(|| {
             Error::Format(format!(
@@ -1124,21 +1186,34 @@ fn key_len_fmt(class: &str, name: &str, title: &str, form: Form) -> u16 {
     u16::saturating_from(Key::header_len(class, name, title, form.is_big()))
 }
 
-/// Write a `Key` header (no payload) in the small or big form. `obj_len` is the
-/// uncompressed object size; `payload_len` the stored size.
-#[allow(clippy::too_many_arguments)]
-fn write_key_header_fmt(
-    w: &mut WBuffer,
-    class: &str,
-    name: &str,
-    title: &str,
+/// What a key header says, apart from the lengths its strings fix.
+#[derive(Clone, Copy)]
+struct KeySpec<'a> {
+    class: &'a str,
+    name: &'a str,
+    title: &'a str,
+    /// The uncompressed object size.
     obj_len: u32,
+    /// The stored (possibly compressed) size.
     payload_len: u32,
+    /// Where the key is, and where its directory is.
     seek_key: u64,
     seek_pdir: u64,
     cycle: u16,
-    form: Form,
-) {
+}
+
+/// Write a `Key` header (no payload) in the small or big form.
+fn write_key_header(w: &mut WBuffer, key: &KeySpec<'_>, form: Form) {
+    let KeySpec {
+        class,
+        name,
+        title,
+        obj_len,
+        payload_len,
+        seek_key,
+        seek_pdir,
+        cycle,
+    } = *key;
     let key_len = key_len_fmt(class, name, title, form);
     w.be_i32((u32::from(key_len) + payload_len).cast_signed()); // Nbytes
     w.be_u16(if form.is_big() {

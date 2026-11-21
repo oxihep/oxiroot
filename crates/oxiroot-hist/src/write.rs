@@ -4,7 +4,9 @@
 //! against a ROOT-written fixture), filling the data-bearing members from a
 //! [`Hist1D`] and the cosmetic/auxiliary members with ROOT's defaults.
 
+use crate::base::Moments;
 use oxiroot_io_core::cast::SaturatingFrom;
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 pub(crate) use oxiroot_io_core::WriteRoot;
@@ -18,14 +20,14 @@ use crate::base::BinContentType;
 use crate::efficiency::Efficiency;
 use crate::graph::{Graph, GraphErrors, GraphFunction};
 use crate::graph2d::Graph2D;
-use crate::hist1d::Hist1D;
-use crate::hist2d::Hist2D;
-use crate::hist3d::Hist3D;
 use crate::multierrorgraph::MultiErrorGraph;
 use crate::polyhist::{PolyBin, PolyHist};
 use crate::profile1d::Profile1D;
 use crate::profile2d::Profile2D;
 use crate::profile3d::Profile3D;
+use crate::record::Hist1D;
+use crate::record::Hist2D;
+use crate::record::Hist3D;
 use crate::sparsehist::SparseHist;
 
 /// The streamer info ROOT 6 writes for the histogram family, captured from a
@@ -66,8 +68,8 @@ fn label_classes<'a>(axes: impl IntoIterator<Item = &'a Axis>) -> Vec<ClassDef<'
 macro_rules! impl_write_root_hist {
     ($ty:ty, $write:ident, $functions:expr) => {
         impl WriteRoot for $ty {
-            fn root_class(&self) -> String {
-                self.class_name()
+            fn root_class(&self) -> Cow<'static, str> {
+                Cow::Owned(self.class_name())
             }
             fn root_name(&self) -> &str {
                 &self.name
@@ -75,10 +77,8 @@ macro_rules! impl_write_root_hist {
             fn root_title(&self) -> &str {
                 &self.title
             }
-            fn to_root_bytes(&self) -> Vec<u8> {
-                let mut w = WBuffer::new();
-                $write(&mut w, self, self.bin_content_type);
-                w.into_vec()
+            fn write_body(&self, w: &mut WBuffer) {
+                $write(w, self, self.bin_content_type);
             }
             fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
                 let class = self.class_name();
@@ -107,8 +107,8 @@ impl_write_root_hist!(Hist3D, write_th3_obj, |_| false);
 macro_rules! impl_write_root_fixed {
     ($ty:ty, $class:expr, $bytes:ident, [$($holds:expr),*], [$($axis:ident),*]) => {
         impl WriteRoot for $ty {
-            fn root_class(&self) -> String {
-                $class.to_string()
+            fn root_class(&self) -> Cow<'static, str> {
+                Cow::Borrowed($class)
             }
             fn root_name(&self) -> &str {
                 &self.name
@@ -116,8 +116,8 @@ macro_rules! impl_write_root_fixed {
             fn root_title(&self) -> &str {
                 &self.title
             }
-            fn to_root_bytes(&self) -> Vec<u8> {
-                $bytes(self)
+            fn write_body(&self, w: &mut WBuffer) {
+                $bytes(w, self);
             }
             fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
                 let mut classes = hist_streamer_classes(&[$class $(, $holds)*]);
@@ -127,34 +127,28 @@ macro_rules! impl_write_root_fixed {
         }
     };
 }
-impl_write_root_fixed!(Profile1D, "TProfile", tprofile_to_bytes, [], [xaxis]);
+impl_write_root_fixed!(Profile1D, "TProfile", write_tprofile, [], [xaxis]);
 impl_write_root_fixed!(
     Profile2D,
     "TProfile2D",
-    tprofile2d_to_bytes,
+    write_tprofile2d,
     [],
     [xaxis, yaxis]
 );
 impl_write_root_fixed!(
     Profile3D,
     "TProfile3D",
-    tprofile3d_to_bytes,
+    write_tprofile3d,
     [],
     [xaxis, yaxis, zaxis]
 );
 // Its passed and total histograms, held as `Hist1D*`.
-impl_write_root_fixed!(
-    Efficiency,
-    "TEfficiency",
-    tefficiency_to_bytes,
-    ["TH1D"],
-    []
-);
+impl_write_root_fixed!(Efficiency, "TEfficiency", write_tefficiency, ["TH1D"], []);
 // Its axes and its chunks, held in `TObjArray`s.
 impl_write_root_fixed!(
     SparseHist,
     "THnSparseT<TArrayD>",
-    thnsparse_to_bytes,
+    write_thnsparse,
     ["TAxis", "THnSparseArrayChunk"],
     []
 );
@@ -162,14 +156,14 @@ impl_write_root_fixed!(
 impl_write_root_fixed!(
     PolyHist,
     "TH2Poly",
-    th2poly_to_bytes,
+    write_th2poly,
     ["TH2PolyBin", "TGraph"],
     []
 );
 
 impl WriteRoot for Graph {
-    fn root_class(&self) -> String {
-        self.class_name().to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.class_name())
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -177,8 +171,8 @@ impl WriteRoot for Graph {
     fn root_title(&self) -> &str {
         &self.title
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        tgraph_to_bytes(self)
+    fn write_body(&self, w: &mut WBuffer) {
+        write_tgraph(w, self);
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         // Attached functions are `Func1D`s in the `fFunctions` list.
@@ -266,20 +260,17 @@ pub(crate) fn write_th2_obj(w: &mut WBuffer, h: &Hist2D, contents: BinContentTyp
             xaxis: &h.xaxis,
             yaxis: &h.yaxis,
             zaxis: &h.zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumw2,
             functions: &[],
         },
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
-    w.be_f64(h.tsumwxy);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
+    w.be_f64(h.moments.wxy);
     w.end_object(th2);
     write_tarray(w, &h.contents, contents); // TArray{D,F} base: bin contents, inline
     w.end_object(outer);
@@ -317,25 +308,22 @@ pub(crate) fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, contents: BinContentTyp
             xaxis: &h.xaxis,
             yaxis: &h.yaxis,
             zaxis: &h.zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumw2,
             functions: &[],
         },
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
-    w.be_f64(h.tsumwxy);
-    w.be_f64(h.tsumwz);
-    w.be_f64(h.tsumwz2);
-    w.be_f64(h.tsumwxz);
-    w.be_f64(h.tsumwyz);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
+    w.be_f64(h.moments.wxy);
+    w.be_f64(h.moments.wz);
+    w.be_f64(h.moments.wz2);
+    w.be_f64(h.moments.wxz);
+    w.be_f64(h.moments.wyz);
     w.end_object(th3);
     write_tarray(w, &h.contents, contents); // TArray{D,F} base: bin contents, inline
     w.end_object(outer);
@@ -359,12 +347,9 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
             xaxis: &h.xaxis,
             yaxis: &yaxis,
             zaxis: &zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumy2,
             functions: &[],
         },
@@ -375,17 +360,10 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
     w.be_i32(h.error_mode.code());
     w.be_f64(h.ymin);
     w.be_f64(h.ymax);
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
     write_tarrayd(w, &h.bin_sumw2); // fBinSumw2
     w.end_object(tp);
-}
-
-/// Serialize a `Profile1D` object to a fresh byte vector.
-pub(crate) fn tprofile_to_bytes(h: &Profile1D) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tprofile(&mut w, h);
-    w.into_vec()
 }
 
 /// Serialize a `Profile2D` object (with its byte-count/version header) into `w`.
@@ -407,20 +385,17 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
             xaxis: &h.xaxis,
             yaxis: &h.yaxis,
             zaxis: &zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumz2,
             functions: &[],
         },
     );
     w.be_f64(1.0); // fScalefactor (ROOT default)
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
-    w.be_f64(h.tsumwxy);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
+    w.be_f64(h.moments.wxy);
     w.end_object(th2);
     write_tarrayd(w, &h.sums); // TH2D TArrayD base: per-cell Σ(w·z)
     w.end_object(th2d);
@@ -428,17 +403,10 @@ pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
     w.be_i32(h.error_mode.code());
     w.be_f64(h.zmin);
     w.be_f64(h.zmax);
-    w.be_f64(h.tsumwz);
-    w.be_f64(h.tsumwz2);
+    w.be_f64(h.moments.wz);
+    w.be_f64(h.moments.wz2);
     write_tarrayd(w, &h.bin_sumw2); // fBinSumw2
     w.end_object(tp);
-}
-
-/// Serialize a `Profile2D` object to a fresh byte vector.
-pub(crate) fn tprofile2d_to_bytes(h: &Profile2D) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tprofile2d(&mut w, h);
-    w.into_vec()
 }
 
 /// Serialize a `Profile3D` object (with its byte-count/version header) into `w`.
@@ -457,25 +425,22 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
             xaxis: &h.xaxis,
             yaxis: &h.yaxis,
             zaxis: &h.zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumt2,
             functions: &[],
         },
     );
     let att3d = w.begin_object(1); // TAtt3D version 1 (empty base)
     w.end_object(att3d);
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
-    w.be_f64(h.tsumwxy);
-    w.be_f64(h.tsumwz);
-    w.be_f64(h.tsumwz2);
-    w.be_f64(h.tsumwxz);
-    w.be_f64(h.tsumwyz);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
+    w.be_f64(h.moments.wxy);
+    w.be_f64(h.moments.wz);
+    w.be_f64(h.moments.wz2);
+    w.be_f64(h.moments.wxz);
+    w.be_f64(h.moments.wyz);
     w.end_object(th3);
     write_tarrayd(w, &h.sums); // TH3D TArrayD base: per-cell Σ(w·t)
     w.end_object(th3d);
@@ -487,13 +452,6 @@ pub(crate) fn write_tprofile3d(w: &mut WBuffer, h: &Profile3D) {
     w.be_f64(h.tsumwt2);
     write_tarrayd(w, &h.bin_sumw2); // fBinSumw2
     w.end_object(tp);
-}
-
-/// Serialize a `Profile3D` object to a fresh byte vector.
-pub(crate) fn tprofile3d_to_bytes(h: &Profile3D) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tprofile3d(&mut w, h);
-    w.into_vec()
 }
 
 /// An empty `fBeta_bin_params` (`vector<pair<double,double>>`), byte-for-byte as
@@ -542,13 +500,6 @@ pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &Efficiency) {
     write_th1d_ptr(w, &h.total); // fTotalHistogram
     w.be_f64(h.weight);
     w.end_object(te);
-}
-
-/// Serialize an `Efficiency` object to a fresh byte vector.
-pub(crate) fn tefficiency_to_bytes(h: &Efficiency) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tefficiency(&mut w, h);
-    w.into_vec()
 }
 
 /// Write a `TObjArray` (version 3) of `n` object-pointer elements, each emitted
@@ -619,13 +570,6 @@ pub(crate) fn write_thnsparse(w: &mut WBuffer, h: &SparseHist) {
     w.end_object(tt);
 }
 
-/// Serialize a `SparseHist` object to a fresh byte vector.
-pub(crate) fn thnsparse_to_bytes(h: &SparseHist) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_thnsparse(&mut w, h);
-    w.into_vec()
-}
-
 /// The number of partition cells per axis ROOT uses by default (`fCellX`/`fCellY`).
 const POLY_CELLS_PER_AXIS: i32 = 25;
 /// `kMustCleanup` — the `fBits` value ROOT writes for a `Graph`'s `Named`.
@@ -661,18 +605,15 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
             zaxis: &zaxis,
             ncells: i32::saturating_from(n + 9),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &[],
             functions: &[],
         },
     );
     w.be_f64(1.0); // fScalefactor
-    w.be_f64(h.tsumwy);
-    w.be_f64(h.tsumwy2);
-    w.be_f64(h.tsumwxy);
+    w.be_f64(h.moments.wy);
+    w.be_f64(h.moments.wy2);
+    w.be_f64(h.moments.wxy);
     w.end_object(th2);
 
     // PolyHist members.
@@ -740,10 +681,11 @@ fn write_polybin(w: &mut WBuffer, b: &PolyBin) {
     }); // fPoly
     w.be_f64(b.area);
     w.be_f64(b.content);
-    w.be_f64(b.xmin);
-    w.be_f64(b.ymin);
-    w.be_f64(b.xmax);
-    w.be_f64(b.ymax);
+    let (x, y) = b.bounds();
+    w.be_f64(*x.start());
+    w.be_f64(*y.start());
+    w.be_f64(*x.end());
+    w.be_f64(*y.end());
     w.end_object(bin);
 }
 
@@ -825,13 +767,6 @@ fn write_function_list(w: &mut WBuffer, bits: u32, functions: &[GraphFunction]) 
     w.end_object(tl);
 }
 
-/// Serialize a `PolyHist` object to a fresh byte vector.
-pub(crate) fn th2poly_to_bytes(h: &PolyHist) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_th2poly(&mut w, h);
-    w.into_vec()
-}
-
 /// Write a `Double_t* //[n]` member: a presence marker byte then exactly `n`
 /// doubles, taking them from `data` and zero-padding if it is shorter.
 fn write_basic_array(w: &mut WBuffer, data: &[f64], n: usize) {
@@ -897,13 +832,6 @@ pub(crate) fn write_tgraph(w: &mut WBuffer, g: &Graph) {
     }
 }
 
-/// Serialize a [`Graph`] object to a fresh byte vector.
-pub(crate) fn tgraph_to_bytes(g: &Graph) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tgraph(&mut w, g);
-    w.into_vec()
-}
-
 /// Serialize a [`Graph2D`] (version 1): the three `TAtt` bases, the scalar
 /// display parameters at ROOT's defaults, the `fX`/`fY`/`fZ` arrays, and an empty
 /// `fFunctions` (the `fHistogram` frame is transient and not persisted).
@@ -943,16 +871,9 @@ fn write_tgraph2d(w: &mut WBuffer, g: &Graph2D) {
     w.end_object(obj);
 }
 
-/// Serialize a [`Graph2D`] object to a fresh byte vector.
-pub(crate) fn tgraph2d_to_bytes(g: &Graph2D) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tgraph2d(&mut w, g);
-    w.into_vec()
-}
-
 impl WriteRoot for Graph2D {
-    fn root_class(&self) -> String {
-        "TGraph2D".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("TGraph2D")
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -960,8 +881,8 @@ impl WriteRoot for Graph2D {
     fn root_title(&self) -> &str {
         &self.title
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        tgraph2d_to_bytes(self)
+    fn write_body(&self, w: &mut WBuffer) {
+        write_tgraph2d(w, self);
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         hist_streamer_classes(&["TGraph2D"])
@@ -1020,16 +941,9 @@ fn write_tgraphmultierrors(w: &mut WBuffer, g: &MultiErrorGraph) {
     w.end_object(obj);
 }
 
-/// Serialize a [`MultiErrorGraph`] object to a fresh byte vector.
-pub(crate) fn tgraphmultierrors_to_bytes(g: &MultiErrorGraph) -> Vec<u8> {
-    let mut w = WBuffer::new();
-    write_tgraphmultierrors(&mut w, g);
-    w.into_vec()
-}
-
 impl WriteRoot for MultiErrorGraph {
-    fn root_class(&self) -> String {
-        "TGraphMultiErrors".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("TGraphMultiErrors")
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -1037,8 +951,8 @@ impl WriteRoot for MultiErrorGraph {
     fn root_title(&self) -> &str {
         &self.title
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        tgraphmultierrors_to_bytes(self)
+    fn write_body(&self, w: &mut WBuffer) {
+        write_tgraphmultierrors(w, self);
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         hist_streamer_classes(&["TGraphMultiErrors"])
@@ -1054,12 +968,9 @@ fn write_th1_base(w: &mut WBuffer, h: &Hist1D) {
             xaxis: &h.xaxis,
             yaxis: &h.yaxis,
             zaxis: &h.zaxis,
-            ncells: h.ncells(),
+            ncells: i32::saturating_from(h.ncells()),
             entries: h.entries,
-            tsumw: h.tsumw,
-            tsumw2: h.tsumw2,
-            tsumwx: h.tsumwx,
-            tsumwx2: h.tsumwx2,
+            moments: h.moments,
             sumw2: &h.sumw2,
             functions: &h.functions,
         },
@@ -1077,10 +988,8 @@ struct Th1Core<'a> {
     /// `fNcells`: every cell, flow included.
     ncells: i32,
     entries: f64,
-    tsumw: f64,
-    tsumw2: f64,
-    tsumwx: f64,
-    tsumwx2: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    moments: Moments,
     /// `fSumw2`: per-cell Σw², or what a profile keeps there.
     sumw2: &'a [f64],
     /// `fFunctions`: the functions stored with the histogram.
@@ -1099,10 +1008,14 @@ fn write_th1_core(w: &mut WBuffer, core: &Th1Core<'_>) {
         zaxis,
         ncells,
         entries,
-        tsumw,
-        tsumw2,
-        tsumwx,
-        tsumwx2,
+        moments:
+            Moments {
+                w: tsumw,
+                w2: tsumw2,
+                wx: tsumwx,
+                wx2: tsumwx2,
+                ..
+            },
         sumw2: fsumw2,
         functions,
     } = *core;
@@ -1185,7 +1098,7 @@ fn write_taxis(w: &mut WBuffer, ax: &Axis) {
     w.be_i16(42); // fTitleFont
     w.end_object(att);
 
-    w.be_i32(ax.nbins);
+    w.be_i32(i32::saturating_from(ax.nbins));
     w.be_f64(ax.xmin);
     w.be_f64(ax.xmax);
     write_tarrayd(w, &ax.xbins); // fXbins

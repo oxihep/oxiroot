@@ -151,49 +151,36 @@ pub mod plot {
     pub use oxiplot::*;
 }
 
-/// The common types and functions for reading and writing ROOT files.
+/// The common types for reading and writing ROOT files.
 ///
 /// `use oxiroot::prelude::*;` brings in the file reader and writer
-/// ([`FileReader`], [`FileWriter`]), [`Compression`],
-/// the histogram types with their `read_*`/`write_*` helpers, and the dataset
-/// API for `TTree` and `RNTuple` ([`Dataset`](crate::data::Dataset),
+/// ([`FileReader`], [`FileWriter`], [`FileUpdater`]), [`Compression`], the
+/// traits objects are read and written through, the common histogram,
+/// profile, graph and function types, and the dataset API for `TTree` and
+/// `RNTuple` ([`Dataset`](crate::data::Dataset),
 /// [`DatasetWriter`](crate::data::DatasetWriter), [`Batch`](crate::data::Batch),
-/// [`Format`](crate::data::Format)).
+/// [`Format`](crate::data::Format)). Everything else is in its module.
 pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
+    //
+    // Only what reading and writing a file takes. The rest has one path, in
+    // its module: fitting in `oxiroot::fit`, statistics in `oxiroot::stat`,
+    // collections and parameters in `oxiroot::file`, matrices in
+    // `oxiroot::linalg`, merging in `oxiroot::hadd`, and the less common
+    // histogram types in `oxiroot::hist`.
     pub use oxiroot_io_core::{
-        Compression, FileReader, FileUpdater, FileWriter, ListKind, ObjList, ObjMap, ObjString,
-        ParamValue, Parameter, ReadRoot, SubdirWriter, WriteRoot,
+        Compression, FileReader, FileUpdater, FileWriter, ReadRoot, WriteRoot,
     };
 
-    pub use crate::hadd::{MergeKind, MergeReport, Merger};
-
-    #[cfg(feature = "fit")]
-    // `oxifit::{Contour, Profile}` stay under `oxiroot::fit`: `Profile` would
-    // read as a profile histogram here, next to `Profile1D`. So do the
-    // generic `Channel`, `Sample` and `Chain`, and oxifit's `BinomialData`,
-    // which would clash with ROOT's `Efficiency` (TEfficiency) below.
-    pub use oxifit::{
-        CmaEs, Cost, CostSum, DifferentialEvolution, Events, Events2, Events3, FitData, FitDataNd,
-        FitError, FitExt, FitMethod, FitOptions, FitResult, Fitter, FnCost, HypoTest, Loss,
-        Minimizer, Model, ModelCost, MultiStart, Nuts, Point, PointNd, Points, Points2, Points3,
-        SWeights, Sampler, Simultaneous, TemplateModel, Toys,
-    };
-    #[cfg(feature = "rayon")]
-    pub use oxiroot_hist::fill_par;
     /// The ROOT-free histogram the `Hist` builder makes (from oxihist);
     /// `.to_root()?` turns it into a `Hist1D`/`Hist2D`/…
     pub use oxiroot_hist::oxihist::Histogram;
-    pub use oxiroot_hist::oxihist::{Chi2TestKind, Chi2TestResult, KsTestResult};
     pub use oxiroot_hist::{
-        Axis, BinContentType, Efficiency, ErrorMode, Graph, Graph2D, GraphErrors, GraphFunction,
-        GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack, Mergeable, MultiErrorGraph, PolyBin,
-        PolyHist, Profile1D, Profile2D, Profile3D, Random, SparseBin, SparseHist, ThreadedHist,
-        ToRoot,
+        Axis, Efficiency, Graph, Hist, Hist1D, Hist2D, Hist3D, Mergeable, Profile1D, Profile2D,
+        Profile3D, ToRoot,
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
-    pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
-    pub use oxiroot_dataset::{Batch, Dataset, DatasetObject, DatasetWriter, Format};
+    pub use oxiroot_dataset::{Batch, Dataset, DatasetWriter, Format};
 }

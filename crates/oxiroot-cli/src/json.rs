@@ -13,6 +13,8 @@ pub enum Json {
     Str(String),
     Array(Vec<Self>),
     Object(Vec<(&'static str, Self)>),
+    /// An object whose keys come from the file, such as a record's members.
+    Map(Vec<(String, Self)>),
 }
 
 impl Json {
@@ -46,20 +48,23 @@ impl Json {
                 }
                 out.push(']');
             }
-            Self::Object(fields) => {
-                out.push('{');
-                for (i, (key, value)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    escape(key, out);
-                    out.push(':');
-                    value.write(out);
-                }
-                out.push('}');
-            }
+            Self::Object(fields) => write_fields(fields.iter().map(|(k, v)| (*k, v)), out),
+            Self::Map(fields) => write_fields(fields.iter().map(|(k, v)| (k.as_str(), v)), out),
         }
     }
+}
+
+fn write_fields<'a>(fields: impl Iterator<Item = (&'a str, &'a Json)>, out: &mut String) {
+    out.push('{');
+    for (i, (key, value)) in fields.enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        escape(key, out);
+        out.push(':');
+        value.write(out);
+    }
+    out.push('}');
 }
 
 /// Append `s` as a quoted, escaped JSON string.

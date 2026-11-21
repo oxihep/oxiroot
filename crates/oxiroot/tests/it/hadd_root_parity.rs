@@ -124,9 +124,9 @@ fn a_stack_merges_its_histograms_and_a_parameter_sums_like_root() {
     let (ours, root) = merged("stack");
     let st = ours.get::<HistStack>("st").unwrap();
     let root_st = root.get::<HistStack>("st").unwrap();
-    assert_eq!(st.hists().len(), 1);
-    assert_eq!(st.hists()[0].contents(), root_st.hists()[0].contents());
-    assert_eq!(st.hists()[0].values().iter().sum::<f64>(), 3.0);
+    assert_eq!(st.members().len(), 1);
+    assert_eq!(st.members()[0].contents(), root_st.members()[0].contents());
+    assert_eq!(st.members()[0].values().iter().sum::<f64>(), 3.0);
 
     let par = ours.get::<Parameter>("par").unwrap();
     assert_eq!(par.value(), root.get::<Parameter>("par").unwrap().value());
@@ -141,6 +141,6 @@ fn what_root_does_not_merge_is_the_first_input() {
     let g2 = ours.get::<Graph2D>("g2").unwrap();
     assert_eq!(g2.x(), first.get::<Graph2D>("g2").unwrap().x());
     let mg = ours.get::<GraphStack>("mg").unwrap();
-    assert_eq!(mg.graphs().len(), 1);
-    assert_eq!(mg.graphs()[0].x(), [0.0, 1.0]);
+    assert_eq!(mg.members().len(), 1);
+    assert_eq!(mg.members()[0].x(), [0.0, 1.0]);
 }

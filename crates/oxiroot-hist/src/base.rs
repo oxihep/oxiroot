@@ -90,6 +90,60 @@ pub(crate) fn bin_content_type_of(class: &str) -> Result<BinContentType> {
         .ok_or_else(|| Error::Unsupported(format!("unsupported histogram type: {class}")))
 }
 
+/// The sums over the fills ROOT keeps beside a histogram's bins, so the mean
+/// and spread do not depend on the binning: `Σw`, `Σw²`, then `Σw·x`,
+/// `Σw·x²` for each axis and `Σw·x·y` for each pair (`fTsumw`, `fTsumw2`,
+/// `fTsumwx`, …). A histogram of fewer dimensions leaves the others at zero.
+/// For a profile the last axis is the profiled value.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) struct Moments {
+    pub w: f64,
+    pub w2: f64,
+    pub wx: f64,
+    pub wx2: f64,
+    pub wy: f64,
+    pub wy2: f64,
+    pub wxy: f64,
+    pub wz: f64,
+    pub wz2: f64,
+    pub wxz: f64,
+    pub wyz: f64,
+}
+
+impl Moments {
+    /// Add `c` times `other`: every sum is linear in the weights but `Σw²`,
+    /// which goes as `c²`.
+    pub(crate) fn add_scaled(&mut self, other: &Self, c: f64) {
+        self.w2 += c * c * other.w2;
+        for (sum, from) in self.linear_mut().into_iter().zip(other.linear()) {
+            *sum += c * from;
+        }
+    }
+
+    /// The sums that are linear in the weights: all but `Σw²`.
+    const fn linear(&self) -> [f64; 10] {
+        [
+            self.w, self.wx, self.wx2, self.wy, self.wy2, self.wxy, self.wz, self.wz2, self.wxz,
+            self.wyz,
+        ]
+    }
+
+    fn linear_mut(&mut self) -> [&mut f64; 10] {
+        [
+            &mut self.w,
+            &mut self.wx,
+            &mut self.wx2,
+            &mut self.wy,
+            &mut self.wy2,
+            &mut self.wxy,
+            &mut self.wz,
+            &mut self.wz2,
+            &mut self.wxz,
+            &mut self.wyz,
+        ]
+    }
+}
+
 /// The members shared by every `Hist1D`-derived histogram.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistBase {
@@ -105,14 +159,8 @@ pub struct HistBase {
     pub zaxis: Axis,
     /// Number of entries (`fEntries`).
     pub entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub tsumw: f64,
-    /// Sum of squared weights (`fTsumw2`).
-    pub tsumw2: f64,
-    /// Sum of weight*x (`fTsumwx`).
-    pub tsumwx: f64,
-    /// Sum of weight*x^2 (`fTsumwx2`).
-    pub tsumwx2: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    pub moments: Moments,
     /// Per-bin sum of squared weights (`fSumw2`); empty for an unweighted
     /// histogram, but used by `Profile1D` to store the per-bin sum of `y^2`.
     pub sumw2: Vec<f64>,
@@ -148,14 +196,10 @@ pub(crate) fn end_record(r: &mut RBuffer<'_>, header: &VersionHeader, class: &st
 /// The sum of `values` over the in-range cells of a histogram with the given
 /// per-axis bin counts (flow cells excluded), as ROOT's `GetStats` sums them.
 /// `values` has one entry per cell, flow included; an empty slice sums to 0.
-pub(crate) fn in_range_sum(values: &[f64], axis_nbins: &[i32]) -> f64 {
+pub(crate) fn in_range_sum(values: &[f64], sizes: &[usize]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
-    let sizes: Vec<usize> = axis_nbins
-        .iter()
-        .map(|&n| usize::saturating_from(n.max(0)))
-        .collect();
     if sizes.contains(&0) {
         return 0.0;
     }
@@ -243,10 +287,13 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
         yaxis,
         zaxis,
         entries,
-        tsumw,
-        tsumw2,
-        tsumwx,
-        tsumwx2,
+        moments: Moments {
+            w: tsumw,
+            w2: tsumw2,
+            wx: tsumwx,
+            wx2: tsumwx2,
+            ..Moments::default()
+        },
         sumw2,
         functions,
     })
@@ -255,10 +302,10 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
 /// The number of cells (flow-inclusive) for the given per-axis bin counts:
 /// `Π (nbins_i + 2)`, computed with overflow checking. A malformed file can
 /// carry absurd `fNbins`, so this returns `Err` rather than wrapping.
-pub(crate) fn cell_count(axis_nbins: &[i32]) -> Result<usize> {
+pub(crate) fn cell_count(axis_nbins: &[usize]) -> Result<usize> {
     let mut total: usize = 1;
     for &n in axis_nbins {
-        let cells = usize::saturating_from(n.max(0))
+        let cells = n
             .checked_add(2)
             .and_then(|c| total.checked_mul(c))
             .ok_or_else(|| Error::Format("histogram cell count overflows usize".into()))?;
@@ -337,7 +384,7 @@ mod tests {
         assert_eq!(cell_count(&[3, 2]).unwrap(), 5 * 4);
         assert_eq!(cell_count(&[3, 2, 1]).unwrap(), 5 * 4 * 3);
         // A forged axis count must error, not wrap.
-        assert!(cell_count(&[i32::MAX, i32::MAX, i32::MAX]).is_err());
+        assert!(cell_count(&[usize::MAX / 4, 8]).is_err());
     }
 
     #[test]

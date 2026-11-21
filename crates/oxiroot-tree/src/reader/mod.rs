@@ -16,6 +16,7 @@ use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload};
 use oxiroot_io_core::{Error, FileReader, Result};
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::value::{BranchValues, FromBranch, Jagged, LeafType};
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -32,6 +33,30 @@ use parse::read_tree;
 /// count, and branches; branch data is read on demand, one branch at a time,
 /// with [`branch`](Self::branch).
 ///
+/// A branch the reader left out, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Skipped {
+    pub(crate) name: String,
+    pub(crate) reason: String,
+}
+
+impl Skipped {
+    pub(crate) fn new(name: String, reason: String) -> Self {
+        Self { name, reason }
+    }
+}
+
+/// The baskets to read for a window of entries.
+struct BasketSelection {
+    /// Which baskets overlap the window.
+    indices: Vec<usize>,
+    /// The first entry the first of them holds.
+    first_entry: u64,
+    /// The window, clamped to the tree's entries.
+    start: u64,
+    stop: u64,
+}
+
 /// This is the low-level, TTree-specific reader. For one API over `TTree` and
 /// `RNTuple`, read through `oxiroot::data::Dataset`.
 #[doc(alias = "TTree", alias = "TTreeReader")]
@@ -44,7 +69,7 @@ pub struct TreeReader<'f> {
     branches: Vec<Branch>,
     /// Branches present in the file that this crate cannot (yet) read, as
     /// `(name, reason)` — surfaced via [`TreeReader::unsupported_branches`].
-    unsupported: Vec<(String, String)>,
+    unsupported: Vec<Skipped>,
     /// The classes (and versions) declared in the file's `TStreamerInfo` — the
     /// schema this tree was written against; surfaced via
     /// [`TreeReader::streamer_classes`]. Empty if the file has no streamer info.
@@ -187,15 +212,17 @@ struct Branch {
     leaf_len: i32,
     /// Number of baskets actually written (`fWriteBasket`).
     n_baskets: usize,
-    /// File offset of each basket (`fBasketSeek`).
-    basket_seek: Vec<u64>,
+    /// File offset of each basket (`fBasketSeek`). The three basket vectors are
+    /// shared: the leaves of a leaflist, and the members of an object branch,
+    /// are one set of baskets read several ways.
+    basket_seek: Arc<[u64]>,
     /// On-disk byte size of each basket (`fBasketBytes`), so a basket is fetched
     /// at its exact size — never over-fetched — over a ranged/remote source.
     /// Empty when the file omits it; then the reader probes the key header.
-    basket_bytes: Vec<u64>,
+    basket_bytes: Arc<[u64]>,
     /// First entry number of each basket (`fBasketEntry`, `n_baskets` values),
     /// for selecting the baskets that cover an entry range.
-    basket_entry: Vec<i64>,
+    basket_entry: Arc<[i64]>,
     /// Per-entry streamer-header bytes to skip before the element data — `0` for
     /// `TLeaf`-based branches, `10` for an unsplit `std::vector<T>`
     /// `TBranchElement` (byte count + version + size).
@@ -236,24 +263,39 @@ struct ObjectMember {
     class_elements: Vec<StreamerElement>,
 }
 
-/// The write-reconstruction metadata of a read branch — the private-field
-/// summary [`BranchRead::to_branch`] needs to rebuild a branch as a
-/// writable [`Branch`](crate::raw::Branch) with the correct kind (scalar / fixed
-/// array / jagged / `std::vector` / string), or to reject the kinds this crate
-/// cannot write back.
-pub(crate) struct BranchMetaLite {
-    /// Number of fixed-array dimensions parsed from the title (`x[N]` → 1,
-    /// `x[N][M]` → 2, scalar / jagged / `std::vector` → 0).
-    pub dims_len: usize,
-    /// Per-entry streamer-header size: `>0` marks a `std::vector<T>`
-    /// `TBranchElement` (distinguishing it from a jagged `x[n]` leaf).
-    pub elem_header: usize,
-    /// Whether this is one leaf of a multi-leaf (leaflist) branch.
-    pub has_leaflist: bool,
-    /// Whether this is a synthesized member column of an unsplit object branch.
-    pub has_object_member: bool,
-    /// Whether this is a `std::vector<std::vector<T>>` branch.
-    pub has_nested: bool,
+/// How a branch read from a file is written back: which kind of writable
+/// branch its per-entry lists become.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rewrite {
+    /// A fixed array `x[N]`.
+    Fixed,
+    /// A `std::vector<T>`: each entry carries a streamer header.
+    Vector,
+    /// A counted C-style array `x[n]`.
+    Jagged,
+}
+
+impl Branch {
+    /// How this branch is written back, or what it is when this crate reads
+    /// it but cannot write it. The one place that turns the fields the decoder
+    /// reads into a kind.
+    fn rewrite(&self) -> std::result::Result<Rewrite, &'static str> {
+        if self.object_member.is_some() {
+            return Err("split-object member column");
+        }
+        if self.leaflist.is_some() {
+            return Err("multi-leaf (leaflist) branch");
+        }
+        if self.nested_elem.is_some() {
+            return Err("std::vector<std::vector<T>> branch");
+        }
+        match self.dims.len() {
+            0 if self.elem_header > 0 => Ok(Rewrite::Vector),
+            0 => Ok(Rewrite::Jagged),
+            1 => Ok(Rewrite::Fixed),
+            _ => Err("multidimensional fixed array"),
+        }
+    }
 }
 
 /// One `TLeaf` of a branch: its name/title, element type, fixed length, and byte
@@ -324,9 +366,8 @@ impl<'f> TreeReader<'f> {
     }
 
     /// The names of the (readable) branches, in tree order.
-    #[must_use]
-    pub fn branch_names(&self) -> Vec<&str> {
-        self.branches.iter().map(|b| b.name.as_str()).collect()
+    pub fn branch_names(&self) -> impl ExactSizeIterator<Item = &str> + Clone {
+        self.branches.iter().map(|b| b.name.as_str())
     }
 
     /// The friend trees attached with `TTree::AddFriend` (persisted in the main
@@ -501,24 +542,18 @@ impl<'f> TreeReader<'f> {
     /// `(name, reason)` pairs (e.g. multi-leaf/leaflist branches or unsupported
     /// element types). These are absent from [`branch_names`](Self::branch_names),
     /// so this is the way to see what was skipped and why.
-    #[must_use]
-    pub fn unsupported_branches(&self) -> Vec<(&str, &str)> {
+    pub fn unsupported_branches(&self) -> impl ExactSizeIterator<Item = (&str, &str)> + Clone {
         self.unsupported
             .iter()
-            .map(|(n, r)| (n.as_str(), r.as_str()))
-            .collect()
+            .map(|s| (s.name.as_str(), s.reason.as_str()))
     }
 
     /// The classes (and their versions) declared in the file's `TStreamerInfo` —
     /// the schema this tree was written against (e.g. `("TTree", 20)`,
     /// `("TBranch", 13)`). Empty if the file carries no streamer info. This is the
     /// member layout the reader walks on [`open`](Self::open) to parse the tree.
-    #[must_use]
-    pub fn streamer_classes(&self) -> Vec<(&str, i32)> {
-        self.streamer_classes
-            .iter()
-            .map(|(n, v)| (n.as_str(), *v))
-            .collect()
+    pub fn streamer_classes(&self) -> impl ExactSizeIterator<Item = (&str, i32)> + Clone {
+        self.streamer_classes.iter().map(|(n, v)| (n.as_str(), *v))
     }
 
     /// The split `std::vector<Struct>` collection that branch `name` is a
@@ -534,30 +569,25 @@ impl<'f> TreeReader<'f> {
     /// `name` (`hits.x`, `hits.y`, … for `hits`), in tree order; empty if
     /// `name` is not such a collection. Each member reads as a list of numbers,
     /// all with the same length per entry.
-    #[must_use]
-    pub fn collection_members(&self, name: &str) -> Vec<&str> {
+    pub fn collection_members<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> {
         self.branches
             .iter()
-            .filter(|b| b.collection.as_deref() == Some(name))
+            .filter(move |b| b.collection.as_deref() == Some(name))
             .map(|b| b.name.as_str())
-            .collect()
     }
 
     fn find_branch(&self, name: &str) -> Option<&Branch> {
         self.branches.iter().find(|b| b.name == name)
     }
 
-    /// The write-reconstruction metadata of branch `name` (for
-    /// [`BranchRead::to_branch`]), or `None` if there is no such branch.
-    pub(crate) fn branch_meta(&self, name: &str) -> Option<BranchMetaLite> {
-        let b = self.find_branch(name)?;
-        Some(BranchMetaLite {
-            dims_len: b.dims.len(),
-            elem_header: b.elem_header,
-            has_leaflist: b.leaflist.is_some(),
-            has_object_member: b.object_member.is_some(),
-            has_nested: b.nested_elem.is_some(),
-        })
+    /// How branch `name` is written back (for [`BranchRead::to_branch`]): the
+    /// kind, or what it is when it cannot be written. `None` if there is no
+    /// such branch.
+    pub(crate) fn branch_rewrite(
+        &self,
+        name: &str,
+    ) -> Option<std::result::Result<Rewrite, &'static str>> {
+        self.find_branch(name).map(Branch::rewrite)
     }
 
     /// Read the branch `name`: set a [`range`](BranchRead::range) of entries
@@ -615,12 +645,7 @@ impl<'f> TreeReader<'f> {
 
     /// The baskets of `branch` overlapping entries `[start, stop)` (clamped to
     /// the entry count), and the first entry the first of them holds.
-    fn select_baskets(
-        &self,
-        branch: &Branch,
-        start: u64,
-        stop: u64,
-    ) -> (Vec<usize>, u64, u64, u64) {
+    fn select_baskets(&self, branch: &Branch, start: u64, stop: u64) -> BasketSelection {
         let stop = stop.min(self.entries);
         let start = start.min(stop);
 
@@ -654,7 +679,12 @@ impl<'f> TreeReader<'f> {
                 indices.push(i);
             }
         }
-        (indices, first_entry, start, stop)
+        BasketSelection {
+            indices,
+            first_entry,
+            start,
+            stop,
+        }
     }
 
     fn read_values(
@@ -670,8 +700,12 @@ impl<'f> TreeReader<'f> {
             let baskets = read_baskets(self.file, branch, 0..branch.n_baskets, decode)?;
             return decode_baskets(branch, &baskets);
         };
-        let (indices, first_entry, start, stop) =
-            self.select_baskets(branch, range.start, range.end);
+        let BasketSelection {
+            indices,
+            first_entry,
+            start,
+            stop,
+        } = self.select_baskets(branch, range.start, range.end);
         let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
         let values = decode_baskets(branch, &baskets)?;
         // `values` covers [first_entry, ..); slice out [start, stop).
@@ -693,9 +727,19 @@ impl<'f> TreeReader<'f> {
             )));
         }
         let range = range.filter(|r| r.start > 0 || r.end < self.entries);
-        let (indices, first_entry, start, stop) = match range {
+        let BasketSelection {
+            indices,
+            first_entry,
+            start,
+            stop,
+        } = match range {
             Some(r) => self.select_baskets(branch, r.start, r.end),
-            None => ((0..branch.n_baskets).collect(), 0, 0, self.entries),
+            None => BasketSelection {
+                indices: (0..branch.n_baskets).collect(),
+                first_entry: 0,
+                start: 0,
+                stop: self.entries,
+            },
         };
         let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
         let regions = entry_regions(branch, &baskets);
@@ -770,13 +814,10 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     }
 
     /// Decompress the baskets in parallel on rayon's global thread pool.
-    #[cfg(feature = "rayon")]
+    /// Without the `rayon` feature there is no pool, and the read stays on
+    /// the calling thread whatever is asked.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.decode = if parallel {
-            Decode::Parallel
-        } else {
-            Decode::Serial
-        };
+        self.decode = Decode::from_parallel(parallel);
         self
     }
 

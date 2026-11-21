@@ -93,6 +93,9 @@ impl Branch {
     /// or, for a string branch, the longest length + 1. 0 for anything else.
     pub(super) fn leaf_max(&self) -> i64 {
         use BranchValues::*;
+        if let Some(meta) = self.meta {
+            return meta.max;
+        }
         match &self.values {
             Bool(v) => i64::from(v.iter().any(|&b| b)),
             I8(v) => i64::from(v.iter().copied().max().unwrap_or(0)),
@@ -116,8 +119,23 @@ impl Branch {
         }
     }
 
+    /// The largest element count of a split `std::vector<Struct>` branch: its
+    /// parent's `fMaximum`.
+    pub(super) fn split_max_count(&self) -> i32 {
+        if let Some(meta) = self.meta {
+            return meta.split_max;
+        }
+        self.split()
+            .and_then(|spec| spec.members.first())
+            .and_then(|m| super::branch::vec_row_lengths(&m.values).into_iter().max())
+            .unwrap_or(0)
+    }
+
     /// The `TLeafC` `fLen` (longest string length + 1) for a string branch.
     pub(super) fn str_len(&self) -> i32 {
+        if let Some(meta) = self.meta {
+            return meta.str_len;
+        }
         match &self.values {
             BranchValues::Str(v) => {
                 i32::saturating_from(v.iter().map(String::len).max().unwrap_or(0)) + 1
@@ -222,6 +240,7 @@ impl Branch {
             name: self.count_name(),
             values: BranchValues::I32(self.row_lengths()),
             kind: BranchKind::Count,
+            meta: None,
         })
     }
 

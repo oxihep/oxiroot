@@ -2,6 +2,7 @@
 
 use crate::support::{NtupleObject, TreeObject};
 use oxiroot::file::Error;
+use oxiroot::file::Parameter;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;

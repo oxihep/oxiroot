@@ -9,6 +9,63 @@ change the API.
 
 ### Changed
 
+- **Breaking: `Hist1D`, `Hist2D` and `Hist3D` are one type,
+  `HistRecord<const D: usize>`**, under the same three names (now type
+  aliases), and `Func1D`, `Func2D`, `Func3D` are `Func<const D: usize>`.
+  Code that names the types and calls their methods is unchanged; an `impl`
+  written for all three by hand can be written once.
+- **Breaking: bin and cell counts are `usize`**: `Axis::new` and
+  `Axis::nbins`, `ncells()` on every record, `Efficiency::new` and
+  `SparseHist::new`. A file whose `fNbins` is negative is a format error.
+- **Breaking: `HistStack` and `GraphStack` are `Stack<Hist1D>` and
+  `Stack<Graph>`**; `members()` replaces `hists()` and `graphs()`.
+- **Breaking: `PolyBin` has no `xmin`/`ymin`/`xmax`/`ymax` fields**;
+  `bounds()` gives the box, derived from the vertices.
+- **Breaking: the prelude holds what reading and writing a file takes**, 26
+  names. Fitting is `oxiroot::fit` (`use oxiroot::fit::{FitExt, Model}`),
+  collections and parameters `oxiroot::file`, matrices `oxiroot::linalg`,
+  merging `oxiroot::hadd`, and `Graph2D`, `GraphErrors`, `PolyHist`,
+  `SparseHist`, `ThreadedHist`, `BinContentType`, `Random` and the stacks
+  `oxiroot::hist`.
+- **Breaking: `Error` is no longer `Clone`, `PartialEq` or `Eq`**: it holds
+  the error it came from. `Error::Io` holds the `std::io::Error`, and
+  `source()` returns it; compare errors with `matches!`. `CompressError`
+  likewise, with `Codec { algorithm, source }` for a codec's own failure.
+- **Breaking: `WriteRoot::write_body(&self, &mut WBuffer)` is the method to
+  implement**; `to_root_bytes()` is provided from it. `root_class` returns a
+  `Cow<'static, str>`.
+- **Breaking: `Column::String` holds its text as a `String`**
+  (`{ offsets, text }`, where it held bytes), so a string column is UTF-8 by
+  construction. `IntoColumn` is gone: a column is made with `Column::from`
+  or `.into()`, and `Batch::column` takes `impl Into<Column>`.
+- **Breaking: getters that returned a list return an iterator**:
+  `TreeReader::branch_names`, `unsupported_branches`, `streamer_classes` and
+  `collection_members`, `NtupleReader::field_names`,
+  `StreamerRegistry::class_names`. Add `.collect::<Vec<_>>()` where a list
+  is wanted.
+- **Breaking, low level:** `compress`, `decompress` and
+  `decompress_payload` return a `Cow<[u8]>` (borrowed when nothing was
+  copied); `FileReader::subdir` returns an `Arc<Directory>`;
+  `Key::payload_range` is replaced by `checked_payload_len`; a directory's
+  times are `Datime`s; `streamer_gen`'s builders are named for what they
+  describe (`string`, `object_ptr`, `basic_ptr`, …, with `ElementDef`);
+  `raw::read_column` takes a `&ColumnDescriptor` and
+  `ContainerWriter::build_append` a `&Bytes`.
+- `.parallel(bool)` exists on the tree, RNTuple and dataset readers with or
+  without the `rayon` feature; without it the read stays on one thread.
+- `hadd` writes merged histograms one object at a time, to a temporary file
+  it renames when complete: memory no longer grows with the output, and a
+  failed merge leaves no partial file.
+- `oxroot dump` reads trees and RNTuples through `Dataset`: nested lists,
+  fixed arrays, optionals and records print their values, where they
+  printed `...` (and `null` in JSON).
+- A `THnSparse` whose file lists one cell twice reads as one cell with the
+  two contents summed.
+- `streamer_types` names ROOT's `fType` codes, and
+  `StreamerElement::kind()` classifies one; `Header::top_level_fields`,
+  `top_level_field` and `child_fields`, `FieldDescriptor::parent` and
+  `ColumnDescriptor::field` walk an RNTuple schema without index casts;
+  `TagReader::open_list` opens a `TList` member.
 - **Breaking: no value stands in for "nothing".** `Axis::bin_center`,
   `bin_width` and `bin_low_edge` return `Option` (`None` for a bin the axis
   does not have, where they returned `0.0` or clamped);

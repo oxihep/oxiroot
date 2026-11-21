@@ -28,7 +28,10 @@ fn split_branch() -> Branch {
 fn assert_hits_roundtrip(f: &FileReader) {
     let t = TreeReader::open(f, "T").expect("open tree");
     assert_eq!(t.entries(), 3);
-    assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["hits.x", "hits.y", "hits.id"]
+    );
     assert_eq!(
         t.branch("hits.x").values().unwrap(),
         BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
@@ -56,7 +59,10 @@ fn writes_split_vector_of_struct() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 3);
-    assert_eq!(t.branch_names(), ["hits.x", "hits.y", "hits.id"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["hits.x", "hits.y", "hits.id"]
+    );
 
     assert_eq!(
         t.branch("hits.x").values().unwrap(),

@@ -33,6 +33,7 @@ fn poke_tree(f: &FileReader, tree: &str) {
     if let Ok(t) = TreeReader::open(f, tree) {
         let names: Vec<String> = t
             .branch_names()
+            .collect::<Vec<_>>()
             .iter()
             .map(std::string::ToString::to_string)
             .collect();

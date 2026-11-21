@@ -103,5 +103,8 @@ fn all_three_in_one_ntuple() {
         ntpl.field("xyz").values().unwrap(),
         FieldValues::VecF64(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]])
     );
-    assert_eq!(ntpl.field_names(), vec!["xyz", "flags", "hit"]);
+    assert_eq!(
+        ntpl.field_names().collect::<Vec<_>>(),
+        vec!["xyz", "flags", "hit"]
+    );
 }

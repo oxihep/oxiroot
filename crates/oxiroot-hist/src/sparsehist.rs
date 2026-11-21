@@ -12,6 +12,7 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{read_named, read_object_base, read_pointer_header};
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
+use std::collections::HashMap;
 
 use crate::axis::Axis;
 use crate::base::{BinContentType, check_len, read_tarray};
@@ -46,49 +47,37 @@ pub struct SparseHist {
     pub(crate) tsumwx: Vec<f64>,
     /// Per-axis `Σ(w·x²)` (`fTsumwx2`).
     pub(crate) tsumwx2: Vec<f64>,
-    /// The filled cells (sparse storage). Editing it directly is allowed; a
-    /// fill notices cells added or removed, but not an edit that changes one
-    /// cell's coordinates to another cell's, which would duplicate that cell.
+    /// The filled cells, in the order they were first filled. Cells are
+    /// added only through [`content_mut`](Self::content_mut), which keeps
+    /// `index` in step.
     pub(crate) bins: Vec<SparseBin>,
     /// Where each cell's coordinates sit in `bins`, so a fill finds its cell
-    /// without scanning every filled one. Derived from `bins` (which is
-    /// public), so it is checked on use and rebuilt when it no longer matches.
-    index: CellIndex,
-}
-
-/// A lookup from cell coordinates to their position in `bins`; derived data,
-/// so it never makes two histograms differ.
-#[derive(Debug, Clone, Default)]
-struct CellIndex(std::collections::HashMap<Vec<i32>, usize>);
-
-impl PartialEq for CellIndex {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
+    /// without scanning every filled one.
+    index: HashMap<Vec<i32>, usize>,
 }
 
 impl SparseHist {
-    /// The position in `bins` of the cell at `coords`, if it is filled. The
-    /// index is rebuilt first if `bins` was changed directly.
-    fn cell(&mut self, coords: &[i32]) -> Option<usize> {
-        let fresh = self.index.0.len() == self.bins.len()
-            && self
-                .index
-                .0
-                .get(coords)
-                .is_none_or(|&i| self.bins.get(i).is_some_and(|b| b.coords == coords));
-        if !fresh {
-            self.index.0 = (self.bins.iter().enumerate())
-                .map(|(i, b)| (b.coords.clone(), i))
-                .collect();
-        }
-        self.index.0.get(coords).copied()
+    /// The content of the cell at `coords`, to change in place. A cell not
+    /// filled yet is added with a content of zero.
+    pub(crate) fn content_mut(&mut self, coords: &[i32]) -> &mut f64 {
+        let at = match self.index.get(coords) {
+            Some(&at) => at,
+            None => {
+                self.index.insert(coords.to_vec(), self.bins.len());
+                self.bins.push(SparseBin {
+                    coords: coords.to_vec(),
+                    content: 0.0,
+                });
+                self.bins.len() - 1
+            }
+        };
+        &mut self.bins[at].content
     }
 
     /// Create an empty `SparseHist` over the given per-dimension uniform axes,
     /// `(nbins, xmin, xmax)`.
     #[must_use]
-    pub fn new(axes: &[(i32, f64, f64)]) -> Self {
+    pub fn new(axes: &[(usize, f64, f64)]) -> Self {
         let n = axes.len();
         Self {
             name: String::new(),
@@ -104,7 +93,7 @@ impl SparseHist {
             tsumwx: vec![0.0; n],
             tsumwx2: vec![0.0; n],
             bins: Vec::new(),
-            index: CellIndex::default(),
+            index: HashMap::new(),
         }
     }
 
@@ -131,16 +120,7 @@ impl SparseHist {
             .map(|(ax, &x)| i32::saturating_from(ax.find_bin(x)))
             .collect();
         self.entries += 1.0;
-        match self.cell(&bins) {
-            Some(i) => self.bins[i].content += 1.0,
-            None => {
-                self.index.0.insert(bins.clone(), self.bins.len());
-                self.bins.push(SparseBin {
-                    coords: bins,
-                    content: 1.0,
-                });
-            }
-        }
+        *self.content_mut(&bins) += 1.0;
         Ok(())
     }
 
@@ -234,26 +214,23 @@ impl SparseHist {
             tsumwx,
             tsumwx2,
             bins: Vec::new(),
-            index: CellIndex::default(),
+            index: HashMap::new(),
         };
         // Before unpacking: a wider coordinate was cut to its low 64 bits.
         h.check_coordinate_width()?;
         let bit_widths = h.axis_bits();
-        h.bins = bins
-            .into_iter()
-            .map(|(coord, content)| SparseBin {
-                coords: h.unpack(coord, &bit_widths),
-                content,
-            })
-            .collect();
+        for (coord, content) in bins {
+            let coords = h.unpack(coord, &bit_widths);
+            *h.content_mut(&coords) += content;
+        }
         Ok(h)
     }
 }
 
 /// The bits one axis takes in a packed coordinate: `bitlength(nbins + 2)`.
 fn axis_bit_width(axis: &Axis) -> u32 {
-    let cells = (axis.nbins.max(0) + 2).cast_unsigned();
-    u32::BITS - cells.leading_zeros()
+    let cells = axis.nbins + 2;
+    usize::BITS - cells.leading_zeros()
 }
 
 /// Consume an object-pointer header (`{byte count}{class tag}`), leaving the
@@ -266,7 +243,7 @@ fn enter_object(r: &mut RBuffer<'_>) -> Result<bool> {
 fn read_objarray_len(r: &mut RBuffer<'_>) -> Result<usize> {
     let _oa = r.read_version()?; // TObjArray version 3
     read_object_base(r)?;
-    let _name = r.string()?;
+    r.skip_string()?;
     let size = usize::saturating_from(r.be_i32()?);
     let _lower_bound = r.be_i32()?;
     Ok(size)
@@ -339,8 +316,7 @@ impl ReadRoot for SparseHist {
 mod index_tests {
     use super::*;
 
-    /// The cell index gives the same cells and contents as counting by hand,
-    /// and notices cells removed from `bins` directly.
+    /// The cell index gives the same cells and contents as counting by hand.
     #[test]
     #[allow(
         clippy::cast_possible_truncation,
@@ -363,12 +339,6 @@ mod index_tests {
         for b in &h.bins {
             assert_eq!(Some(&b.content), expect.get(&b.coords), "{:?}", b.coords);
         }
-        // Edit `bins` directly: drop a cell, then fill it again.
-        let gone = h.bins.remove(0);
-        let x: Vec<f64> = gone.coords.iter().map(|&c| f64::from(c - 1)).collect();
-        h.fill(&x).unwrap();
-        let again = h.bins.iter().filter(|b| b.coords == gone.coords).count();
-        assert_eq!(again, 1);
     }
 }
 

@@ -28,11 +28,14 @@ fn a_missing_key_or_subdirectory_is_not_found() {
     let f = file();
     let err = f.key("nope").unwrap_err();
     assert_eq!(
-        err,
-        Error::NotFound {
-            what: "key",
-            name: "nope".into()
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::NotFound {
+                what: "key",
+                name: "nope".into()
+            }
+        )
     );
     assert_eq!(err.to_string(), "no key named \"nope\"");
 
@@ -55,12 +58,15 @@ fn a_missing_key_or_subdirectory_is_not_found() {
 fn a_key_holding_another_class_is_the_wrong_class() {
     let err = file().get::<ObjString>("l").unwrap_err();
     assert_eq!(
-        err,
-        Error::WrongClass {
-            name: Some("l".into()),
-            found: "TList".into(),
-            expected: "TObjString".into()
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::WrongClass {
+                name: Some("l".into()),
+                found: "TList".into(),
+                expected: "TObjString".into()
+            }
+        )
     );
     assert_eq!(err.to_string(), "key \"l\" is a TList, not a TObjString");
 }
@@ -98,8 +104,11 @@ fn a_url_scheme_without_a_reader_is_unsupported() {
 fn context_prefixes_a_message_and_keeps_the_variant() {
     let err = Error::Format("frame size 3 too small".into()).context("reading \"n\"");
     assert_eq!(
-        err,
-        Error::Format("reading \"n\": frame size 3 too small".into())
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::Format("reading \"n\": frame size 3 too small".into())
+        )
     );
     let err = Error::SchemaChanged {
         detail: "input #1 is missing branch \"pt\"".into(),
@@ -114,8 +123,12 @@ fn context_prefixes_a_message_and_keeps_the_variant() {
     let missing = Error::NotFound {
         what: "branch",
         name: "pt".into(),
-    };
-    assert_eq!(missing.clone().context("reading"), missing);
+    }
+    .context("reading");
+    assert!(
+        matches!(&missing, Error::NotFound { what: "branch", name } if name == "pt"),
+        "{missing:?}"
+    );
 }
 
 #[test]

@@ -269,284 +269,204 @@ fn record_type_name(children: &[Node]) -> String {
     }
 }
 
-/// Lower one field's [`Column`] into a [`Node`] subtree.
+/// A fixed-width value that has a column type of its own.
+trait Scalar: Copy {
+    /// The field's type name, as ROOT spells it.
+    const TYPE_NAME: &'static str;
+    const COLUMN: ColumnType;
+    const BITS: u16;
+    /// The values as a page: little-endian, or bit-packed for `bool`.
+    fn page(values: &[Self]) -> Vec<u8>;
+}
+
+macro_rules! scalar {
+    ($($t:ty => $name:literal, $column:ident, $bits:literal;)*) => {$(
+        impl Scalar for $t {
+            const TYPE_NAME: &'static str = $name;
+            const COLUMN: ColumnType = ColumnType::$column;
+            const BITS: u16 = $bits;
+            fn page(values: &[Self]) -> Vec<u8> {
+                le_bytes(values, |x| x.to_le_bytes())
+            }
+        }
+    )*};
+}
+
+scalar! {
+    i8 => "std::int8_t", Int8, 8;
+    u8 => "std::uint8_t", UInt8, 8;
+    i16 => "std::int16_t", Int16, 16;
+    u16 => "std::uint16_t", UInt16, 16;
+    i32 => "std::int32_t", Int32, 32;
+    u32 => "std::uint32_t", UInt32, 32;
+    i64 => "std::int64_t", Int64, 64;
+    u64 => "std::uint64_t", UInt64, 64;
+}
+
+impl Scalar for f32 {
+    const TYPE_NAME: &'static str = "float";
+    const COLUMN: ColumnType = ColumnType::Real32;
+    const BITS: u16 = 32;
+    fn page(values: &[Self]) -> Vec<u8> {
+        le_bytes(values, |x| x.to_le_bytes())
+    }
+}
+
+impl Scalar for f64 {
+    const TYPE_NAME: &'static str = "double";
+    const COLUMN: ColumnType = ColumnType::Real64;
+    const BITS: u16 = 64;
+    fn page(values: &[Self]) -> Vec<u8> {
+        le_bytes(values, |x| x.to_le_bytes())
+    }
+}
+
+impl Scalar for bool {
+    const TYPE_NAME: &'static str = "bool";
+    const COLUMN: ColumnType = ColumnType::Bit;
+    const BITS: u16 = 1;
+    fn page(values: &[Self]) -> Vec<u8> {
+        pack_bits(values)
+    }
+}
+
+/// A leaf field of one value per entry.
+fn scalar_node<T: Scalar>(name: &str, values: &[T]) -> Node {
+    let column = raw(T::COLUMN, T::BITS, T::page(values), values.len());
+    leaf_node(name, T::TYPE_NAME, column)
+}
+
+/// A `std::vector` field of scalars: the rows' ends, then the values of all
+/// rows as the element field `_0`.
+fn vector_node<T: Scalar>(name: &str, rows: &[Vec<T>]) -> Node {
+    let (offsets, data) = flatten(rows);
+    collection_node(name, &offsets, rows.len(), scalar_node("_0", &data))
+}
+
+/// A field made of other fields, with no column and no flags; the few
+/// fields that have either set them on the result.
+fn parent_node(name: &str, type_name: String, role: u16, children: Vec<Node>) -> Node {
+    Node {
+        name: name.to_string(),
+        type_name,
+        role,
+        cols: vec![],
+        children,
+        flags: 0,
+        array_size: None,
+        type_checksum: None,
+    }
+}
+
+/// A `float` field stored as the top `bits` bits of each value.
+fn truncated_node(name: &str, values: &[f32], bits: u16) -> Node {
+    let shift = 32 - u32::from(bits);
+    let packed: Vec<u64> = values
+        .iter()
+        .map(|&x| u64::from(x.to_bits() >> shift))
+        .collect();
+    let page = pack_uints(&packed, bits);
+    let column = raw(ColumnType::Real32Trunc, bits, page, values.len());
+    leaf_node(name, "float", column)
+}
+
+/// A `float` field stored as `bits`-bit steps across `[min, max]`; values
+/// outside the range are clamped to it.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "t in [0, 1]: a quantized value within its bit width"
 )]
+fn quantized_node(name: &str, values: &[f32], (min, max): (f64, f64), bits: u16) -> Node {
+    let denom = ((1u64 << bits) - 1) as f64;
+    let span = max - min;
+    let packed: Vec<u64> = values
+        .iter()
+        .map(|&x| {
+            let t = if span != 0.0 {
+                ((f64::from(x) - min) / span).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (t * denom).round() as u64
+        })
+        .collect();
+    let page = pack_uints(&packed, bits);
+    let mut column = raw(ColumnType::Real32Quant, bits, page, values.len());
+    column.value_range = Some((min, max));
+    leaf_node(name, "float", column)
+}
+
+/// A `std::variant` field: a switch column saying which alternative each
+/// entry holds and where in it, then the alternatives as `_0`, `_1`, ….
+fn variant_node(name: &str, alternatives: &[Column], tags: &[u32]) -> Node {
+    // An entry's index is a running count within its alternative; the switch
+    // column holds an 8-byte index and a 4-byte tag per entry. Tag 0, or one
+    // past the alternatives, is an entry holding nothing.
+    let mut counters = vec![0u64; alternatives.len()];
+    let mut switch = Vec::with_capacity(tags.len() * 12);
+    for &tag in tags {
+        let (index, out_tag) = match counters.get_mut((tag as usize).wrapping_sub(1)) {
+            Some(counter) => {
+                let index = *counter;
+                *counter += 1;
+                (index, tag)
+            }
+            None => (0, 0),
+        };
+        switch.extend_from_slice(&index.to_le_bytes());
+        switch.extend_from_slice(&out_tag.to_le_bytes());
+    }
+    let children: Vec<Node> = alternatives
+        .iter()
+        .enumerate()
+        .map(|(k, c)| lower_column(&format!("_{k}"), c))
+        .collect();
+    let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
+    let type_name = format!("std::variant<{}>", inner.join(","));
+    let mut node = parent_node(name, type_name, ROLE_VARIANT, children);
+    node.cols = vec![raw(ColumnType::Switch, 96, switch, tags.len())];
+    node
+}
+
+/// Lower one field's [`Column`] into a [`Node`] subtree.
 fn lower_column(name: &str, data: &Column) -> Node {
     match data {
-        Column::Bool(v) => leaf_node(name, "bool", raw(ColumnType::Bit, 1, pack_bits(v), v.len())),
-        Column::I8(v) => leaf_node(
-            name,
-            "std::int8_t",
-            raw(
-                ColumnType::Int8,
-                8,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::U8(v) => leaf_node(
-            name,
-            "std::uint8_t",
-            raw(
-                ColumnType::UInt8,
-                8,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::I16(v) => leaf_node(
-            name,
-            "std::int16_t",
-            raw(
-                ColumnType::Int16,
-                16,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::U16(v) => leaf_node(
-            name,
-            "std::uint16_t",
-            raw(
-                ColumnType::UInt16,
-                16,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::I32(v) => leaf_node(
-            name,
-            "std::int32_t",
-            raw(
-                ColumnType::Int32,
-                32,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::I64(v) => leaf_node(
-            name,
-            "std::int64_t",
-            raw(
-                ColumnType::Int64,
-                64,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::U32(v) => leaf_node(
-            name,
-            "std::uint32_t",
-            raw(
-                ColumnType::UInt32,
-                32,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::U64(v) => leaf_node(
-            name,
-            "std::uint64_t",
-            raw(
-                ColumnType::UInt64,
-                64,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::F32(v) => leaf_node(
-            name,
-            "float",
-            raw(
-                ColumnType::Real32,
-                32,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
-        Column::F64(v) => leaf_node(
-            name,
-            "double",
-            raw(
-                ColumnType::Real64,
-                64,
-                le_bytes(v, |x| x.to_le_bytes()),
-                v.len(),
-            ),
-        ),
+        Column::Bool(v) => scalar_node(name, v),
+        Column::I8(v) => scalar_node(name, v),
+        Column::U8(v) => scalar_node(name, v),
+        Column::I16(v) => scalar_node(name, v),
+        Column::U16(v) => scalar_node(name, v),
+        Column::I32(v) => scalar_node(name, v),
+        Column::I64(v) => scalar_node(name, v),
+        Column::U32(v) => scalar_node(name, v),
+        Column::U64(v) => scalar_node(name, v),
+        Column::F32(v) => scalar_node(name, v),
+        Column::F64(v) => scalar_node(name, v),
         Column::Str(v) => string_node(name, v),
-        Column::VecBool(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "bool",
-                raw(ColumnType::Bit, 1, pack_bits(&data), data.len()),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecI8(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::int8_t",
-                raw(
-                    ColumnType::Int8,
-                    8,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecU8(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::uint8_t",
-                raw(
-                    ColumnType::UInt8,
-                    8,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecI16(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::int16_t",
-                raw(
-                    ColumnType::Int16,
-                    16,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecU16(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::uint16_t",
-                raw(
-                    ColumnType::UInt16,
-                    16,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecI32(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::int32_t",
-                raw(
-                    ColumnType::Int32,
-                    32,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecI64(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "std::int64_t",
-                raw(
-                    ColumnType::Int64,
-                    64,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecF32(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "float",
-                raw(
-                    ColumnType::Real32,
-                    32,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
-        Column::VecF64(v) => {
-            let (offsets, data) = flatten(v);
-            let child = leaf_node(
-                "_0",
-                "double",
-                raw(
-                    ColumnType::Real64,
-                    64,
-                    le_bytes(&data, |x| x.to_le_bytes()),
-                    data.len(),
-                ),
-            );
-            collection_node(name, &offsets, v.len(), child)
-        }
+        Column::VecBool(v) => vector_node(name, v),
+        Column::VecI8(v) => vector_node(name, v),
+        Column::VecU8(v) => vector_node(name, v),
+        Column::VecI16(v) => vector_node(name, v),
+        Column::VecU16(v) => vector_node(name, v),
+        Column::VecI32(v) => vector_node(name, v),
+        Column::VecI64(v) => vector_node(name, v),
+        Column::VecF32(v) => vector_node(name, v),
+        Column::VecF64(v) => vector_node(name, v),
         Column::VecStr(v) => {
             let (offsets, data) = flatten(v);
             collection_node(name, &offsets, v.len(), string_node("_0", &data))
         }
         Column::HalfF32(v) => {
-            let page: Vec<u8> = v
-                .iter()
-                .flat_map(|&x| f32_to_half(x).to_le_bytes())
-                .collect();
+            let page = le_bytes(v, |&x| f32_to_half(x).to_le_bytes());
             leaf_node(name, "float", raw(ColumnType::Real16, 16, page, v.len()))
         }
-        Column::TruncF32 { values, bits } => {
-            let shift = 32 - u32::from(*bits);
-            let packed: Vec<u64> = values
-                .iter()
-                .map(|&x| u64::from(x.to_bits() >> shift))
-                .collect();
-            let page = pack_uints(&packed, *bits);
-            leaf_node(
-                name,
-                "float",
-                raw(ColumnType::Real32Trunc, *bits, page, values.len()),
-            )
-        }
+        Column::TruncF32 { values, bits } => truncated_node(name, values, *bits),
         Column::QuantF32 {
             values,
-            range: (min, max),
+            range,
             bits,
-        } => {
-            let denom = ((1u64 << bits) - 1) as f64;
-            let span = max - min;
-            let packed: Vec<u64> = values
-                .iter()
-                .map(|&x| {
-                    let t = if span != 0.0 {
-                        ((f64::from(x) - min) / span).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    (t * denom).round() as u64
-                })
-                .collect();
-            let page = pack_uints(&packed, *bits);
-            let mut col = raw(ColumnType::Real32Quant, *bits, page, values.len());
-            col.value_range = Some((*min, *max));
-            leaf_node(name, "float", col)
-        }
+        } => quantized_node(name, values, *range, *bits),
         Column::Nested { offsets, items } => {
             let child = lower_column("_0", items);
             let ends = on_disk_offsets(offsets);
@@ -572,105 +492,37 @@ fn lower_column(name: &str, data: &Column) -> Node {
             // std::atomic<T> is a Leaf field that delegates to a single child
             // leaf `_0` carrying the bare value (no column of its own).
             let child = lower_column("_0", inner);
-            Node {
-                name: name.to_string(),
-                type_name: format!("std::atomic<{}>", child.type_name),
-                role: ROLE_LEAF,
-                cols: vec![],
-                children: vec![child],
-                flags: 0,
-                array_size: None,
-                type_checksum: None,
-            }
+            let type_name = format!("std::atomic<{}>", child.type_name);
+            parent_node(name, type_name, ROLE_LEAF, vec![child])
         }
         Column::Record(subs) => {
             let children: Vec<Node> = subs.iter().map(|(n, c)| lower_column(n, c)).collect();
-            let type_name = record_type_name(&children);
-            Node {
-                name: name.to_string(),
-                type_name,
-                role: ROLE_RECORD,
-                cols: vec![],
-                children,
-                flags: 0,
-                array_size: None,
-                type_checksum: None,
-            }
+            parent_node(name, record_type_name(&children), ROLE_RECORD, children)
         }
-        Column::Variant { alternatives, tags } => {
-            // Derive each entry's index (a running counter within its active
-            // alternative) and encode the Switch column: 8-byte index + 4-byte
-            // tag per entry.
-            let mut counters = vec![0u64; alternatives.len()];
-            let mut switch = Vec::with_capacity(tags.len() * 12);
-            for &tag in tags {
-                let (index, out_tag) = if tag == 0 || (tag as usize) > alternatives.len() {
-                    (0u64, 0u32)
-                } else {
-                    let k = (tag - 1) as usize;
-                    let i = counters[k];
-                    counters[k] += 1;
-                    (i, tag)
-                };
-                switch.extend_from_slice(&index.to_le_bytes());
-                switch.extend_from_slice(&out_tag.to_le_bytes());
-            }
-            // Alternatives are named `_0`, `_1`, … on disk.
-            let children: Vec<Node> = alternatives
-                .iter()
-                .enumerate()
-                .map(|(k, c)| lower_column(&format!("_{k}"), c))
-                .collect();
-            let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
-            Node {
-                name: name.to_string(),
-                type_name: format!("std::variant<{}>", inner.join(",")),
-                role: ROLE_VARIANT,
-                cols: vec![raw(ColumnType::Switch, 96, switch, tags.len())],
-                children,
-                flags: 0,
-                array_size: None,
-                type_checksum: None,
-            }
-        }
+        Column::Variant { alternatives, tags } => variant_node(name, alternatives, tags),
         Column::Array { len, items } => {
             // A fixed array: no own column, one element child `_0` carrying the
             // flattened values; the field flags an `array_size` element count.
             let child = lower_column("_0", items);
-            Node {
-                name: name.to_string(),
-                type_name: format!("std::array<{},{}>", child.type_name, len),
-                role: ROLE_LEAF,
-                cols: vec![],
-                children: vec![child],
-                flags: FIELD_FLAG_ARRAY,
-                array_size: Some(*len as u64),
-                type_checksum: None,
-            }
+            let type_name = format!("std::array<{},{}>", child.type_name, len);
+            let mut node = parent_node(name, type_name, ROLE_LEAF, vec![child]);
+            node.flags = FIELD_FLAG_ARRAY;
+            node.array_size = Some(*len as u64);
+            node
         }
-        Column::Bitset { len, bits } => Node {
-            name: name.to_string(),
-            type_name: format!("std::bitset<{len}>"),
-            role: ROLE_LEAF,
-            cols: vec![raw(ColumnType::Bit, 1, pack_bits(bits), bits.len())],
-            children: vec![],
-            flags: FIELD_FLAG_ARRAY,
-            array_size: Some(*len as u64),
-            type_checksum: None,
-        },
+        Column::Bitset { len, bits } => {
+            let mut node = parent_node(name, format!("std::bitset<{len}>"), ROLE_LEAF, vec![]);
+            node.cols = vec![raw(ColumnType::Bit, 1, pack_bits(bits), bits.len())];
+            node.flags = FIELD_FLAG_ARRAY;
+            node.array_size = Some(*len as u64);
+            node
+        }
         Column::Object { type_name, members } => {
             let children: Vec<Node> = members.iter().map(|(n, c)| lower_column(n, c)).collect();
-            let checksum = class_checksum(type_name, members);
-            Node {
-                name: name.to_string(),
-                type_name: type_name.clone(),
-                role: ROLE_RECORD,
-                cols: vec![],
-                children,
-                flags: FIELD_FLAG_CHECKSUM,
-                array_size: None,
-                type_checksum: Some(checksum),
-            }
+            let mut node = parent_node(name, type_name.clone(), ROLE_RECORD, children);
+            node.flags = FIELD_FLAG_CHECKSUM;
+            node.type_checksum = Some(class_checksum(type_name, members));
+            node
         }
         Column::Assoc {
             type_name,

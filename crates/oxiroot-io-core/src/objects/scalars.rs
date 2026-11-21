@@ -7,7 +7,8 @@ use crate::buffer::{RBuffer, WBuffer};
 use crate::error::{Error, Result};
 use crate::object_io::{Object, ReadRoot, WriteRoot};
 use crate::streamer::{read_object_base, write_object_base};
-use crate::streamer_gen::{ClassDef, base, basic, strf};
+use crate::streamer_gen::{ClassDef, base, basic, string};
+use std::borrow::Cow;
 
 /// `fBits` ROOT writes for a `Parameter`'s embedded `TObject` (`ObjString`'s is
 /// `0`). Cosmetic, but matched so written files equal ROOT's byte-for-byte.
@@ -57,8 +58,8 @@ impl ObjString {
 }
 
 impl WriteRoot for ObjString {
-    fn root_class(&self) -> String {
-        "TObjString".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("TObjString")
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -67,13 +68,11 @@ impl WriteRoot for ObjString {
         // ROOT records the ObjString class description as the key title.
         "Collectable string class"
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
+    fn write_body(&self, w: &mut WBuffer) {
         let obj = w.begin_object(1); // ObjString version 1
-        write_object_base(&mut w, 0);
+        write_object_base(w, 0);
         w.string(&self.value); // fString
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![tobjstring_class()]
@@ -218,8 +217,8 @@ impl Parameter {
 }
 
 impl WriteRoot for Parameter {
-    fn root_class(&self) -> String {
-        format!("TParameter<{}>", self.value.type_name())
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Owned(format!("TParameter<{}>", self.value.type_name()))
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -227,16 +226,14 @@ impl WriteRoot for Parameter {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
+    fn write_body(&self, w: &mut WBuffer) {
         // [version 2][TObject][fName][fVal] — ROOT's Parameter omits the Named
         // version header and fTitle.
-        let mut w = WBuffer::new();
         let obj = w.begin_object(2); // Parameter version 2
-        write_object_base(&mut w, PARAM_BITS);
+        write_object_base(w, PARAM_BITS);
         w.string(&self.name); // fName (Named)
-        self.value.write(&mut w); // fVal
+        self.value.write(w); // fVal
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![tparameter_class(self.value)]
@@ -255,7 +252,7 @@ pub(crate) fn decode_tparameter(name: &str, class: &str, object: &[u8]) -> Resul
     let mut r = RBuffer::new(object);
     r.read_version()?; // Parameter version
     read_object_base(&mut r)?; // TObject base
-    let _fname = r.string()?; // fName (use the key name for consistency)
+    r.skip_string()?; // fName (use the key name for consistency)
     let value = match type_name {
         "double" => ParamValue::Double(r.be_f64()?),
         "float" => ParamValue::Float(r.be_f32()?),
@@ -283,7 +280,7 @@ fn tobjstring_class() -> ClassDef<'static> {
         name: "TObjString".into(),
         version: 1,
         checksum: 2_626_570_240,
-        elements: vec![base("TObject", 1), strf("fString")],
+        elements: vec![base("TObject", 1), string("fString")],
     }
 }
 
@@ -302,7 +299,7 @@ fn tparameter_class(value: ParamValue) -> ClassDef<'static> {
         checksum,
         elements: vec![
             base("TObject", 1),
-            strf("fName"),
+            string("fName"),
             basic("fVal", ty, size, type_name),
         ],
     }

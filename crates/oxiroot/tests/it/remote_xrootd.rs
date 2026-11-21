@@ -436,7 +436,7 @@ fn a_failing_plain_read_is_an_error() {
                 .map(|k| k.name.clone())
                 .expect("a TTree key");
             let tree = TreeReader::open(&f, &name)?;
-            let branch = tree.branch_names()[0].to_string();
+            let branch = tree.branch_names().collect::<Vec<_>>()[0].to_string();
             tree.branch(&branch).values().map(|_| ())
         });
         let err = result.expect_err("a broken server cannot yield data");
@@ -457,7 +457,7 @@ fn reads_a_ttree_over_xrootd() {
         .expect("a TTree key");
     let tname = tkey.name.clone();
     let ltree = TreeReader::open(&local, &tname).expect("local tree");
-    let branch = ltree.branch_names()[0].to_string();
+    let branch = ltree.branch_names().collect::<Vec<_>>()[0].to_string();
     let local_vals = format!(
         "{:?}",
         ltree.branch(&branch).values().expect("local branch")

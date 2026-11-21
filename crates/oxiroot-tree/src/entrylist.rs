@@ -115,7 +115,7 @@ fn read_entry_list(object: &[u8], keylen: usize) -> Result<EntryList> {
     if blocks.class_name.is_some() {
         r.read_version()?; // the TObjArray's own version header
         read_object_base(&mut r)?;
-        r.string()?; // fName
+        r.skip_string()?; // fName
         let size = r.be_i32()?.max(0);
         let _lower = r.be_i32()?; // fLowerBound
         for bi in 0..size {

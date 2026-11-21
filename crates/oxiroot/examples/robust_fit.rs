@@ -37,6 +37,9 @@ impl XorShift64 {
 
 #[cfg(feature = "fit")]
 fn main() {
+    use oxiroot::fit::FitExt;
+    use oxiroot::fit::Points;
+    use oxiroot::fit::{FitOptions, FitResult, Loss, Model};
     use oxiroot::prelude::*;
 
     let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);

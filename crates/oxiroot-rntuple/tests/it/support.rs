@@ -2,6 +2,7 @@
 //! [`raw::write_ntuple`]: an `RNTuple` written in one go (schema-extension
 //! fields included) to a file, to bytes, or into a `FileWriter`.
 
+use std::borrow::Cow;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -98,8 +99,8 @@ impl oxiroot_io_core::Storable for NtupleObject {
 }
 
 impl WriteInto for NtupleObject {
-    fn root_class(&self) -> String {
-        oxiroot_rntuple::ANCHOR_CLASS.to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(oxiroot_rntuple::ANCHOR_CLASS)
     }
     fn root_name(&self) -> &str {
         &self.name

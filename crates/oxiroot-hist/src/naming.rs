@@ -9,47 +9,55 @@
 //! object, or two with the same name in one directory, is a loud error.
 
 use crate::{
-    Efficiency, Graph, Graph2D, Hist1D, Hist2D, Hist3D, MultiErrorGraph, PolyHist, Profile1D,
-    Profile2D, Profile3D, SparseHist,
+    Efficiency, Graph, Graph2D, MultiErrorGraph, PolyHist, Profile1D, Profile2D, Profile3D,
+    SparseHist,
 };
+
+/// The four naming methods, for the body of an `impl`.
+macro_rules! named_methods {
+    () => {
+        #[doc = "The object's name (ROOT's `fName`): the key it is written under."]
+        #[must_use]
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        #[doc = "The object's title (ROOT's `fTitle`)."]
+        #[must_use]
+        pub fn title(&self) -> &str {
+            &self.title
+        }
+
+        #[doc = "Set the object's name — the key it is written under in a ROOT"]
+        #[doc = "file. Chainable: `graph.named(\"g\").titled(\"data\")`."]
+        #[must_use]
+        pub fn named(mut self, name: impl Into<String>) -> Self {
+            self.name = name.into();
+            self
+        }
+
+        #[doc = "Set the object's title (ROOT's `fTitle`)."]
+        #[must_use]
+        pub fn titled(mut self, title: impl Into<String>) -> Self {
+            self.title = title.into();
+            self
+        }
+    };
+}
 
 macro_rules! impl_named {
     ($($t:ty),+ $(,)?) => {$(
         impl $t {
-            #[doc = "The object's name (ROOT's `fName`): the key it is written under."]
-            #[must_use]
-            pub fn name(&self) -> &str {
-                &self.name
-            }
-
-            #[doc = "The object's title (ROOT's `fTitle`)."]
-            #[must_use]
-            pub fn title(&self) -> &str {
-                &self.title
-            }
-
-            #[doc = "Set the object's name — the key it is written under in a ROOT"]
-            #[doc = "file. Chainable: `graph.named(\"g\").titled(\"data\")`."]
-            #[must_use]
-            pub fn named(mut self, name: impl Into<String>) -> Self {
-                self.name = name.into();
-                self
-            }
-
-            #[doc = "Set the object's title (ROOT's `fTitle`)."]
-            #[must_use]
-            pub fn titled(mut self, title: impl Into<String>) -> Self {
-                self.title = title.into();
-                self
-            }
+            named_methods!();
         }
     )+};
 }
 
+impl<const D: usize> crate::HistRecord<D> {
+    named_methods!();
+}
+
 impl_named!(
-    Hist1D,
-    Hist2D,
-    Hist3D,
     Profile1D,
     Profile2D,
     Profile3D,

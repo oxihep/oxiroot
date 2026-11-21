@@ -1,6 +1,7 @@
 //! [`Dataset`]: one reader for a `TTree` or an `RNTuple`, yielding
 //! [`Batch`]es.
 
+use std::num::NonZeroU64;
 use std::ops::Range;
 
 use oxiroot_io_core::cast::SaturatingFrom;
@@ -11,7 +12,7 @@ use oxiroot_tree::raw::BranchValues;
 use oxiroot_tree::{BranchLayout, LeafType, TreeReader};
 
 use crate::batch::Batch;
-use crate::column::{Column, IntoColumn};
+use crate::column::Column;
 use crate::schema::{DataType, Schema};
 
 /// Which of ROOT's two columnar formats a dataset is stored in.
@@ -169,7 +170,7 @@ impl<'f> Dataset<'f> {
                 }
                 out
             }
-            Source::Ntuple(n) => n.field_names(),
+            Source::Ntuple(n) => n.field_names().collect::<Vec<_>>(),
             Source::Chain(parts) => parts[0].columns(),
         }
     }
@@ -259,7 +260,7 @@ impl<'f> Dataset<'f> {
                 .into_iter()
                 .map(|s| s.as_ref().to_string())
                 .collect(),
-            step: 0,
+            step: None,
             range: 0..self.entries(),
             parallel: false,
             cuts: None,
@@ -290,7 +291,7 @@ impl<'f> Dataset<'f> {
                 let members: Vec<&str> = names
                     .iter()
                     .flat_map(|n| {
-                        let m = t.collection_members(n);
+                        let m = t.collection_members(n).collect::<Vec<_>>();
                         if m.is_empty() { vec![n.as_str()] } else { m }
                     })
                     .collect();
@@ -363,7 +364,8 @@ impl<'f> Dataset<'f> {
 pub struct Batches<'d, 'f> {
     dataset: &'d Dataset<'f>,
     columns: Vec<String>,
-    step: u64,
+    /// The entries asked for per batch; `None` is one cluster per batch.
+    step: Option<NonZeroU64>,
     range: Range<u64>,
     parallel: bool,
     cuts: Option<Vec<u64>>,
@@ -374,9 +376,9 @@ impl Batches<'_, '_> {
     /// Aim for `entries` entries per batch. A batch still ends where a cluster
     /// (or aligned basket) does, the first such boundary at or past
     /// `entries` — unless that is more than twice as far, where it is cut at
-    /// `entries` exactly.
+    /// `entries` exactly. Zero asks for nothing: a batch stays one cluster.
     pub fn step(mut self, entries: u64) -> Self {
-        self.step = entries;
+        self.step = NonZeroU64::new(entries);
         self
     }
 
@@ -388,7 +390,8 @@ impl Batches<'_, '_> {
     }
 
     /// Read a batch's columns concurrently, on rayon's global thread pool.
-    #[cfg(feature = "rayon")]
+    /// Without the `rayon` feature there is no pool, and the read stays on
+    /// the calling thread whatever is asked.
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
@@ -397,12 +400,16 @@ impl Batches<'_, '_> {
     /// The end of the batch starting at `start`.
     fn batch_end(&self, cuts: &[u64], start: u64) -> u64 {
         let end = self.range.end;
-        let target = start.saturating_add(self.step.max(1));
-        let aligned = cuts.iter().copied().find(|&c| c >= target && c > start);
-        let stop = match aligned {
-            Some(c) if self.step == 0 || c - start <= 2 * self.step => c,
-            _ if self.step == 0 => end,
-            _ => target,
+        let stop = match self.step.map(NonZeroU64::get) {
+            // The next cluster boundary, or the end past the last one.
+            None => cuts.iter().copied().find(|&c| c > start).unwrap_or(end),
+            Some(step) => {
+                let target = start.saturating_add(step);
+                match cuts.iter().copied().find(|&c| c >= target) {
+                    Some(c) if c - start <= 2 * step => c,
+                    _ => target,
+                }
+            }
         };
         stop.min(end)
     }
@@ -426,9 +433,7 @@ impl Iterator for Batches<'_, '_> {
         if start >= self.range.end {
             return None;
         }
-        let cuts = self.cuts.take().unwrap_or_default();
-        let stop = self.batch_end(&cuts, start);
-        self.cuts = Some(cuts);
+        let stop = self.batch_end(self.cuts.as_deref().unwrap_or_default(), start);
         self.next = Some(stop);
         Some(
             self.dataset
@@ -446,7 +451,7 @@ fn tree_column(
     parallel: bool,
 ) -> Result<Column> {
     let Some(layout) = t.branch_layout(name) else {
-        let members = t.collection_members(name);
+        let members = t.collection_members(name).collect::<Vec<_>>();
         if members.is_empty() {
             return Err(Error::NotFound {
                 what: "column",
@@ -456,13 +461,7 @@ fn tree_column(
         return tree_collection(t, name, &members, range, parallel);
     };
     let is_str = t.branch_type(name) == Some(LeafType::Str);
-    #[cfg(feature = "rayon")]
     let branch = || t.branch(name).range(range.clone()).parallel(parallel);
-    #[cfg(not(feature = "rayon"))]
-    let branch = || {
-        let _ = parallel;
-        t.branch(name).range(range.clone())
-    };
     match layout {
         BranchLayout::Array(len) if !is_str => match branch().flat() {
             Ok(j) => Ok(Column::Array {
@@ -497,13 +496,7 @@ fn tree_collection(
     let mut offsets: Option<Vec<u64>> = None;
     let mut fields = Vec::with_capacity(members.len());
     for &member in members {
-        #[cfg(feature = "rayon")]
         let read = t.branch(member).range(range.clone()).parallel(parallel);
-        #[cfg(not(feature = "rayon"))]
-        let read = {
-            let _ = parallel;
-            t.branch(member).range(range.clone())
-        };
         let j = read.flat()?;
         match &offsets {
             None => offsets = Some(j.offsets),
@@ -556,19 +549,19 @@ fn branch_column(values: BranchValues) -> Result<Column> {
         BranchValues::U64(v) => Column::U64(v),
         BranchValues::F32(v) => Column::F32(v),
         BranchValues::F64(v) => Column::F64(v),
-        BranchValues::Str(v) => v.into_column(),
-        BranchValues::VecBool(v) => v.into_column(),
-        BranchValues::VecI8(v) => v.into_column(),
-        BranchValues::VecU8(v) => v.into_column(),
-        BranchValues::VecI16(v) => v.into_column(),
-        BranchValues::VecU16(v) => v.into_column(),
-        BranchValues::VecI32(v) => v.into_column(),
-        BranchValues::VecU32(v) => v.into_column(),
-        BranchValues::VecI64(v) => v.into_column(),
-        BranchValues::VecU64(v) => v.into_column(),
-        BranchValues::VecF32(v) => v.into_column(),
-        BranchValues::VecF64(v) => v.into_column(),
-        BranchValues::VecStr(v) => v.into_column(),
+        BranchValues::Str(v) => v.into(),
+        BranchValues::VecBool(v) => v.into(),
+        BranchValues::VecI8(v) => v.into(),
+        BranchValues::VecU8(v) => v.into(),
+        BranchValues::VecI16(v) => v.into(),
+        BranchValues::VecU16(v) => v.into(),
+        BranchValues::VecI32(v) => v.into(),
+        BranchValues::VecU32(v) => v.into(),
+        BranchValues::VecI64(v) => v.into(),
+        BranchValues::VecU64(v) => v.into(),
+        BranchValues::VecF32(v) => v.into(),
+        BranchValues::VecF64(v) => v.into(),
+        BranchValues::VecStr(v) => v.into(),
         BranchValues::Nested { offsets, items } => Column::List {
             offsets,
             values: Box::new(branch_column(*items)?),
@@ -589,19 +582,11 @@ fn ntuple_column(
     range: Range<u64>,
     parallel: bool,
 ) -> Result<Column> {
-    #[cfg(feature = "rayon")]
     let field = || n.field(name).range(range.clone()).parallel(parallel);
-    #[cfg(not(feature = "rayon"))]
-    let field = || {
-        let _ = parallel;
-        n.field(name).range(range.clone())
-    };
     let array_size = n
         .header()
-        .fields
-        .iter()
-        .enumerate()
-        .find(|(i, f)| f.name == name && f.parent_field_id as usize == *i)
+        .top_level_fields()
+        .find(|(_, f)| f.name == name)
         .ok_or_else(|| Error::NotFound {
             what: "column",
             name: name.to_string(),
@@ -639,19 +624,19 @@ fn field_column(name: &str, values: FieldValues) -> Result<Column> {
         FieldValues::U64(v) => Column::U64(v),
         FieldValues::F32(v) => Column::F32(v),
         FieldValues::F64(v) => Column::F64(v),
-        FieldValues::Str(v) => v.into_column(),
-        FieldValues::VecBool(v) => v.into_column(),
-        FieldValues::VecI8(v) => v.into_column(),
-        FieldValues::VecU8(v) => v.into_column(),
-        FieldValues::VecI16(v) => v.into_column(),
-        FieldValues::VecU16(v) => v.into_column(),
-        FieldValues::VecI32(v) => v.into_column(),
-        FieldValues::VecU32(v) => v.into_column(),
-        FieldValues::VecI64(v) => v.into_column(),
-        FieldValues::VecU64(v) => v.into_column(),
-        FieldValues::VecF32(v) => v.into_column(),
-        FieldValues::VecF64(v) => v.into_column(),
-        FieldValues::VecStr(v) => v.into_column(),
+        FieldValues::Str(v) => v.into(),
+        FieldValues::VecBool(v) => v.into(),
+        FieldValues::VecI8(v) => v.into(),
+        FieldValues::VecU8(v) => v.into(),
+        FieldValues::VecI16(v) => v.into(),
+        FieldValues::VecU16(v) => v.into(),
+        FieldValues::VecI32(v) => v.into(),
+        FieldValues::VecU32(v) => v.into(),
+        FieldValues::VecI64(v) => v.into(),
+        FieldValues::VecU64(v) => v.into(),
+        FieldValues::VecF32(v) => v.into(),
+        FieldValues::VecF64(v) => v.into(),
+        FieldValues::VecStr(v) => v.into(),
         FieldValues::Nested { offsets, items } => Column::List {
             offsets,
             values: Box::new(field_column(name, *items)?),
@@ -688,11 +673,7 @@ fn tree_type(t: &TreeReader<'_>, name: &str, shape: DataType) -> DataType {
 /// An `RNTuple` column's stored type, from its in-memory `shape` and the
 /// header's description of the top-level field `name`.
 fn ntuple_type(header: &Header, name: &str, shape: DataType) -> DataType {
-    let top = header
-        .fields
-        .iter()
-        .enumerate()
-        .position(|(i, f)| f.name == name && f.parent_field_id as usize == i);
+    let top = header.top_level_field(name);
     match top {
         Some(id) => field_type(header, id, shape),
         None => shape,
@@ -701,13 +682,7 @@ fn ntuple_type(header: &Header, name: &str, shape: DataType) -> DataType {
 
 /// The fields directly inside field `id`, in order.
 fn child_fields(header: &Header, id: usize) -> Vec<usize> {
-    header
-        .fields
-        .iter()
-        .enumerate()
-        .filter(|&(i, f)| i != id && f.parent_field_id as usize == id)
-        .map(|(i, _)| i)
-        .collect()
+    header.child_fields(id).collect()
 }
 
 /// Whether the C++ type `name` is the template `template` (`std::set`) or its
@@ -740,7 +715,7 @@ fn field_type(header: &Header, id: usize, shape: DataType) -> DataType {
     }
     match shape {
         DataType::F32 => {
-            let column = header.columns.iter().find(|c| c.field_id as usize == id);
+            let column = header.columns.iter().find(|c| c.field() == id);
             match column.map(|c| (c.column_type, c.bits_on_storage, c.value_range)) {
                 Some((ColumnType::Real16 | ColumnType::SplitReal16, ..)) => DataType::Half,
                 Some((ColumnType::Real32Trunc, bits, _)) => DataType::Truncated { bits },

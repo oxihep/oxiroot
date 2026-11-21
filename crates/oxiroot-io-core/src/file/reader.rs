@@ -59,7 +59,7 @@ impl std::fmt::Debug for FileReader {
             .field("bytes", &self.size)
             .field("version", &self.header.version)
             .field("keys", &self.root_dir.keys.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -190,7 +190,7 @@ impl FileReader {
                 .cloned()
                 .ok_or_else(missing);
         }
-        let dir = self.subdir_cached(dir)?;
+        let dir = self.subdir(dir)?;
         find_key(&dir.keys, name).cloned().ok_or_else(missing)
     }
 
@@ -245,12 +245,10 @@ impl FileReader {
     ///
     /// If a component of `path` is not a subdirectory, or a directory record cannot be
     /// read.
-    pub fn subdir(&self, path: &str) -> Result<Directory> {
-        Ok((*self.subdir_cached(path)?).clone())
-    }
-
-    /// [`subdir`](Self::subdir), read once per path and then shared.
-    fn subdir_cached(&self, path: &str) -> Result<std::sync::Arc<Directory>> {
+    ///
+    /// A directory is read once per path and then shared: the `Arc` is the
+    /// reader's own copy, not a clone of its key list.
+    pub fn subdir(&self, path: &str) -> Result<std::sync::Arc<Directory>> {
         let norm: String = path
             .split('/')
             .filter(|p| !p.is_empty())
@@ -349,7 +347,7 @@ impl FileReader {
         let key = Key::read(&mut RBuffer::new(&win))?;
         let payload = payload_in_window(&win, &key)?;
         let object = decompress_payload(payload, key.obj_len as usize, "streamer info")?;
-        Ok(Some((object, key.key_len as usize)))
+        Ok(Some((object.into_owned(), key.key_len as usize)))
     }
 
     /// Total size of the file in bytes.
@@ -403,12 +401,7 @@ impl FileReader {
     /// If the key points outside the file, or the source cannot be read.
     pub fn key_payload(&self, key: &Key) -> Result<Bytes> {
         let start = key.payload_start(usize::saturating_from(self.size))? as u64;
-        let len = key
-            .total_bytes()
-            .checked_sub(u32::from(key.key_len))
-            .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", key.name)))?
-            as usize;
-        self.read_at(start, len)
+        self.read_at(start, key.checked_payload_len()?)
     }
 }
 
@@ -438,11 +431,7 @@ impl ByteSource for FileReader {
 /// `fNbytes − fKeyLen` bytes. Bounds-checked against the window.
 fn payload_in_window<'a>(win: &'a [u8], key: &Key) -> Result<&'a [u8]> {
     let start = key.key_len as usize;
-    let len = key
-        .total_bytes()
-        .checked_sub(u32::from(key.key_len))
-        .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", key.name)))?
-        as usize;
+    let len = key.checked_payload_len()?;
     win.get(start..start + len)
         .ok_or_else(|| Error::Format(format!("key {:?}: payload runs past record", key.name)))
 }

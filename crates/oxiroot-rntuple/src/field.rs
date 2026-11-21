@@ -547,17 +547,17 @@ pub(crate) fn collect(offsets: Vec<u64>, items: FieldValues) -> Result<FieldValu
 /// nullable [`FieldValues::Opt`]: derive per-entry presence from the cumulative
 /// `offsets` (entry `i` is present iff its count increased), keeping the
 /// densely-packed present `values`.
-pub(crate) fn optional(offsets: &[u64], values: FieldValues) -> Result<FieldValues> {
+pub(crate) fn optional(offsets: &[u64], values: FieldValues) -> FieldValues {
     let mut present = Vec::with_capacity(offsets.len());
     let mut prev = 0u64;
     for &o in offsets {
         present.push(o > prev);
         prev = o;
     }
-    Ok(FieldValues::Opt {
+    FieldValues::Opt {
         present,
         values: Box::new(values),
-    })
+    }
 }
 
 /// Group a fixed-size array field's flattened `items` into one chunk of `n` per

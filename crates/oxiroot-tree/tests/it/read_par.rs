@@ -25,22 +25,28 @@ fn assert_par_matches_serial(t: &TreeReader<'_>) {
     for name in t.branch_names() {
         let serial = t.branch(name).values();
         assert_eq!(
-            t.branch(name).parallel(true).values(),
-            serial,
+            format!("{:?}", t.branch(name).parallel(true).values()),
+            format!("{:?}", serial),
             "branch {name}"
         );
         let n = t.entries();
         assert_eq!(
-            t.branch(name)
-                .range(1..n.saturating_sub(1))
-                .parallel(true)
-                .values(),
-            t.branch(name).range(1..n.saturating_sub(1)).values(),
+            format!(
+                "{:?}",
+                t.branch(name)
+                    .range(1..n.saturating_sub(1))
+                    .parallel(true)
+                    .values()
+            ),
+            format!(
+                "{:?}",
+                t.branch(name).range(1..n.saturating_sub(1)).values()
+            ),
             "range of {name}"
         );
         assert_eq!(
-            t.branch(name).parallel(true).flat(),
-            t.branch(name).flat(),
+            format!("{:?}", t.branch(name).parallel(true).flat()),
+            format!("{:?}", t.branch(name).flat()),
             "flat {name}"
         );
     }

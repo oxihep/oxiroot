@@ -225,7 +225,7 @@ let file = FileReader::open("data.root")?;
 let ntpl = NtupleReader::open(&file, "events")?;
 
 println!("{} entries", ntpl.entries());
-println!("fields: {:?}", ntpl.field_names());
+println!("fields: {:?}", ntpl.field_names().collect::<Vec<_>>());
 println!("clusters start at {:?}", ntpl.cluster_boundaries());
 
 let mass: Vec<f64> = ntpl.field("mass").range(0..1000).read()?;

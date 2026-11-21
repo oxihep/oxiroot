@@ -41,9 +41,9 @@ fn reads_the_functions_root_attached_to_a_histogram() {
 #[test]
 fn reads_the_functions_of_every_histogram_in_a_root_stack() {
     let stack = fixture().get::<HistStack>("hs").unwrap();
-    let functions: Vec<Vec<&str>> = stack.hists().iter().map(names).collect();
+    let functions: Vec<Vec<&str>> = stack.members().iter().map(names).collect();
     assert_eq!(functions, [vec!["line_s1"], vec!["line_s2"]]);
-    assert_eq!(stack.hists()[1].functions()[0].params, [5.0, 0.5]);
+    assert_eq!(stack.members()[1].functions()[0].params, [5.0, 0.5]);
 }
 
 /// A histogram keeps its functions through a write and a read, alone and in

@@ -49,6 +49,7 @@ moment loop is needed.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, Model};
 
 // the `fit` feature is on by default
 let mut peak = Hist::reg(60, 80.0, 100.0).weight().named("mass");
@@ -71,6 +72,7 @@ The same `data.fit(&model)` call works on a `Graph` or on raw points:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, Model, Points};
 
 // the `fit` feature is on by default
 // Raw (x, y, sigma) measurements.
@@ -123,6 +125,7 @@ inferred from the formula; seed the values with `with_params`.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 let model = Model::from_formula("decay", "[0]*exp(-[1]*x)")?
     .with_params(vec![100.0, 0.5])
     .lower_limit("p1", 0.0);
@@ -136,6 +139,7 @@ below is a Gaussian signal on a flat background:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 
 // the `fit` feature is on by default
 // params: [norm, mean, sigma, background-per-bin].
@@ -158,6 +162,7 @@ Each part keeps its seeds, limits and fixed parameters:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 
 // the `fit` feature is on by default
 let sig = Model::gaussian("sig")
@@ -186,6 +191,7 @@ of `t` the resolution covers. Use a unit-area resolution such as
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 
 // the `fit` feature is on by default
 // A decay that starts at t = 0, smeared by a Gaussian vertex resolution.
@@ -214,6 +220,7 @@ These chainable methods return the `Model`, so they compose:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 
 // the `fit` feature is on by default
 let model = Model::gaussian("g")
@@ -255,6 +262,7 @@ The cost being minimized is a `FitMethod`:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitMethod, FitOptions};
 
 // the `fit` feature is on by default
 let chi2 = peak.fit(&model);                             // χ², the default
@@ -291,6 +299,7 @@ minimizer backend. Construct it with `FitOptions::new()` and chain setters:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitMethod, FitOptions};
 
 // the `fit` feature is on by default
 let opts = FitOptions::new()
@@ -306,6 +315,7 @@ fitted curve afterwards:
 <!-- fragment -->
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions};
 
 // the `fit` feature is on by default
 let mut model = sig_bkg;
@@ -335,6 +345,7 @@ to count as an outlier (`ρ` is applied as `C²·ρ(z / C²)` with `C = f_scale`
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, Loss};
 
 let opts = FitOptions::new().loss(Loss::Huber).f_scale(1.5);
 let fit = peak.fit_opts(&model, &opts);
@@ -368,6 +379,7 @@ let fit = peak.fit_opts(&model, &opts);
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions};
 
 // the `fit` feature is on by default
 let fit = peak.fit_opts(&model, &FitOptions::new().minos(true));
@@ -403,6 +415,7 @@ likelihoods fit a model to them. Their normalization is numerical, over the fit
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{Events, FitExt, FitMethod, FitOptions, Model};
 
 // the `fit` feature is on by default
 // Decay times in ps (in practice, a branch of a TTree).
@@ -437,6 +450,7 @@ integrals:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{Events2, FitExt, FitMethod, FitOptions, Model};
 
 // the `fit` feature is on by default
 let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().named("map");
@@ -476,6 +490,7 @@ grows with the number of parameters.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::Model;
 
 // the `fit` feature is on by default
 let line = Model::new("line", &["a", "b"], vec![0.0, 1.0], |x, p| p[0] + p[1] * x)
@@ -498,6 +513,7 @@ keeps its own model and cost (binned or unbinned):
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model, Simultaneous};
 
 // the `fit` feature is on by default
 // Two peaks of the same particle, in two samples: the mean is shared, the
@@ -532,6 +548,7 @@ model at known parameters, fit each sample, and look at the pulls
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitMethod, FitOptions, Model, Toys};
 
 // the `fit` feature is on by default
 let truth = Model::gaussian("z").with_params(vec![40.0, 91.0, 2.5]);
@@ -562,6 +579,7 @@ go further, both refitting the other parameters at every point:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, Model};
 
 // the `fit` feature is on by default
 let opts = FitOptions::new();
@@ -597,6 +615,7 @@ that implements `Cost` (parameter names and a value, optionally a gradient):
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{CostSum, FitExt, FitOptions, Fitter, FnCost, Model, ModelCost};
 
 // The peak's width also measured elsewhere: 0.62 ± 0.03.
 let model = Model::gaussian("z").estimate_from(&peak);
@@ -630,6 +649,7 @@ discovery p-value match pyhf. For a mass scan, `upcrossings` and
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitMethod, FitOptions, HypoTest, Model, ModelCost};
 
 // Signal strength μ times a known peak, on a flat background.
 let s_plus_b = Model::new("sb", &["mu", "bkg"], vec![1.0, 20.0], |x, p| {
@@ -659,6 +679,7 @@ CLs and limits match pyhf on two reference workspaces.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, HypoTest, TemplateModel};
 use oxiroot::fit::{Channel, Sample};
 
 // Bin contents of the signal-region histogram and of the simulated templates.
@@ -695,6 +716,7 @@ size, where the naive and SumW2 errors are too small.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{Events, FitExt, FitMethod, FitOptions, Model, SWeights};
 
 // Mass and decay time of the same events (in practice, two TTree branches).
 let mass = [5.27, 5.29, 5.31, 5.12, 5.28, 5.44, 5.26, 5.20, 5.30, 5.37];
@@ -726,6 +748,7 @@ slope. A `Hist1D` passes its real bin edges, variable-width ones included.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, Model};
 
 let model = Model::gaussian("z").estimate_from(&peak);
 let fit = peak.fit_opts(&model, &FitOptions::new().bin_integration(true));
@@ -742,6 +765,7 @@ is the fit; the prelude's `Efficiency` is ROOT's `TEfficiency` object.)
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, Model};
 use oxiroot::fit::BinomialData;
 
 // Per-bin trigger counts: `passed` of `trials` at each pT (GeV).
@@ -769,6 +793,7 @@ covariance, the acceptance and each parameter's autocorrelation time.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitMethod, FitOptions, Model, ModelCost, Sampler};
 
 let model = Model::gaussian("z").estimate_from(&peak).limit("sigma", 0.1, 5.0);
 let cost = ModelCost::new(&peak, &model, &FitOptions::new().method(FitMethod::Likelihood));
@@ -806,6 +831,7 @@ the parameters to search:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{DifferentialEvolution, FitExt, FitOptions, Minimizer, Model, MultiStart};
 
 // Search the whole mass window for the peak, wherever the seed puts it.
 let search = Model::gaussian("z")
@@ -834,6 +860,7 @@ when the `argmin` feature is on; `with_minos` is ignored by it.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, FitOptions, Minimizer, Model};
 
 // the `fit` + `argmin` features are both on by default
 let fit = peak.fit_opts(

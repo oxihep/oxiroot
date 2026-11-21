@@ -1,122 +1,154 @@
 //! The header, page-list and footer envelopes, and the anchor.
+//!
+//! Each envelope is written into one buffer: a frame's size goes in a
+//! reserved slot that is filled when the frame ends, so nothing is built
+//! apart and copied in.
 
 use oxiroot_io_core::Compression;
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, Result};
+use oxiroot_io_core::{Error, Result, WBuffer};
 
 use super::lower::{ColumnPlan, FieldPlan};
 use super::{CHECKSUM_TYPE_VERSION, COLUMN_FLAG_DEFERRED, COLUMN_FLAG_RANGE, K_BYTE_COUNT_MASK};
 
-fn rstr(s: &str) -> Vec<u8> {
-    let mut out = u32::saturating_from(s.len()).to_le_bytes().to_vec();
-    out.extend_from_slice(s.as_bytes());
-    out
-}
+/// An envelope being written.
+struct Out(WBuffer);
 
-pub(super) fn envelope(type_id: u16, payload: &[u8]) -> Vec<u8> {
-    let length = (8 + payload.len() + 8) as u64;
-    let word = u64::from(type_id) | (length << 16);
-    let mut out = word.to_le_bytes().to_vec();
-    out.extend_from_slice(payload);
-    let checksum = xxhash_rust::xxh3::xxh3_64(&out);
-    out.extend_from_slice(&checksum.to_le_bytes());
-    out
-}
-
-pub(super) fn record_frame(payload: &[u8]) -> Vec<u8> {
-    let size = i64::saturating_from(8 + payload.len());
-    let mut out = size.to_le_bytes().to_vec();
-    out.extend_from_slice(payload);
-    out
-}
-
-pub(super) fn list_frame(items: &[Vec<u8>]) -> Vec<u8> {
-    let body_len: usize = items.iter().map(std::vec::Vec::len).sum();
-    let size = i64::saturating_from(8 + 4 + body_len);
-    let mut out = (-size).to_le_bytes().to_vec();
-    out.extend_from_slice(&u32::saturating_from(items.len()).to_le_bytes());
-    for item in items {
-        out.extend_from_slice(item);
+impl Out {
+    /// Start an envelope: the slot for its type and length comes first.
+    fn new() -> (Self, oxiroot_io_core::Patch<8>) {
+        let mut w = WBuffer::new();
+        let word = w.reserve::<8>();
+        (Self(w), word)
     }
-    out
-}
 
-// --- envelope builders ------------------------------------------------------
+    /// End the envelope: fill in its type and length, and append the
+    /// checksum of everything before it.
+    fn finish(mut self, type_id: u16, word: oxiroot_io_core::Patch<8>) -> Vec<u8> {
+        let length = (self.0.len() + 8) as u64;
+        self.0
+            .patch_le_u64(word, u64::from(type_id) | (length << 16));
+        let checksum = xxhash_rust::xxh3::xxh3_64(self.0.as_slice());
+        self.0.le_u64(checksum);
+        self.0.into_vec()
+    }
+
+    /// A string: its length as a `u32`, then its bytes.
+    fn str(&mut self, s: &str) {
+        self.0.le_u32(u32::saturating_from(s.len()));
+        self.0.bytes(s.as_bytes());
+    }
+
+    /// A record frame around what `body` writes: its size, counting the size
+    /// field itself, then the body.
+    fn record<R>(&mut self, body: impl FnOnce(&mut Self) -> R) -> R {
+        let start = self.0.len();
+        let size = self.0.reserve::<8>();
+        let out = body(self);
+        self.0.patch_le_u64(size, (self.0.len() - start) as u64);
+        out
+    }
+
+    /// A list frame of `count` items written by `body`: the size negated,
+    /// which is what marks a list, then the count, then the items.
+    fn list<R>(&mut self, count: usize, body: impl FnOnce(&mut Self) -> R) -> R {
+        let start = self.0.len();
+        let size = self.0.reserve::<8>();
+        self.0.le_u32(u32::saturating_from(count));
+        let out = body(self);
+        let len = i64::saturating_from(self.0.len() - start);
+        self.0.patch_le_u64(size, (-len).cast_unsigned());
+        out
+    }
+
+    /// A list with nothing in it.
+    fn empty_list(&mut self) {
+        self.list(0, |_| ());
+    }
+}
 
 /// One field descriptor record (shared by the header and the footer's
 /// schema-extension record).
-fn field_record(f: &FieldPlan) -> Vec<u8> {
-    let mut r = Vec::new();
-    r.extend_from_slice(&0u32.to_le_bytes()); // field version
-    // A checksummed (user-class) field records type version -1.
-    let type_version = if f.type_checksum.is_some() {
-        CHECKSUM_TYPE_VERSION
-    } else {
-        0
-    };
-    r.extend_from_slice(&type_version.to_le_bytes());
-    r.extend_from_slice(&f.parent_id.to_le_bytes());
-    r.extend_from_slice(&f.role.to_le_bytes()); // struct role
-    r.extend_from_slice(&f.flags.to_le_bytes()); // flags
-    r.extend_from_slice(&rstr(&f.name));
-    r.extend_from_slice(&rstr(&f.type_name));
-    r.extend_from_slice(&rstr("")); // type alias
-    r.extend_from_slice(&rstr("")); // description
-    // Flag-gated trailers (reader order: array, projection source, checksum).
-    if let Some(size) = f.array_size {
-        r.extend_from_slice(&size.to_le_bytes());
-    }
-    if let Some(checksum) = f.type_checksum {
-        r.extend_from_slice(&checksum.to_le_bytes());
-    }
-    record_frame(&r)
+fn field_record(o: &mut Out, f: &FieldPlan) {
+    o.record(|o| {
+        o.0.le_u32(0); // field version
+        // A checksummed (user-class) field records type version -1.
+        o.0.le_u32(if f.type_checksum.is_some() {
+            CHECKSUM_TYPE_VERSION
+        } else {
+            0
+        });
+        o.0.le_u32(f.parent_id);
+        o.0.le_u16(f.role); // struct role
+        o.0.le_u16(f.flags);
+        o.str(&f.name);
+        o.str(&f.type_name);
+        o.str(""); // type alias
+        o.str(""); // description
+        // Flag-gated trailers (reader order: array, projection source, checksum).
+        if let Some(size) = f.array_size {
+            o.0.le_u64(size);
+        }
+        if let Some(checksum) = f.type_checksum {
+            o.0.le_u32(checksum);
+        }
+    });
 }
 
 /// One column descriptor record. `first_element_index` is `Some` for a deferred
 /// (schema-extension) column — its data starts at that global element index — and
 /// sets the [`COLUMN_FLAG_DEFERRED`] flag plus the index trailer (before the value
 /// range, matching the reader's order).
-fn column_record(c: &ColumnPlan, first_element_index: Option<i64>) -> Vec<u8> {
-    let mut r = Vec::new();
-    r.extend_from_slice(&(c.column_type as u16).to_le_bytes());
-    r.extend_from_slice(&c.bits.to_le_bytes());
-    r.extend_from_slice(&c.field_id.to_le_bytes());
-    let mut flags = 0u16;
-    if first_element_index.is_some() {
-        flags |= COLUMN_FLAG_DEFERRED;
-    }
-    if c.value_range.is_some() {
-        flags |= COLUMN_FLAG_RANGE;
-    }
-    r.extend_from_slice(&flags.to_le_bytes());
-    r.extend_from_slice(&0u16.to_le_bytes()); // representation index
-    if let Some(first) = first_element_index {
-        r.extend_from_slice(&first.to_le_bytes());
-    }
-    if let Some((min, max)) = c.value_range {
-        r.extend_from_slice(&min.to_le_bytes());
-        r.extend_from_slice(&max.to_le_bytes());
-    }
-    record_frame(&r)
+fn column_record(o: &mut Out, c: &ColumnPlan, first_element_index: Option<i64>) {
+    o.record(|o| {
+        o.0.le_u16(c.column_type as u16);
+        o.0.le_u16(c.bits);
+        o.0.le_u32(c.field_id);
+        let mut flags = 0u16;
+        if first_element_index.is_some() {
+            flags |= COLUMN_FLAG_DEFERRED;
+        }
+        if c.value_range.is_some() {
+            flags |= COLUMN_FLAG_RANGE;
+        }
+        o.0.le_u16(flags);
+        o.0.le_u16(0); // representation index
+        if let Some(first) = first_element_index {
+            o.0.le_i64(first);
+        }
+        if let Some((min, max)) = c.value_range {
+            o.0.le_f64(min);
+            o.0.le_f64(max);
+        }
+    });
+}
+
+/// The four lists a schema is: fields, columns, then alias columns and extra
+/// type information, which this writer leaves empty. The header holds one,
+/// and so does the footer's extension record.
+fn schema(o: &mut Out, fields: &[FieldPlan], cols: &[ColumnPlan], first_entries: Option<&[i64]>) {
+    o.list(fields.len(), |o| {
+        for f in fields {
+            field_record(o, f);
+        }
+    });
+    o.list(cols.len(), |o| {
+        for (i, c) in cols.iter().enumerate() {
+            column_record(o, c, first_entries.map(|first| first[i]));
+        }
+    });
+    o.empty_list(); // alias columns
+    o.empty_list(); // extra type info
 }
 
 pub(super) fn build_header(name: &str, fields: &[FieldPlan], cols: &[ColumnPlan]) -> Vec<u8> {
-    let mut p = Vec::new();
-    p.extend_from_slice(&0i64.to_le_bytes()); // feature flags
-    p.extend_from_slice(&rstr(name));
-    p.extend_from_slice(&rstr("")); // description
-    p.extend_from_slice(&rstr("oxiroot")); // writer
-
-    let field_records: Vec<Vec<u8>> = fields.iter().map(field_record).collect();
-    p.extend_from_slice(&list_frame(&field_records));
-
-    let column_records: Vec<Vec<u8>> = cols.iter().map(|c| column_record(c, None)).collect();
-    p.extend_from_slice(&list_frame(&column_records));
-
-    p.extend_from_slice(&list_frame(&[])); // alias columns
-    p.extend_from_slice(&list_frame(&[])); // extra type info
-
-    envelope(0x01, &p)
+    let (mut o, word) = Out::new();
+    o.0.le_i64(0); // feature flags
+    o.str(name);
+    o.str(""); // description
+    o.str("oxiroot"); // writer
+    schema(&mut o, fields, cols, None);
+    o.finish(0x01, word)
 }
 
 /// A page-list entry stores a page's element count and on-disk size as signed
@@ -142,138 +174,99 @@ pub(super) fn check_page_limits(n_elements: u32, disk_size: usize) -> Result<()>
     Ok(())
 }
 
+/// Where one column's page of one cluster is, for the page list.
+pub(super) struct PageRec {
+    pub(super) offset: u64,
+    pub(super) disk_size: usize,
+    pub(super) n_elements: u32,
+    /// The index of the page's first element in the whole column: past the
+    /// earlier clusters' elements, and for a column added late, past the
+    /// entries it has no data for.
+    pub(super) element_offset: i64,
+}
+
+/// The page-list envelope: one summary `(first entry, entry count)` per
+/// cluster, then the page locations nested clusters → columns → one page.
 pub(super) fn build_page_list(
-    n_entries: u32,
-    page_offsets: &[usize],
-    disk_sizes: &[usize],
-    cols: &[ColumnPlan],
+    summaries: &[(u64, u64)],
+    cluster_pages: &[Vec<PageRec>],
     compression: Compression,
     header_checksum: u64,
 ) -> Result<Vec<u8>> {
-    // A normal single cluster: every column starts at element 0.
-    let element_offsets = vec![0i64; cols.len()];
-    build_page_list_offsets(
-        n_entries,
-        page_offsets,
-        disk_sizes,
-        cols,
-        &element_offsets,
-        compression,
-        header_checksum,
-    )
+    let (mut o, word) = Out::new();
+    o.0.le_u64(header_checksum);
+    o.list(summaries.len(), |o| {
+        for &(first, n) in summaries {
+            o.record(|o| {
+                o.0.le_u64(first);
+                o.0.le_u64(n); // the high byte is the flags, 0
+            });
+        }
+    });
+    o.list(cluster_pages.len(), |o| {
+        for cols in cluster_pages {
+            o.list(cols.len(), |o| {
+                for page in cols {
+                    check_page_limits(page.n_elements, page.disk_size)?;
+                    // A list of one page, with the column's element offset
+                    // and compression after it in the same frame.
+                    o.list(1, |o| {
+                        o.0.le_i32(page.n_elements.cast_signed()); // positive: no checksum
+                        o.0.le_i32(i32::saturating_from(page.disk_size)); // locator size
+                        o.0.le_u64(page.offset); // locator offset
+                        o.0.le_i64(page.element_offset);
+                        o.0.le_u32(compression.setting());
+                    });
+                }
+                Ok::<(), Error>(())
+            })?;
+        }
+        Ok::<(), Error>(())
+    })?;
+    Ok(o.finish(0x03, word))
 }
 
-/// Like [`build_page_list`] but with each column's first-element offset given
-/// explicitly: a deferred (schema-extension) column's page starts at that global
-/// element index, so the reader knows the earlier entries are defaulted.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn build_page_list_offsets(
-    n_entries: u32,
-    page_offsets: &[usize],
-    disk_sizes: &[usize],
-    cols: &[ColumnPlan],
-    element_offsets: &[i64],
-    compression: Compression,
-    header_checksum: u64,
-) -> Result<Vec<u8>> {
-    let mut p = Vec::new();
-    p.extend_from_slice(&header_checksum.to_le_bytes());
-
-    let mut summary = Vec::new();
-    summary.extend_from_slice(&0u64.to_le_bytes()); // first entry
-    summary.extend_from_slice(&u64::from(n_entries).to_le_bytes()); // num entries (flags=0)
-    p.extend_from_slice(&list_frame(&[record_frame(&summary)]));
-
-    let mut column_frames: Vec<Vec<u8>> = Vec::with_capacity(cols.len());
-    for (i, c) in cols.iter().enumerate() {
-        check_page_limits(c.n, disk_sizes[i])?;
-        let mut page = Vec::new();
-        page.extend_from_slice(&(c.n).cast_signed().to_le_bytes()); // positive: no checksum
-        page.extend_from_slice(&i32::saturating_from(disk_sizes[i]).to_le_bytes()); // on-disk locator size
-        page.extend_from_slice(&(page_offsets[i] as u64).to_le_bytes()); // locator offset
-        let mut body = Vec::new();
-        body.extend_from_slice(&1u32.to_le_bytes()); // one page
-        body.extend_from_slice(&page);
-        body.extend_from_slice(&element_offsets[i].to_le_bytes()); // element offset
-        body.extend_from_slice(&compression.setting().to_le_bytes()); // compression settings
-        let size = i64::saturating_from(8 + body.len());
-        let mut frame = (-size).to_le_bytes().to_vec();
-        frame.extend_from_slice(&body);
-        column_frames.push(frame);
-    }
-    let inner = list_frame(&column_frames); // over columns
-    p.extend_from_slice(&list_frame(&[inner])); // over clusters
-
-    Ok(envelope(0x03, &p))
+/// The fields and columns added after the header was written, for the
+/// footer's schema-extension record.
+pub(super) struct Extension<'a> {
+    pub(super) fields: &'a [FieldPlan],
+    pub(super) columns: &'a [ColumnPlan],
+    /// Each column's first element index, in the order of `columns`.
+    pub(super) first_entries: &'a [i64],
 }
 
+/// The footer envelope. With an `extension`, readers merge its fields and
+/// columns into the schema and fill the entries before each one's first.
 pub(super) fn build_footer(
     n_entries: u32,
     num_clusters: u32,
     page_list_offset: usize,
     page_list_len: usize,
     header_checksum: u64,
+    extension: Option<&Extension<'_>>,
 ) -> Vec<u8> {
-    build_footer_ext(
-        n_entries,
-        num_clusters,
-        page_list_offset,
-        page_list_len,
-        header_checksum,
-        &[],
-        &[],
-        &[],
-    )
-}
-
-/// Like [`build_footer`] but with a non-empty schema-extension record: the late
-/// `ext_fields` and their deferred `ext_cols` (each paired with its first-element
-/// index) go into the header-extension record so readers merge them and back-fill.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn build_footer_ext(
-    n_entries: u32,
-    num_clusters: u32,
-    page_list_offset: usize,
-    page_list_len: usize,
-    header_checksum: u64,
-    ext_fields: &[FieldPlan],
-    ext_cols: &[ColumnPlan],
-    first_entries: &[i64],
-) -> Vec<u8> {
-    let mut p = Vec::new();
-    p.extend_from_slice(&0i64.to_le_bytes()); // feature flags
-    p.extend_from_slice(&header_checksum.to_le_bytes());
-
-    // Header-extension record: late field list, late column list, then the two
-    // empty trailers (alias columns, extra type info).
-    let mut ext = Vec::new();
-    let field_records: Vec<Vec<u8>> = ext_fields.iter().map(field_record).collect();
-    ext.extend_from_slice(&list_frame(&field_records));
-    let column_records: Vec<Vec<u8>> = ext_cols
-        .iter()
-        .zip(first_entries)
-        .map(|(c, &first)| column_record(c, Some(first)))
-        .collect();
-    ext.extend_from_slice(&list_frame(&column_records));
-    ext.extend_from_slice(&list_frame(&[])); // alias columns
-    ext.extend_from_slice(&list_frame(&[])); // extra type info
-    p.extend_from_slice(&record_frame(&ext));
-
+    let (mut o, word) = Out::new();
+    o.0.le_i64(0); // feature flags
+    o.0.le_u64(header_checksum);
+    o.record(|o| match extension {
+        Some(ext) => schema(o, ext.fields, ext.columns, Some(ext.first_entries)),
+        None => schema(o, &[], &[], None),
+    });
     // One cluster group spanning every cluster; it links to the single page-list
     // envelope that details all clusters' pages.
-    let mut cg = Vec::new();
-    cg.extend_from_slice(&0u64.to_le_bytes()); // min entry
-    cg.extend_from_slice(&u64::from(n_entries).to_le_bytes()); // entry span
-    cg.extend_from_slice(&num_clusters.to_le_bytes()); // num clusters
-    cg.extend_from_slice(&(page_list_len as u64).to_le_bytes()); // envelope link: uncompressed len
-    cg.extend_from_slice(&i32::saturating_from(page_list_len).to_le_bytes()); // locator size
-    cg.extend_from_slice(&(page_list_offset as u64).to_le_bytes()); // locator offset
-    p.extend_from_slice(&list_frame(&[record_frame(&cg)]));
-
+    o.list(1, |o| {
+        o.record(|o| {
+            o.0.le_u64(0); // min entry
+            o.0.le_u64(u64::from(n_entries)); // entry span
+            o.0.le_u32(num_clusters);
+            o.0.le_u64(page_list_len as u64); // envelope link: uncompressed len
+            o.0.le_i32(i32::saturating_from(page_list_len)); // locator size
+            o.0.le_u64(page_list_offset as u64); // locator offset
+        });
+    });
     // Linked attribute sets (RNTuple format >= 1.0.1.0); empty here.
-    p.extend_from_slice(&list_frame(&[]));
-
-    envelope(0x02, &p)
+    o.empty_list();
+    o.finish(0x02, word)
 }
 
 pub(super) fn build_anchor(
@@ -282,25 +275,22 @@ pub(super) fn build_anchor(
     seek_footer: usize,
     len_footer: usize,
 ) -> Vec<u8> {
-    let mut fields = Vec::with_capacity(64);
-    fields.extend_from_slice(&1u16.to_be_bytes()); // epoch
-    fields.extend_from_slice(&0u16.to_be_bytes()); // major
-    fields.extend_from_slice(&1u16.to_be_bytes()); // minor
-    fields.extend_from_slice(&1u16.to_be_bytes()); // patch
-    fields.extend_from_slice(&(seek_header as u64).to_be_bytes());
-    fields.extend_from_slice(&(len_header as u64).to_be_bytes());
-    fields.extend_from_slice(&(len_header as u64).to_be_bytes());
-    fields.extend_from_slice(&(seek_footer as u64).to_be_bytes());
-    fields.extend_from_slice(&(len_footer as u64).to_be_bytes());
-    fields.extend_from_slice(&(len_footer as u64).to_be_bytes());
-    fields.extend_from_slice(&0x4000_0000u64.to_be_bytes()); // max key size
-
-    let checksum = xxhash_rust::xxh3::xxh3_64(&fields);
-
-    let mut obj = Vec::new();
-    obj.extend_from_slice(&((66u32) | K_BYTE_COUNT_MASK).to_be_bytes());
-    obj.extend_from_slice(&2u16.to_be_bytes()); // class version
-    obj.extend_from_slice(&fields);
-    obj.extend_from_slice(&checksum.to_be_bytes());
-    obj
+    let mut w = WBuffer::with_capacity(70);
+    w.be_u32(66 | K_BYTE_COUNT_MASK);
+    w.be_u16(2); // class version
+    let fields = w.len();
+    w.be_u16(1); // epoch
+    w.be_u16(0); // major
+    w.be_u16(1); // minor
+    w.be_u16(1); // patch
+    w.be_u64(seek_header as u64);
+    w.be_u64(len_header as u64);
+    w.be_u64(len_header as u64);
+    w.be_u64(seek_footer as u64);
+    w.be_u64(len_footer as u64);
+    w.be_u64(len_footer as u64);
+    w.be_u64(0x4000_0000); // max key size
+    let checksum = xxhash_rust::xxh3::xxh3_64(&w.as_slice()[fields..]);
+    w.be_u64(checksum);
+    w.into_vec()
 }

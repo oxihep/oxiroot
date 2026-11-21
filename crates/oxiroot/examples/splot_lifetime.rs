@@ -35,7 +35,10 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod splot {
+    use oxiroot::fit::Events;
+    use oxiroot::fit::FitExt;
     use oxiroot::fit::FitResult;
+    use oxiroot::fit::{FitMethod, FitOptions, Model, SWeights};
     use oxiroot::hist::oxihist::Weight;
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Scale, Style};
     use oxiroot::prelude::*;

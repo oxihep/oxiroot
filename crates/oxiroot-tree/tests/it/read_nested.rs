@@ -25,10 +25,10 @@ fn reads_nested_struct_subbranches() {
     assert_eq!(t.entries(), 3);
     // The nested `Inner` member is flattened to `v.inner.a` / `v.inner.b`.
     assert_eq!(
-        t.branch_names(),
+        t.branch_names().collect::<Vec<_>>(),
         vec!["v.id", "v.inner.a", "v.inner.b", "v.w"]
     );
-    assert!(t.unsupported_branches().is_empty());
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     assert_eq!(
         t.branch("v.id").values().unwrap(),

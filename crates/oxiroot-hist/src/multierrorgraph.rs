@@ -13,12 +13,11 @@
 //! cross-checked against compiled ROOT C++ only.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, skip_versioned};
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::base::check_len;
-use crate::graph::read_basic_array;
+use crate::graph::{read_basic_array, read_graph_points};
 
 /// How a [`MultiErrorGraph`]'s y-error layers combine into one error (ROOT's
 /// `TGraphMultiErrors::ESummationModes`).
@@ -183,13 +182,8 @@ fn decode_tgraphmultierrors(name: &str, class: &str, object: &[u8]) -> Result<Mu
     let mut r = RBuffer::new(object);
     let outer = r.read_version()?; // MultiErrorGraph v1
     let base = r.read_version()?; // Graph v5 base
-    let named = read_named(&mut r)?;
-    skip_versioned(&mut r)?; // TAttLine
-    skip_versioned(&mut r)?; // TAttFill
-    skip_versioned(&mut r)?; // TAttMarker
-    let npoints = usize::saturating_from(r.be_i32()?.max(0));
-    let x = read_basic_array(&mut r, npoints)?;
-    let y = read_basic_array(&mut r, npoints)?;
+    let (named, x, y) = read_graph_points(&mut r)?;
+    let npoints = x.len();
     if let Some(end) = base.end {
         r.seek(end)?; // skip the Graph base trailer (fFunctions/fHistogram/…)
     }

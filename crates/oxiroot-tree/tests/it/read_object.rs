@@ -18,8 +18,11 @@ fn reads_split_single_object_scalars() {
     .expect("open fixture");
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 3);
-    assert_eq!(t.branch_names(), vec!["id", "inner.a", "inner.b", "w"]);
-    assert!(t.unsupported_branches().is_empty());
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        vec!["id", "inner.a", "inner.b", "w"]
+    );
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     // Each member is a scalar (one value per entry), not a jagged array.
     assert_eq!(

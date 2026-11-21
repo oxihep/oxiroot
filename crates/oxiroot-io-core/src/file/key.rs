@@ -6,7 +6,6 @@
 //! `_key_format_{small,big}`.
 
 use crate::cast::SaturatingFrom;
-use std::ops::Range;
 
 use crate::buffer::RBuffer;
 use crate::error::{Error, Result};
@@ -167,20 +166,24 @@ impl Key {
         self.payload_len() == self.obj_len as usize
     }
 
-    /// Byte range of the (possibly compressed) object payload within the file.
-    /// Unvalidated — prefer [`payload`](Key::payload), which bounds-checks
-    /// against the actual buffer. Kept for callers operating on trusted data.
-    #[must_use]
-    pub fn payload_range(&self) -> Range<usize> {
-        let start = usize::saturating_from(self.seek_key) + self.key_len as usize;
-        start..start + self.payload_len()
+    /// The length of the (possibly compressed) object payload on disk,
+    /// `fNbytes − fKeyLen`, checked: the one place that subtraction is done on
+    /// a key that came from a file.
+    ///
+    /// # Errors
+    ///
+    /// A format error for a key whose header is longer than its record.
+    pub fn checked_payload_len(&self) -> Result<usize> {
+        self.total_bytes()
+            .checked_sub(u32::from(self.key_len))
+            .map(|n| n as usize)
+            .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", self.name)))
     }
 
     /// Bounds-checked absolute offset of the record body (`fSeekKey + fKeyLen`)
     /// within a buffer of length `data_len`. Returns an error — never overflows
     /// `usize` — for a malformed key whose offset wraps or points past the
-    /// buffer. Use this (not [`payload_range`](Key::payload_range)`.start`) to
-    /// locate a key's body on any untrusted file.
+    /// buffer. Use this to locate a key's body on any untrusted file.
     ///
     /// # Errors
     ///
@@ -207,11 +210,7 @@ impl Key {
     /// A format error if the key's offsets or lengths do not fit `data`.
     pub fn payload<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
         let start = self.payload_start(data.len())?;
-        let len = self
-            .total_bytes()
-            .checked_sub(u32::from(self.key_len))
-            .ok_or_else(|| Error::Format(format!("key {:?}: fKeyLen exceeds fNbytes", self.name)))?
-            as usize;
+        let len = self.checked_payload_len()?;
         let end = start
             .checked_add(len)
             .filter(|&e| e <= data.len())

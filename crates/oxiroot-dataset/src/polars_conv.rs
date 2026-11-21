@@ -19,7 +19,7 @@ use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::OffsetsBuffer;
 
 use crate::batch::Batch;
-use crate::column::{Column, IntoColumn};
+use crate::column::Column;
 
 impl Batch {
     /// This batch as a Polars [`DataFrame`], copying the values.
@@ -99,11 +99,11 @@ fn to_array(column: Column) -> Result<Box<dyn Array>> {
         Column::U64(v) => Box::new(PrimitiveArray::from_vec(v)),
         Column::F32(v) => Box::new(PrimitiveArray::from_vec(v)),
         Column::F64(v) => Box::new(PrimitiveArray::from_vec(v)),
-        Column::String { offsets, bytes } => Box::new(
+        Column::String { offsets, text } => Box::new(
             Utf8Array::<i64>::try_new(
                 ArrowDataType::LargeUtf8,
                 signed(&offsets)?,
-                bytes.into(),
+                text.into_bytes().into(),
                 None,
             )
             .map_err(Error::other)?,
@@ -207,9 +207,9 @@ fn spread(dense: Column, valid: &[bool]) -> Result<Column> {
         Column::F64(v) => Column::F64(fill(v, valid)),
         // An absent string, list or struct is an empty one: repeat the
         // offset (the dense children already hold only present entries).
-        Column::String { offsets, bytes } => Column::String {
+        Column::String { offsets, text } => Column::String {
             offsets: repeat_absent(&offsets, valid),
-            bytes,
+            text,
         },
         Column::List { offsets, values } => Column::List {
             offsets: repeat_absent(&offsets, valid),
@@ -330,13 +330,13 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             let (offsets, first, last) = unsigned_offsets(s.offsets().buffer());
             Column::String {
                 offsets,
-                bytes: s.values()[first..last].to_vec(),
+                text: text_of(&s.values()[first..last])?,
             }
         }
         ArrowDataType::Utf8View => downcast::<Utf8ViewArray>(array, name)?
             .values_iter()
             .collect::<Vec<&str>>()
-            .into_column(),
+            .into(),
         ArrowDataType::LargeList(_) => {
             let l = downcast::<ListArray<i64>>(array, name)?;
             let (offsets, first, last) = unsigned_offsets(l.offsets().buffer());
@@ -371,4 +371,10 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             )));
         }
     })
+}
+
+/// A string array's bytes as text. The array has checked them already; this
+/// is the one place the bytes become a `String`.
+fn text_of(bytes: &[u8]) -> Result<String> {
+    Ok(std::str::from_utf8(bytes).map_err(Error::other)?.to_owned())
 }

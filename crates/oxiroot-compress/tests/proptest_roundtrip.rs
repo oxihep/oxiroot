@@ -12,14 +12,14 @@ proptest! {
     fn zstd_round_trips(data in proptest::collection::vec(any::<u8>(), 0..5000)) {
         let compressed = compress(&data, Compression::Zstd(5)).expect("compress");
         let out = decompress(&compressed, data.len()).expect("decompress");
-        prop_assert_eq!(out, data);
+        prop_assert_eq!(&*out, &data[..]);
     }
 
     // Uncompressed passthrough (settings 0) round-trips for any input.
     #[test]
     fn uncompressed_round_trips(data in proptest::collection::vec(any::<u8>(), 0..5000)) {
         let stored = compress(&data, Compression::Stored).expect("store");
-        prop_assert_eq!(decompress(&stored, data.len()).expect("read"), data);
+        prop_assert_eq!(&*decompress(&stored, data.len()).expect("read"), &data[..]);
     }
 
     // Arbitrary bytes with an arbitrary declared length must yield Ok or Err,

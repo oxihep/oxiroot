@@ -37,6 +37,7 @@ fn main() -> oxiroot::Result<()> {
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod templates {
     use oxiroot::fit::{Channel, Sample};
+    use oxiroot::fit::{FitOptions, HypoTest, TemplateModel};
     use oxiroot::hist::oxihist::WeightedSum;
     use oxiroot::plot::{
         Axes, Color, CurveOpts, FillOpts, HistOpts, HistType, StackOpts, Style, ratio_subplots_with,

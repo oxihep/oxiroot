@@ -151,7 +151,7 @@ fn reads_a_ttree_over_http_without_downloading_it_whole() {
         .expect("a TTree key");
     let tname = tkey.name.clone();
     let ltree = TreeReader::open(&local, &tname).expect("local tree");
-    let branch = ltree.branch_names()[0].to_string();
+    let branch = ltree.branch_names().collect::<Vec<_>>()[0].to_string();
     let local_vals = format!(
         "{:?}",
         ltree.branch(&branch).values().expect("local branch")

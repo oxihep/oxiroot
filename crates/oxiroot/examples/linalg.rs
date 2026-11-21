@@ -9,6 +9,7 @@
 //! cargo run -p oxiroot --example linalg
 //! ```
 
+use oxiroot::linalg::{Matrix, SymMatrix, Vector};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
