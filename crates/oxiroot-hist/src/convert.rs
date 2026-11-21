@@ -36,21 +36,32 @@
 //! # What does not survive the trip
 //!
 //! ROOT always has both flow bins; an oxihist axis without one leaves it empty.
-//! ROOT's summary moments (`fTsumw`, `fTsumwx`, …) are recomputed from the bin
-//! centers, and `fEntries` is the sum of the bin values, as uproot does: oxihist
-//! does not count fills. Reading back gives `Regular`, `Variable` or
-//! `StrCategory` axes (a labelled axis's underflow bin is dropped, since a
-//! category axis has none), [`Weight`] storage for histograms and
-//! [`WeightedMean`] for profiles. So, read back:
+//! Reading back gives `Regular`, `Variable` or `StrCategory` axes (a labelled
+//! axis's underflow bin is dropped, since a category axis has none),
+//! [`Weight`] storage for histograms and [`WeightedMean`] for profiles. So,
+//! read back:
 //!
 //! - an `Integer` axis is a `Regular` one with the same bins;
 //! - an `IntCategory` or `Boolean` axis is a `StrCategory` one over its labels;
 //! - an axis's growth flag and its [`name`](oxihist::Axis::name) are gone (ROOT
 //!   axes are always `xaxis`/`yaxis`/`zaxis`), only its label is kept;
 //! - a category axis with no categories yet is written as one empty, unlabelled
-//!   ROOT bin, and comes back as a one-bin `Regular` axis over `[0, 1)`;
-//! - the fill count is not kept, since `fEntries` is written as the sum of the
-//!   bin values.
+//!   ROOT bin, and comes back as a one-bin `Regular` axis over `[0, 1)`.
+//!
+//! # Statistics
+//!
+//! ROOT's entry count and summary sums (`fEntries`, `fTsumw`, `fTsumwx`, …)
+//! are the histogram's [fill statistics](oxihist::FillStats): what it was
+//! filled with, so `GetMean`, `GetRMS` and `GetEntries` on the written file
+//! are those of the data, as for a histogram filled in ROOT. Reading puts
+//! the file's sums back, so they survive a round trip exactly.
+//!
+//! A histogram with no fill statistics (built from bins, or changed bin by
+//! bin) is written with their estimate from the bin centers, and `fEntries`
+//! as the sum of the bin values, as uproot does. A file whose sums are empty
+//! although it has entries (`fTsumw == 0`, as after `SetBinContent` in ROOT)
+//! reads as a histogram without fill statistics: ROOT computes its statistics
+//! from the bins in that case, and so does oxihist.
 //!
 //! [`ToRoot::to_root`] refuses what ROOT cannot hold at all: an axis with
 //! more than `i32::MAX` bins, or an axis kind this version does not know.
@@ -64,7 +75,7 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 
 use oxihist::{
-    AxisKind, Double, Histogram, Int64, Mean, MeanBin, Storage, Weight, WeightedMean,
+    AxisKind, Double, FillStats, Histogram, Int64, Mean, MeanBin, Storage, Weight, WeightedMean,
     WeightedMeanBin, WeightedSum,
 };
 use oxiroot_io_core::{Error, Result, WriteRoot};
@@ -241,6 +252,9 @@ struct Cells {
     swx: [f64; 3],
     swx2: [f64; 3],
     swxx: [f64; 3],
+    /// `Σw·s` and `Σw·s²` of a profile's sampled value (0 for counts).
+    sws: f64,
+    sws2: f64,
 }
 
 fn cells<S: Storage, const D: usize>(
@@ -250,7 +264,6 @@ fn cells<S: Storage, const D: usize>(
 ) -> Cells {
     let sizes: Vec<usize> = h.axes().iter().map(oxihist::Axis::size).collect();
     let nbins: Vec<usize> = h.axes().iter().map(root_nbins).collect();
-    let centers: Vec<Vec<f64>> = h.axes().iter().map(oxihist::Axis::centers).collect();
     let ncells: usize = nbins.iter().map(|n| n + 2).product();
     let mut c = Cells {
         sizes: sizes.clone(),
@@ -263,33 +276,31 @@ fn cells<S: Storage, const D: usize>(
         swx: [0.0; 3],
         swx2: [0.0; 3],
         swxx: [0.0; 3],
+        sws: 0.0,
+        sws2: 0.0,
     };
     for (idx, b) in h.iter(true) {
-        let (w, v) = (value(b), var(b));
         let cell = root_cell(&idx, &sizes, &nbins);
-        c.contents[cell] = w;
-        c.sumw2[cell] = v;
-        c.entries += w;
-        let in_range = idx
-            .iter()
-            .zip(&sizes)
-            .all(|(&i, &n)| i >= 0 && (i).cast_unsigned() < n);
-        if !in_range {
-            continue;
-        }
-        let x: Vec<f64> = (0..D).map(|k| centers[k][idx[k].cast_unsigned()]).collect();
-        c.sw += w;
-        c.sw2 += v;
-        for k in 0..D {
-            c.swx[k] += w * x[k];
-            c.swx2[k] += w * x[k] * x[k];
-        }
-        for (slot, (i, j)) in [(0, 1), (0, 2), (1, 2)].into_iter().enumerate() {
-            if j < D {
-                c.swxx[slot] += w * x[i] * x[j];
-            }
+        c.contents[cell] = value(b);
+        c.sumw2[cell] = var(b);
+    }
+    // The sums of the fills themselves when the histogram kept them, else
+    // their estimate from the bin centers.
+    let stats = h.fill_stats().unwrap_or_else(|| h.binned_stats());
+    c.entries = stats.entries;
+    c.sw = stats.sum_w;
+    c.sw2 = stats.sum_w2;
+    for k in 0..D {
+        c.swx[k] = stats.sum_wx[k];
+        c.swx2[k] = stats.sum_wxy[k][k];
+    }
+    for (slot, (i, j)) in [(0, 1), (0, 2), (1, 2)].into_iter().enumerate() {
+        if j < D {
+            c.swxx[slot] = stats.sum_wxy[i][j];
         }
     }
+    c.sws = stats.sum_ws;
+    c.sws2 = stats.sum_ws2;
     c
 }
 
@@ -432,15 +443,9 @@ fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCel
             sumw2[cell] = w2;
             weighted = true;
         }
-        let in_range = idx
-            .iter()
-            .zip(&p.cells.sizes)
-            .all(|(&i, &n)| i >= 0 && (i).cast_unsigned() < n);
-        if in_range {
-            p.swy += sum;
-            p.swy2 += sum2;
-        }
     }
+    p.swy = p.cells.sws;
+    p.swy2 = p.cells.sws2;
     if weighted {
         p.sumw2 = Some(sumw2);
     }
@@ -538,6 +543,7 @@ fn from_cells<S: Storage, const D: usize>(
     ncells: usize,
     name: &str,
     title: &str,
+    stats: Option<FillStats<D>>,
     bin: impl Fn(usize) -> S::Bin,
 ) -> Histogram<S, D> {
     let nbins: [usize; D] = std::array::from_fn(|k| axes[k].size());
@@ -547,7 +553,46 @@ fn from_cells<S: Storage, const D: usize>(
             *b = bin(cell);
         }
     }
+    h.set_fill_stats(stats);
     h
+}
+
+/// The fill statistics a ROOT histogram stores, for the oxihist histogram
+/// read from it: `x[k]` and `x2[k]` are `fTsumw` times the coordinate of
+/// axis `k` and its square, `cross` the mixed terms as `(i, j, Σw·xᵢ·xⱼ)`,
+/// `sampled` a profile's `Σw·s` and `Σw·s²`.
+///
+/// `None` when the file holds no sums although the histogram has entries
+/// (`fTsumw == 0`, as after `SetBinContent`): ROOT then computes its
+/// statistics from the bins, and so does oxihist without fill statistics.
+fn root_stats<const D: usize>(
+    entries: f64,
+    (sum_w, sum_w2): (f64, f64),
+    x: [f64; D],
+    x2: [f64; D],
+    cross: &[(usize, usize, f64)],
+    (sum_ws, sum_ws2): (f64, f64),
+) -> Option<FillStats<D>> {
+    if sum_w == 0.0 && entries > 0.0 {
+        return None;
+    }
+    let mut sum_wxy = [[0.0; D]; D];
+    for k in 0..D {
+        sum_wxy[k][k] = x2[k];
+    }
+    for &(i, j, v) in cross {
+        sum_wxy[i][j] = v;
+        sum_wxy[j][i] = v;
+    }
+    Some(FillStats {
+        entries,
+        sum_w,
+        sum_w2,
+        sum_wx: x,
+        sum_wxy,
+        sum_ws,
+        sum_ws2,
+    })
 }
 
 fn weighted_sum(contents: &[f64], sumw2: &[f64], cell: usize) -> WeightedSum {
@@ -600,6 +645,14 @@ impl Hist1D {
             self.contents.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx],
+                [self.tsumwx2],
+                &[],
+                (0.0, 0.0),
+            ),
             |c| weighted_sum(&self.contents, &self.sumw2, c),
         ))
     }
@@ -619,6 +672,14 @@ impl Hist2D {
             self.contents.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx, self.tsumwy],
+                [self.tsumwx2, self.tsumwy2],
+                &[(0, 1, self.tsumwxy)],
+                (0.0, 0.0),
+            ),
             |c| weighted_sum(&self.contents, &self.sumw2, c),
         ))
     }
@@ -642,6 +703,18 @@ impl Hist3D {
             self.contents.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx, self.tsumwy, self.tsumwz],
+                [self.tsumwx2, self.tsumwy2, self.tsumwz2],
+                &[
+                    (0, 1, self.tsumwxy),
+                    (0, 2, self.tsumwxz),
+                    (1, 2, self.tsumwyz),
+                ],
+                (0.0, 0.0),
+            ),
             |c| weighted_sum(&self.contents, &self.sumw2, c),
         ))
     }
@@ -661,6 +734,14 @@ impl Profile1D {
             self.sums.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx],
+                [self.tsumwx2],
+                &[],
+                (self.tsumwy, self.tsumwy2),
+            ),
             |c| {
                 weighted_mean(
                     &self.bin_entries,
@@ -687,6 +768,14 @@ impl Profile2D {
             self.sums.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx, self.tsumwy],
+                [self.tsumwx2, self.tsumwy2],
+                &[(0, 1, self.tsumwxy)],
+                (self.tsumwz, self.tsumwz2),
+            ),
             |c| {
                 weighted_mean(
                     &self.bin_entries,
@@ -717,6 +806,18 @@ impl Profile3D {
             self.sums.len(),
             &self.name,
             &self.title,
+            root_stats(
+                self.entries,
+                (self.tsumw, self.tsumw2),
+                [self.tsumwx, self.tsumwy, self.tsumwz],
+                [self.tsumwx2, self.tsumwy2, self.tsumwz2],
+                &[
+                    (0, 1, self.tsumwxy),
+                    (0, 2, self.tsumwxz),
+                    (1, 2, self.tsumwyz),
+                ],
+                (self.tsumwt, self.tsumwt2),
+            ),
             |c| {
                 weighted_mean(
                     &self.bin_entries,
@@ -750,11 +851,90 @@ mod tests {
         let r = h.to_root().unwrap();
         assert_eq!(r.contents, vec![1.0, 2.0, 0.0, 3.0, 1.0]);
         assert_eq!(r.sumw2, vec![1.0, 4.0, 0.0, 9.0, 1.0]);
-        assert_eq!((r.tsumw, r.tsumw2, r.entries), (5.0, 13.0, 7.0));
-        assert_eq!(r.tsumwx, 2.0 * 0.5 + 3.0 * 7.5);
+        // The sums of the fills: four entries, and 7.0 where it was filled,
+        // not at its bin's center.
+        assert_eq!((r.tsumw, r.tsumw2, r.entries), (5.0, 13.0, 4.0));
+        assert_eq!(r.tsumwx, 2.0 * 0.5 + 3.0 * 7.0);
+        assert_eq!(r.tsumwx2, 2.0 * 0.25 + 3.0 * 49.0);
         assert_eq!(r.xaxis.title, "x [cm]");
         assert_eq!(r.class_name(), "TH1D");
-        assert_eq!(r.to_hist().unwrap(), h);
+        let back = r.to_hist().unwrap();
+        assert_eq!(back, h);
+        assert_eq!(back.fill_stats(), h.fill_stats());
+        assert_eq!((back.mean(), back.entries()), (h.mean(), 4.0));
+    }
+
+    #[test]
+    fn fill_statistics_round_trip_in_every_dimension() {
+        let mut h2 = Hist::reg(4, 0.0, 4.0).reg(3, 0.0, 3.0).weight();
+        h2.fill_weight(0.3, 0.2, 2.0);
+        h2.fill_weight(1.7, 2.9, 0.5);
+        h2.fill(9.0, 1.0);
+        let r = h2.to_root().unwrap();
+        let s = h2.fill_stats().unwrap();
+        assert_eq!((r.entries, r.tsumw, r.tsumw2), (3.0, 2.5, 4.25));
+        assert_eq!((r.tsumwx, r.tsumwy), (s.sum_wx[0], s.sum_wx[1]));
+        assert_eq!((r.tsumwx2, r.tsumwy2), (s.sum_wxy[0][0], s.sum_wxy[1][1]));
+        assert_eq!(r.tsumwxy, s.sum_wxy[0][1]);
+        assert_eq!(r.to_hist().unwrap().fill_stats(), Some(s));
+
+        let mut h3 = Hist::reg(2, 0.0, 2.0)
+            .reg(2, 0.0, 2.0)
+            .reg(2, 0.0, 2.0)
+            .double();
+        h3.fill_weight(0.25, 1.0, 1.75, 2.0);
+        let r = h3.to_root().unwrap();
+        assert_eq!((r.tsumwxy, r.tsumwxz, r.tsumwyz), (0.5, 0.875, 3.5));
+        assert_eq!(r.to_hist().unwrap().fill_stats(), h3.fill_stats());
+
+        let mut p = Hist::reg(4, 0.0, 4.0).weighted_mean();
+        p.fill_sample_weight(0.5, 10.0, 2.0);
+        p.fill_sample(1.25, 5.0);
+        p.fill_sample(7.0, 3.0);
+        let r = p.to_root().unwrap();
+        // ROOT's TProfile::GetStats for these fills.
+        assert_eq!((r.entries, r.tsumw, r.tsumw2), (3.0, 3.0, 5.0));
+        assert_eq!((r.tsumwx, r.tsumwx2), (2.25, 2.0625));
+        assert_eq!((r.tsumwy, r.tsumwy2), (25.0, 225.0));
+        assert_eq!(r.to_hist().unwrap().fill_stats(), p.fill_stats());
+
+        let mut p2 = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).mean();
+        p2.fill_sample(0.5, 1.5, 4.0);
+        let r = p2.to_root().unwrap();
+        assert_eq!((r.tsumwxy, r.tsumwz, r.tsumwz2), (0.75, 4.0, 16.0));
+        assert_eq!(r.to_hist().unwrap().fill_stats(), p2.fill_stats());
+    }
+
+    #[test]
+    fn without_fill_statistics_the_bins_stand_in() {
+        // Built from bins: the sums are estimated from the bin centers, and
+        // fEntries is the sum of the bin values.
+        let mut filled = Hist::reg(2, 0.0, 2.0).weight();
+        filled.fill_weight(0.25, 2.5);
+        let bare =
+            Histogram::<Weight, 1>::from_bins([filled.axis(0).clone()], filled.bins()).unwrap();
+        let r = bare.to_root().unwrap();
+        assert_eq!((r.entries, r.tsumw, r.tsumwx), (2.5, 2.5, 1.25));
+        // The file then carries those sums, and reading takes them as they
+        // are.
+        assert_eq!(r.to_hist().unwrap().mean(), 0.5);
+
+        // A ROOT histogram with entries but no sums (SetBinContent) reads
+        // without fill statistics, as ROOT recomputes them from the bins.
+        let mut set = filled.to_root().unwrap();
+        set.tsumw = 0.0;
+        set.tsumw2 = 0.0;
+        set.tsumwx = 0.0;
+        set.tsumwx2 = 0.0;
+        let back = set.to_hist().unwrap();
+        assert!(back.fill_stats().is_none());
+        assert_eq!(back.mean(), 0.5);
+        // An empty one has exact, empty statistics.
+        let empty = Hist::reg(2, 0.0, 2.0).weight().to_root().unwrap();
+        assert_eq!(
+            empty.to_hist().unwrap().fill_stats(),
+            Some(FillStats::default())
+        );
     }
 
     #[test]
@@ -890,10 +1070,10 @@ mod tests {
         assert_ne!(back.axis(0).name, "pdg");
         assert_eq!(back.value([1]), Some(1.0));
 
-        // fEntries is the sum of the bin values, not the fill count.
+        // fEntries is the fill count, not the sum of the bin values.
         let mut h = Hist::reg(2, 0.0, 2.0).weight();
         h.fill_weight(0.5, 2.5);
-        assert_eq!(h.to_root().unwrap().entries, 2.5);
+        assert_eq!(h.to_root().unwrap().entries, 1.0);
     }
 
     #[test]

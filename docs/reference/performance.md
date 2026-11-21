@@ -28,17 +28,21 @@ One million values per fill benchmark.
 | `Hist1D`, 100 variable bins | 248 M fills/s |
 | `Hist2D`, 100 × 100 | 276 M fills/s |
 | `Profile1D`, 100 bins | 275 M fills/s |
-| oxihist, 100 regular bins, `Double` storage | 770 M fills/s |
-| oxihist, 100 regular bins, `Weight` storage | 607 M fills/s |
-| oxihist, string category axis, 20 categories | 128 M fills/s |
+| oxihist, 100 regular bins, `Double` storage | 480 M fills/s |
+| oxihist, 100 regular bins, `Weight` storage | 461 M fills/s |
+| oxihist, string category axis, 20 categories | 106 M fills/s |
 | `ThreadedHist<Hist1D>`, 1 thread | 233 M fills/s |
 | `ThreadedHist<Hist1D>`, 4 threads | 735 M fills/s |
 
-The ROOT histograms (`Hist1D`, …) also keep ROOT's entry count and moment sums
-on every fill; oxihist histograms (what [`Hist`](../guide/histograms.md)
-builds before `.to_root()?`) keep only the bins, and fill a number on a regular
-or variable axis, an integer, a known category or a boolean without going
-through their general (growing, converting) code path.
+Both kinds keep ROOT's entry count and moment sums on every fill: the ROOT
+histograms (`Hist1D`, …) in their `fEntries` and `fTsumw*` fields, oxihist
+histograms (what [`Hist`](../guide/histograms.md) builds before
+`.to_root()?`) in their fill statistics, which `to_root()` writes out. An
+oxihist histogram fills a number on a regular or variable axis, an integer, a
+known category or a boolean without going through its general (growing,
+converting) code path; that path being there is what makes its plain fill
+slower than `Hist1D`'s, whose sums the compiler can keep in registers across
+a loop. Before oxihist 0.14 kept the sums it filled at 770 M/s (`Double`).
 
 `ThreadedHist` gives every thread its own copy, found without a shared lock,
 so fills scale with the threads until the merge: 4 threads fill about 3× faster
