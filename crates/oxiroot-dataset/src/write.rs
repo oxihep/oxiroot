@@ -241,7 +241,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
         let chunks = chunk_ranges(batch);
         let schema = self.schema.clone().unwrap_or_else(|| batch.schema());
         let convert_tree =
-            |r: &std::ops::Range<usize>| Ok(tree_branches(&batch.slice(r.clone()), &schema));
+            |r: &std::ops::Range<usize>| Ok(tree_branches(batch.slice(r.clone()), &schema));
         let convert_ntuple =
             |r: &std::ops::Range<usize>| Ok(ntuple_fields(batch.slice(r.clone()), &schema));
         match self.open()? {
@@ -302,7 +302,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
         {
             let schema = self.schema.clone().unwrap_or_else(|| empty.schema());
             match self.open()? {
-                Opened::Tree(w) => w.write_batch(&tree_branches(&empty, &schema))?,
+                Opened::Tree(w) => w.write_batch(&tree_branches(empty, &schema))?,
                 Opened::Ntuple(w) => w.write_batch(&ntuple_fields(empty, &schema))?,
             }
         }
@@ -380,7 +380,7 @@ impl DatasetObject {
         Ok(match self.format {
             Format::Tree => {
                 check_counts(&self.batch, &schema)?;
-                Content::Tree(tree_branches(&self.batch, &schema))
+                Content::Tree(tree_branches(self.batch, &schema))
             }
             Format::Ntuple => Content::Ntuple(ntuple_fields(self.batch, &schema)),
         })
@@ -615,14 +615,14 @@ fn check_counts(batch: &Batch, schema: &Schema) -> Result<()> {
 /// takes its column as it is, and a counted array says so. A column that is
 /// the count of a counted array is written by the array, not a second time
 /// (see [`check_counts`]).
-fn tree_branches(batch: &Batch, schema: &Schema) -> Vec<Branch> {
-    let counts = count_branches(batch, schema);
+fn tree_branches(batch: Batch, schema: &Schema) -> Vec<Branch> {
+    let counts = count_branches(&batch, schema);
     batch
-        .iter()
+        .into_columns()
         .zip(schema.iter())
         .filter(|((name, _), _)| !counts.iter().any(|(count, _)| count == name))
         .map(|((name, column), (_, data_type))| {
-            let branch = Branch::new(name, column.clone());
+            let branch = Branch::new(name, column);
             match data_type {
                 DataType::CArray(_) => branch.counted(),
                 _ => branch,
