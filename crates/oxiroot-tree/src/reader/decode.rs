@@ -111,6 +111,24 @@ pub(super) fn read_baskets(
 /// over every basket or a window of them. A scalar branch is a scalar
 /// column, a fixed array an array, a counted array or `std::vector` a list.
 pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Column> {
+    let column = decode_entries(branch, baskets)?;
+    // Baskets say how their entries are cut; with none to read, or none that
+    // holds an entry, the branch's own metadata says it is a list.
+    let empty_list = branch.variable
+        && column.is_empty()
+        && !matches!(column, Column::List { .. } | Column::String { .. });
+    Ok(if empty_list {
+        Column::List {
+            offsets: vec![0],
+            values: Box::new(column),
+        }
+    } else {
+        column
+    })
+}
+
+/// The entries of `baskets`, shaped as the baskets themselves say.
+fn decode_entries(branch: &Branch, baskets: &[Basket]) -> Result<Column> {
     let width = usize::saturating_from(branch.leaf_len);
     // A synthesized `TBranchObject` member column: each entry is a whole object,
     // from which this member is extracted.

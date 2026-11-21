@@ -12,8 +12,8 @@ use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::streamer_gen::ClassDef;
 use oxiroot_io_core::{Compression, Error, Result, WriteInto};
 use oxiroot_rntuple::ANCHOR_CLASS;
-use oxiroot_rntuple::raw::{Column as RnColumn, Field, NtupleWriter};
-use oxiroot_tree::raw::{Branch, SplitMember, TreeWriter};
+use oxiroot_rntuple::raw::{Field, NtupleWriter};
+use oxiroot_tree::raw::{Branch, TreeWriter};
 
 use crate::Column;
 use crate::DataType;
@@ -241,7 +241,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
         let chunks = chunk_ranges(batch);
         let schema = self.schema.clone().unwrap_or_else(|| batch.schema());
         let convert_tree =
-            |r: &std::ops::Range<usize>| tree_branches(&batch.slice(r.clone()), &schema);
+            |r: &std::ops::Range<usize>| Ok(tree_branches(&batch.slice(r.clone()), &schema));
         let convert_ntuple =
             |r: &std::ops::Range<usize>| Ok(ntuple_fields(batch.slice(r.clone()), &schema));
         match self.open()? {
@@ -302,7 +302,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
         {
             let schema = self.schema.clone().unwrap_or_else(|| empty.schema());
             match self.open()? {
-                Opened::Tree(w) => w.write_batch(&tree_branches(&empty, &schema)?)?,
+                Opened::Tree(w) => w.write_batch(&tree_branches(&empty, &schema))?,
                 Opened::Ntuple(w) => w.write_batch(&ntuple_fields(empty, &schema))?,
             }
         }
@@ -380,7 +380,7 @@ impl DatasetObject {
         Ok(match self.format {
             Format::Tree => {
                 check_counts(&self.batch, &schema)?;
-                Content::Tree(tree_branches(&self.batch, &schema)?)
+                Content::Tree(tree_branches(&self.batch, &schema))
             }
             Format::Ntuple => Content::Ntuple(ntuple_fields(self.batch, &schema)),
         })
@@ -611,16 +611,23 @@ fn check_counts(batch: &Batch, schema: &Schema) -> Result<()> {
     Ok(())
 }
 
-/// A batch's columns as tree branches, stored as `schema` says. A column that
-/// is the count of a counted array is written by the array, not a second time
+/// A batch's columns as tree branches, stored as `schema` says: a branch
+/// takes its column as it is, and a counted array says so. A column that is
+/// the count of a counted array is written by the array, not a second time
 /// (see [`check_counts`]).
-fn tree_branches(batch: &Batch, schema: &Schema) -> Result<Vec<Branch>> {
+fn tree_branches(batch: &Batch, schema: &Schema) -> Vec<Branch> {
     let counts = count_branches(batch, schema);
     batch
         .iter()
         .zip(schema.iter())
         .filter(|((name, _), _)| !counts.iter().any(|(count, _)| count == name))
-        .map(|((name, column), (_, data_type))| tree_branch(name, column, data_type))
+        .map(|((name, column), (_, data_type))| {
+            let branch = Branch::new(name, column.clone());
+            match data_type {
+                DataType::CArray(_) => branch.counted(),
+                _ => branch,
+            }
+        })
         .collect()
 }
 
@@ -630,234 +637,9 @@ fn ntuple_fields(batch: Batch, schema: &Schema) -> Vec<Field> {
         .into_columns()
         .zip(schema.iter())
         .map(|((name, column), (_, data_type))| {
-            let column = ntuple_column(column, &name, data_type);
-            Field::new(name, column)
+            Field::new(name, column).stored_as(data_type.clone())
         })
         .collect()
-}
-
-/// Split flat `values` into one `Vec` per entry at the cumulative `offsets`.
-fn rows<T: Clone>(offsets: &[u64], values: &[T]) -> Vec<Vec<T>> {
-    offsets
-        .windows(2)
-        .map(|w| values[usize::saturating_from(w[0])..usize::saturating_from(w[1])].to_vec())
-        .collect()
-}
-
-fn strings(offsets: &[u64], text: &str) -> Vec<String> {
-    (offsets.windows(2))
-        .map(|w| text[usize::saturating_from(w[0])..usize::saturating_from(w[1])].to_owned())
-        .collect()
-}
-
-fn unsupported(name: &str, c: &Column, what: &str) -> Error {
-    Error::Unsupported(format!(
-        "column {name:?} is {}, which {what} written by oxiroot cannot hold",
-        c.type_name()
-    ))
-}
-
-/// Match a column's scalar variants, binding the values as `$v` and building
-/// `$ctor(name, $conv)` for each listed one; any other is unsupported.
-macro_rules! by_type {
-    ($ty:ident, $name:expr, $c:expr, $what:expr, $col:expr, $v:ident => $conv:expr;
-     $($variant:ident => $ctor:ident),* $(,)?) => {
-        match $col {
-            $(Column::$variant($v) => Ok($ty::$ctor($name, $conv)),)*
-            _ => Err(unsupported($name, $c, $what)),
-        }
-    };
-}
-
-/// A column as a tree branch: `Vec<T>` as `std::vector<T>` (or a counted
-/// `x[n]` when `data_type` says so), `[T; N]` as a fixed array.
-fn tree_branch(name: &str, c: &Column, data_type: &DataType) -> Result<Branch> {
-    const WHAT: &str = "a TTree";
-    match c {
-        Column::String { offsets, text } => Ok(Branch::string(name, strings(offsets, text))),
-        Column::List { offsets, values } if matches!(data_type, DataType::CArray(_)) => {
-            by_type!(Branch, name, c, WHAT, &**values, x => rows(offsets, x);
-                Bool => jagged_bool, I8 => jagged_i8, U8 => jagged_u8, I16 => jagged_i16,
-                U16 => jagged_u16, I32 => jagged_i32, U32 => jagged_u32, I64 => jagged_i64,
-                U64 => jagged_u64, F32 => jagged_f32, F64 => jagged_f64)
-        }
-        Column::List { offsets, values } => match &**values {
-            // A list of structs is a split `std::vector<Struct>`: one jagged
-            // sub-branch per member, the struct a class named after the column.
-            Column::Struct(members) => {
-                let members = members
-                    .iter()
-                    .map(|(m, mc)| {
-                        by_type!(SplitMember, m.as_str(), c, WHAT, mc, x => rows(offsets, x);
-                            Bool => bool, I8 => i8, U8 => u8, I16 => i16, U16 => u16,
-                            I32 => i32, U32 => u32, I64 => i64, U64 => u64, F32 => f32,
-                            F64 => f64)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(Branch::split_vector(name, class_name(name), members))
-            }
-            Column::String { offsets: o2, text } => Ok(Branch::vector_string(
-                name,
-                rows(offsets, &strings(o2, text)),
-            )),
-            Column::List {
-                offsets: o2,
-                values: inner,
-            } => {
-                by_type!(Branch, name, c, WHAT, &**inner, x => rows(offsets, &rows(o2, x));
-                Bool => vector_vector_bool, I8 => vector_vector_i8, U8 => vector_vector_u8,
-                I16 => vector_vector_i16, U16 => vector_vector_u16, I32 => vector_vector_i32,
-                U32 => vector_vector_u32, I64 => vector_vector_i64, U64 => vector_vector_u64,
-                F32 => vector_vector_f32, F64 => vector_vector_f64)
-            }
-            v => by_type!(Branch, name, c, WHAT, v, x => rows(offsets, x);
-                Bool => vector_bool, I8 => vector_i8, U8 => vector_u8, I16 => vector_i16,
-                U16 => vector_u16, I32 => vector_i32, U32 => vector_u32, I64 => vector_i64,
-                U64 => vector_u64, F32 => vector_f32, F64 => vector_f64),
-        },
-        // The width goes with the branch, so an empty batch keeps it too.
-        Column::Array { len, values } => by_type!(Branch, name, c, WHAT, &**values,
-            v => if *len == 0 { Vec::new() } else { v.chunks(*len).map(<[_]>::to_vec).collect() };
-            Bool => array_bool, I8 => array_i8, U8 => array_u8, I16 => array_i16,
-            U16 => array_u16, I32 => array_i32, U32 => array_u32, I64 => array_i64,
-            U64 => array_u64, F32 => array_f32, F64 => array_f64)
-        .map(|b| b.with_width(*len)),
-        scalar => by_type!(Branch, name, c, WHAT, scalar, v => v.clone();
-            Bool => bool, I8 => i8, U8 => u8, I16 => i16, U16 => u16, I32 => i32,
-            U32 => u32, I64 => i64, U64 => u64, F32 => f32, F64 => f64),
-    }
-}
-
-/// A column as an `RNTuple` column, moved rather than copied: lists become
-/// collections over their flat values, so a `std::vector<float>` is written
-/// straight from its offsets and values. `data_type` chooses the storage
-/// where the column's shape allows more than one. `class` names a struct:
-/// members `_0`, `_1`, … make a `std::pair` / `std::tuple`, named members a
-/// user class called `class` (ROOT reads it with that class's dictionary, or
-/// by type emulation without one).
-fn ntuple_column(c: Column, class: &str, data_type: &DataType) -> RnColumn {
-    // The type of what is inside a list, array or optional. A type that does
-    // not have the column's shape was refused by `check_batch`; the column's
-    // own type stands in so this cannot fail.
-    let inner = |t: &DataType| -> Option<DataType> {
-        match t {
-            DataType::List(i)
-            | DataType::Set(i)
-            | DataType::Array(_, i)
-            | DataType::Optional(i)
-            | DataType::UniquePtr(i) => Some((**i).clone()),
-            _ => None,
-        }
-    };
-    if let DataType::Atomic(of) = data_type {
-        return RnColumn::Atomic(Box::new(ntuple_column(c, class, of)));
-    }
-    match c {
-        Column::Bool(v) => RnColumn::Bool(v),
-        Column::I8(v) => RnColumn::I8(v),
-        Column::U8(v) => RnColumn::U8(v),
-        Column::I16(v) => RnColumn::I16(v),
-        Column::U16(v) => RnColumn::U16(v),
-        Column::I32(v) => RnColumn::I32(v),
-        Column::U32(v) => RnColumn::U32(v),
-        Column::I64(v) => RnColumn::I64(v),
-        Column::U64(v) => RnColumn::U64(v),
-        Column::F32(values) => match *data_type {
-            DataType::Half => RnColumn::HalfF32(values),
-            DataType::Truncated { bits } => RnColumn::TruncF32 { values, bits },
-            DataType::Quantized { bits, min, max } => RnColumn::QuantF32 {
-                values,
-                range: (min, max),
-                bits,
-            },
-            _ => RnColumn::F32(values),
-        },
-        Column::F64(v) => RnColumn::F64(v),
-        Column::String { offsets, text } => RnColumn::Str(strings(&offsets, &text)),
-        Column::List { offsets, values } => {
-            let item = match (data_type, &*values) {
-                // A map's `{_0, _1}` entries take the key and value types.
-                (DataType::Map(k, v), Column::Struct(_)) => DataType::Struct(vec![
-                    ("_0".into(), (**k).clone()),
-                    ("_1".into(), (**v).clone()),
-                ]),
-                _ => inner(data_type).unwrap_or_else(|| values.data_type()),
-            };
-            let items = Box::new(ntuple_column(*values, class, &item));
-            match data_type {
-                DataType::Set(_) | DataType::Map(..) => RnColumn::Assoc {
-                    type_name: data_type.cpp_name(),
-                    offsets,
-                    items,
-                },
-                _ => RnColumn::Nested { offsets, items },
-            }
-        }
-        Column::Array { len, values } => match (data_type, *values) {
-            (DataType::Bitset(_), Column::Bool(bits)) => RnColumn::Bitset { len, bits },
-            (_, values) => {
-                let item = inner(data_type).unwrap_or_else(|| values.data_type());
-                RnColumn::Array {
-                    len,
-                    items: Box::new(ntuple_column(values, class, &item)),
-                }
-            }
-        },
-        Column::Optional { valid, values } => {
-            let item = inner(data_type).unwrap_or_else(|| values.data_type());
-            RnColumn::Optional {
-                unique: matches!(data_type, DataType::UniquePtr(_)),
-                present: valid,
-                values: Box::new(ntuple_column(*values, class, &item)),
-            }
-        }
-        Column::Struct(members) => {
-            let types: Vec<DataType> = match data_type {
-                DataType::Struct(types) if types.len() == members.len() => {
-                    types.iter().map(|(_, t)| t.clone()).collect()
-                }
-                _ => members.iter().map(|(_, c)| c.data_type()).collect(),
-            };
-            let positional = positional(members.iter().map(|(n, _)| n));
-            let members: Vec<(String, RnColumn)> = members
-                .into_iter()
-                .zip(&types)
-                .map(|((n, c), t)| {
-                    let inner = format!("{class}_{n}");
-                    (n, ntuple_column(c, &inner, t))
-                })
-                .collect();
-            if positional {
-                RnColumn::Record(members)
-            } else {
-                RnColumn::Object {
-                    type_name: class_name(class),
-                    members,
-                }
-            }
-        }
-        // Refused by `check_batch` before this is reached.
-        _ => RnColumn::Bool(Vec::new()),
-    }
-}
-
-/// `name` as a C++ identifier: other characters become `_`, and a leading
-/// digit gets a `_` in front.
-fn class_name(name: &str) -> String {
-    let mut out: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if out.is_empty() || out.starts_with(|c: char| c.is_ascii_digit()) {
-        out.insert(0, '_');
-    }
-    out
 }
 
 #[cfg(test)]
