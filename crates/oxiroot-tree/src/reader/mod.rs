@@ -19,8 +19,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use crate::value::{LeafType, integers};
-use oxiroot_io_core::column::{FromColumn, typed};
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::column::{FromColumn, typed};
 
 mod decode;
 mod members;

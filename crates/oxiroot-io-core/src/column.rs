@@ -209,8 +209,8 @@ impl Column {
             }
             fields.push((name, *values));
         }
-        let offsets = shared
-            .ok_or_else(|| Error::InvalidInput("a list of structs needs a member".into()))?;
+        let offsets =
+            shared.ok_or_else(|| Error::InvalidInput("a list of structs needs a member".into()))?;
         Ok(Self::List {
             offsets,
             values: Box::new(Self::Struct(fields)),

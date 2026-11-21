@@ -1,13 +1,14 @@
 //! Histograms, a `TTree` and an `RNTuple` in one file, through one `FileWriter`.
 
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::data::Column;
 use oxiroot::file::Error;
 use oxiroot::file::Parameter;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, Column};
+use oxiroot::tree::raw::Branch;
 
 fn hist() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");
@@ -31,7 +32,7 @@ fn histograms_trees_and_rntuples_share_a_file() {
         ))
         .add(NtupleObject::new(
             "ntuple",
-            vec![Field::i32("x", vec![1, 2])],
+            vec![Field::new("x", vec![1, 2])],
         ))
         .dir("cal", |d| {
             d.add(&Parameter::f64("gain", 1.5)).add(TreeObject::new(
@@ -59,17 +60,14 @@ fn histograms_trees_and_rntuples_share_a_file() {
             .field("x")
             .values()
             .unwrap(),
-        FieldValues::I32(vec![1, 2])
+        Column::I32(vec![1, 2])
     );
     assert_eq!(
         f.get::<Parameter>("cal/gain").unwrap().value().as_f64(),
         1.5
     );
     let ped = TreeReader::open(&f, "cal/Pedestals").unwrap();
-    assert_eq!(
-        ped.branch("adc").values().unwrap(),
-        Column::I32(vec![3, 4])
-    );
+    assert_eq!(ped.branch("adc").values().unwrap(), Column::I32(vec![3, 4]));
 
     // One streamer-info record describes all of it.
     let registry = f.streamer_registry().unwrap();
@@ -104,7 +102,10 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
         .unwrap();
     oxiroot::FileUpdater::open(&path)
         .unwrap()
-        .add(TreeObject::new("T", vec![Branch::new("flag", vec![1_u8, 0])]))
+        .add(TreeObject::new(
+            "T",
+            vec![Branch::new("flag", vec![1_u8, 0])],
+        ))
         .compression(Compression::Stored)
         .write()
         .unwrap();

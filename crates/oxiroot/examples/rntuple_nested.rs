@@ -10,13 +10,15 @@
 //! `RNTuple` writer and reader rather than `oxiroot::data`. Pass an output path as the first argument to keep the
 //! file (default: a temporary file that is read back and removed).
 
+use oxiroot::data::Column;
+
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Column, Field, NtupleWriter};
+use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
     // (a) std::vector<std::string>: per-entry lists of tags.
-    let tags = Field::vector_string(
+    let tags = Field::new(
         "tags",
         vec![
             vec![],
@@ -26,7 +28,7 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // (b) std::vector<std::vector<int32_t>>: per-entry hit patterns.
-    let hits = Field::vector_vector_i32(
+    let hits = Field::new(
         "hits",
         vec![vec![], vec![vec![1, 2]], vec![vec![3], vec![4, 5]]],
     );
@@ -35,11 +37,11 @@ fn main() -> oxiroot::Result<()> {
     //     per-entry offsets over the flattened (id, energy) struct-of-arrays.
     let clusters = Field::new(
         "clusters",
-        Column::Nested {
+        Column::List {
             // A leading 0, then each entry's end: entry i spans
             // items[offsets[i]..offsets[i + 1]].
             offsets: vec![0, 0, 1, 3], // entry 0: none, entry 1: 1, entry 2: 2
-            items: Box::new(Column::Record(vec![
+            values: Box::new(Column::Struct(vec![
                 ("_0".to_string(), Column::I32(vec![10, 20, 21])),
                 ("_1".to_string(), Column::F64(vec![1.5, 2.5, 3.5])),
             ])),

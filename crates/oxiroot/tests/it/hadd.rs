@@ -1,12 +1,13 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::data::Column;
 use oxiroot::file::ObjString;
 use oxiroot::hadd::{MergeKind, Merger};
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, Column};
+use oxiroot::tree::raw::Branch;
 use oxiroot_io_core::cast::SaturatingFrom;
 
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -101,7 +102,7 @@ fn concatenates_rntuple_files() {
     FileWriter::create(tmp("rn_a"))
         .add(NtupleObject::new(
             "ntpl",
-            vec![Field::f64("x", vec![0.0, 1.0])],
+            vec![Field::new("x", vec![0.0, 1.0])],
         ))
         .compression(Compression::Stored)
         .write()
@@ -109,7 +110,7 @@ fn concatenates_rntuple_files() {
     FileWriter::create(tmp("rn_b"))
         .add(NtupleObject::new(
             "ntpl",
-            vec![Field::f64("x", vec![2.0, 3.0, 4.0])],
+            vec![Field::new("x", vec![2.0, 3.0, 4.0])],
         ))
         .compression(Compression::Stored)
         .write()
@@ -135,7 +136,7 @@ fn concatenates_rntuple_files() {
     assert_eq!(nt.entries(), 5);
     assert_eq!(
         nt.field("x").values().unwrap(),
-        FieldValues::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0])
+        Column::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0])
     );
 }
 
@@ -179,14 +180,22 @@ fn a_tree_merge_streams_one_batch_per_input() {
                 .add(TreeObject::new(
                     "Events",
                     vec![
-                        Branch::new("i", (0..n).map(|x| k * 10 + x).collect()),
+                        Branch::new("i", (0..n).map(|x| k * 10 + x).collect::<Vec<i32>>()),
                         Branch::new(
                             "hits",
                             (0..n)
                                 .map(|x| vec![x as f32; usize::saturating_from(x)])
-                                .collect()).counted(),
-                        Branch::new("tag", (0..n).map(|x| format!("t{k}{x}")).collect()),
-                        Branch::new("vec", (0..n).map(|x| vec![f64::from(x); 2]).collect()),
+                                .collect::<Vec<_>>(),
+                        )
+                        .counted(),
+                        Branch::new(
+                            "tag",
+                            (0..n).map(|x| format!("t{k}{x}")).collect::<Vec<_>>(),
+                        ),
+                        Branch::new(
+                            "vec",
+                            (0..n).map(|x| vec![f64::from(x); 2]).collect::<Vec<_>>(),
+                        ),
                     ],
                 ))
                 .compression(Compression::Zstd(3))
@@ -256,8 +265,8 @@ fn an_rntuple_merge_gathers_small_inputs_into_one_cluster() {
                 .add(NtupleObject::new(
                     "ntpl",
                     vec![
-                        Field::i64("id", vec![k, k + 100]),
-                        Field::string("s", vec![format!("a{k}"), format!("b{k}")]),
+                        Field::new("id", vec![k, k + 100_i64]),
+                        Field::new("s", vec![format!("a{k}"), format!("b{k}")]),
                     ],
                 ))
                 .compression(Compression::Stored)
@@ -279,11 +288,11 @@ fn an_rntuple_merge_gathers_small_inputs_into_one_cluster() {
     assert_eq!(nt.footer().cluster_groups[0].num_clusters, 1);
     assert_eq!(
         nt.field("id").values().unwrap(),
-        FieldValues::I64(vec![0, 100, 1, 101, 2, 102])
+        Column::I64(vec![0, 100, 1, 101, 2, 102])
     );
     assert_eq!(
         nt.field("s").values().unwrap(),
-        FieldValues::Str(
+        Column::from(
             ["a0", "b0", "a1", "b1", "a2", "b2"]
                 .map(String::from)
                 .to_vec()
@@ -295,7 +304,10 @@ fn an_rntuple_merge_gathers_small_inputs_into_one_cluster() {
 fn empty_inputs_merge_to_an_empty_tree() {
     for k in 0..2 {
         FileWriter::create(tmp(&format!("empty_tree_{k}")))
-            .add(TreeObject::new("T", vec![Branch::new("x", Vec::<f64>::new())]))
+            .add(TreeObject::new(
+                "T",
+                vec![Branch::new("x", Vec::<f64>::new())],
+            ))
             .compression(Compression::Stored)
             .write()
             .unwrap();
@@ -382,19 +394,40 @@ fn a_merge_keeps_every_column_a_batch_can_hold() {
     }
 }
 
-/// A `std::variant` field is the one thing a batch cannot hold: the merge
-/// says so and writes nothing.
+/// A `std::variant` field merges like any other: a union column holds it,
+/// and the output has the inputs' entries one after the other.
 #[test]
-fn a_merge_refuses_a_variant_field() {
+fn a_merge_keeps_a_variant_field() {
     let input = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/rntuple_variant_uncompressed.root");
     let out = tmp("variant_out");
-    let err = Merger::new()
-        .inputs([&input, &input])
-        .merge(&out)
-        .unwrap_err();
-    assert!(err.to_string().contains("variant"), "{err}");
-    assert!(!out.exists());
+    Merger::new().inputs([&input, &input]).merge(&out).unwrap();
+
+    let read = |path: &std::path::Path| {
+        let file = FileReader::open(path).unwrap();
+        let key = file.keys()[0].name.clone();
+        let ntuple = NtupleReader::open(&file, &key).unwrap();
+        let fields: Vec<String> = ntuple.field_names().map(str::to_string).collect();
+        let values: Vec<_> = (fields.iter())
+            .map(|f| ntuple.field(f).values().unwrap())
+            .collect();
+        (ntuple.entries(), fields, values)
+    };
+    let (entries, fields, once) = read(&input);
+    let (merged_entries, merged_fields, merged) = read(&out);
+    assert_eq!(merged_entries, 2 * entries);
+    assert_eq!(merged_fields, fields);
+    assert!(
+        once.iter().any(|c| matches!(c, Column::Union { .. })),
+        "the fixture holds a variant"
+    );
+    for (mut twice, merged) in once.into_iter().zip(merged) {
+        let again = twice.clone();
+        twice.append(again).expect("the same type twice");
+        // An alternative's values are stored densely, so the merged file's
+        // indices are those of the two inputs appended.
+        assert_eq!(merged, twice);
+    }
 }
 
 /// Inputs that do not hold the first input's columns, or hold one of them as

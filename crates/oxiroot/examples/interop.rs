@@ -29,15 +29,17 @@
 //!     top-level TH1D "dh" = [2,4] plus a subdirectory "region" holding "rh"
 //!     = [3,6,9].
 
+use oxiroot::data::Column;
+
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::Path;
 use std::process::exit;
 
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, Column, SplitMember};
+use oxiroot::tree::raw::Branch;
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -190,8 +192,8 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         .write()?;
 
     let fields = vec![
-        Field::i32("x", NTPL_X.to_vec()),
-        Field::f64("y", NTPL_Y.to_vec()),
+        Field::new("x", NTPL_X.to_vec()),
+        Field::new("y", NTPL_Y.to_vec()),
     ];
     write_rntuple_file(
         dir.join("rust_ntuple.root"),
@@ -206,24 +208,20 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
         &[
             Branch::new("ti", NTPL_X.to_vec()),
             Branch::new("tf", NTPL_Y.to_vec()),
-            Branch::new("tv", TREE_TV.iter().map(|r| r.to_vec()).collect() /*ARRAY_FIXME f64*/),
+            Branch::new("tv", TREE_TV.to_vec()),
+            Branch::new("ts", TREE_TS.to_vec()),
+            Branch::new("tj", rows(&TREE_TJ)).counted(),
+            Branch::new("tw", rows(&TREE_TW)),
+            // One list per member of the struct, zipped into a list of structs.
             Branch::new(
-                "ts",
-                TREE_TS
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect()),
-            Branch::new("tj", TREE_TJ.iter().map(|r| r.to_vec()).collect()).counted(),
-            Branch::new("tw", TREE_TW.iter().map(|r| r.to_vec()).collect()),
-            Branch::split_vector(
                 "th",
-                "Hit",
-                vec![
-                    SplitMember::f32("x", TREE_TH_X.iter().map(|r| r.to_vec()).collect()),
-                    SplitMember::f32("y", TREE_TH_Y.iter().map(|r| r.to_vec()).collect()),
-                    SplitMember::i32("id", TREE_TH_ID.iter().map(|r| r.to_vec()).collect()),
-                ],
-            ),
+                Column::list_of_structs([
+                    ("x", Column::from(rows(&TREE_TH_X))),
+                    ("y", rows(&TREE_TH_Y).into()),
+                    ("id", rows(&TREE_TH_ID).into()),
+                ])?,
+            )
+            .class_name("Hit"),
         ],
         Compression::Stored,
     )?;
@@ -310,11 +308,11 @@ fn read(dir: &Path) -> oxiroot::Result<()> {
     let f = FileReader::open(ntuple_path)?;
     let ntpl = NtupleReader::open(&f, "ntpl")?;
     match ntpl.field("x").values()? {
-        FieldValues::I32(v) => assert_eq_or_die("ntuple x", &v, &NTPL_X),
+        Column::I32(v) => assert_eq_or_die("ntuple x", &v, &NTPL_X),
         other => die(&format!("ntuple x: expected I32, got {other:?}")),
     }
     match ntpl.field("y").values()? {
-        FieldValues::F64(v) => assert_close("ntuple y", &v, &NTPL_Y),
+        Column::F64(v) => assert_close("ntuple y", &v, &NTPL_Y),
         other => die(&format!("ntuple y: expected F64, got {other:?}")),
     }
     println!("read oracle_ntuple.root — values match");
@@ -328,23 +326,13 @@ fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
         Column::I32(v) => assert_eq_or_die("otree oi", &v, &OTREE_OI),
         other => die(&format!("otree oi: expected I32, got {other:?}")),
     }
-    match t.branch("oj").values()? {
-        Column::from(v) => assert_nested("otree oj", &v, &OTREE_OJ),
-        other => die(&format!("otree oj: expected VecF64, got {other:?}")),
-    }
-    match t.branch("os").values()? {
-        Column::from(v) => {
-            let got: Vec<&str> = v.iter().map(String::as_str).collect();
-            assert_eq_or_die("otree os", &got, &OTREE_OS);
-        }
-        other => die(&format!("otree os: expected Str, got {other:?}")),
-    }
+    assert_nested("otree oj", &t.branch("oj").read::<Vec<f64>>()?, &OTREE_OJ);
+    let os = t.branch("os").read::<String>()?;
+    let got: Vec<&str> = os.iter().map(String::as_str).collect();
+    assert_eq_or_die("otree os", &got, &OTREE_OS);
     // The std::vector<double> branch is written only by the ROOT C++ oracle.
     if t.branch_names().collect::<Vec<_>>().contains(&"ov") {
-        match t.branch("ov").values()? {
-            Column::from(v) => assert_nested("otree ov", &v, &OTREE_OV),
-            other => die(&format!("otree ov: expected VecF64, got {other:?}")),
-        }
+        assert_nested("otree ov", &t.branch("ov").read::<Vec<f64>>()?, &OTREE_OV);
     }
     println!("read oracle_tree.root — values match");
     Ok(())
@@ -401,4 +389,9 @@ fn main() {
         eprintln!("interop ERROR: {e}");
         exit(1);
     }
+}
+
+/// The rows of a table of slices, each as a `Vec`.
+fn rows<T: Clone>(table: &[&[T]]) -> Vec<Vec<T>> {
+    table.iter().map(|row| row.to_vec()).collect()
 }

@@ -129,20 +129,20 @@ fn bench(c: &mut Criterion) {
                 ),
             });
         });
-        g.bench_function("vector<f64> column, low level flat", |b| {
+        g.bench_function("vector<f64> column, low level", |b| {
             b.iter(|| match label {
                 "ttree" => black_box(
                     TreeReader::open(&file, "events")
                         .unwrap()
                         .branch("jets")
-                        .flat()
+                        .values()
                         .map(drop),
                 ),
                 _ => black_box(
                     NtupleReader::open(&file, "events")
                         .unwrap()
                         .field("jets")
-                        .flat()
+                        .values()
                         .map(drop),
                 ),
             });
