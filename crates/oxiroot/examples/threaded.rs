@@ -23,8 +23,6 @@ fn main() {
     let hist = ThreadedHist::new(
         Hist::reg(100, 0.0, 100.0)
             .double()
-            .to_root()
-            .unwrap()
             .named("mass")
             .titled("toy mass [GeV]"),
     );
@@ -55,27 +53,30 @@ fn main() {
 
     // Combine every thread's copy into one — exact (contents + entries + moments).
     let merged = hist.merge().expect("identical binning");
+    let (peak_bin, peak) = merged.maximum().expect("a histogram with bins");
     println!(
         "merged: {} entries, mean {:.4}, std {:.4}, peak bin {} = {}",
         merged.entries(),
         merged.mean(),
         merged.std_dev(),
-        merged.maximum_bin(),
-        merged.maximum(),
+        peak_bin[0],
+        peak,
     );
 
     // The result is identical to a plain single-threaded fill (bins are exact;
     // moment sums agree up to floating-point summation order).
     let mut serial = Hist::reg(100, 0.0, 100.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("mass")
         .titled("toy mass [GeV]");
     for &x in &data {
         serial.fill(x);
     }
-    assert_eq!(merged.values(), serial.values(), "bins match serial fill");
+    assert_eq!(
+        merged.values(false),
+        serial.values(false),
+        "bins match serial fill"
+    );
     assert_eq!(merged.entries(), serial.entries(), "entry count matches");
     println!("\u{2713} identical to a single-threaded fill");
 }

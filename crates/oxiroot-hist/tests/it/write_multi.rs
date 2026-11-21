@@ -10,25 +10,20 @@ use oxiroot_io_core::FileWriter;
 
 #[test]
 fn writes_multiple_histograms_into_one_file() {
-    let mut h1 = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("hx")
-        .titled("1-D");
+    let mut h1 = Hist::reg(4, 0.0, 4.0).double().named("hx").titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
         h1.fill(x);
     }
+    let h1 = h1.to_root().unwrap();
     let mut h2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("hxy")
         .titled("2-D");
     h2.fill(0.5, 0.5);
     h2.fill(1.5, 1.5);
     h2.fill(1.5, 1.5);
+    let h2 = h2.to_root().unwrap();
 
     let out = PathBuf::from("/tmp/rootrs_multi_hist.root");
     FileWriter::create(&out)

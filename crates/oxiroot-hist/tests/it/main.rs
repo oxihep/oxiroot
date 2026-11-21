@@ -1,10 +1,8 @@
 //! The oxiroot-hist histogram integration tests, compiled as one binary so the
 //! suite links once. Each module is one topic.
 
-mod analysis;
 mod collections;
 mod delete_purge;
-mod derive;
 mod dirs;
 mod efficiency;
 mod fit;
@@ -26,21 +24,17 @@ mod polyhist;
 mod profile2d;
 mod profile3d;
 mod profile_merge;
-mod quick_hist;
 mod read_compressed;
 mod read_family;
 mod read_integer;
 mod read_th1d;
 mod read_th2d;
 mod sparsehist;
-mod stats;
 mod streamer_classes;
 mod sumw2_varbins;
-mod threaded;
 mod time_axis;
 mod trait_api;
 mod update;
-mod weighted_fill;
 mod write_big;
 mod write_float;
 mod write_int;

@@ -1,7 +1,7 @@
 # Multithreaded fill
 
 `ThreadedHist` is the pure-`std` analog of ROOT's
-[`TThreadedObject<Hist1D>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
+[`TThreadedObject<TH1D>`](https://root.cern/doc/master/classROOT_1_1TThreadedObject.html):
 share one accumulator across threads, fill it from any of them, then merge the
 per-thread copies into a single histogram that is identical to a serial fill.
 This page covers `ThreadedHist`, the `Mergeable` trait (and its `merge_all`), and the
@@ -11,9 +11,9 @@ optional `rayon`-powered `fill_par`.
 
 ROOT fills histograms in parallel by handing each thread a private copy and
 combining them at the end. oxiroot is built for exactly this pattern: every
-histogram type is plain `Clone` data, and `add(other, 1.0)` is an *exact*
-reduction — it sums bin contents, per-bin `Sumw2`, the entry count, and every
-statistical moment sum. A parallel fill is therefore "clone per thread, fill
+histogram is plain `Clone` data, and `add(&other)` is an *exact* reduction — it
+sums bin contents, per-bin variances, the entry count, and the statistics of
+the fills. A parallel fill is therefore "clone per thread, fill
 locally without locking, merge at the end", and the merged result equals a
 single-threaded fill up to floating-point summation order.
 
@@ -35,7 +35,7 @@ use oxiroot::prelude::*;
 let data: Vec<f64> = (0..1_000_000).map(|i| (i as f64 * 0.618) % 100.0).collect();
 
 // A binning prototype (normally empty); each thread copies it on first fill.
-let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root()?.named("mass"));
+let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("mass"));
 
 let n_threads = std::thread::available_parallelism().map_or(4, |n| n.get());
 
@@ -78,21 +78,12 @@ no shared lock and fills scale with the number of threads: 24 M fills of a
 | `num_slots()` | Number of threads that have filled so far (diagnostic). |
 | `merge()` | Consume the accumulator, returning the combined histogram (`Result<H, H::Error>`). |
 
-The `fill` / `fill_weight` convenience methods are provided for every
-fillable type — `Hist1D`, `Hist2D`, `Hist3D` and the three profiles — with the matching
-arity. `ThreadedHist` itself is oxihist's (the same accumulator fills oxihist
-histograms), so for ROOT types these methods come from four traits, by the
-number of values a fill takes. The prelude brings them in; without it, import
-the one you fill through:
-
-| Type | `fill` | `fill_weight` | Trait |
-| --- | --- | --- | --- |
-| `ThreadedHist<Hist1D>` | `fill(x)` | `fill_weight(x, w)` | `ThreadedFill1` |
-| `ThreadedHist<Hist2D>` | `fill(x, y)` | `fill_weight(x, y, w)` | `ThreadedFill2` |
-| `ThreadedHist<Hist3D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` | `ThreadedFill3` |
-| `ThreadedHist<Profile1D>` | `fill(x, y)` | `fill_weight(x, y, w)` | `ThreadedFill2` |
-| `ThreadedHist<Profile2D>` | `fill(x, y, z)` | `fill_weight(x, y, z, w)` | `ThreadedFill3` |
-| `ThreadedHist<Profile3D>` | `fill(x, y, z, t)` | `fill_weight(x, y, z, t, w)` | `ThreadedFill4` |
+`ThreadedHist` is oxihist's, and so are the histograms it fills: `fill` and
+`fill_weight` take one value per axis for a count histogram, and
+`fill_sample` takes the sampled value too for a profile. Convert the merged
+histogram with `to_root()?` to store it. The ROOT-only types that are filled
+directly (`Efficiency`, `PolyHist`, `SparseHist`) are filled through
+`with_local`.
 
 ### `with_local`
 
@@ -105,7 +96,7 @@ acquisition instead of one per value:
 ```rust
 use oxiroot::prelude::*;
 
-let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root()?.named("h"));
+let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
 
 hist.with_local(|h| {
     for x in batch {
@@ -136,14 +127,15 @@ println!("filled across {} thread-local copies", hist.num_slots());
 `merge()` is built on the `Mergeable` trait. `ThreadedHist`, `Mergeable` and
 `fill_par` are [oxihist](https://github.com/oxihep/oxihist)'s, shared by both
 crates: the trait has its own `Error` type, so each implementation reports
-errors its own way, and the same accumulator fills oxihist histograms (what
-`Hist` builds before `.to_root()?`) and ROOT ones.
+errors its own way. Every oxihist histogram is `Mergeable` (`merge` is
+`add(&other)`), and that is what `ThreadedHist` and `fill_par` fill.
 
-oxiroot implements it for:
+oxiroot implements it for its records too, which is what `hadd` and
+`merge_all` over files use:
 
 | Type | `merge` |
 | --- | --- |
-| `Hist1D`, `Hist2D`, `Hist3D`, `Profile1D`, `Profile2D`, `Profile3D`, `PolyHist`, `SparseHist` | `add(other, 1.0)`: contents, `Sumw2`, entries and moment sums |
+| `Hist1D`, `Hist2D`, `Hist3D`, `Profile1D`, `Profile2D`, `Profile3D`, `PolyHist`, `SparseHist` | `add(&other, 1.0)`: contents, `Sumw2`, entries and moment sums |
 | `Efficiency` | adds the passed and total histograms |
 | `Graph` | appends `other`'s points, as `hadd` does |
 | `HistStack` | merges the stacked histograms by name |
@@ -163,7 +155,7 @@ binning-mismatch error from the first incompatible pair:
 ```rust
 use oxiroot::prelude::*;
 
-// Combine partial histograms (e.g. one per input file) into a single result.
+// Combine partial records (e.g. one per input file) into a single result.
 let partials: Vec<Hist1D> = load_partial_histograms();
 let total: Option<Hist1D> = Hist1D::merge_all(partials)?;
 ```
@@ -179,7 +171,7 @@ items into a private `template.clone()`, and the partials reduce with
 use oxiroot::prelude::*;
 
 let data: Vec<f64> = (0..1_000_000).map(|i| i as f64 % 100.0).collect();
-let template = Hist::reg(100, 0.0, 100.0).double().to_root()?.named("h");
+let template = Hist::reg(100, 0.0, 100.0).double().named("h");
 
 let hist = fill_par(&template, &data, |h, &x| h.fill(x));
 assert_eq!(hist.entries(), data.len() as f64);

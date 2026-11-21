@@ -163,7 +163,6 @@ mod search {
         let m_gg = data.values::<f32>("m_gg")?;
         let mut hist = Hist::reg(BINS, LO, HI)
             .double()
-            .to_root()?
             .named("m_gg")
             .titled("Diphoton mass;m_{#gamma#gamma} [GeV];Events / 0.5 GeV");
         for &m in m_gg {
@@ -317,13 +316,14 @@ mod search {
         main.ylabel("Events / 0.5 GeV")
             .hep_label("Demo", "Simulation")
             .legend();
-        let centres: Vec<f64> = (1..=BINS).map(|i| hist.xaxis().bin_center(i)).collect();
+        let centres = hist.axis(0).centers();
+        let counts = hist.values(false);
         let residual: Vec<f64> = centres
             .iter()
             .enumerate()
-            .map(|(i, &m)| hist.contents()[i + 1] - bkg_curve.eval(m))
+            .map(|(i, &m)| counts[i] - bkg_curve.eval(m))
             .collect();
-        let errors: Vec<f64> = (1..=BINS).map(|i| hist.bin_error(i)).collect();
+        let errors: Vec<f64> = hist.variances(false).iter().map(|v| v.sqrt()).collect();
         let residuals = Graph::new(centres.clone(), residual).and_then(|g| {
             g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
                 ex: vec![0.0; BINS],
@@ -420,7 +420,7 @@ mod search {
         };
         let results = dir.join("search_results.root");
         FileWriter::create(&results)
-            .add(&hist)
+            .add(&hist.to_root()?)
             .add(&graph(
                 "limit_observed",
                 limits.iter().map(|l| l.observed).collect(),

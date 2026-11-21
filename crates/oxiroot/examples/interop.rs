@@ -119,15 +119,13 @@ fn canonical_hist() -> Hist1D {
 fn hist(name: &str, contents: &[f64]) -> Hist1D {
     let n = i32::saturating_from(contents.len());
     let mut h = Hist::reg(usize::saturating_from(n), 0.0, f64::from(n))
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named(name)
         .titled("interop");
     for (i, &c) in contents.iter().enumerate() {
         h.fill_weight(i as f64 + 0.5, c);
     }
-    h
+    h.to_root().expect("a regular axis maps to ROOT")
 }
 
 /// The codecs of the matrix, by file-name suffix.
@@ -140,12 +138,7 @@ const CODECS: [(&str, Compression); 4] = [
 
 /// The 2-D, 3-D, profile and large histograms of the codec matrix.
 fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
-    let mut h2 = Hist::reg(3, 0.0, 3.0)
-        .reg(2, 0.0, 2.0)
-        .weight()
-        .to_root()
-        .unwrap()
-        .named("h2");
+    let mut h2 = Hist::reg(3, 0.0, 3.0).reg(2, 0.0, 2.0).weight().named("h2");
     for i in 0..3 {
         for j in 0..2 {
             h2.fill_weight(
@@ -159,8 +152,6 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .weight()
-        .to_root()
-        .unwrap()
         .named("h3");
     for i in 0..2 {
         for j in 0..2 {
@@ -175,19 +166,20 @@ fn matrix_hists() -> (Hist2D, Hist3D, Profile1D, Hist1D) {
             }
         }
     }
-    let mut p = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
-    p.fill(0.5, 1.0);
-    p.fill(0.5, 3.0);
-    p.fill(1.5, 5.0);
-    let mut big = Hist::reg(1000, 0.0, 1000.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("big");
+    let mut p = Hist::reg(2, 0.0, 2.0).mean().named("p");
+    p.fill_sample(0.5, 1.0);
+    p.fill_sample(0.5, 3.0);
+    p.fill_sample(1.5, 5.0);
+    let mut big = Hist::reg(1000, 0.0, 1000.0).weight().named("big");
     for i in 0..1000 {
         big.fill_weight(f64::from(i) + 0.5, f64::from(i % 7));
     }
-    (h2, h3, p, big)
+    (
+        h2.to_root().expect("maps to ROOT"),
+        h3.to_root().expect("maps to ROOT"),
+        p.to_root().expect("maps to ROOT"),
+        big.to_root().expect("maps to ROOT"),
+    )
 }
 
 fn write(dir: &Path) -> oxiroot::Result<()> {

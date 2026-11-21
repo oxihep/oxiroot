@@ -16,15 +16,11 @@ fn tmp(name: &str) -> std::path::PathBuf {
 fn sums_histograms_and_copies_other_objects() {
     // Two files, each a Hist1D "h" (2 in-range fills) plus an ObjString "meta".
     for (tag, xs) in [("hist_a", [0.5, 1.5]), ("hist_b", [2.5, 3.5])] {
-        let mut h = Hist::reg(4, 0.0, 4.0)
-            .double()
-            .to_root()
-            .unwrap()
-            .named("h")
-            .titled("h");
+        let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("h");
         for x in xs {
             h.fill(x);
         }
+        let h = h.to_root().unwrap();
         FileWriter::create(tmp(tag))
             .add(&h)
             .add(&ObjString::new("provenance").named("meta"))
@@ -50,7 +46,7 @@ fn sums_histograms_and_copies_other_objects() {
     // The merged histogram is the bin-by-bin sum: 4 in-range entries total.
     let fo = FileReader::open(&out).unwrap();
     let h = fo.get::<Hist1D>("h").unwrap();
-    assert_eq!(h.integral(), 4.0);
+    assert_eq!(h.values().iter().sum::<f64>(), 4.0);
     // The non-summable object was carried over verbatim.
     assert!(fo.get::<ObjString>("meta").is_ok());
 }
@@ -152,12 +148,9 @@ fn refuses_a_fileset_mixing_a_tree_with_histograms() {
         .compression(Compression::Stored)
         .write()
         .unwrap();
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(1.5);
+    let h = h.to_root().unwrap();
     FileWriter::create(tmp("mix_hist"))
         .add(&h)
         .compression(Compression::Stored)

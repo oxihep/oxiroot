@@ -17,10 +17,10 @@ and name it only when you persist it. `FileWriter::add` stores any writable obje
 any readable one.
 
 ```rust
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt").titled("p_{T}");
-h.track_sumw2();                                  // per-bin (weighted) errors
+let mut h = Hist::reg(50, 0.0, 100.0).weight().named("pt").titled("p_{T}");
 h.fill_weight(42.0, 1.5);
-FileWriter::create("hist.root").add(&h).write()?;        // any single writable object
+let h = h.to_root()?;                                            // the TH1D a file stores
+FileWriter::create("hist.root").add(&h).write()?;                // any writable object
 
 let same = FileReader::open("hist.root")?.get::<Hist1D>("pt")?;  // any readable object
 ```
@@ -31,9 +31,9 @@ For more than one object, a `TDirectory`, or appending to an existing file, use
 `FileWriter` — the single entry point for file composition.
 
 ```rust
-let prof = Hist::reg(5, 0.0, 5.0).mean().to_root()?.named("prof").titled("<pt> per region");
+let prof = Hist::reg(5, 0.0, 5.0).mean().named("prof").titled("<pt> per region").to_root()?;
 FileWriter::create("out.root")
-    .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
+    .add(&h)                              // a histogram, a profile, a graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
     .write()?;
 

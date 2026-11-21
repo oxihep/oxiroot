@@ -43,12 +43,9 @@ fn reads_root_written_map() {
 
 #[test]
 fn round_trips_map_through_oxiroot() {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h");
     h.fill(0.5);
+    let h = h.to_root().unwrap();
     let map = ObjMap::new()
         .named("meta")
         .insert("version", &ObjString::new("2.1"))

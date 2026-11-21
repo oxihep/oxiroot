@@ -25,8 +25,7 @@ fn main() -> oxiroot::Result<()> {
 
     // --- The data: a tiny histogram, as an analysis would produce. -------------
     let mut mass = Hist::reg(20, 80.0, 100.0)
-        .double()
-        .to_root()?
+        .weight()
         .named("mass")
         .titled("di-muon mass [GeV]");
     for &(x, w) in &[(90.9, 1.0), (91.2, 1.2), (91.4, 0.9), (92.0, 1.0)] {
@@ -59,7 +58,7 @@ fn main() -> oxiroot::Result<()> {
     // side by side as top-level keys — exactly how ROOT stashes run info next to
     // the plots it belongs to.
     FileWriter::create(&path)
-        .add(&mass) // the data
+        .add(&mass.to_root()?) // the data
         .add(&config) // the metadata, alongside it
         .add(&lumi)
         .add(&run)
@@ -80,8 +79,8 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "\nread back the data:\n  mass: {} entries, integral {:.2}, mean {:.3} GeV",
         mass_back.entries(),
-        mass_back.integral(),
-        mass_back.mean(),
+        mass_back.values().iter().sum::<f64>(),
+        mass_back.tsumwx() / mass_back.tsumw(), // ROOT's sums of the filled values
     );
 
     // The config string comes straight back out with `.value()`.

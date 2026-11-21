@@ -52,9 +52,8 @@ pub struct Hist2D {
     pub(crate) tsumwxy: f64,
     /// Bin contents including flow (length `ncells`, x fastest).
     pub(crate) contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on by [`Hist2D::track_sumw2`], [`Hist2D::scale`], or a weighted fill (see
-    /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
+    /// Per-bin sum of squared weights (`fSumw2`); empty when the histogram
+    /// does not track errors.
     pub(crate) sumw2: Vec<f64>,
 }
 
@@ -153,90 +152,6 @@ impl Hist2D {
             tsumwxy: 0.0,
             contents: vec![0.0; usize::saturating_from(ncells.max(0))],
             sumw2: Vec::new(),
-        }
-    }
-
-    /// Create an empty `TH2D` with variable bin edges on each axis. Internal
-    /// primitive behind [`Hist::var`](crate::Hist::var)`(xedges).var(yedges).double()`.
-    pub(crate) fn new_variable(xedges: &[f64], yedges: &[f64]) -> Self {
-        let ncells =
-            (i32::saturating_from(xedges.len()) + 1) * (i32::saturating_from(yedges.len()) + 1);
-        Self {
-            bin_content_type: BinContentType::F64,
-            name: String::new(),
-            title: String::new(),
-            xaxis: Axis::from_edges("xaxis", xedges),
-            yaxis: Axis::from_edges("yaxis", yedges),
-            zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
-            ncells,
-            entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
-            tsumwxy: 0.0,
-            contents: vec![0.0; usize::saturating_from(ncells.max(0))],
-            sumw2: Vec::new(),
-        }
-    }
-
-    /// Fill `(x, y)` with unit weight, as in an analysis loop.
-    pub fn fill(&mut self, x: f64, y: f64) {
-        self.fill_weight(x, y, 1.0);
-    }
-
-    /// Fill `(x, y)` with weight `w`, matching ROOT's `Hist2D::Fill` semantics:
-    /// every fill counts toward `fEntries`, the cell (including flow) is
-    /// incremented, but the statistical moment sums accumulate only when both
-    /// coordinates land in range (`fgStatOverflows` defaults to off).
-    pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
-        // Before the contents change; see `Hist1D::fill_weight`.
-        if w != 1.0 && self.sumw2.is_empty() {
-            self.track_sumw2();
-        }
-        let (nx, ny) = (self.nx(), self.ny());
-        let binx = self.xaxis.find_bin(x);
-        let biny = self.yaxis.find_bin(y);
-        let bin = binx + (nx + 2) * biny;
-        if let Some(c) = self.contents.get_mut(bin) {
-            *c += w;
-        }
-        if let Some(s) = self.sumw2.get_mut(bin) {
-            *s += w * w;
-        }
-        self.entries += 1.0;
-
-        let in_range = (1..=nx).contains(&binx) && (1..=ny).contains(&biny);
-        if in_range {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-            self.tsumwy += w * y;
-            self.tsumwy2 += w * y * y;
-            self.tsumwxy += w * x * y;
-        }
-    }
-
-    /// Mean of the x projection (`fTsumwx / fTsumw`), 0 when empty.
-    #[must_use]
-    pub fn mean_x(&self) -> f64 {
-        if self.tsumw == 0.0 {
-            0.0
-        } else {
-            self.tsumwx / self.tsumw
-        }
-    }
-
-    /// Mean of the y projection (`fTsumwy / fTsumw`), 0 when empty.
-    #[must_use]
-    pub fn mean_y(&self) -> f64 {
-        if self.tsumw == 0.0 {
-            0.0
-        } else {
-            self.tsumwy / self.tsumw
         }
     }
 }

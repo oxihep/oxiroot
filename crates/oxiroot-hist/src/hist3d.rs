@@ -62,9 +62,8 @@ pub struct Hist3D {
     pub(crate) tsumwyz: f64,
     /// Bin contents including flow (length `ncells`, x fastest then y then z).
     pub(crate) contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty until error tracking is
-    /// turned on by [`Hist3D::sumw2`], [`Hist3D::scale`], or a weighted fill (see
-    /// [`Hist1D::fill_weight`](crate::Hist1D::fill_weight)).
+    /// Per-bin sum of squared weights (`fSumw2`); empty when the histogram
+    /// does not track errors.
     pub(crate) sumw2: Vec<f64>,
 }
 
@@ -199,79 +198,6 @@ impl Hist3D {
             tsumwyz: 0.0,
             contents: vec![0.0; usize::saturating_from(ncells.max(0))],
             sumw2: Vec::new(),
-        }
-    }
-
-    /// Fill `(x, y, z)` with unit weight.
-    pub fn fill(&mut self, x: f64, y: f64, z: f64) {
-        self.fill_weight(x, y, z, 1.0);
-    }
-
-    /// Fill `(x, y, z)` with weight `w`, matching ROOT's `Hist3D::Fill`: every fill
-    /// counts toward `fEntries`, the cell (including flow) is incremented, and
-    /// the moment sums accumulate only when all three coordinates are in range.
-    pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
-        // Before the contents change; see `Hist1D::fill_weight`.
-        if w != 1.0 && self.sumw2.is_empty() {
-            self.track_sumw2();
-        }
-        let (nx, ny, nz) = (self.nx(), self.ny(), self.nz());
-        let binx = self.xaxis.find_bin(x);
-        let biny = self.yaxis.find_bin(y);
-        let binz = self.zaxis.find_bin(z);
-        let bin = binx + (nx + 2) * (biny + (ny + 2) * binz);
-        if let Some(c) = self.contents.get_mut(bin) {
-            *c += w;
-        }
-        if let Some(s) = self.sumw2.get_mut(bin) {
-            *s += w * w;
-        }
-        self.entries += 1.0;
-
-        let in_range =
-            (1..=nx).contains(&binx) && (1..=ny).contains(&biny) && (1..=nz).contains(&binz);
-        if in_range {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-            self.tsumwy += w * y;
-            self.tsumwy2 += w * y * y;
-            self.tsumwxy += w * x * y;
-            self.tsumwz += w * z;
-            self.tsumwz2 += w * z * z;
-            self.tsumwxz += w * x * z;
-            self.tsumwyz += w * y * z;
-        }
-    }
-
-    /// Mean of the x projection (`fTsumwx / fTsumw`), 0 when empty.
-    #[must_use]
-    pub fn mean_x(&self) -> f64 {
-        if self.tsumw == 0.0 {
-            0.0
-        } else {
-            self.tsumwx / self.tsumw
-        }
-    }
-
-    /// Mean of the y projection (`fTsumwy / fTsumw`), 0 when empty.
-    #[must_use]
-    pub fn mean_y(&self) -> f64 {
-        if self.tsumw == 0.0 {
-            0.0
-        } else {
-            self.tsumwy / self.tsumw
-        }
-    }
-
-    /// Mean of the z projection (`fTsumwz / fTsumw`), 0 when empty.
-    #[must_use]
-    pub fn mean_z(&self) -> f64 {
-        if self.tsumw == 0.0 {
-            0.0
-        } else {
-            self.tsumwz / self.tsumw
         }
     }
 }

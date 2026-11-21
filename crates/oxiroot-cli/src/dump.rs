@@ -326,7 +326,9 @@ fn rows_json<T>(cols: &[(String, Option<T>)], n: usize, cell: fn(&T, usize) -> J
 /// Bins, contents, errors, and summary stats of a `Hist1D`.
 fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
     let edges = hist.edges();
-    let errors = hist.errors();
+    // The record holds the bins; the statistics are the histogram's.
+    let stats = hist.to_hist()?;
+    let errors: Vec<f64> = stats.variances(false).iter().map(|v| v.sqrt()).collect();
     let bin = |i: usize, content: f64| {
         (
             edges.get(i).copied().unwrap_or(f64::NAN),
@@ -356,9 +358,9 @@ fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
             ("name", Json::s(name)),
             ("class", Json::s("TH1")),
             ("entries", Json::F64(hist.entries())),
-            ("mean", Json::F64(hist.mean())),
-            ("std", Json::F64(hist.std_dev())),
-            ("integral", Json::F64(hist.integral())),
+            ("mean", Json::F64(stats.mean())),
+            ("std", Json::F64(stats.std_dev())),
+            ("integral", Json::F64(stats.integral(false))),
             ("bins", bins),
         ]);
         println!("{}", out.render());
@@ -368,9 +370,9 @@ fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
     println!(
         "TH1 {name:?}  entries {}  mean {}  std {}  integral {}",
         num(hist.entries()),
-        num(hist.mean()),
-        num(hist.std_dev()),
-        num(hist.integral()),
+        num(stats.mean()),
+        num(stats.std_dev()),
+        num(stats.integral(false)),
     );
     let mut table =
         Table::new(&["bin", "low", "high", "content", "error"]).right_align(&[0, 1, 2, 3, 4]);
@@ -390,6 +392,10 @@ fn dump_th1(hist: &Hist1D, name: &str, json: bool) -> CmdResult {
 
 /// A summary of a `Hist2D` (its full grid is not printed).
 fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
+    // The record holds the bins; the statistics are the histogram's.
+    let filled = hist.to_hist()?;
+    let stats = filled.fill_stats().unwrap_or_else(|| filled.binned_stats());
+    let integral: f64 = filled.values(false).iter().sum();
     let (nx, ny) = (hist.nx(), hist.ny());
     if json {
         let out = Json::Object(vec![
@@ -398,9 +404,9 @@ fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
             ("bins_x", Json::Int(i64::saturating_from(nx))),
             ("bins_y", Json::Int(i64::saturating_from(ny))),
             ("entries", Json::F64(hist.entries())),
-            ("integral", Json::F64(hist.integral())),
-            ("mean_x", Json::F64(hist.mean_x())),
-            ("mean_y", Json::F64(hist.mean_y())),
+            ("integral", Json::F64(integral)),
+            ("mean_x", Json::F64(stats.mean(0))),
+            ("mean_y", Json::F64(stats.mean(1))),
         ]);
         println!("{}", out.render());
         return Ok(());
@@ -409,15 +415,19 @@ fn dump_th2(hist: &Hist2D, name: &str, json: bool) -> CmdResult {
     println!(
         "entries {}  integral {}  mean_x {}  mean_y {}",
         num(hist.entries()),
-        num(hist.integral()),
-        num(hist.mean_x()),
-        num(hist.mean_y()),
+        num(integral),
+        num(stats.mean(0)),
+        num(stats.mean(1)),
     );
     Ok(())
 }
 
 /// A summary of a `Hist3D` (its full grid is not printed).
 fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
+    // The record holds the bins; the statistics are the histogram's.
+    let filled = hist.to_hist()?;
+    let stats = filled.fill_stats().unwrap_or_else(|| filled.binned_stats());
+    let integral: f64 = filled.values(false).iter().sum();
     let (nx, ny, nz) = (hist.nx(), hist.ny(), hist.nz());
     if json {
         let out = Json::Object(vec![
@@ -427,9 +437,9 @@ fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
             ("bins_y", Json::Int(i64::saturating_from(ny))),
             ("bins_z", Json::Int(i64::saturating_from(nz))),
             ("entries", Json::F64(hist.entries())),
-            ("integral", Json::F64(hist.integral())),
-            ("mean_x", Json::F64(hist.mean_x())),
-            ("mean_y", Json::F64(hist.mean_y())),
+            ("integral", Json::F64(integral)),
+            ("mean_x", Json::F64(stats.mean(0))),
+            ("mean_y", Json::F64(stats.mean(1))),
         ]);
         println!("{}", out.render());
         return Ok(());
@@ -438,9 +448,9 @@ fn dump_th3(hist: &Hist3D, name: &str, json: bool) -> CmdResult {
     println!(
         "entries {}  integral {}  mean_x {}  mean_y {}",
         num(hist.entries()),
-        num(hist.integral()),
-        num(hist.mean_x()),
-        num(hist.mean_y()),
+        num(integral),
+        num(stats.mean(0)),
+        num(stats.mean(1)),
     );
     Ok(())
 }

@@ -9,6 +9,29 @@ change the API.
 
 ### Changed
 
+- **Breaking: `Hist1D`, `Hist2D`, `Hist3D` and the `Profile*` types are I/O
+  records.** A histogram is oxihist's `Histogram`: build it with `Hist`, fill
+  and analyse it, and call `to_root()?` to store it; read one with
+  `file.get::<Hist1D>(path)?.to_hist()?`. The records keep what a ROOT file
+  holds and oxihist does not: the stored fields (`contents()`, `values()`,
+  `sumw2()`, `entries()`, `tsumw()`…, the axes), `class_name()` and
+  `with_bin_content_type`, axis labels and time formats (`xaxis_mut()`), and
+  `add`, the merge `hadd` performs. Removed from them: `fill`/`fill_weight`,
+  `track_sumw2`, `scale`, `multiply`, `divide`, `integral`, `reset`,
+  `bin_error`, `set_bin_content`/`set_bin_error`, `contents_mut`/`sumw2_mut`,
+  `mean`/`std_dev`/`maximum`/`minimum` and their `_bin` and per-axis forms,
+  `effective_entries`, `interpolate`, `quantiles`, `rebin*`, `cumulative`,
+  `projection_*`, `profile_*`, `get_random`/`fill_random*`, `smooth`,
+  `chi2_test*`, `kolmogorov_test`, the `RootHistogram` trait, the
+  `ThreadedFill1`–`4` traits, and their `FitData` and plot-data
+  implementations. Each has an oxihist counterpart (`integral(flow)`,
+  `rebin(axis, factor)`, `project([axes])`, `profile(axis)`, `sample`,
+  `chi2_test(other, kind)`, `value([i])`/`bin_mut([i])`…). `Efficiency`,
+  `SparseHist` and `PolyHist` are still filled directly. Differences to
+  know: `interpolate` returns `None` outside the axis; `slice` leaves out a
+  bin that starts at its upper bound; per-bin errors come from the storage
+  (`.weight()`), not from a switch; a time format or a bin content type is
+  set on the record after `to_root()`.
 - **oxihist 0.14.0**: its histograms keep the statistics of their fills
   (the number of fills, `Σw`, `Σw²`, `Σw·x`, `Σw·x²` and the cross terms; a
   profile's sums of the sampled value) and gain `multiply`, `divide`,

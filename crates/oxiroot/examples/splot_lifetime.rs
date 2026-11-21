@@ -36,6 +36,7 @@ fn main() -> oxiroot::Result<()> {
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod splot {
     use oxiroot::fit::FitResult;
+    use oxiroot::hist::oxihist::Weight;
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Scale, Style};
     use oxiroot::prelude::*;
 
@@ -167,13 +168,8 @@ mod splot {
         (n, lo, hi): (usize, f64, f64),
         values: &[f64],
         weights: Option<&[f64]>,
-    ) -> Hist1D {
-        let mut h = Hist::reg(n, lo, hi)
-            .weight()
-            .to_root()
-            .unwrap()
-            .named(name)
-            .titled(title);
+    ) -> Histogram<Weight, 1> {
+        let mut h = Hist::reg(n, lo, hi).weight().named(name).titled(title);
         match weights {
             Some(w) => values
                 .iter()
@@ -420,16 +416,16 @@ mod splot {
 
         let results = dir.join("splot_results.root");
         FileWriter::create(&results)
-            .add(&m_hist)
-            .add(&t_hist)
-            .add(&naive)
-            .add(&asym)
+            .add(&m_hist.to_root()?)
+            .add(&t_hist.to_root()?)
+            .add(&naive.to_root()?)
+            .add(&asym.to_root()?)
             .write()?;
         let back = FileReader::open(&results)?.get::<Hist1D>("time_sweighted")?;
         println!(
             "\n6. Results file {} (sWeighted time histogram: {:.1} signal read back)",
             results.display(),
-            back.integral()
+            back.values().iter().sum::<f64>()
         );
         for png in [&mass_png, &time_png, &weights_png, &pulls_png] {
             println!("   plot: {}", png.display());

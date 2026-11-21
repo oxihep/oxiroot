@@ -27,14 +27,13 @@ fn tprofile2d_round_trips() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .mean()
-        .to_root()
-        .unwrap()
         .named("p2")
         .titled("prof");
-    p.fill(0.5, 0.5, 10.0);
-    p.fill(0.5, 0.5, 20.0); // bin(1,1) mean 15
-    p.fill(1.5, 0.5, 5.0); // bin(2,1) mean 5
-    p.fill(1.5, 1.5, 30.0); // bin(2,2) mean 30
+    p.fill_sample(0.5, 0.5, 10.0);
+    p.fill_sample(0.5, 0.5, 20.0); // bin(1,1) mean 15
+    p.fill_sample(1.5, 0.5, 5.0); // bin(2,1) mean 5
+    p.fill_sample(1.5, 1.5, 30.0);
+    let p = p.to_root().unwrap(); // bin(2,2) mean 30
     assert_eq!(p.values(), vec![vec![15.0, 0.0], vec![5.0, 30.0]]);
 
     let out = PathBuf::from("/tmp/oxiroot_tprofile2d.root");

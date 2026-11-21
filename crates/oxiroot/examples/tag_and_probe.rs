@@ -40,6 +40,7 @@ mod probes {
     use std::fmt::Write as _;
 
     use oxiroot::fit::BinomialData;
+    use oxiroot::hist::oxihist::{Double, WeightedSum};
     use oxiroot::plot::{
         Axes, Color, Colormap, CurveOpts, HAlign, Hist2dOpts, HistOpts, HistType, Style, TextOpts,
         VAlign,
@@ -60,6 +61,11 @@ mod probes {
     /// Z probes and background pairs per (pT, |η|) bin.
     const N_Z: usize = 3000;
     const N_BKG: usize = 2500;
+
+    /// An in-range bin index, as oxihist counts them.
+    fn bin(i: usize) -> isize {
+        isize::try_from(i).expect("a small index")
+    }
 
     fn efficiency(pt: f64, p: &[f64]) -> f64 {
         p[2] * 0.5 * (1.0 + erf((pt - p[0]) / (2f64.sqrt() * p[1])))
@@ -111,7 +117,10 @@ mod probes {
 
     /// Fit one bin's passing and failing mass histograms together: the Z
     /// yield, the efficiency (with its larger MINOS error) and the fit.
-    fn pass_fail_fit(pass: &Hist1D, fail: &Hist1D) -> (f64, f64, Model, Model, FitResult) {
+    fn pass_fail_fit(
+        pass: &Histogram<Double, 1>,
+        fail: &Histogram<Double, 1>,
+    ) -> (f64, f64, Model, Model, FitResult) {
         let width = (M_HI - M_LO) / M_BINS as f64;
         let gauss = move |m: f64, mean: f64, sigma: f64| {
             width * (-0.5 * ((m - mean) / sigma).powi(2)).exp()
@@ -209,25 +218,17 @@ mod probes {
         // ---- 2. Pass/fail fits per (pT, |η|) bin ------------------------------
         let mut map = Hist::var(&PT_EDGES)
             .var(&ETA_EDGES)
-            .double()
-            .to_root()?
+            .weight()
             .named("efficiency_map")
             .titled("Trigger efficiency;probe p_{T} [GeV];probe |#eta|");
-        map.track_sumw2();
         let mut per_region: Vec<(Vec<f64>, Vec<f64>)> = vec![(Vec::new(), Vec::new()); 2];
         let mut shown = None;
         println!("\n2. Simultaneous pass/fail fits: ε per (pT, |η|) bin");
         println!("   pT bin (GeV)    barrel ε          endcap ε");
-        for p in PT_EDGES.windows(2) {
+        for (ip, p) in PT_EDGES.windows(2).enumerate() {
             let mut row = String::new();
             for (r, e) in ETA_EDGES.windows(2).enumerate() {
-                let new = |name: &str| {
-                    Hist::reg(M_BINS, M_LO, M_HI)
-                        .double()
-                        .to_root()
-                        .unwrap()
-                        .named(name)
-                };
+                let new = |name: &str| Hist::reg(M_BINS, M_LO, M_HI).double().named(name);
                 let (mut h_pass, mut h_fail) = (new("pass"), new("fail"));
                 for i in 0..pt.len() {
                     if (p[0]..p[1]).contains(&pt[i]) && (e[0]..e[1]).contains(&eta[i]) {
@@ -239,9 +240,11 @@ mod probes {
                     }
                 }
                 let (eps, err, pf, ff, _) = pass_fail_fit(&h_pass, &h_fail);
-                let cell = map.find_bin(0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                map.contents_mut()[cell] = eps;
-                map.sumw2_mut().expect("error tracking is on")[cell] = err * err;
+                // The cell holds the fitted efficiency and its variance.
+                *map.bin_mut([bin(ip), bin(r)]).expect("in range") = WeightedSum {
+                    value: eps,
+                    variance: err * err,
+                };
                 per_region[r].0.push(eps);
                 per_region[r].1.push(err);
                 let _ = write!(row, "   {eps:.4} ± {err:.4}"); // a String never fails
@@ -400,10 +403,10 @@ mod probes {
                 .vrange(0.0..1.0)
                 .label("Efficiency"),
         );
-        for p in PT_EDGES.windows(2) {
-            for e in ETA_EDGES.windows(2) {
+        for (ip, p) in PT_EDGES.windows(2).enumerate() {
+            for (ie, e) in ETA_EDGES.windows(2).enumerate() {
                 let (cx, cy) = (0.5 * (p[0] + p[1]), 0.5 * (e[0] + e[1]));
-                let v = map.contents()[map.find_bin(cx, cy)];
+                let v = map.value([bin(ip), bin(ie)]).expect("in range");
                 ax.text_with(
                     cx,
                     cy,
@@ -459,11 +462,7 @@ mod probes {
 
         // The toys' threshold pulls.
         let pull_hist = |name: &str, p: &[f64]| {
-            let mut h = Hist::reg(24, -4.0, 4.0)
-                .double()
-                .to_root()
-                .unwrap()
-                .named(name);
+            let mut h = Hist::reg(24, -4.0, 4.0).double().named(name);
             p.iter().for_each(|&v| h.fill(v));
             h
         };
@@ -489,7 +488,7 @@ mod probes {
 
         let results = dir.join("efficiency_results.root");
         FileWriter::create(&results)
-            .add(&map)
+            .add(&map.to_root()?)
             .add(&graphs[0])
             .add(&graphs[1])
             .add(&matched)

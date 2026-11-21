@@ -31,8 +31,8 @@ dataset the `.fit(...)` methods for free.
 | `Model` | A named parametric fit function `f(x, params)` |
 | `FitResult` | Best-fit parameters, errors, covariance, chi-square |
 
-`Hist1D` and `Graph` implement `FitData` (in `oxiroot-hist`, under the `fit`
-feature), so histograms and graphs fit directly. `Points`, `&[Point]`,
+Histograms (oxihist's, 1-D to 3-D) and `Graph` implement `FitData`, so they fit
+directly; a histogram read from a file is fitted after `to_hist()?`. `Points`, `&[Point]`,
 `[Point; N]`, and `Vec<Point>` also implement it, and you can implement it on
 your own type to fit anything.
 
@@ -51,8 +51,7 @@ moment loop is needed.
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let mut peak = Hist::reg(60, 80.0, 100.0).double().to_root()?.named("mass");
-peak.track_sumw2(); // track per-bin errors for the chi-square
+let mut peak = Hist::reg(60, 80.0, 100.0).weight().named("mass");
 for _ in 0..10_000 {
     peak.fill(/* sample */ 91.2);
 }
@@ -228,8 +227,8 @@ let model = Model::gaussian("g")
     sigma)` to the peak height and the `y`-weighted mean and standard deviation of
     the data, leaving any tail parameters at their defaults. For other shapes,
     supply initial values with `with_params` (or in `Model::new`). It is
-    especially useful for histograms built with `set_bin_content` rather than
-    `fill`, whose stored moment sums are zero.
+    especially useful for histograms set bin by bin (`bin_mut`) rather than
+    filled, which have no fill statistics.
 
 `Model::eval(x)` evaluates the function at `x` with its current parameters —
 handy after `fit_into` (below) to draw the fitted curve.
@@ -440,7 +439,7 @@ integrals:
 use oxiroot::prelude::*;
 
 // the `fit` feature is on by default
-let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().to_root()?.named("map");
+let mut map = Hist::reg(40, -4.0, 4.0).reg(40, -4.0, 4.0).double().named("map");
 // … fill map with (x, y) pairs …
 let blob = Model::product(
     "blob",

@@ -46,18 +46,15 @@ fn main() {
 
     // --- 1. A clean Gaussian peak: chi-square vs binned likelihood. ---
     let mut peak = Hist::reg(60, 80.0, 100.0)
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named("mass")
         .titled("di-muon mass [GeV]");
-    peak.track_sumw2(); // track per-bin errors for the chi-square
     for _ in 0..10_000 {
         peak.fill(rng.gauss(true_mean, true_sigma));
     }
 
     // `estimate_from` seeds (constant, mean, sigma) straight from the bins — no
-    // manual moment loop, and it works even for set_bin_content histograms.
+    // manual moment loop, and it works even for histograms set bin by bin.
     let model = Model::gaussian("z").estimate_from(&peak);
     let chi2 = peak.fit(&model); // chi-square (the default)
     // Poisson likelihood, via FitOptions:
@@ -80,12 +77,9 @@ fn main() {
 
     // --- 2. The same peak on a flat background, fitted with a custom model. ---
     let mut withbkg = Hist::reg(60, 80.0, 100.0)
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named("mass_bkg")
         .titled("peak + background");
-    withbkg.track_sumw2();
     for _ in 0..10_000 {
         withbkg.fill(rng.gauss(true_mean, true_sigma)); // signal
     }
@@ -98,7 +92,12 @@ fn main() {
     let mut sig_bkg = Model::new(
         "sig+bkg",
         &["norm", "mean", "sigma", "bkg"],
-        vec![withbkg.maximum(), 91.0, 2.0, withbkg.minimum()],
+        vec![
+            withbkg.maximum().map_or(1.0, |(_, v)| v),
+            91.0,
+            2.0,
+            withbkg.minimum().map_or(0.0, |(_, v)| v),
+        ],
         |x, q| q[0] * (-0.5 * ((x - q[1]) / q[2]).powi(2)).exp() + q[3],
     );
     // fit_into writes the best-fit parameters back into the model, so `sig_bkg`

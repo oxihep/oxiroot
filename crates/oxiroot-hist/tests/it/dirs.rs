@@ -12,27 +12,24 @@ use oxiroot_io_core::FileWriter;
 fn writes_histograms_into_subdirectories() {
     let mut top = Hist::reg(3, 0.0, 3.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("top")
         .titled("top-level");
     top.fill(0.5);
+    let top = top.to_root().unwrap();
 
     let mut sr = Hist::reg(4, 0.0, 4.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("mll")
         .titled("signal region");
     sr.fill(1.5);
     sr.fill(2.5);
+    let sr = sr.to_root().unwrap();
     let mut cr = Hist::reg(4, 0.0, 4.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("mll")
         .titled("control region");
     cr.fill(0.5);
+    let cr = cr.to_root().unwrap();
 
     let out = PathBuf::from("/tmp/rootrs_dirs.root");
     FileWriter::create(&out)
@@ -79,13 +76,10 @@ fn writes_histograms_into_subdirectories() {
 #[test]
 fn writes_directories_nested_several_levels_deep() {
     let named = |name: &str, weight: f64| {
-        let mut h = Hist::reg(1, 0.0, 1.0)
-            .double()
-            .to_root()
-            .unwrap()
-            .named(name);
+        let mut h = Hist::reg(1, 0.0, 1.0).weight().named(name);
         h.fill_weight(0.5, weight);
-        h
+
+        h.to_root().unwrap()
     };
     let (top, a, b, c, sibling) = (
         named("top", 1.0),

@@ -59,7 +59,7 @@ The API mirrors matplotlib but reads as idiomatic Rust:
 use oxiroot::plot::Axes;
 use oxiroot::prelude::*;
 
-let mut h = Hist::reg(50, 0.0, 100.0).double().to_root()?.named("pt");
+let mut h = Hist::reg(50, 0.0, 100.0).double().named("pt");
 h.fill(42.0);
 
 let mut ax = Axes::new();
@@ -311,7 +311,7 @@ The `_with` variants take `CurveOpts` for the color, label and line style:
 ```rust
 # use oxiroot::plot::{Axes, CurveOpts};
 # use oxiroot::prelude::*;
-# fn demo(data: &Hist1D, model: &Model) -> Result<(), FitError> {
+# fn demo(data: &Histogram<oxiroot::hist::oxihist::Weight, 1>, model: &Model) -> Result<(), FitError> {
 let opts = FitOptions::new();
 let mut ax = Axes::new();
 for (delta, label) in [(2.30, "68 % CL"), (5.99, "95 % CL")] {

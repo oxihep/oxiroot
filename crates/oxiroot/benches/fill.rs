@@ -24,7 +24,7 @@ fn root_hists(c: &mut Criterion) {
     g.throughput(Throughput::Elements(N as u64));
     g.bench_function("Hist1D 100 bins", |b| {
         b.iter(|| {
-            let mut h = Hist::reg(100, 0.0, 100.0).double().to_root().unwrap();
+            let mut h = Hist::reg(100, 0.0, 100.0).double();
             for &x in &xs {
                 h.fill(x);
             }
@@ -34,7 +34,7 @@ fn root_hists(c: &mut Criterion) {
     g.bench_function("Hist1D variable 100 bins", |b| {
         let edges: Vec<f64> = (0..=100).map(|i| f64::from(i).powf(1.5) / 10.0).collect();
         b.iter(|| {
-            let mut h = Hist::var(&edges).double().to_root().unwrap();
+            let mut h = Hist::var(&edges).double();
             for &x in &xs {
                 h.fill(x);
             }
@@ -43,11 +43,7 @@ fn root_hists(c: &mut Criterion) {
     });
     g.bench_function("Hist2D 100x100", |b| {
         b.iter(|| {
-            let mut h = Hist::reg(100, 0.0, 100.0)
-                .reg(100, 0.0, 100.0)
-                .double()
-                .to_root()
-                .unwrap();
+            let mut h = Hist::reg(100, 0.0, 100.0).reg(100, 0.0, 100.0).double();
             for (&x, &y) in xs.iter().zip(xs.iter().rev()) {
                 h.fill(x, y);
             }
@@ -56,9 +52,9 @@ fn root_hists(c: &mut Criterion) {
     });
     g.bench_function("Profile1D 100 bins", |b| {
         b.iter(|| {
-            let mut p = Hist::reg(100, 0.0, 100.0).mean().to_root().unwrap();
+            let mut p = Hist::reg(100, 0.0, 100.0).mean();
             for (&x, &y) in xs.iter().zip(xs.iter().rev()) {
-                p.fill(x, y);
+                p.fill_sample(x, y);
             }
             black_box(p)
         });
@@ -107,12 +103,11 @@ fn threaded(c: &mut Criterion) {
     g.throughput(Throughput::Elements(N as u64));
     for threads in [1, 4] {
         g.bench_with_input(
-            BenchmarkId::new("ThreadedHist<Hist1D>", threads),
+            BenchmarkId::new("ThreadedHist<Histogram>", threads),
             &threads,
             |b, &threads| {
                 b.iter(|| {
-                    let acc =
-                        ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root().unwrap());
+                    let acc = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double());
                     std::thread::scope(|s| {
                         for chunk in xs.chunks(N.div_ceil(threads)) {
                             let acc = &acc;

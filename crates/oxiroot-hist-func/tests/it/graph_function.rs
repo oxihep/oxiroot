@@ -93,15 +93,13 @@ fn to_model_keeps_the_names_of_a_shortcut_formula() {
 #[test]
 fn a_func2d_and_a_func3d_fit_their_histograms() {
     use oxifit::FitExt;
-    use oxiroot_hist::{Hist, ToRoot};
+    use oxiroot_hist::Hist;
     use oxiroot_hist_func::{Func2D, Func3D};
 
     // A ROOT 2-D histogram filled with a plane, fitted with a TF2-like model.
     let mut h = Hist::reg(10, 0.0, 10.0)
         .reg(8, 0.0, 8.0)
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named("plane");
     for ix in 0..10 {
         for iy in 0..8 {
@@ -127,9 +125,7 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
     let mut h3 = Hist::reg(4, 0.0, 4.0)
         .reg(3, 0.0, 3.0)
         .reg(5, 0.0, 5.0)
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named("cube");
     for ix in 0..4 {
         for iy in 0..3 {

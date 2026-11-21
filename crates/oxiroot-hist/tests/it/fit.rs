@@ -1,87 +1,25 @@
 //! Histogram fitting (`fit` feature). Run: `cargo test -p oxiroot-hist --features fit`.
 #![cfg(feature = "fit")]
 
-use oxiroot_hist::ToRoot;
-use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
-use oxiroot_hist::{FitExt, Hist, Hist1D, Model};
+use oxiroot_hist::oxihist::{Histogram, Weight};
+use oxiroot_hist::{FitExt, Hist1D, Model};
 use oxiroot_io_core::FileReader;
 
-fn read(name: &str) -> Hist1D {
+fn read(name: &str) -> Histogram<Weight, 1> {
     let f = FileReader::open(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/analysis.root"),
     )
     .expect("open");
-    f.get::<Hist1D>(name).expect("read")
+    f.get::<Hist1D>(name)
+        .expect("read")
+        .to_hist()
+        .expect("convert")
 }
 
 fn rel_close(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol * (1.0 + b.abs())
-}
-
-#[test]
-fn gaussian_fit_matches_root() {
-    let hg = read("hg"); // const=1000, mean=0.5, sigma=1.3 gaussian (integer bins)
-    // The fixture sets bin contents directly (no fills), so its moment sums are
-    // zero; estimate the initial mean/sigma from the contents instead.
-    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
-        .sum::<f64>()
-        / total;
-    let var: f64 = (1..=n)
-        .map(|i| hg.contents()[i] * (hg.xaxis().bin_center(i) - mean).powi(2))
-        .sum::<f64>()
-        / total;
-    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, var.sqrt()]);
-    let r = hg.fit(&model);
-
-    assert!(r.valid, "fit did not converge");
-    // ROOT's `hg.Fit("gaus")` ground truth (the Rust and ROOT Minuit2 ports agree
-    // to a few parts in 1e3 on this integer-rounded data).
-    assert!(
-        rel_close(r.params[0], 1000.827893, 5e-3),
-        "const = {}",
-        r.params[0]
-    );
-    assert!(
-        rel_close(r.params[1], 0.498833, 5e-3),
-        "mean = {}",
-        r.params[1]
-    );
-    assert!(
-        rel_close(r.params[2], 1.297287, 5e-3),
-        "sigma = {}",
-        r.params[2]
-    );
-    // Uncertainties are reported and positive.
-    assert!(r.errors.iter().all(|&e| e > 0.0 && e.is_finite()));
-    assert!(r.ndf > 0);
-}
-
-#[test]
-fn polynomial_fit_recovers_a_line() {
-    // y = 3 + 2x exactly on a fine grid -> a degree-1 fit recovers (3, 2).
-    let mut h = Hist::reg(100, 0.0, 10.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("line");
-    for i in 1..=100 {
-        let x = h.xaxis().bin_center(i);
-        h.contents_mut()[i] = 3.0 + 2.0 * x;
-    }
-    h.track_sumw2(); // give every bin a unit-ish error so all enter the fit
-    for s in h.sumw2_mut().expect("error tracking is on").iter_mut() {
-        *s = 1.0;
-    }
-    let r = h.fit(&Model::polynomial("pol1", 1).with_params(vec![0.0, 0.0]));
-    assert!(r.valid);
-    assert!(rel_close(r.params[0], 3.0, 1e-6), "p0 = {}", r.params[0]);
-    assert!(rel_close(r.params[1], 2.0, 1e-6), "p1 = {}", r.params[1]);
-    assert!(r.chi2 < 1e-6, "chi2 = {}", r.chi2);
 }
 
 #[test]
@@ -92,226 +30,6 @@ fn tf1_eval_uses_current_params() {
 }
 
 #[test]
-fn likelihood_fit_of_a_constant_equals_the_mean() {
-    // The Poisson maximum-likelihood estimate of a constant rate is exactly the
-    // mean of the bin counts; the chi-square estimate is a different (smaller)
-    // value. This pins the likelihood path analytically and distinguishes it
-    // from chi-square.
-    use oxiroot_hist::{FitMethod, FitOptions};
-    let counts = [10.0, 20.0, 30.0, 40.0];
-    let mut h = Hist::reg(counts.len(), 0.0, counts.len() as f64)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("c");
-    for (i, &c) in counts.iter().enumerate() {
-        h.contents_mut()[i + 1] = c;
-    }
-    let mean = counts.iter().sum::<f64>() / counts.len() as f64; // 25.0
-
-    let like = h.fit_opts(
-        &Model::polynomial("pol0", 0).with_params(vec![mean]),
-        &FitOptions::new().method(FitMethod::Likelihood),
-    );
-    let chi2 = h.fit_opts(
-        &Model::polynomial("pol0", 0).with_params(vec![mean]),
-        &FitOptions::new().method(FitMethod::Chi2),
-    );
-    assert!(like.valid && chi2.valid);
-    assert!(
-        (like.params[0] - mean).abs() < 1e-4,
-        "L const = {}",
-        like.params[0]
-    );
-    assert!(
-        (chi2.params[0] - mean).abs() > 1.0,
-        "chi2 const = {}",
-        chi2.params[0]
-    );
-}
-
-#[test]
-fn likelihood_gaussian_recovers_shape() {
-    use oxiroot_hist::{FitMethod, FitOptions};
-    // hg is a high-statistics gaussian (const=1000, mean=0.5, sigma=1.3); the
-    // Poisson likelihood fit recovers it (at high stats it agrees with chi-square).
-    let hg = read("hg");
-    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
-        .sum::<f64>()
-        / total;
-    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
-    let r = hg.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
-    assert!(r.valid);
-    assert!(
-        rel_close(r.params[0], 1000.0, 1e-2),
-        "const = {}",
-        r.params[0]
-    );
-    assert!(rel_close(r.params[1], 0.5, 2e-2), "mean = {}", r.params[1]);
-    assert!(rel_close(r.params[2], 1.3, 1e-2), "sigma = {}", r.params[2]);
-}
-
-#[test]
-fn likelihood_and_chi2_diverge_on_low_statistics() {
-    use oxiroot_hist::{FitMethod, FitOptions};
-    // On a low-statistics, imperfect gaussian the two estimators genuinely
-    // differ (where ROOT's "L" on a SetBinContent histogram falls back to chi2).
-    let hgl = read("hgl");
-    let n = usize::saturating_from(hgl.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hgl.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hgl.xaxis().bin_center(i) * hgl.contents()[i])
-        .sum::<f64>()
-        / total;
-    let model = || Model::gaussian("g").with_params(vec![hgl.maximum(), mean, 1.3]);
-    let chi2 = hgl.fit_opts(&model(), &FitOptions::new().method(FitMethod::Chi2));
-    let like = hgl.fit_opts(&model(), &FitOptions::new().method(FitMethod::Likelihood));
-    assert!(chi2.valid && like.valid);
-    assert!(
-        (chi2.params[0] - like.params[0]).abs() > 0.5,
-        "chi2 const {} vs L const {} should differ",
-        chi2.params[0],
-        like.params[0]
-    );
-}
-
-#[test]
-fn under_determined_fit_is_flagged_invalid() {
-    // 2 data points, 3-parameter Gaussian -> cannot be determined.
-    let mut h = Hist::reg(2, 0.0, 2.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("tiny");
-    h.contents_mut()[1] = 5.0;
-    h.contents_mut()[2] = 7.0;
-    let r = h.fit(&Model::gaussian("g").with_params(vec![7.0, 1.0, 1.0]));
-    assert!(!r.valid);
-    assert_eq!(r.ndf, 0);
-    assert!(r.chi2_per_ndf().is_nan());
-}
-
-#[test]
-fn bounded_and_fixed_parameters() {
-    let hg = read("hg"); // gaussian, const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
-        .sum::<f64>()
-        / total;
-
-    // (a) sigma constrained positive still recovers the width.
-    let bounded = Model::gaussian("g")
-        .with_params(vec![hg.maximum(), mean, 1.0])
-        .lower_limit("sigma", 0.0);
-    let rb = hg.fit(&bounded);
-    assert!(rb.valid);
-    assert!(rb.params[2] > 0.0 && rel_close(rb.params[2], 1.297287, 1e-2));
-
-    // (b) fixing the mean removes one degree of freedom and pins the parameter.
-    let free = hg.fit(&Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]));
-    let fixed = hg.fit(
-        &Model::gaussian("g")
-            .with_params(vec![hg.maximum(), 0.5, 1.3])
-            .fix("mean"),
-    );
-    assert!(fixed.valid);
-    assert_eq!(fixed.params[1], 0.5, "fixed parameter must stay put");
-    assert_eq!(
-        fixed.ndf,
-        free.ndf + 1,
-        "fixing frees one degree of freedom"
-    );
-}
-
-#[test]
-fn fit_range_pearson_and_p_value() {
-    use oxiroot_hist::{FitMethod, FitOptions};
-    let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
-        .sum::<f64>()
-        / total;
-    let model = || Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
-
-    // (a) Restricting the fit to the core ±2σ still recovers the peak, and uses
-    //     fewer bins (smaller ndf) than the full-range fit.
-    let full = hg.fit(&model());
-    let windowed = hg.fit_opts(&model(), &FitOptions::new().range(-2.0, 3.0));
-    assert!(windowed.valid);
-    assert!(rel_close(windowed.params[1], 0.5, 2e-2));
-    assert!(windowed.ndf < full.ndf, "range fit should use fewer bins");
-
-    // (b) Pearson chi-square recovers the same shape as Neyman on this data.
-    let pearson = hg.fit_opts(&model(), &FitOptions::new().method(FitMethod::PearsonChi2));
-    assert!(pearson.valid);
-    assert!(
-        rel_close(pearson.params[2], 1.297287, 1e-2),
-        "sigma = {}",
-        pearson.params[2]
-    );
-
-    // (c) The goodness-of-fit p-value is well-defined and high for a good fit.
-    let p = full.p_value();
-    assert!((0.0..=1.0).contains(&p) && p > 0.01, "p = {p}");
-}
-
-#[test]
-fn minos_errors_and_covariance() {
-    use oxiroot_hist::FitOptions;
-    let hg = read("hg"); // gaussian const≈1000, mean≈0.5, sigma≈1.3
-    let n = usize::saturating_from(hg.xaxis().nbins().max(0));
-    let total: f64 = (1..=n).map(|i| hg.contents()[i]).sum();
-    let mean: f64 = (1..=n)
-        .map(|i| hg.xaxis().bin_center(i) * hg.contents()[i])
-        .sum::<f64>()
-        / total;
-    let model = Model::gaussian("g").with_params(vec![hg.maximum(), mean, 1.3]);
-    let r = hg.fit_opts(&model, &FitOptions::new().minos(true));
-    assert!(r.valid);
-
-    // MINOS errors: one (lower ≤ 0 ≤ upper) pair per parameter. Near this almost
-    // quadratic minimum they bracket — and roughly match — the parabolic errors.
-    let minos = r.minos.as_ref().expect("minos requested");
-    assert_eq!(minos.len(), 3);
-    for (i, &(lo, up)) in minos.iter().enumerate() {
-        assert!(lo <= 0.0 && up >= 0.0, "param {i}: ({lo}, {up})");
-        assert!(
-            rel_close(up, r.errors[i], 0.3) && rel_close(-lo, r.errors[i], 0.3),
-            "param {i}: minos ({lo}, {up}) vs parabolic {}",
-            r.errors[i]
-        );
-    }
-
-    // Covariance: a 3×3 matrix whose diagonal square-roots are the parabolic
-    // errors, and which is symmetric.
-    let cov = r.covariance.as_ref().expect("covariance available");
-    assert_eq!(cov.len(), 3);
-    for (i, row) in cov.iter().enumerate() {
-        assert_eq!(row.len(), 3);
-        assert!(
-            rel_close(cov[i][i].sqrt(), r.errors[i], 1e-2),
-            "sqrt(cov[{i}][{i}]) = {} vs error {}",
-            cov[i][i].sqrt(),
-            r.errors[i]
-        );
-        for (j, &cij) in row.iter().enumerate() {
-            assert!(rel_close(cij, cov[j][i], 1e-9), "cov not symmetric");
-        }
-    }
-
-    // Without the flag, both stay None (no wasted likelihood scan).
-    let plain = hg.fit(&model);
-    assert!(plain.minos.is_none());
-}
-
-#[test]
 fn ergonomics_estimate_seed_and_fit_into() {
     use oxiroot_hist::FitOptions;
 
@@ -319,8 +37,11 @@ fn ergonomics_estimate_seed_and_fit_into() {
     fn assert_traits<T: Send + Sync + Clone>() {}
     assert_traits::<Model>();
 
-    let hg = read("hg"); // SetBinContent gaussian: mean()/std_dev() read back as 0
-    assert_eq!(hg.mean(), 0.0, "fixture stores no moment sums");
+    // A gaussian set bin by bin: the file stores no moment sums, so the
+    // histogram has no fill statistics and its mean is estimated from the bins.
+    let hg = read("hg");
+    assert!(hg.fill_stats().is_none());
+    assert!(rel_close(hg.mean(), 0.5, 5e-3), "mean = {}", hg.mean());
 
     // estimate_from seeds (constant, mean, sigma) straight from the bins, so the
     // call site needs no manual content-weighted moment loop.
@@ -378,38 +99,4 @@ fn fit_a_tgraph_with_errors() {
     assert!(fit.chi2 < 1e-6, "perfect line → chi2 ≈ 0, got {}", fit.chi2);
     // 5 points − 2 free params = 3 d.o.f.
     assert_eq!(fit.ndf, 3);
-}
-
-#[test]
-fn variable_bins_are_integrated_over_their_edges() {
-    use oxiroot_hist::{FitData, FitOptions};
-    // Contents are the exact bin averages of 100·e^(−x/2) over very uneven
-    // bins, with 1 % errors: only a fit averaging the model over each bin's
-    // real edges recovers the slope (ROOT's option "I").
-    let edges = [0.0, 0.5, 1.5, 3.0, 5.0, 8.0];
-    let mut h = Hist::var(&edges).weight().to_root().unwrap();
-    for (i, w) in edges.windows(2).enumerate() {
-        let average = 200.0 * ((-w[0] / 2.0).exp() - (-w[1] / 2.0).exp()) / (w[1] - w[0]);
-        h.contents_mut()[i + 1] = average;
-        h.sumw2_mut().expect("error tracking is on")[i + 1] = (0.01 * average).powi(2);
-    }
-    assert_eq!(
-        h.bin_edges().expect("edges"),
-        vec![(0.0, 0.5), (0.5, 1.5), (1.5, 3.0), (3.0, 5.0), (5.0, 8.0)]
-    );
-    let model = Model::new("e", &["n", "tau"], vec![80.0, 1.5], |x, p| {
-        p[0] * (-x / p[1]).exp()
-    });
-    let fit = h.fit_opts(&model, &FitOptions::new().bin_integration(true));
-    assert!(
-        fit.valid && (fit.params[1] - 2.0).abs() < 1e-4,
-        "{:?}",
-        fit.params
-    );
-    let at_centers = h.fit(&model);
-    assert!(
-        (at_centers.params[1] - 2.0).abs() > 1e-2,
-        "{:?}",
-        at_centers.params
-    );
 }

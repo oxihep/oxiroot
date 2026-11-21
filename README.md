@@ -106,7 +106,7 @@ None of them is on crates.io yet; depend on them from GitHub (see
   `root://eospublic.cern.ch`. A large local file is read the same lazy way:
   `FileReader::open` reads whole only files up to 64 MiB.
 - 🧵 **Multithreaded fill** — `ThreadedHist`, the pure-std analog of ROOT's
-  `TThreadedObject<Hist1D>`; optional one-call `rayon` parallel fill.
+  `TThreadedObject<TH1D>`; optional one-call `rayon` parallel fill.
 - ➕ **`hadd`** — a pure-Rust file merger: everything ROOT's `hadd` merges
   merged the same way (histograms, profiles, efficiencies, poly and sparse
   histograms, stacks, parameters, and graphs by appending points), `TTree` /
@@ -150,16 +150,19 @@ oxiroot-rntuple   = { git = "https://github.com/oxihep/oxiroot", tag = "v0.9.0" 
 ```rust
 use oxiroot::prelude::*;
 
-// Fill and save one histogram — oxihist's Hist builder, .to_root()?, WriteRoot / ReadRoot.
-let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight().to_root()?;
+// Fill a histogram (oxihist's Hist builder), then save it: `to_root()` is the
+// TH1D a file stores.
+let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight();
 h.fill_weight(42.0, 1.5);
-FileWriter::create("hist.root").add(&h).write()?;            // any single writable object
+let h = h.to_root()?;
+FileWriter::create("hist.root").add(&h).write()?;               // any writable object
 let same = FileReader::open("hist.root")?.get::<Hist1D>("pt")?; // any readable object
+let again = same.to_hist()?;                                    // an oxihist histogram again
 
 // Several objects, subdirectories, or appending — FileWriter.
 let prof = Hist::reg(5, 0.0, 5.0).name("prof").title("<pt> per region").mean().to_root()?;
 FileWriter::create("out.root")
-    .add(&h)                              // any &dyn WriteRoot: hist, profile, graph…
+    .add(&h)                              // a histogram, a profile, a graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
     .write()?;
 let g = FileReader::open("out.root")?;
@@ -222,20 +225,23 @@ cargo run -p oxiroot --example analysis
   `.with_bin_content_type(BinContentType::F32)`; `h.class_name()` reconstructs the ROOT
   class. Profiles carry a typed `ErrorMode`.
 - **No forced names, no global registry.** A histogram is just data: construct
-  it with the `Hist` builder (`Hist::reg(nbins, lo, hi).double().to_root()?`) and name it
-  only when you persist it — `.name("pt")` sets the file key (`.title(...)` the
+  it with the `Hist` builder (`Hist::reg(nbins, lo, hi).double()`) and name it
+  only when you persist it — `.named("pt")` sets the file key (`.titled(...)` the
   title). Unlike ROOT there
   is no `gROOT`/`gDirectory`, so any number of same-named histograms coexist in
   memory; and writing two objects under the same key name in one directory is a
   loud `DuplicateName` error, never ROOT's silent shadow-on-read.
-- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics, including its
-  automatic `Sumw2`: the first weight other than 1 turns on weighted per-bin
-  errors (`bin_error`). `sumw2()` (chains: `h.track_sumw2().fill(x)`) turns them on
-  explicitly for a unit-weight histogram.
-- **Histograms are built with [oxihist](https://github.com/oxihep/oxihist)**, the
+- Then `fill`/`fill_weight` with ROOT's exact `Fill` semantics: every fill is
+  an entry, and the statistics of the fills (`Σw`, `Σw·x`, …) accumulate for
+  in-range fills, so a stored histogram has the `fEntries` and `fTsumw*` ROOT
+  would have computed. Per-bin errors come from the storage: `.weight()` keeps
+  `Σw²` per bin (ROOT's `Sumw2`), read with `variances(flow)`.
+- **The histogram is [oxihist](https://github.com/oxihep/oxihist)'s**, the
   ROOT-free histogram library modelled on boost-histogram and scikit-hep
-  [`hist`](https://github.com/scikit-hep/hist), and turned into ROOT's with
-  `.to_root()?`, the way uproot writes `hist` objects:
+  [`hist`](https://github.com/scikit-hep/hist): you fill it and analyse it, and
+  `.to_root()?` turns it into the ROOT record to store, the way uproot writes
+  `hist` objects. `Hist1D`/`Hist2D`/`Hist3D` and the `Profile*` types are those
+  records: what a file holds.
   `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight().to_root()?`
   is a `TH1D` with `Sumw2`. `var(&edges)` gives variable bins, `.reg`/`.var` again
   a `Hist2D`/`Hist3D`, and the storage picks the class: `double()`→`TH1D`,
@@ -244,27 +250,20 @@ cargo run -p oxiroot --example analysis
   Category axes become labelled ROOT axes. Going the other way, `h.to_hist()` or
   `file.get::<Hist1D>("pt")?.to_hist()` gives an oxihist histogram
   (the `ToRoot` trait and `to_hist`). Axis labels live in ROOT's `fXaxis.fTitle`
-  and round-trip. On the ROOT types the `hist` accessor family is there too:
-  `values()`, `variances()` (`Sumw2`), `errors()` (`√variance`), `counts()`
-  (effective entries), `density()`, and `at(x)` (content at a coordinate); plus
-  batch `fill_many()` and UHI-style `integral_range(a, b)` / `slice(a, b)`.
-- Arithmetic with `Sumw2` error propagation: `scale`,
-  `add` (the bin-by-bin merge used to combine job outputs), `multiply`, `divide`,
-  `integral`. `contents()` is every cell as a slice;
-  a shared `RootHistogram` trait (`contents`/`entries`/`sum`) abstracts over `Hist1D/2/3`,
-  and every type implements `Display` for a one-line summary.
-- Statistics & shape accessors: `mean`/`std_dev`, `maximum`/`minimum`/
-  `maximum_bin`, `find_bin`, `bin_center`/`bin_width`/`bin_low_edge`,
-  `effective_entries`, `reset`, `interpolate`, `quantiles`; derived histograms
-  `rebin`/`rebin2d`/`rebin3d`, `cumulative`, projections (`Hist2D`→`Hist1D`;
-  `Hist3D`→`Hist1D`/`Hist2D`), and `profile_x`/`profile_y` — all carrying the statistical
-  moment sums so the results' `mean`/`std_dev` stay correct.
-- Sampling & smoothing: `get_random` / `fill_random` draw from a histogram's (or,
+  and round-trip. A record exposes the stored fields (`contents()`, `values()`,
+  `sumw2()`, `entries()`, the axes), its class and bin type, axis labels and
+  time formats, and `add`, the bin-by-bin merge `hadd` uses.
+- Arithmetic with variance propagation: `scale`, `add`, `multiply`, `divide`,
+  `integral(flow)`; single bins through `value([i])` / `bin_mut([i])`.
+- Statistics & shape accessors: `mean`/`std_dev`, `maximum`/`minimum` (bin and
+  content), `effective_entries`, `reset`, `interpolate`, `quantiles`; derived
+  histograms `rebin`, `slice`, `cumulative`, `project` and `profile`.
+- Sampling & smoothing: `sample` / `fill_random` draw from a histogram's (or,
   via `fill_random_fn` / `Func1D::get_random`, a function's) distribution
   (inverse-CDF, ROOT's `GetRandom`/`FillRandom`); `smooth` is ROOT's `353QH`
   smoother. A small seedable `Random` means no `rand` dependency and reproducible
   draws.
-- Compatibility tests: `chi2_test`/`chi2_test_with` (Pearson χ², all three
+- Compatibility tests: `chi2_test` (Pearson χ², all three
   `UU`/`UW`/`WW` weighting schemes) and `kolmogorov_test`, returning ROOT-matched
   p-values. Alphanumeric (labelled) axes round-trip through `Axis::labels`
   (read **and** write, with `set_label`).
@@ -279,12 +278,12 @@ cargo run -p oxiroot --example analysis
   `Loss` (`Huber`/`SoftL1`/`Cauchy`/`Arctan` — scipy's `least_squares` `loss`)
   down-weights outliers.
 - **Multithreaded fill** — `ThreadedHist`, the pure-Rust analog of ROOT's
-  `TThreadedObject<Hist1D>`: share `&hist`, call `hist.fill(x)` from any thread —
+  `TThreadedObject<TH1D>`: share `&hist`, call `hist.fill(x)` from any thread —
   each thread transparently gets its own copy — then `hist.merge()` combines them
-  exactly (contents + `Sumw2` + every moment sum), identical to a serial fill:
+  exactly (contents, variances and fill statistics), identical to a serial fill:
   <!-- fragment -->
   ```rust
-  let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().to_root()?.named("h"));
+  let hist = ThreadedHist::new(Hist::reg(100, 0.0, 100.0).double().named("h"));
   std::thread::scope(|s| for chunk in data.chunks(n) {
       let hist = &hist;
       s.spawn(move || for &x in chunk { hist.fill(x); });
@@ -302,7 +301,7 @@ cargo run -p oxiroot --example analysis
   ```rust
   FileWriter::create("out.root")
       .add(&h)                            // any &dyn WriteRoot: hist, profile, graph…
-      .add(&prof)
+      .add(&prof.to_root()?)
       .dir("by_region", |d| d.add(&sig))  // a TDirectory per region; `dir` nests
       .write()?;
   FileUpdater::open("out.root")?.add(&extra).compression(Compression::Stored).write()?; // append
@@ -366,12 +365,11 @@ let fit = data.fit_opts(&model, &FitOptions::new().minimizer(Minimizer::NelderMe
 ```rust
 use oxiroot::prelude::*; // the `fit` feature is on by default
 
-let mut h = Hist::reg(60, 80.0, 100.0).double().to_root()?.named("mass").titled("di-muon mass");
-h.track_sumw2();
+let mut h = Hist::reg(60, 80.0, 100.0).weight().named("mass").titled("di-muon mass");
 // … fill h with events …
 
 // Gaussian peak fit (chi-square). `estimate_from` seeds (constant, mean, sigma)
-// from the bins — no manual moment loop, and it works for set_bin_content too.
+// from the bins — no manual moment loop, and it works for a histogram set bin by bin too.
 let model = Model::gaussian("z").estimate_from(&h);
 let fit = h.fit(&model);
 println!("mean = {:.3} ± {:.3}", fit.params[1], fit.errors[1]);

@@ -21,8 +21,6 @@ fn writes_and_reads_a_mixed_object_file() {
     // profile, a function, a graph, and a string — all in one file.
     let mut h = Hist::reg(20, 0.0, 100.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("pt")
         .titled("p_{T}");
     for x in [5.0, 15.0, 15.0, 95.0] {
@@ -31,28 +29,17 @@ fn writes_and_reads_a_mixed_object_file() {
 
     let mut hv = Hist::var(&[0.0, 1.0, 2.0, 5.0, 10.0, 100.0])
         .double()
-        .to_root()
-        .unwrap()
         .named("hv");
     for x in [0.5, 3.0, 50.0] {
         hv.fill(x);
     }
 
-    let mut h2 = Hist::reg(4, 0.0, 4.0)
-        .reg(3, 0.0, 3.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h2");
+    let mut h2 = Hist::reg(4, 0.0, 4.0).reg(3, 0.0, 3.0).double().named("h2");
     h2.fill(1.5, 1.5);
 
-    let mut prof = Hist::reg(10, 0.0, 10.0)
-        .mean()
-        .to_root()
-        .unwrap()
-        .named("prof");
-    prof.fill(1.0, 5.0);
-    prof.fill(1.0, 7.0);
+    let mut prof = Hist::reg(10, 0.0, 10.0).mean().named("prof");
+    prof.fill_sample(1.0, 5.0);
+    prof.fill_sample(1.0, 7.0);
 
     let f = Func1D::new("f", "[0]*sin([1]*x)", 0.0..=6.3)
         .unwrap()
@@ -63,10 +50,10 @@ fn writes_and_reads_a_mixed_object_file() {
     g.name = "g".into();
 
     FileWriter::create(tmp("mixed"))
-        .add(&h)
-        .add(&hv)
-        .add(&h2)
-        .add(&prof)
+        .add(&h.to_root().unwrap())
+        .add(&hv.to_root().unwrap())
+        .add(&h2.to_root().unwrap())
+        .add(&prof.to_root().unwrap())
         .add(&f)
         .add(&g)
         .add(&ObjString::new("skim v3").named("meta"))
@@ -75,12 +62,27 @@ fn writes_and_reads_a_mixed_object_file() {
 
     // Every object reads back with its identity intact.
     let file = FileReader::open(tmp("mixed")).unwrap();
-    assert_eq!(file.get::<Hist1D>("pt").unwrap().integral(), 4.0);
+    assert_eq!(
+        file.get::<Hist1D>("pt")
+            .unwrap()
+            .values()
+            .iter()
+            .sum::<f64>(),
+        4.0
+    );
     assert_eq!(
         file.get::<Hist1D>("hv").unwrap().edges(),
         vec![0.0, 1.0, 2.0, 5.0, 10.0, 100.0]
     );
-    assert_eq!(file.get::<Hist2D>("h2").unwrap().integral(), 1.0);
+    assert_eq!(
+        file.get::<Hist2D>("h2")
+            .unwrap()
+            .values()
+            .iter()
+            .flatten()
+            .sum::<f64>(),
+        1.0
+    );
     assert!(file.get::<Profile1D>("prof").is_ok());
     let f_back = file.get::<Func1D>("f").unwrap();
     assert!((f_back.eval(1.0) - f.eval(1.0)).abs() < 1e-9);
@@ -150,11 +152,7 @@ fn rntuple_round_trips_through_the_facade() {
 #[test]
 fn sampling_a_histogram_reproduces_its_shape() {
     // A source distribution peaked at 3.0.
-    let mut src = Hist::reg(50, 0.0, 10.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("src");
+    let mut src = Hist::reg(50, 0.0, 10.0).double().named("src");
     for _ in 0..200 {
         src.fill(3.0);
     }
@@ -165,15 +163,11 @@ fn sampling_a_histogram_reproduces_its_shape() {
 
     // Draw from it into a new histogram — reproducibly, with the seedable Random.
     let mut rng = Random::seed(7);
-    let mut drawn = Hist::reg(50, 0.0, 10.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("drawn");
+    let mut drawn = Hist::reg(50, 0.0, 10.0).double().named("drawn");
     drawn.fill_random(&src, 20_000, &mut rng);
 
     // All draws land in range, and the sampled mean tracks the source's.
-    assert_eq!(drawn.integral(), 20_000.0);
+    assert_eq!(drawn.integral(false), 20_000.0);
     assert!(
         (drawn.mean() - src.mean()).abs() < 0.1,
         "drawn mean {}",
@@ -183,21 +177,20 @@ fn sampling_a_histogram_reproduces_its_shape() {
     // Smoothing runs and keeps the bin count.
     let mut smoothed = src.clone();
     smoothed.smooth(1);
-    assert_eq!(smoothed.values().len(), src.values().len());
+    assert_eq!(smoothed.values(false).len(), src.values(false).len());
 }
 
 #[test]
 fn hadd_merges_histogram_files_end_to_end() {
     for (name, xs) in [("m1", [1.0, 2.0]), ("m2", [2.0, 3.0])] {
-        let mut h = Hist::reg(5, 0.0, 5.0)
-            .double()
-            .to_root()
-            .unwrap()
-            .named("h");
+        let mut h = Hist::reg(5, 0.0, 5.0).double().named("h");
         for x in xs {
             h.fill(x);
         }
-        FileWriter::create(tmp(name)).add(&h).write().unwrap();
+        FileWriter::create(tmp(name))
+            .add(&h.to_root().unwrap())
+            .write()
+            .unwrap();
     }
 
     let report = Merger::new()
@@ -210,5 +203,12 @@ fn hadd_merges_histogram_files_end_to_end() {
     );
 
     let file = FileReader::open(tmp("merged")).unwrap();
-    assert_eq!(file.get::<Hist1D>("h").unwrap().integral(), 4.0);
+    assert_eq!(
+        file.get::<Hist1D>("h")
+            .unwrap()
+            .values()
+            .iter()
+            .sum::<f64>(),
+        4.0
+    );
 }

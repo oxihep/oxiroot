@@ -63,22 +63,11 @@ impl Hist1D {
         &self.contents
     }
 
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when error tracking
-    /// is on ([`track_sumw2`](Self::track_sumw2)); `None` otherwise.
+    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
+    /// tracks errors; `None` otherwise.
     #[must_use]
     pub fn sumw2(&self) -> Option<&[f64]> {
         (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The per-bin Σw², to change in place, when error tracking is on.
-    #[must_use]
-    pub fn sumw2_mut(&mut self) -> Option<&mut [f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_mut_slice())
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its
@@ -100,30 +89,6 @@ impl Hist1D {
     #[must_use]
     pub fn zaxis_mut(&mut self) -> &mut Axis {
         &mut self.zaxis
-    }
-
-    /// The bin contents, to change in place (flow bins included; the number
-    /// of cells stays fixed).
-    #[must_use]
-    pub fn contents_mut(&mut self) -> &mut [f64] {
-        &mut self.contents
-    }
-
-    /// Set the content of cell `bin` (flow included); out of range does
-    /// nothing.
-    pub fn set_bin_content(&mut self, bin: usize, value: f64) {
-        if let Some(c) = self.contents.get_mut(bin) {
-            *c = value;
-        }
-    }
-
-    /// Set the error of cell `bin`, turning on error tracking; out of range
-    /// does nothing.
-    pub fn set_bin_error(&mut self, bin: usize, error: f64) {
-        if bin < self.contents.len() {
-            self.track_sumw2();
-            self.sumw2[bin] = error * error;
-        }
     }
 }
 
@@ -200,22 +165,11 @@ impl Hist2D {
         &self.contents
     }
 
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when error tracking
-    /// is on ([`track_sumw2`](Self::track_sumw2)); `None` otherwise.
+    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
+    /// tracks errors; `None` otherwise.
     #[must_use]
     pub fn sumw2(&self) -> Option<&[f64]> {
         (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The per-bin Σw², to change in place, when error tracking is on.
-    #[must_use]
-    pub fn sumw2_mut(&mut self) -> Option<&mut [f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_mut_slice())
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its
@@ -237,30 +191,6 @@ impl Hist2D {
     #[must_use]
     pub fn zaxis_mut(&mut self) -> &mut Axis {
         &mut self.zaxis
-    }
-
-    /// The bin contents, to change in place (flow bins included; the number
-    /// of cells stays fixed).
-    #[must_use]
-    pub fn contents_mut(&mut self) -> &mut [f64] {
-        &mut self.contents
-    }
-
-    /// Set the content of cell `bin` (flow included); out of range does
-    /// nothing.
-    pub fn set_bin_content(&mut self, bin: usize, value: f64) {
-        if let Some(c) = self.contents.get_mut(bin) {
-            *c = value;
-        }
-    }
-
-    /// Set the error of cell `bin`, turning on error tracking; out of range
-    /// does nothing.
-    pub fn set_bin_error(&mut self, bin: usize, error: f64) {
-        if bin < self.contents.len() {
-            self.track_sumw2();
-            self.sumw2[bin] = error * error;
-        }
     }
 }
 
@@ -361,22 +291,11 @@ impl Hist3D {
         &self.contents
     }
 
-    /// The per-bin Σw² (`fSumw2`), flow bins included, when error tracking
-    /// is on ([`track_sumw2`](Self::track_sumw2)); `None` otherwise.
+    /// The per-bin Σw² (`fSumw2`), flow bins included, when the histogram
+    /// tracks errors; `None` otherwise.
     #[must_use]
     pub fn sumw2(&self) -> Option<&[f64]> {
         (!self.sumw2.is_empty()).then_some(self.sumw2.as_slice())
-    }
-
-    /// The per-bin Σw², to change in place, when error tracking is on.
-    #[must_use]
-    pub fn sumw2_mut(&mut self) -> Option<&mut [f64]> {
-        (!self.sumw2.is_empty()).then_some(self.sumw2.as_mut_slice())
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its
@@ -398,30 +317,6 @@ impl Hist3D {
     #[must_use]
     pub fn zaxis_mut(&mut self) -> &mut Axis {
         &mut self.zaxis
-    }
-
-    /// The bin contents, to change in place (flow bins included; the number
-    /// of cells stays fixed).
-    #[must_use]
-    pub fn contents_mut(&mut self) -> &mut [f64] {
-        &mut self.contents
-    }
-
-    /// Set the content of cell `bin` (flow included); out of range does
-    /// nothing.
-    pub fn set_bin_content(&mut self, bin: usize, value: f64) {
-        if let Some(c) = self.contents.get_mut(bin) {
-            *c = value;
-        }
-    }
-
-    /// Set the error of cell `bin`, turning on error tracking; out of range
-    /// does nothing.
-    pub fn set_bin_error(&mut self, bin: usize, error: f64) {
-        if bin < self.contents.len() {
-            self.track_sumw2();
-            self.sumw2[bin] = error * error;
-        }
     }
 }
 
@@ -502,11 +397,6 @@ impl Profile1D {
     #[must_use]
     pub fn bin_sumw2(&self) -> &[f64] {
         &self.bin_sumw2
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its
@@ -618,11 +508,6 @@ impl Profile2D {
     #[must_use]
     pub fn bin_sumw2(&self) -> &[f64] {
         &self.bin_sumw2
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its
@@ -765,11 +650,6 @@ impl Profile3D {
     #[must_use]
     pub fn bin_sumw2(&self) -> &[f64] {
         &self.bin_sumw2
-    }
-
-    /// Set the number of entries (`fEntries`).
-    pub fn set_entries(&mut self, entries: f64) {
-        self.entries = entries;
     }
 
     /// The x axis, to change its title, labels or time display (its

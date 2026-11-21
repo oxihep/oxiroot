@@ -8,17 +8,11 @@ use oxiroot_io_core::FileReader;
 use oxiroot_io_core::{Compression, FileWriter, WriteRoot};
 
 fn sample() -> Hist1D {
-    let mut h = Hist::reg(10, 0.0, 10.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h")
-        .titled("title");
-    h.track_sumw2();
+    let mut h = Hist::reg(10, 0.0, 10.0).weight().named("h").titled("title");
     for i in 0..10 {
         h.fill_weight(f64::from(i) + 0.5, f64::from(i + 1));
     }
-    h
+    h.to_root().unwrap()
 }
 
 #[test]

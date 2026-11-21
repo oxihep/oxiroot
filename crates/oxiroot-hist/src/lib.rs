@@ -1,11 +1,19 @@
 //! Classic ROOT histograms, profiles and graphs, read and written byte-for-byte
 //! as ROOT 6 does.
 //!
-//! - Histograms: [`Hist1D`], [`Hist2D`], [`Hist3D`] in every bin content type
-//!   ([`BinContentType`]; the exact class is preserved in `class_name`), built
-//!   with [`Hist`].
-//! - Profiles: [`Profile1D`], [`Profile2D`], [`Profile3D`].
-//! - [`Efficiency`], [`SparseHist`] and [`PolyHist`].
+//! The histogram you build, fill, fit and plot is an
+//! [oxihist](https://github.com/oxihep/oxihist) [`Histogram`](oxihist::Histogram),
+//! made with [`Hist`]. The types here are what a ROOT file stores:
+//!
+//! - [`Hist1D`], [`Hist2D`], [`Hist3D`] (`TH1`/`TH2`/`TH3`, in every bin
+//!   content type: [`BinContentType`]) and [`Profile1D`], [`Profile2D`],
+//!   [`Profile3D`] (`TProfile`…) are **records**: their bins, errors, axes and
+//!   ROOT's statistics, as read from a file or about to be written.
+//!   [`ToRoot::to_root`] makes one from a histogram, and `to_hist()` gives the
+//!   histogram back, with the statistics of its fills. A record can be added
+//!   to another of the same binning (`add`), which is how `hadd` sums files.
+//! - [`Efficiency`], [`SparseHist`] and [`PolyHist`] have no oxihist
+//!   counterpart and are filled directly.
 //! - Graphs: [`Graph`] (with its error variants), [`Graph2D`] and
 //!   [`MultiErrorGraph`]; the collections [`HistStack`] and [`GraphStack`].
 //!
@@ -20,14 +28,12 @@
 mod access;
 mod base;
 mod collections;
-mod compare;
 mod convert;
 mod family;
 mod naming;
 mod ops;
 
 mod axis;
-mod derive;
 mod efficiency;
 #[cfg(feature = "fit")]
 mod fit;
@@ -44,16 +50,13 @@ mod polyhist;
 mod profile1d;
 mod profile2d;
 mod profile3d;
-mod sample;
 mod sparsehist;
-mod stats;
 mod threaded;
 mod write;
 
 pub use axis::Axis;
 pub use base::BinContentType;
 pub use collections::{GraphStack, HistStack};
-pub use compare::{Chi2TestKind, Chi2TestResult, KsTestResult};
 #[cfg(feature = "fit")]
 pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points};
 pub use graph::{Graph, GraphErrors, GraphFunction};
@@ -66,7 +69,6 @@ pub use efficiency::Efficiency;
 pub use hist1d::Hist1D;
 pub use hist2d::Hist2D;
 pub use hist3d::Hist3D;
-pub use ops::RootHistogram;
 /// The ROOT-free histogram library these types convert to and from.
 pub use oxihist;
 pub use oxihist::Random;
@@ -80,7 +82,5 @@ pub use profile3d::Profile3D;
 pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;
-pub use threaded::{
-    Mergeable, ThreadedFill1, ThreadedFill2, ThreadedFill3, ThreadedFill4, ThreadedHist,
-};
+pub use threaded::{Mergeable, ThreadedHist};
 pub use write::hist_streamer_classes;

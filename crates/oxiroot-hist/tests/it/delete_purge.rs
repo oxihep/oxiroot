@@ -8,13 +8,10 @@ use oxiroot_io_core::FileWriter;
 use oxiroot_io_core::{Compression, FileReader};
 
 fn hist(name: &str, content: f64) -> Hist1D {
-    let mut h = Hist::reg(1, 0.0, 1.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named(name);
+    let mut h = Hist::reg(1, 0.0, 1.0).weight().named(name);
     h.fill_weight(0.5, content);
-    h
+
+    h.to_root().unwrap()
 }
 
 /// `name;cycle` for every key on file, in the order the directory lists them.
@@ -64,8 +61,14 @@ fn deletes_one_cycle_and_a_whole_name() {
     assert_eq!(keys(&out), ["keep;1", "h;2", "h;3"]);
     // What is left still reads, and the newest cycle is still what a name means.
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(f.get::<Hist1D>("h").unwrap().integral(), 3.0);
-    assert_eq!(f.get::<Hist1D>("h;2").unwrap().integral(), 2.0);
+    assert_eq!(
+        f.get::<Hist1D>("h").unwrap().values().iter().sum::<f64>(),
+        3.0
+    );
+    assert_eq!(
+        f.get::<Hist1D>("h;2").unwrap().values().iter().sum::<f64>(),
+        2.0
+    );
     assert!(f.get::<Hist1D>("scratch").is_err());
     assert!(f.get::<Hist1D>("h;1").is_err());
 }
@@ -84,7 +87,10 @@ fn purge_keeps_the_current_cycle_of_each_name() {
 
     assert_eq!(keys(&out), ["keep;1", "scratch;1", "h;3"]);
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(f.get::<Hist1D>("h").unwrap().integral(), 3.0);
+    assert_eq!(
+        f.get::<Hist1D>("h").unwrap().values().iter().sum::<f64>(),
+        3.0
+    );
 }
 
 #[test]
@@ -103,7 +109,10 @@ fn an_object_written_after_a_delete_takes_the_next_free_cycle() {
     // h;3 went, so the added one takes 3 again — the newest is what was added.
     assert_eq!(keys(&out), ["h;1", "keep;1", "scratch;1", "h;2", "h;3"]);
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(f.get::<Hist1D>("h").unwrap().integral(), 9.0);
+    assert_eq!(
+        f.get::<Hist1D>("h").unwrap().values().iter().sum::<f64>(),
+        9.0
+    );
 }
 
 #[test]
@@ -127,8 +136,18 @@ fn compact_gives_up_the_space_the_dropped_objects_held() {
     );
     assert_eq!(keys(&out), ["keep;1", "scratch;1", "h;1"]);
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(f.get::<Hist1D>("h").unwrap().integral(), 3.0);
-    assert_eq!(f.get::<Hist1D>("keep").unwrap().integral(), 100.0);
+    assert_eq!(
+        f.get::<Hist1D>("h").unwrap().values().iter().sum::<f64>(),
+        3.0
+    );
+    assert_eq!(
+        f.get::<Hist1D>("keep")
+            .unwrap()
+            .values()
+            .iter()
+            .sum::<f64>(),
+        100.0
+    );
     // The rewritten file describes the classes it holds, so it reads on its own.
     assert!(
         f.get::<oxiroot_io_core::Value>("h")
@@ -159,9 +178,26 @@ fn compact_keeps_the_subdirectories() {
         .expect("compact");
 
     let f = FileReader::open(&out).unwrap();
-    assert_eq!(f.get::<Hist1D>("top").unwrap().integral(), 1.0);
-    assert_eq!(f.get::<Hist1D>("a/in_a").unwrap().integral(), 2.0);
-    assert_eq!(f.get::<Hist1D>("a/b/in_b").unwrap().integral(), 3.0);
+    assert_eq!(
+        f.get::<Hist1D>("top").unwrap().values().iter().sum::<f64>(),
+        1.0
+    );
+    assert_eq!(
+        f.get::<Hist1D>("a/in_a")
+            .unwrap()
+            .values()
+            .iter()
+            .sum::<f64>(),
+        2.0
+    );
+    assert_eq!(
+        f.get::<Hist1D>("a/b/in_b")
+            .unwrap()
+            .values()
+            .iter()
+            .sum::<f64>(),
+        3.0
+    );
 }
 
 #[test]

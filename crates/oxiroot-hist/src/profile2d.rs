@@ -110,45 +110,6 @@ impl Profile2D {
         usize::saturating_from(self.yaxis.nbins.max(0))
     }
 
-    /// Profile a point `(x, y, z)` with unit weight.
-    pub fn fill(&mut self, x: f64, y: f64, z: f64) {
-        self.fill_weight(x, y, z, 1.0);
-    }
-
-    /// Profile a point `(x, y, z)` with weight `w`, matching `Profile2D::Fill`:
-    /// accumulate the per-cell sums of `w·z` and `w·z²` and the per-cell weight,
-    /// plus the moment sums (the latter only when both x and y are in range). A
-    /// `z` range (`zmin != zmax`) rejects out-of-range points first.
-    ///
-    /// The first fill with `w != 1` turns on per-bin tracking of `Σw²`
-    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
-    /// and so every bin error, would assume unit weights.
-    pub fn fill_weight(&mut self, x: f64, y: f64, z: f64, w: f64) {
-        if self.zmin != self.zmax && (z < self.zmin || z > self.zmax || z.is_nan()) {
-            return;
-        }
-        if w != 1.0 {
-            self.track_bin_sumw2();
-        }
-        let stride = self.nx() + 2;
-        let (bx, by) = (self.xaxis.find_bin(x), self.yaxis.find_bin(y));
-        let cell = bx + stride * by;
-        self.accumulate(cell, z, w);
-
-        let in_range = (1..=self.nx()).contains(&bx) && (1..=self.ny()).contains(&by);
-        if in_range {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-            self.tsumwy += w * y;
-            self.tsumwy2 += w * y * y;
-            self.tsumwxy += w * x * y;
-            self.tsumwz += w * z;
-            self.tsumwz2 += w * z * z;
-        }
-    }
-
     /// Profiled `z` value per in-range cell as `values[ix][iy]`: `Σ(w·z) / Σw`,
     /// or `0` where a cell has no entries. Matches ROOT/uproot.
     #[must_use]

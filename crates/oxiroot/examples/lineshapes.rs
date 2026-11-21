@@ -137,12 +137,9 @@ fn fit_crystal_ball() {
     let (true_mean, true_sigma) = (91.2, 2.5); // a Z-like mass peak [GeV]
 
     let mut peak = Hist::reg(80, 75.0, 100.0)
-        .double()
-        .to_root()
-        .unwrap()
+        .weight()
         .named("cb_mass")
         .titled("mass with a low-side tail [GeV]");
-    peak.track_sumw2(); // per-bin errors for the chi-square
 
     // ~4000 events: a Gaussian core, but 12 % are dragged just below the peak to
     // fake the radiative tail the Crystal Ball is built to describe.
@@ -160,7 +157,13 @@ fn fit_crystal_ball() {
     // alpha/n we set here survive. Keep the width/tail physical (and `n`
     // bounded, so it can't run away) for a clean MIGRAD convergence.
     let mut model = Model::crystal_ball("cb")
-        .with_params(vec![peak.maximum(), true_mean, true_sigma, 1.3, 4.0])
+        .with_params(vec![
+            peak.maximum().map_or(1.0, |(_, v)| v),
+            true_mean,
+            true_sigma,
+            1.3,
+            4.0,
+        ])
         .estimate_from(&peak)
         .lower_limit("sigma", 0.0)
         .limit("alpha", 0.2, 5.0)

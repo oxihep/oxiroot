@@ -44,13 +44,9 @@ fn reads_root_written_collections() {
 
 #[test]
 fn round_trips_collections_through_oxiroot() {
-    let mut ha = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("ha")
-        .titled("a");
+    let mut ha = Hist::reg(4, 0.0, 4.0).double().named("ha").titled("a");
     ha.fill(0.5);
+    let ha = ha.to_root().unwrap();
     let hb = Hist::reg(4, 0.0, 4.0)
         .double()
         .to_root()

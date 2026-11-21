@@ -235,11 +235,12 @@ fn read_back<T: ReadRoot>(old: &OldObject, version: u16) -> Result<T, Error> {
 
 #[test]
 fn every_streamed_tprofile_version_reads() {
-    let mut p = Hist::reg(4, 0.0, 4.0).mean().to_root().unwrap().named("p");
-    p.fill(0.5, 1.0);
-    p.fill(0.5, 3.0);
-    p.fill_weight(1.5, 2.0, 2.0); // a weight: fBinSumw2 is tracked
-    p.fill(2.5, 4.5);
+    let mut p = Hist::reg(4, 0.0, 4.0).weighted_mean().named("p");
+    p.fill_sample(0.5, 1.0);
+    p.fill_sample(0.5, 3.0);
+    p.fill_sample_weight(1.5, 2.0, 2.0); // a weight: fBinSumw2 is tracked
+    p.fill_sample(2.5, 4.5);
+    let p = p.to_root().unwrap();
     assert!(!p.bin_sumw2().is_empty());
 
     for version in 2..=7 {
@@ -260,14 +261,13 @@ fn every_streamed_tprofile_version_reads() {
 fn every_streamed_tprofile2d_version_reads() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(3, 0.0, 3.0)
-        .mean()
-        .to_root()
-        .unwrap()
+        .weighted_mean()
         .named("p");
-    p.fill(0.5, 0.5, 10.0);
-    p.fill(0.5, 0.5, 20.0);
-    p.fill_weight(1.5, 2.5, 5.0, 0.5);
-    p.fill(1.5, 1.5, 30.0);
+    p.fill_sample(0.5, 0.5, 10.0);
+    p.fill_sample(0.5, 0.5, 20.0);
+    p.fill_sample_weight(1.5, 2.5, 5.0, 0.5);
+    p.fill_sample(1.5, 1.5, 30.0);
+    let p = p.to_root().unwrap();
 
     for version in 2..=8 {
         let old = downgrade(&TPROFILE2D, p.to_root_bytes(), p.bin_sumw2().len(), version);
@@ -286,12 +286,11 @@ fn every_streamed_tprofile3d_version_reads() {
     let mut p = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
-        .mean()
-        .to_root()
-        .unwrap()
+        .weighted_mean()
         .named("p");
-    p.fill(0.5, 0.5, 0.5, 10.0);
-    p.fill_weight(1.5, 1.5, 1.5, 7.0, 3.0);
+    p.fill_sample(0.5, 0.5, 0.5, 10.0);
+    p.fill_sample_weight(1.5, 1.5, 1.5, 7.0, 3.0);
+    let p = p.to_root().unwrap();
 
     for version in 6..=8 {
         let old = downgrade(&TPROFILE3D, p.to_root_bytes(), p.bin_sumw2().len(), version);
@@ -307,7 +306,11 @@ fn every_streamed_tprofile3d_version_reads() {
 
 #[test]
 fn profiles_older_than_streamer_info_are_an_error() {
-    let p1 = Hist::reg(2, 0.0, 2.0).mean().to_root().unwrap().named("p");
+    let p1 = Hist::reg(2, 0.0, 2.0)
+        .weighted_mean()
+        .to_root()
+        .unwrap()
+        .named("p");
     let old = downgrade(&TPROFILE, p1.to_root_bytes(), 0, 1);
     let Err(Error::UnsupportedVersion { class, version }) = read_back::<Profile1D>(&old, 1) else {
         panic!("TProfile v1 read");
@@ -317,7 +320,7 @@ fn profiles_older_than_streamer_info_are_an_error() {
     let p3 = Hist::reg(1, 0.0, 1.0)
         .reg(1, 0.0, 1.0)
         .reg(1, 0.0, 1.0)
-        .mean()
+        .weighted_mean()
         .to_root()
         .unwrap()
         .named("p");

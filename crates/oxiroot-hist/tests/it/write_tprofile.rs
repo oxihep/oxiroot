@@ -32,17 +32,13 @@ fn round_trips_real_root_tprofile() {
 #[test]
 fn create_fill_save_round_trips() {
     // Reproduce the fixture's fills: 4 bins over [0,4], profiling y vs x.
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .mean()
-        .to_root()
-        .unwrap()
-        .named("p")
-        .titled("profile");
-    h.fill(0.5, 20.0);
-    h.fill(0.5, 10.0);
-    h.fill(1.5, 10.0);
-    h.fill(1.5, 5.0);
-    h.fill(2.5, 30.0);
+    let mut h = Hist::reg(4, 0.0, 4.0).mean().named("p").titled("profile");
+    h.fill_sample(0.5, 20.0);
+    h.fill_sample(0.5, 10.0);
+    h.fill_sample(1.5, 10.0);
+    h.fill_sample(1.5, 5.0);
+    h.fill_sample(2.5, 30.0);
+    let h = h.to_root().unwrap();
 
     assert_eq!(h.entries(), 5.0);
     assert_eq!(h.tsumw(), 5.0);

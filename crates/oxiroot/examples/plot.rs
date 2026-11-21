@@ -42,11 +42,9 @@ fn main() -> oxiroot::Result<()> {
 
     // A deterministic Gaussian-filled di-muon mass histogram (Sumw2 on).
     let mut mc = Hist::reg(40, 50.0, 130.0)
-        .double()
-        .to_root()?
+        .weight()
         .named("mass")
         .titled("di-muon mass");
-    mc.track_sumw2();
     let mut rng = Lcg::new(0x1234_5678_9abc_def0);
     for _ in 0..40_000 {
         mc.fill(91.0 + 7.5 * rng.gauss());
@@ -122,8 +120,7 @@ fn main() -> oxiroot::Result<()> {
     // --- 3. A 2-D Hist2D as a viridis heatmap with a colorbar. ---
     let mut h2 = Hist::reg(40, -4.0, 4.0)
         .reg(40, -4.0, 4.0)
-        .double()
-        .to_root()?
+        .weight()
         .named("h2");
     for ix in 0..40 {
         for iy in 0..40 {
@@ -142,12 +139,14 @@ fn main() -> oxiroot::Result<()> {
     save_both(&ax2, &out, "heatmap")?;
 
     // --- 4. A ratio plot: filled MC + data over a data/MC ratio panel. ---
-    let mc_vals = mc.values();
+    let mc_vals = mc.values(false);
+    let edges = mc.axis(0).edges().expect("a numeric axis");
     let bin_content = |x: f64| -> f64 {
-        mc_vals
-            .get(mc.xaxis().find_bin(x).wrapping_sub(1))
-            .copied()
-            .unwrap_or(0.0)
+        // The bin whose edges hold `x`, or nothing outside the axis.
+        match edges.partition_point(|&e| e <= x) {
+            bin if (1..edges.len()).contains(&bin) => mc_vals[bin - 1],
+            _ => 0.0,
+        }
     };
     let ratio_y: Vec<f64> = dx
         .iter()

@@ -12,16 +12,12 @@ use oxiroot_io_core::FileReader;
 use oxiroot_io_core::{FileUpdater, FileWriter};
 
 fn th1(name: &str) -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named(name)
-        .titled("1-D");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named(name).titled("1-D");
     for x in [0.5, 1.5, 1.5, 3.5] {
         h.fill(x);
     }
-    h
+
+    h.to_root().unwrap()
 }
 
 #[test]
@@ -31,12 +27,11 @@ fn big_container_flat_round_trips() {
     let mut h2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("hxy")
         .titled("2-D");
     h2.fill(0.5, 0.5);
     h2.fill(1.5, 1.5);
+    let h2 = h2.to_root().unwrap();
 
     // Threshold 0 forces the 64-bit container form even for this tiny file.
     FileWriter::create(&out)

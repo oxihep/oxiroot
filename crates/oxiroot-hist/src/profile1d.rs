@@ -218,40 +218,6 @@ impl Profile1D {
             bin_sumw2: Vec::new(),
         }
     }
-
-    /// Profile a point `(x, y)` with unit weight.
-    pub fn fill(&mut self, x: f64, y: f64) {
-        self.fill_weight(x, y, 1.0);
-    }
-
-    /// Profile a point `(x, y)` with weight `w`, matching ROOT's `Profile1D::Fill`:
-    /// accumulate the per-bin sums of `w*y` and `w*y^2` and the per-bin weight,
-    /// plus the x/y moment sums (the latter only when x is in range). A `y` range
-    /// (`ymin != ymax`) rejects out-of-range points before they are counted.
-    ///
-    /// The first fill with `w != 1` turns on per-bin tracking of `Σw²`
-    /// (`fBinSumw2`), as ROOT's `Fill` does; without it the effective entry count,
-    /// and so every bin error, would assume unit weights.
-    pub fn fill_weight(&mut self, x: f64, y: f64, w: f64) {
-        if self.ymin != self.ymax && (y < self.ymin || y > self.ymax || y.is_nan()) {
-            return;
-        }
-        if w != 1.0 {
-            self.track_bin_sumw2();
-        }
-        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
-        let bin = self.xaxis.find_bin(x);
-        self.accumulate(bin, y, w);
-
-        if (1..=nbins).contains(&bin) {
-            self.tsumw += w;
-            self.tsumw2 += w * w;
-            self.tsumwx += w * x;
-            self.tsumwx2 += w * x * x;
-            self.tsumwy += w * y;
-            self.tsumwy2 += w * y * y;
-        }
-    }
 }
 
 impl ReadRoot for Profile1D {

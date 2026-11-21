@@ -12,18 +12,14 @@ use oxiroot_io_core::{Compression, FileReader};
     reason = "small whole fill counts"
 )]
 fn filled_th1() -> Hist1D {
-    let mut h = Hist::reg(4, 0.0, 4.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h")
-        .titled("int");
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("int");
     for (i, &n) in [1.0, 2.0, 3.0, 4.0].iter().enumerate() {
         for _ in 0..(n as usize) {
             h.fill(i as f64 + 0.5);
         }
     }
-    h
+
+    h.to_root().unwrap()
 }
 
 fn check_th1(out: &str, cls: &str, h: &Hist1D) {
@@ -69,12 +65,11 @@ fn th2i_th3i_round_trip() {
     let mut h2 = Hist::reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h2")
         .titled("i2");
     h2.fill(0.5, 0.5);
     h2.fill(1.5, 1.5);
+    let h2 = h2.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/oxiroot_th2i.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h2.clone().with_bin_content_type(BinContentType::I32))
@@ -89,11 +84,10 @@ fn th2i_th3i_round_trip() {
         .reg(2, 0.0, 2.0)
         .reg(2, 0.0, 2.0)
         .double()
-        .to_root()
-        .unwrap()
         .named("h3")
         .titled("i3");
     h3.fill(0.5, 0.5, 0.5);
+    let h3 = h3.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/oxiroot_th3i.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h3.clone().with_bin_content_type(BinContentType::I32))

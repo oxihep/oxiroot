@@ -60,13 +60,9 @@ fn write_files() -> Files {
     let mut w = FileWriter::create(&hists);
     let made: Vec<Hist1D> = (0..500)
         .map(|i| {
-            let mut h = Hist::reg(100, 0.0, 1.0)
-                .double()
-                .to_root()
-                .unwrap()
-                .named(format!("h{i}"));
+            let mut h = Hist::reg(100, 0.0, 1.0).double().named(format!("h{i}"));
             h.fill(0.5);
-            h
+            h.to_root().unwrap()
         })
         .collect();
     for h in &made {

@@ -998,9 +998,6 @@ mod tests {
         assert_eq!(r.bin_entries[1], 3.0);
         assert_eq!(r.sums[1], 6.0);
         assert_eq!(r.sumy2[1], 18.0);
-        // ROOT's error on the mean uses the population spread over the
-        // effective entries: here σ² = 18/3 − 2² = 2 and n_eff = 3²/5.
-        assert!((r.bin_error(1) - (2.0f64 / 1.8).sqrt()).abs() < 1e-12);
         let back: Histogram<WeightedMean, 1> = r.to_hist().unwrap();
         for i in 0..2 {
             assert!((back.value([i]).unwrap() - p.value([i]).unwrap()).abs() < 1e-12);

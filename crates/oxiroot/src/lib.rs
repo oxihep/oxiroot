@@ -13,10 +13,11 @@
 //! ```no_run
 //! use oxiroot::prelude::*;
 //!
-//! // Fill and save a histogram (the Hist builder; `weight()` tracks Sumw2).
-//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight().to_root()?;
+//! // Fill a histogram (the Hist builder; `weight()` tracks Sumw2), then save
+//! // it: `to_root()` is the TH1D a file stores.
+//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight();
 //! h.fill_weight(42.0, 1.5);
-//! FileWriter::create("out.root").add(&h).write()?; // WriteRoot trait
+//! FileWriter::create("out.root").add(&h.to_root()?).write()?;
 //!
 //! // Write a columnar dataset — an RNTuple here, `Format::Tree` for a TTree —
 //! // then read it back.
@@ -184,12 +185,12 @@ pub mod prelude {
     /// The ROOT-free histogram the `Hist` builder makes (from oxihist);
     /// `.to_root()?` turns it into a `Hist1D`/`Hist2D`/…
     pub use oxiroot_hist::oxihist::Histogram;
+    pub use oxiroot_hist::oxihist::{Chi2TestKind, Chi2TestResult, KsTestResult};
     pub use oxiroot_hist::{
-        Axis, BinContentType, Chi2TestKind, Chi2TestResult, Efficiency, ErrorMode, Graph, Graph2D,
-        GraphErrors, GraphFunction, GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack,
-        KsTestResult, Mergeable, MultiErrorGraph, PolyBin, PolyHist, Profile1D, Profile2D,
-        Profile3D, Random, RootHistogram, SparseBin, SparseHist, ThreadedFill1, ThreadedFill2,
-        ThreadedFill3, ThreadedFill4, ThreadedHist, ToRoot,
+        Axis, BinContentType, Efficiency, ErrorMode, Graph, Graph2D, GraphErrors, GraphFunction,
+        GraphStack, Hist, Hist1D, Hist2D, Hist3D, HistStack, Mergeable, MultiErrorGraph, PolyBin,
+        PolyHist, Profile1D, Profile2D, Profile3D, Random, SparseBin, SparseHist, ThreadedHist,
+        ToRoot,
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
     pub use oxiroot_linalg::{Matrix, SymMatrix, Vector};

@@ -73,8 +73,8 @@ fn an_efficiency_sums_its_histograms_like_root() {
     assert_eq!(e.passed().contents(), root_e.passed().contents());
     assert_eq!(e.total().contents(), root_e.total().contents());
     // One passed of two in the first file, two of three in the second.
-    assert_eq!(e.passed().integral(), 3.0);
-    assert_eq!(e.total().integral(), 5.0);
+    assert_eq!(e.passed().values().iter().sum::<f64>(), 3.0);
+    assert_eq!(e.total().values().iter().sum::<f64>(), 5.0);
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn a_stack_merges_its_histograms_and_a_parameter_sums_like_root() {
     let root_st = root.get::<HistStack>("st").unwrap();
     assert_eq!(st.hists().len(), 1);
     assert_eq!(st.hists()[0].contents(), root_st.hists()[0].contents());
-    assert_eq!(st.hists()[0].integral(), 3.0);
+    assert_eq!(st.hists()[0].values().iter().sum::<f64>(), 3.0);
 
     let par = ours.get::<Parameter>("par").unwrap();
     assert_eq!(par.value(), root.get::<Parameter>("par").unwrap().value());

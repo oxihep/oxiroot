@@ -62,12 +62,7 @@ fn writes_a_root_file_that_round_trips() {
 #[test]
 fn create_fill_save_round_trips() {
     // Build a histogram from scratch and fill it, as in an analysis loop.
-    let mut h = Hist::reg(5, 0.0, 5.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h")
-        .titled("filled");
+    let mut h = Hist::reg(5, 0.0, 5.0).double().named("h").titled("filled");
     h.fill(0.5);
     h.fill(1.5);
     h.fill(1.5);
@@ -75,7 +70,8 @@ fn create_fill_save_round_trips() {
     h.fill(2.5);
     h.fill(2.5);
     h.fill(-1.0); // underflow
-    h.fill(10.0); // overflow
+    h.fill(10.0);
+    let h = h.to_root().unwrap(); // overflow
 
     assert_eq!(h.entries(), 8.0, "all fills counted");
     assert_eq!(
@@ -86,7 +82,10 @@ fn create_fill_save_round_trips() {
     assert_eq!(h.contents()[0], 1.0, "underflow");
     assert_eq!(*h.contents().last().unwrap(), 1.0, "overflow");
     assert_eq!(h.tsumw(), 6.0, "in-range weight sum");
-    assert!((h.mean() - 11.0 / 6.0).abs() < 1e-12, "mean = tsumwx/tsumw");
+    assert!(
+        (h.tsumwx() / h.tsumw() - 11.0 / 6.0).abs() < 1e-12,
+        "mean = tsumwx/tsumw"
+    );
 
     // Save and read back through our own reader.
     let out = std::path::PathBuf::from("/tmp/rootrs_filled_th1d.root");
@@ -105,12 +104,9 @@ fn written_file_embeds_self_describing_streamer_info() {
     // A written file describes the classes it holds, at the exact versions we
     // emit, so any ROOT reader can read it: a TH1D and every class it depends
     // on, and none of the rest of the histogram family.
-    let mut h = Hist::reg(5, 0.0, 5.0)
-        .double()
-        .to_root()
-        .unwrap()
-        .named("h");
+    let mut h = Hist::reg(5, 0.0, 5.0).double().named("h");
     h.fill(2.5);
+    let h = h.to_root().unwrap();
     let out = std::path::PathBuf::from("/tmp/rootrs_streamerinfo_th1d.root");
     oxiroot_io_core::FileWriter::create(&out)
         .add(&h)
