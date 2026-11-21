@@ -4,12 +4,9 @@
 //! including per-bin error (`Sumw2`) propagation. `add` with `c = 1` is the
 //! bin-by-bin merge used to combine outputs across parallel jobs (`hadd`).
 
-use std::collections::HashMap;
-
 use oxiroot_io_core::{Error, Result};
 
 use crate::graph::GraphErrors;
-use crate::sparsehist::SparseBin;
 use crate::{
     Efficiency, Graph, Hist1D, Hist2D, Hist3D, PolyHist, Profile1D, Profile2D, Profile3D,
     SparseHist,
@@ -53,8 +50,8 @@ macro_rules! impl_profile_add {
     (
         $ty:ident, $dim:literal,
         axes: [$($axis:ident),+],
-        value_sq: $sumv2:ident,
-        moments: [$($moment:ident),+ $(,)?] $(,)?
+        value_sq: $sumv2:ident
+        $(, more_moments: [$($moment:ident),+])? $(,)?
     ) => {
         impl $ty {
             #[doc = concat!("Merge `c * other` into this ", $dim, " profile cell by cell (a")]
@@ -119,8 +116,8 @@ macro_rules! impl_profile_add {
                 self.entries += ac * other.entries;
                 // Σw² is quadratic in the weight; every other moment is linear in
                 // it, so takes |c|.
-                self.tsumw2 += c * c * other.tsumw2;
-                $(self.$moment += ac * other.$moment;)+
+                self.moments.add_scaled(&other.moments, ac);
+                $($(self.$moment += ac * other.$moment;)+)?
                 Ok(())
             }
         }
@@ -131,22 +128,17 @@ impl_profile_add!(
     Profile1D, "1-D",
     axes: [xaxis],
     value_sq: sumy2,
-    moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2],
 );
 impl_profile_add!(
     Profile2D, "2-D",
     axes: [xaxis, yaxis],
     value_sq: sumz2,
-    moments: [tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2],
 );
 impl_profile_add!(
     Profile3D, "3-D",
     axes: [xaxis, yaxis, zaxis],
     value_sq: sumt2,
-    moments: [
-        tsumw, tsumwx, tsumwx2, tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz,
-        tsumwt, tsumwt2,
-    ],
+    more_moments: [tsumwt, tsumwt2],
 );
 
 impl std::fmt::Display for Hist1D {
@@ -157,7 +149,7 @@ impl std::fmt::Display for Hist1D {
             "{} {:?}: {} bins [{}, {}), entries={}",
             self.class_name(),
             self.name,
-            self.xaxis.nbins.max(0),
+            self.xaxis.nbins,
             self.xaxis.xmin,
             self.xaxis.xmax,
             self.entries
@@ -173,8 +165,8 @@ impl std::fmt::Display for Hist2D {
             "{} {:?}: {}x{} bins, entries={}",
             self.class_name(),
             self.name,
-            self.xaxis.nbins.max(0),
-            self.yaxis.nbins.max(0),
+            self.xaxis.nbins,
+            self.yaxis.nbins,
             self.entries
         )
     }
@@ -188,9 +180,9 @@ impl std::fmt::Display for Hist3D {
             "{} {:?}: {}x{}x{} bins, entries={}",
             self.class_name(),
             self.name,
-            self.xaxis.nbins.max(0),
-            self.yaxis.nbins.max(0),
-            self.zaxis.nbins.max(0),
+            self.xaxis.nbins,
+            self.yaxis.nbins,
+            self.zaxis.nbins,
             self.entries
         )
     }
@@ -241,13 +233,7 @@ impl PolyHist {
             *region += c * from;
         }
         self.entries += c * other.entries;
-        self.tsumw += c * other.tsumw;
-        self.tsumw2 += c * c * other.tsumw2;
-        self.tsumwx += c * other.tsumwx;
-        self.tsumwx2 += c * other.tsumwx2;
-        self.tsumwy += c * other.tsumwy;
-        self.tsumwy2 += c * other.tsumwy2;
-        self.tsumwxy += c * other.tsumwxy;
+        self.moments.add_scaled(&other.moments, c);
         Ok(())
     }
 }
@@ -269,17 +255,8 @@ impl SparseHist {
         if !same {
             return Err(binning_mismatch("THnSparse::add"));
         }
-        let at: HashMap<Vec<i32>, usize> = (self.bins.iter().enumerate())
-            .map(|(i, bin)| (bin.coords.clone(), i))
-            .collect();
         for bin in &other.bins {
-            match at.get(&bin.coords) {
-                Some(&i) => self.bins[i].content += c * bin.content,
-                None => self.bins.push(SparseBin {
-                    coords: bin.coords.clone(),
-                    content: c * bin.content,
-                }),
-            }
+            *self.content_mut(&bin.coords) += c * bin.content;
         }
         self.entries += c * other.entries;
         self.tsumw += c * other.tsumw;

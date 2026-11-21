@@ -6,6 +6,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use oxiroot::hist::ThreadedHist;
 use oxiroot::prelude::*;
 
 /// Values the fills draw from: a deterministic spread over [0, 100), so the

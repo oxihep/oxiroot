@@ -19,6 +19,7 @@ fn poke_rntuple(f: &FileReader) {
     if let Ok(ntpl) = NtupleReader::open(f, "ntpl") {
         let names: Vec<String> = ntpl
             .field_names()
+            .collect::<Vec<_>>()
             .iter()
             .map(std::string::ToString::to_string)
             .collect();

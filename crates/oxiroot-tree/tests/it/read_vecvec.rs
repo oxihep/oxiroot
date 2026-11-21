@@ -24,8 +24,8 @@ fn reads_vector_of_vector_int() {
     let f = fixture("tree_vecvec.root");
     let t = TreeReader::open(&f, "T").expect("open tree");
     assert_eq!(t.entries(), 3);
-    assert_eq!(t.branch_names(), vec!["vi", "vd"]);
-    assert!(t.unsupported_branches().is_empty());
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), vec!["vi", "vd"]);
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     // vi = [[[0]], [[100], [110, 111]], [[200], [210, 211], [220, 221, 222]]]
     let vi = t.branch("vi").values().unwrap();

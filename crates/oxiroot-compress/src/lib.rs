@@ -14,10 +14,11 @@ mod setting;
 pub use header::{Algorithm, BlockHeader, HDR_SIZE, MAX_CHUNK_SIZE};
 pub use setting::Compression;
 
+use std::borrow::Cow;
 use std::fmt;
 
 /// Errors raised while (de)compressing ROOT payloads.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum CompressError {
     /// The input was shorter than required to read a header or block payload.
@@ -36,8 +37,13 @@ pub enum CompressError {
     },
     /// A block uses an algorithm whose codec is not compiled in yet.
     CodecUnavailable(Algorithm),
-    /// The underlying codec reported an error.
-    Codec(String),
+    /// A codec failed: `source` is its own error, kept whole.
+    Codec {
+        /// The algorithm whose codec failed.
+        algorithm: Algorithm,
+        /// What the codec reported.
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 impl fmt::Display for CompressError {
@@ -58,12 +64,32 @@ impl fmt::Display for CompressError {
             Self::CodecUnavailable(algo) => {
                 write!(f, "no codec available for {algo}")
             }
-            Self::Codec(msg) => write!(f, "codec error: {msg}"),
+            Self::Codec { algorithm, source } => write!(f, "{algorithm} codec error: {source}"),
         }
     }
 }
 
-impl std::error::Error for CompressError {}
+impl std::error::Error for CompressError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Codec { source, .. } => Some(&**source),
+            _ => None,
+        }
+    }
+}
+
+impl CompressError {
+    /// A failure of `algorithm`'s codec, reported as `source`.
+    pub(crate) fn codec(
+        algorithm: Algorithm,
+        source: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Self {
+        Self::Codec {
+            algorithm,
+            source: source.into(),
+        }
+    }
+}
 
 /// Decompress `src` into exactly `uncompressed_len` bytes.
 ///
@@ -77,9 +103,10 @@ impl std::error::Error for CompressError {}
 /// [`CompressError::Truncated`] if a block is cut short, [`CompressError::SizeMismatch`] if the
 /// blocks do not expand to `uncompressed_len` bytes, [`CompressError::CodecUnavailable`] for an
 /// algorithm with no decoder, and [`CompressError::Codec`] if a block does not decode.
-pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, CompressError> {
+pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Cow<'_, [u8]>, CompressError> {
     if src.len() == uncompressed_len {
-        return Ok(src.to_vec());
+        // Stored as it is: the caller reads it where it lies.
+        return Ok(Cow::Borrowed(src));
     }
 
     // `uncompressed_len` comes from the file (an anchor 48-bit length or a Key
@@ -120,7 +147,7 @@ pub fn decompress(src: &[u8], uncompressed_len: usize) -> Result<Vec<u8>, Compre
             got: out.len(),
         });
     }
-    Ok(out)
+    Ok(Cow::Owned(out))
 }
 
 /// Decode one block onto the end of `out`. The block must expand to exactly
@@ -161,10 +188,10 @@ fn decompress_block(
 ///
 /// [`CompressError::Codec`] if an encoder fails or a block does not fit ROOT's
 /// 24-bit block size.
-pub fn compress(src: &[u8], compression: Compression) -> Result<Vec<u8>, CompressError> {
+pub fn compress(src: &[u8], compression: Compression) -> Result<Cow<'_, [u8]>, CompressError> {
     // (tag, method byte) for each encoder, matching ROOT's framing.
     let (tag, method, level): ([u8; 2], u8, u8) = match compression {
-        Compression::Stored => return Ok(src.to_vec()),
+        Compression::Stored => return Ok(Cow::Borrowed(src)),
         Compression::Zlib(level) => (*b"ZL", 8, level), // Z_DEFLATED
         Compression::Lzma(level) => (*b"XZ", 0, level), // an XZ stream, per R__zipLZMA
         Compression::Lz4(level) => (*b"L4", 1, level),  // version byte 1
@@ -182,8 +209,9 @@ pub fn compress(src: &[u8], compression: Compression) -> Result<Vec<u8>, Compres
             Compression::Zstd(_) => codec::zstd_encode(chunk, level)?,
         };
         if frame.len() > MAX_CHUNK_SIZE {
-            return Err(CompressError::Codec(
-                "compressed block exceeds 24-bit size".into(),
+            return Err(CompressError::codec(
+                Algorithm::from_tag(tag),
+                "compressed block exceeds 24-bit size",
             ));
         }
         BlockHeader {
@@ -196,7 +224,7 @@ pub fn compress(src: &[u8], compression: Compression) -> Result<Vec<u8>, Compres
         .write(&mut out);
         out.extend_from_slice(&frame);
     }
-    Ok(out)
+    Ok(Cow::Owned(out))
 }
 
 #[cfg(test)]
@@ -269,7 +297,9 @@ mod tests {
     fn a_block_cannot_expand_past_its_declared_size() {
         let data = vec![0u8; 4 << 20]; // 4 MiB of zeros: a few KiB compressed
         for setting in [101, 505, 205] {
-            let mut block = compress(&data, Compression::try_from(setting).unwrap()).unwrap();
+            let mut block = compress(&data, Compression::try_from(setting).unwrap())
+                .unwrap()
+                .into_owned();
             assert!(block.len() < data.len() / 64, "setting {setting}");
             // Declare 100 bytes in the header and ask for 100 bytes.
             block[6..9].copy_from_slice(&[100, 0, 0]);
@@ -282,7 +312,7 @@ mod tests {
             }
         }
         // LZ4 decodes into a buffer of the declared size and fails on overflow.
-        let mut block = compress(&data, setting(404)).unwrap();
+        let mut block = compress(&data, setting(404)).unwrap().into_owned();
         block[6..9].copy_from_slice(&[100, 0, 0]);
         assert!(decompress(&block, 100).is_err());
     }
@@ -292,11 +322,11 @@ mod tests {
         // A valid LZ4 block whose stored XXH64 prefix has been flipped must be
         // rejected, not silently decoded.
         let data = b"oxiroot oxiroot oxiroot oxiroot".repeat(8);
-        let mut block = compress(&data, setting(404)).unwrap();
+        let mut block = compress(&data, setting(404)).unwrap().into_owned();
         block[HDR_SIZE] ^= 0xff; // corrupt the first checksum byte
         assert!(matches!(
             decompress(&block, data.len()),
-            Err(CompressError::Codec(_))
+            Err(CompressError::Codec { .. })
         ));
     }
 

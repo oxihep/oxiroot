@@ -11,6 +11,7 @@
 //! cargo run -p oxiroot --example rntuple
 //! ```
 
+use oxiroot::data::DatasetObject;
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {

@@ -19,6 +19,7 @@ fn main() {
 
 #[cfg(all(feature = "xrootd", feature = "fit", feature = "plot"))]
 fn main() -> oxiroot::Result<()> {
+    use oxiroot::fit::FitExt;
     use oxiroot::fit::{FitMethod, FitOptions, Minimizer, Model};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;

@@ -16,8 +16,8 @@ fn reads_leaflist_branch() {
     let f = FileReader::open(path).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 4);
-    assert_eq!(t.branch_names(), ["s.a", "s.b", "s.c"]);
-    assert!(t.unsupported_branches().is_empty());
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), ["s.a", "s.b", "s.c"]);
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     let read = |n| t.branch(n).values().expect("read branch");
     assert_eq!(read("s.a"), BranchValues::F32(vec![0.5, 1.5, 2.5, 3.5]));

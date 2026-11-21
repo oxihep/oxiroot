@@ -1,6 +1,7 @@
 //! Tests for the generic streamer-info-driven object reader.
 
 use oxiroot_io_core::{FileReader, Value};
+use std::borrow::Cow;
 
 fn fixture(name: &str) -> String {
     format!("{}/../../fixtures/{}", env!("CARGO_MANIFEST_DIR"), name)
@@ -219,8 +220,8 @@ fn each_object_is_decoded_with_its_own_class_version() {
     /// `MyHit` at class version 1 (`fE`) or 2 (`fE`, then `fId`).
     struct Hit(u16);
     impl WriteRoot for Hit {
-        fn root_class(&self) -> String {
-            "MyHit".to_string()
+        fn root_class(&self) -> Cow<'static, str> {
+            Cow::Borrowed("MyHit")
         }
         fn root_name(&self) -> &str {
             if self.0 == 1 { "old" } else { "new" }
@@ -228,15 +229,13 @@ fn each_object_is_decoded_with_its_own_class_version() {
         fn root_title(&self) -> &str {
             ""
         }
-        fn to_root_bytes(&self) -> Vec<u8> {
-            let mut w = WBuffer::new();
+        fn write_body(&self, w: &mut WBuffer) {
             let hit = w.begin_object(self.0);
             w.be_f64(2.5); // fE
             if self.0 >= 2 {
                 w.be_i32(7); // fId
             }
             w.end_object(hit);
-            w.into_vec()
         }
         fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
             let mut elements = vec![basic("fE", 8, 8, "double")];

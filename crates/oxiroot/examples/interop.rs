@@ -341,7 +341,7 @@ fn read_oracle_tree(dir: &Path) -> oxiroot::Result<()> {
         other => die(&format!("otree os: expected Str, got {other:?}")),
     }
     // The std::vector<double> branch is written only by the ROOT C++ oracle.
-    if t.branch_names().contains(&"ov") {
+    if t.branch_names().collect::<Vec<_>>().contains(&"ov") {
         match t.branch("ov").values()? {
             BranchValues::VecF64(v) => assert_nested("otree ov", &v, &OTREE_OV),
             other => die(&format!("otree ov: expected VecF64, got {other:?}")),

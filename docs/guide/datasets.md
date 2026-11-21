@@ -215,6 +215,7 @@ To put a dataset next to histograms or other datasets in one file, give a
 
 ```rust,no_run
 use oxiroot::prelude::*;
+use oxiroot::data::DatasetObject;
 
 let events = Batch::new().column("energy", vec![10.5_f64, 20.1])?;
 let runs = Batch::new().column("run", vec![101_i32])?;

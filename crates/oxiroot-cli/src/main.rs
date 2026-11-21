@@ -45,15 +45,22 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let json = cli.json;
-    let result = match cli.command {
-        Command::Ls(args) => ls::run(args, json),
-        Command::Show(args) => show::run(args, json),
-        Command::Dump(args) => dump::run(args, json),
-        Command::Stat(args) => stat::run(args, json),
+    let result = match &cli.command {
+        Command::Ls(args) => ls::run(args),
+        Command::Show(args) => show::run(args),
+        Command::Dump(args) => dump::run(args),
+        Command::Stat(args) => stat::run(args),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        // The one place a command's report becomes output.
+        Ok(report) => {
+            if cli.json {
+                println!("{}", report.json().render());
+            } else {
+                print!("{}", report.text());
+            }
+            ExitCode::SUCCESS
+        }
         Err(e) => {
             eprintln!("oxroot: {e}");
             ExitCode::FAILURE

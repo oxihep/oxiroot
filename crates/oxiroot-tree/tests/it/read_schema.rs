@@ -14,7 +14,7 @@ fn exposes_and_validates_the_file_schema() {
     .expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
 
-    let classes: std::collections::HashMap<&str, i32> = t.streamer_classes().into_iter().collect();
+    let classes: std::collections::HashMap<&str, i32> = t.streamer_classes().collect();
     // The core classes the reader parses, at the versions it targets.
     assert_eq!(classes.get("TTree"), Some(&20));
     assert_eq!(classes.get("TBranch"), Some(&13));

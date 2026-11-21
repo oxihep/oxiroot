@@ -70,9 +70,9 @@ impl Basket {
             let _seek_key = r.be_u32()?;
             let _seek_pdir = r.be_u32()?;
         }
-        let _class = r.string()?; // "TBasket"
-        let _name = r.string()?;
-        let _title = r.string()?;
+        r.skip_string()?; // "TBasket"
+        r.skip_string()?;
+        r.skip_string()?;
 
         // TBasket extension (the tail of the key header, within fKeyLen).
         let _basket_version = r.be_u16()?;
@@ -117,11 +117,8 @@ impl Basket {
             buf.into()
         };
 
-        let data = if on_disk == obj_len as usize {
-            raw.to_vec()
-        } else {
-            decompress_payload(&raw, obj_len as usize, "TBasket")?
-        };
+        // A payload as long as the object is stored as it is.
+        let data = decompress_payload(&raw, obj_len as usize, "TBasket")?.into_owned();
 
         // `fLast` is measured from the key start; the boundary within the data
         // buffer is `fLast − fKeyLen`, clamped to the buffer.

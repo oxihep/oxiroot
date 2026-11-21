@@ -64,12 +64,15 @@ fn a_wrong_type_is_an_error_not_a_conversion() {
     let t = TreeReader::open(&f, "T").unwrap();
     let err = t.branch("pt").read::<f64>().unwrap_err();
     assert_eq!(
-        err,
-        Error::TypeMismatch {
-            name: "pt".into(),
-            found: "f32".into(),
-            expected: "f64".into(),
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::TypeMismatch {
+                name: "pt".into(),
+                found: "f32".into(),
+                expected: "f64".into(),
+            }
+        )
     );
     assert!(err.to_string().contains("holds f32, not f64"), "{err}");
     assert!(t.branch("idx").read::<i32>().is_err());
@@ -217,6 +220,6 @@ fn an_empty_first_batch_writes_a_tree_with_no_entries() {
     let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
     let t = TreeReader::open(&file, "T").unwrap();
     assert_eq!(t.entries(), 0);
-    assert_eq!(t.branch_names(), ["x", "v"]);
+    assert_eq!(t.branch_names().collect::<Vec<_>>(), ["x", "v"]);
     assert_eq!(t.branch("x").read::<f64>().unwrap(), Vec::<f64>::new());
 }

@@ -7,6 +7,7 @@
 //!
 //! Run with: `cargo run -p oxiroot --example analysis`
 
+use oxiroot::hist::{BinContentType, ThreadedHist};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {

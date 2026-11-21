@@ -224,6 +224,7 @@ smooth line — the way to overlay an analytic curve on a histogram. To overlay 
 ```rust
 use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType};
 use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
+use oxiroot::fit::{FitExt, Model};
 use oxiroot::hist::Func1D;
 
 // Fit a Gaussian to the histogram, then overlay the fitted curve.
@@ -260,6 +261,7 @@ result it produced:
 ```rust
 use oxiroot::plot::{Axes, Color, CurveOpts};
 use oxiroot::prelude::*;   // the `plot` + `fit` features are on by default
+use oxiroot::fit::{FitExt, Model};
 
 let model = Model::gaussian("gaus").estimate_from(&h);
 let r = h.fit(&model);
@@ -293,6 +295,7 @@ where it sits:
 ```rust
 # use oxiroot::plot::{Axes, StatBox, Corner};
 # use oxiroot::prelude::*;
+# use oxiroot::fit::{FitResult, Model};
 # fn demo(ax: &mut Axes, fitted: &Model, r: &FitResult) {
 ax.fit_stats_with(fitted, r, StatBox::new().corner(Corner::UpperLeft).prob(true));
 # }
@@ -311,6 +314,7 @@ The `_with` variants take `CurveOpts` for the color, label and line style:
 ```rust
 # use oxiroot::plot::{Axes, CurveOpts};
 # use oxiroot::prelude::*;
+# use oxiroot::fit::{FitError, FitOptions, Model};
 # fn demo(data: &Histogram<oxiroot::hist::oxihist::Weight, 1>, model: &Model) -> Result<(), FitError> {
 let opts = FitOptions::new();
 let mut ax = Axes::new();

@@ -12,8 +12,9 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{check_len, read_object_base, write_object_base};
-use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, basicptr, basicptr_in};
+use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, basic_ptr, basic_ptr_in};
 use oxiroot_io_core::{Error, Object, RBuffer, ReadRoot, Result, WBuffer, WriteRoot};
+use std::borrow::Cow;
 
 /// The ROOT class a [`Vector`] is stored as.
 const VECTOR_CLASS: &str = "TVectorT<double>";
@@ -130,8 +131,8 @@ impl Vector {
 }
 
 impl WriteRoot for Vector {
-    fn root_class(&self) -> String {
-        VECTOR_CLASS.to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(VECTOR_CLASS)
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -139,10 +140,9 @@ impl WriteRoot for Vector {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
+    fn write_body(&self, w: &mut WBuffer) {
         let obj = w.begin_object(4); // TVectorT<double> version 4
-        write_object_base(&mut w, 0);
+        write_object_base(w, 0);
         w.be_i32(i32::saturating_from(self.elements.len())); // fNrows
         w.be_i32(0); // fRowLwb
         w.u8(1); // fElements is-array flag
@@ -150,7 +150,6 @@ impl WriteRoot for Vector {
             w.be_f64(e);
         }
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes(VECTOR_CLASS)
@@ -314,8 +313,8 @@ impl Matrix {
 }
 
 impl WriteRoot for Matrix {
-    fn root_class(&self) -> String {
-        MATRIX_CLASS.to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(MATRIX_CLASS)
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -323,16 +322,14 @@ impl WriteRoot for Matrix {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
+    fn write_body(&self, w: &mut WBuffer) {
         let obj = w.begin_object(4); // TMatrixT<double> version 4
-        write_matrix_base(&mut w, self.nrows, self.ncols);
+        write_matrix_base(w, self.nrows, self.ncols);
         w.u8(1); // fElements is-array flag
         for &e in &self.elements {
             w.be_f64(e);
         }
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes(MATRIX_CLASS)
@@ -453,8 +450,8 @@ impl SymMatrix {
 }
 
 impl WriteRoot for SymMatrix {
-    fn root_class(&self) -> String {
-        SYM_MATRIX_CLASS.to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(SYM_MATRIX_CLASS)
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -462,18 +459,16 @@ impl WriteRoot for SymMatrix {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
+    fn write_body(&self, w: &mut WBuffer) {
         // ROOT's TMatrixTSym Streamer: the base (with its own version header),
         // then the upper triangle row-major — no outer version header, no
         // is-array flag.
-        let mut w = WBuffer::new();
-        write_matrix_base(&mut w, self.n, self.n);
+        write_matrix_base(w, self.n, self.n);
         for i in 0..self.n {
             for j in i..self.n {
                 w.be_f64(self.elements[i * self.n + j]);
             }
         }
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         streamer_classes(SYM_MATRIX_CLASS)
@@ -573,7 +568,7 @@ pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
                 base("TObject", 1),
                 basic("fNrows", 6, 4, "int"),
                 basic("fRowLwb", 3, 4, "int"),
-                basicptr("fElements", 48, 8, "double*", "fNrows"),
+                basic_ptr("fElements", 48, 8, "double*", "fNrows"),
             ],
         }],
         MATRIX_CLASS => vec![
@@ -585,7 +580,7 @@ pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
                 elements: vec![
                     base("TMatrixTBase<double>", 5),
                     // fNelems lives in the TMatrixTBase<double> base, not here.
-                    basicptr_in(
+                    basic_ptr_in(
                         "fElements",
                         48,
                         8,

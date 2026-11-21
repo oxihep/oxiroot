@@ -25,28 +25,16 @@ use crate::streamer::{
     begin_object_any, end_object_any, read_object_base, write_named, write_object_base,
 };
 use crate::streamer_info::{StoredInfo, parse_stored_infos};
+use crate::streamer_types::ElementKind;
 
-/// ROOT `fType` codes for an object/string member and the base-class slots.
-const K_TOBJECT: i32 = 66;
-const K_TNAMED: i32 = 67;
-/// `fType` for an inline object member (e.g. a `TObjArray fBranches`).
-pub const K_OBJECT: i32 = 61;
-/// `fType` for an inline non-`TObject` member (e.g. `TIOFeatures`).
-pub const K_ANY: i32 = 62;
-/// `fType` for an object-pointer member.
-pub const K_OBJECT_PTR: i32 = 64;
-/// `fType` for a `TString` member.
-pub const K_TSTRING: i32 = 65;
-/// `fType` for a pointer to a non-`TObject` class (`TStreamerObjectAnyPointer`).
-pub const K_ANY_PTR: i32 = 69;
-/// `fType` for an STL container member (`TStreamerSTL`, e.g. `vector<double>`).
-pub const K_STL: i32 = 500;
+pub use crate::streamer_types::{K_ANY, K_ANY_PTR, K_OBJECT, K_OBJECT_PTR, K_STL, K_TSTRING};
+use crate::streamer_types::{K_TNAMED, K_TOBJECT};
 
 /// One member (or base class) to serialize into a `TStreamerInfo`. Opaque —
-/// build with [`base`], [`basic`], [`strf`], [`object`], [`any`], [`objptr`], or
-/// [`basicptr`].
+/// build with [`base`], [`basic`], [`string`], [`object`], [`any`], [`object_ptr`], or
+/// [`basic_ptr`].
 #[derive(Clone, Debug)]
-pub struct El<'a> {
+pub struct ElementDef<'a> {
     name: Cow<'a, str>,
     /// ROOT `fType` code.
     ty: i32,
@@ -54,13 +42,13 @@ pub struct El<'a> {
     size: i32,
     /// C++ type name (`fTypeName`); `"BASE"` for a base class.
     type_name: Cow<'a, str>,
-    kind: Ek<'a>,
+    kind: ElementDefKind<'a>,
 }
 
-/// Which `TStreamerElement` subclass an [`El`] is, plus its subclass-specific
+/// Which `TStreamerElement` subclass an [`ElementDef`] is, plus its subclass-specific
 /// tail (a base class's referenced version; a `//[fCount]` pointer's counter).
 #[derive(Clone, Debug)]
-enum Ek<'a> {
+enum ElementDefKind<'a> {
     Base(i32),
     Basic,
     Str,
@@ -95,7 +83,7 @@ pub struct ClassDef<'a> {
     /// ROOT's `fCheckSum` for the class (a hash of its member layout).
     pub checksum: u32,
     /// Members and base classes, in the order ROOT streams them.
-    pub elements: Vec<El<'a>>,
+    pub elements: Vec<ElementDef<'a>>,
 }
 
 impl ClassDef<'_> {
@@ -106,32 +94,38 @@ impl ClassDef<'_> {
             name: Cow::Owned(self.name.into_owned()),
             version: self.version,
             checksum: self.checksum,
-            elements: self.elements.into_iter().map(El::into_owned).collect(),
+            elements: self
+                .elements
+                .into_iter()
+                .map(ElementDef::into_owned)
+                .collect(),
         }
     }
 }
 
-impl El<'_> {
-    fn into_owned(self) -> El<'static> {
+impl ElementDef<'_> {
+    fn into_owned(self) -> ElementDef<'static> {
         let own = |s: Cow<'_, str>| Cow::Owned(s.into_owned());
-        El {
+        ElementDef {
             name: own(self.name),
             ty: self.ty,
             size: self.size,
             type_name: own(self.type_name),
             kind: match self.kind {
-                Ek::Base(v) => Ek::Base(v),
-                Ek::Basic => Ek::Basic,
-                Ek::Str => Ek::Str,
-                Ek::Object => Ek::Object,
-                Ek::Any => Ek::Any,
-                Ek::ObjectPtr => Ek::ObjectPtr,
-                Ek::AnyPtr => Ek::AnyPtr,
-                Ek::Stl(stl, ctype) => Ek::Stl(stl, ctype),
-                Ek::BasicPtr(count, owner) => {
-                    Ek::BasicPtr(own(count), owner.map(|(class, v)| (own(class), v)))
+                ElementDefKind::Base(v) => ElementDefKind::Base(v),
+                ElementDefKind::Basic => ElementDefKind::Basic,
+                ElementDefKind::Str => ElementDefKind::Str,
+                ElementDefKind::Object => ElementDefKind::Object,
+                ElementDefKind::Any => ElementDefKind::Any,
+                ElementDefKind::ObjectPtr => ElementDefKind::ObjectPtr,
+                ElementDefKind::AnyPtr => ElementDefKind::AnyPtr,
+                ElementDefKind::Stl(stl, ctype) => ElementDefKind::Stl(stl, ctype),
+                ElementDefKind::BasicPtr(count, owner) => {
+                    ElementDefKind::BasicPtr(own(count), owner.map(|(class, v)| (own(class), v)))
                 }
-                Ek::Stored(class, body) => Ek::Stored(own(class), Cow::Owned(body.into_owned())),
+                ElementDefKind::Stored(class, body) => {
+                    ElementDefKind::Stored(own(class), Cow::Owned(body.into_owned()))
+                }
             },
         }
     }
@@ -143,115 +137,125 @@ pub trait Name<'a>: Into<Cow<'a, str>> {}
 impl<'a, T: Into<Cow<'a, str>>> Name<'a> for T {}
 
 /// A base-class slot referencing `name` at `base_version`.
-pub fn base<'a>(name: impl Name<'a>, base_version: i32) -> El<'a> {
+pub fn base<'a>(name: impl Name<'a>, base_version: i32) -> ElementDef<'a> {
     let name = name.into();
     let ty = match name.as_ref() {
         "TObject" => K_TOBJECT,
         "TNamed" => K_TNAMED,
         _ => 0, // kBase
     };
-    El {
+    ElementDef {
         name,
         ty,
         size: 0,
         type_name: Cow::Borrowed("BASE"),
-        kind: Ek::Base(base_version),
+        kind: ElementDefKind::Base(base_version),
     }
 }
 /// A basic-type member (`fType`/`fSize`/`fTypeName` as ROOT records them).
-pub fn basic<'a>(name: impl Name<'a>, ty: i32, size: i32, type_name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn basic<'a>(
+    name: impl Name<'a>,
+    ty: i32,
+    size: i32,
+    type_name: impl Name<'a>,
+) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty,
         size,
         type_name: type_name.into(),
-        kind: Ek::Basic,
+        kind: ElementDefKind::Basic,
     }
 }
 /// A `TString` member.
-pub fn strf<'a>(name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn string<'a>(name: impl Name<'a>) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_TSTRING,
         size: 24,
         type_name: Cow::Borrowed("TString"),
-        kind: Ek::Str,
+        kind: ElementDefKind::Str,
     }
 }
 /// An inline `TObject`-derived object member (e.g. `TObjArray fBranches`).
-pub fn object<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn object<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_OBJECT,
         size: 64,
         type_name: type_name.into(),
-        kind: Ek::Object,
+        kind: ElementDefKind::Object,
     }
 }
 /// An inline non-`TObject` member (e.g. `ROOT::TIOFeatures fIOFeatures`).
-pub fn any<'a>(name: impl Name<'a>, size: i32, type_name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn any<'a>(name: impl Name<'a>, size: i32, type_name: impl Name<'a>) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_ANY,
         size,
         type_name: type_name.into(),
-        kind: Ek::Any,
+        kind: ElementDefKind::Any,
     }
 }
 /// An object-pointer member (e.g. `TList* fFriends`).
-pub fn objptr<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn object_ptr<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_OBJECT_PTR,
         size: 8,
         type_name: type_name.into(),
-        kind: Ek::ObjectPtr,
+        kind: ElementDefKind::ObjectPtr,
     }
 }
 /// A pointer to a non-`TObject` class (e.g. `TF1Parameters* fParams`).
-pub fn objanyptr<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> El<'a> {
-    El {
+pub fn object_any_ptr<'a>(name: impl Name<'a>, type_name: impl Name<'a>) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_ANY_PTR,
         size: 8,
         type_name: type_name.into(),
-        kind: Ek::AnyPtr,
+        kind: ElementDefKind::AnyPtr,
     }
 }
 /// An STL container member (`TStreamerSTL`), e.g. a `vector<double>`. `stl_type`
 /// is the container kind (`vector` = 1, `map` = 4) and `ctype` the contained
 /// element-type code (`double` = 8, `TObject*` = 63, an object = 61).
-pub fn stl<'a>(name: impl Name<'a>, type_name: impl Name<'a>, stl_type: i32, ctype: i32) -> El<'a> {
-    El {
+pub fn stl<'a>(
+    name: impl Name<'a>,
+    type_name: impl Name<'a>,
+    stl_type: i32,
+    ctype: i32,
+) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty: K_STL,
         size: 24,
         type_name: type_name.into(),
-        kind: Ek::Stl(stl_type, ctype),
+        kind: ElementDefKind::Stl(stl_type, ctype),
     }
 }
 /// A `//[fCount]`-counted basic-type pointer member; `count` names the counter,
 /// which is assumed to live in the same class that declares this element.
-pub fn basicptr<'a>(
+pub fn basic_ptr<'a>(
     name: impl Name<'a>,
     ty: i32,
     size: i32,
     type_name: impl Name<'a>,
     count: impl Name<'a>,
-) -> El<'a> {
-    El {
+) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty,
         size,
         type_name: type_name.into(),
-        kind: Ek::BasicPtr(count.into(), None),
+        kind: ElementDefKind::BasicPtr(count.into(), None),
     }
 }
 
-/// Like [`basicptr`], but the counter lives in `count_class` (version
+/// Like [`basic_ptr`], but the counter lives in `count_class` (version
 /// `count_version`) rather than the declaring class — as for a matrix's
 /// `fElements`, counted by `fNelems` in its `TMatrixTBase` base.
-pub fn basicptr_in<'a>(
+pub fn basic_ptr_in<'a>(
     name: impl Name<'a>,
     ty: i32,
     size: i32,
@@ -259,26 +263,26 @@ pub fn basicptr_in<'a>(
     count: impl Name<'a>,
     count_class: impl Name<'a>,
     count_version: i32,
-) -> El<'a> {
-    El {
+) -> ElementDef<'a> {
+    ElementDef {
         name: name.into(),
         ty,
         size,
         type_name: type_name.into(),
-        kind: Ek::BasicPtr(count.into(), Some((count_class.into(), count_version))),
+        kind: ElementDefKind::BasicPtr(count.into(), Some((count_class.into(), count_version))),
     }
 }
 
 /// An element another file stored: its `TStreamerElement` subclass name
 /// (`element_class`) and body, which is written again verbatim. `name` is the
 /// member's name, for diagnostics.
-pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> El<'static> {
-    El {
+pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> ElementDef<'static> {
+    ElementDef {
         name: Cow::Owned(name),
         ty: 0,
         size: 0,
         type_name: Cow::Borrowed(""),
-        kind: Ek::Stored(Cow::Owned(element_class), Cow::Owned(body)),
+        kind: ElementDefKind::Stored(Cow::Owned(element_class), Cow::Owned(body)),
     }
 }
 
@@ -286,7 +290,7 @@ pub(crate) fn stored(element_class: String, name: String, body: Vec<u8>) -> El<'
 const SI_BITS: u32 = 0x0001_0000;
 
 /// Write the `TStreamerElement` v4 base common to every element subclass.
-fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
+fn write_element_base(w: &mut WBuffer, el: &ElementDef<'_>) {
     let se = w.begin_object(4); // TStreamerElement v4
     write_named(w, 0, &el.name, "");
     w.be_i32(el.ty); // fType
@@ -304,35 +308,35 @@ fn write_element_base(w: &mut WBuffer, el: &El<'_>) {
 /// `TStreamerBasicType`, …), wrapping the common base with the subclass tail.
 /// `owner`/`owner_version` name the class that declares the element (used for a
 /// `//[fCount]` pointer's `fCountClass`/`fCountVersion`).
-fn write_element(w: &mut WBuffer, el: &El<'_>, owner: &str, owner_version: i32) {
-    if let Ek::Stored(class, body) = &el.kind {
-        let bc = begin_object_any(w, class);
-        w.bytes(body);
-        end_object_any(w, bc);
-        return;
-    }
+fn write_element(w: &mut WBuffer, el: &ElementDef<'_>, owner: &str, owner_version: i32) {
     let (class, version) = match &el.kind {
-        Ek::Base(_) => ("TStreamerBase", 3),
-        Ek::Basic => ("TStreamerBasicType", 2),
-        Ek::Str => ("TStreamerString", 2),
-        Ek::Object => ("TStreamerObject", 2),
-        Ek::Any => ("TStreamerObjectAny", 2),
-        Ek::ObjectPtr => ("TStreamerObjectPointer", 2),
-        Ek::AnyPtr => ("TStreamerObjectAnyPointer", 1),
-        Ek::Stl(..) => ("TStreamerSTL", 3),
-        Ek::BasicPtr(..) => ("TStreamerBasicPointer", 2),
-        Ek::Stored(..) => unreachable!("written verbatim above"),
+        // An element kept as it was read is written back as it is.
+        ElementDefKind::Stored(class, body) => {
+            let bc = begin_object_any(w, class);
+            w.bytes(body);
+            end_object_any(w, bc);
+            return;
+        }
+        ElementDefKind::Base(_) => ("TStreamerBase", 3),
+        ElementDefKind::Basic => ("TStreamerBasicType", 2),
+        ElementDefKind::Str => ("TStreamerString", 2),
+        ElementDefKind::Object => ("TStreamerObject", 2),
+        ElementDefKind::Any => ("TStreamerObjectAny", 2),
+        ElementDefKind::ObjectPtr => ("TStreamerObjectPointer", 2),
+        ElementDefKind::AnyPtr => ("TStreamerObjectAnyPointer", 1),
+        ElementDefKind::Stl(..) => ("TStreamerSTL", 3),
+        ElementDefKind::BasicPtr(..) => ("TStreamerBasicPointer", 2),
     };
     let bc = begin_object_any(w, class);
     let sub = w.begin_object(version);
     write_element_base(w, el);
     match &el.kind {
-        Ek::Base(base_version) => w.be_i32(*base_version), // fBaseVersion
-        Ek::Stl(stl_type, ctype) => {
+        ElementDefKind::Base(base_version) => w.be_i32(*base_version), // fBaseVersion
+        ElementDefKind::Stl(stl_type, ctype) => {
             w.be_i32(*stl_type); // fSTLtype
             w.be_i32(*ctype); // fCtype
         }
-        Ek::BasicPtr(count_name, count_owner) => {
+        ElementDefKind::BasicPtr(count_name, count_owner) => {
             let (count_class, count_version) = count_owner
                 .as_ref()
                 .map_or((owner, owner_version), |(class, v)| (class.as_ref(), *v));
@@ -403,7 +407,7 @@ pub fn append_streamer_infos(base_list: &[u8], extra: &[ClassDef<'_>]) -> Result
     let mut r = RBuffer::new(base_list);
     r.read_version()?; // [byte count][version]
     read_object_base(&mut r)?; // TObject base
-    r.string()?; // fName
+    r.skip_string()?; // fName
     let count_offset = r.pos();
     let count = r.be_i32()?; // nobjects
 
@@ -451,7 +455,7 @@ pub(crate) fn collect_stored(
         return;
     }
     for element in &entry.info.elements {
-        if element.element_class == "TStreamerBase" {
+        if element.kind() == ElementKind::Base {
             collect_stored(infos, &element.name, element.base_version, seen, out);
         } else {
             let names = element

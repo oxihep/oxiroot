@@ -224,10 +224,9 @@ impl Conn {
                 }
             }
         }
-        Err(Error::Io {
-            kind: std::io::ErrorKind::Other,
-            message: format!("root://{host}: too many redirects opening {path:?}"),
-        })
+        Err(Error::Io(std::io::Error::other(format!(
+            "root://{host}: too many redirects opening {path:?}"
+        ))))
     }
 
     /// Send a request (24-byte header + `data`) and return the collected
@@ -601,7 +600,7 @@ impl std::fmt::Debug for XrootdSource {
         f.debug_struct("XrootdSource")
             .field("url", &self.url)
             .field("size", &self.size)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -735,10 +734,7 @@ fn server_error(ctx: &str, status: u16, payload: &[u8]) -> Error {
     if status == KXR_ERROR && payload.len() >= 4 {
         let msg = String::from_utf8_lossy(&payload[4..]);
         let msg = msg.trim_end_matches('\0');
-        Error::Io {
-            kind: std::io::ErrorKind::Other,
-            message: format!("root:// {ctx}: {msg}"),
-        }
+        Error::Io(std::io::Error::other(format!("root:// {ctx}: {msg}")))
     } else {
         protocol_err(format!("root:// {ctx}: unexpected status {status}"))
     }
@@ -746,17 +742,14 @@ fn server_error(ctx: &str, status: u16, payload: &[u8]) -> Error {
 
 /// A server response that breaks the `XRootD` protocol.
 fn protocol_err(message: String) -> Error {
-    Error::Io {
-        kind: std::io::ErrorKind::InvalidData,
+    Error::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
         message,
-    }
+    ))
 }
 
 fn io_err(ctx: &str, e: std::io::Error) -> Error {
-    Error::Io {
-        kind: e.kind(),
-        message: format!("{ctx}: {e}"),
-    }
+    Error::Io(std::io::Error::new(e.kind(), format!("{ctx}: {e}")))
 }
 
 #[cfg(test)]

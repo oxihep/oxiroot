@@ -122,7 +122,7 @@ pub(super) fn place_basket<W: Write + Seek>(
     let nbytes = p.klen + u32::saturating_from(p.payload.len());
     let f_last = p.klen + p.border; // entry data ends at the border
 
-    let mut w = WBuffer::with_capacity(nbytes as usize);
+    let mut w = WBuffer::with_capacity(p.klen as usize);
     // Big-format Key header.
     w.be_i32(nbytes.cast_signed());
     w.be_u16(1004); // big-format key version
@@ -142,8 +142,10 @@ pub(super) fn place_basket<W: Write + Seek>(
     w.be_i32(p.n_entries.cast_signed()); // fNevBuf
     w.be_i32(f_last.cast_signed()); // fLast
     w.u8(0); // flag
-    w.bytes(&p.payload);
-    file.place_blob(&w.into_vec())?;
+    // The header, then the payload after it: two writes, no copy of the
+    // payload into the header's buffer.
+    file.place_blob(w.as_slice())?;
+    file.place_blob(&p.payload)?;
     Ok(BasketRec {
         seek,
         nbytes,
@@ -158,6 +160,7 @@ fn chunk_branch(branch: &Branch, start: usize, len: usize) -> Branch {
         name: branch.name.clone(),
         values: chunk_values(&branch.values, start, len),
         kind: branch.chunk_kind(),
+        meta: None,
     }
 }
 
@@ -227,6 +230,7 @@ pub(super) fn split_pieces(branch: &Branch, start: usize, len: usize) -> Vec<Bra
         name: branch.name.clone(),
         values: BranchValues::VecI32(counts.into_iter().map(|n| vec![n]).collect()),
         kind: BranchKind::Jagged,
+        meta: None,
     });
     for (i, m) in spec.members.iter().enumerate() {
         out.push(Branch {
@@ -237,6 +241,7 @@ pub(super) fn split_pieces(branch: &Branch, start: usize, len: usize) -> Vec<Bra
                 chunk_values(&m.values, start, len)
             },
             kind: BranchKind::Jagged,
+            meta: None,
         });
     }
     out

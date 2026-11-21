@@ -30,7 +30,7 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
 use crate::batch::Batch;
-use crate::column::{Column, IntoColumn};
+use crate::column::Column;
 
 impl Batch {
     /// This batch as an Arrow [`RecordBatch`], copying the values.
@@ -120,8 +120,8 @@ fn to_array(column: Column) -> Result<ArrayRef> {
         Column::U64(v) => prim::<UInt64Type>(v),
         Column::F32(v) => prim::<Float32Type>(v),
         Column::F64(v) => prim::<Float64Type>(v),
-        Column::String { offsets, bytes } => Arc::new(
-            LargeStringArray::try_new(signed(&offsets)?, Buffer::from_vec(bytes), None)
+        Column::String { offsets, text } => Arc::new(
+            LargeStringArray::try_new(signed(&offsets)?, Buffer::from_vec(text.into_bytes()), None)
                 .map_err(Error::other)?,
         ),
         Column::List { offsets, values } => {
@@ -212,7 +212,7 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             let (offsets, first, last) = unsigned_offsets(s.value_offsets());
             Column::String {
                 offsets,
-                bytes: s.value_data()[first..last].to_vec(),
+                text: text_of(&s.value_data()[first..last])?,
             }
         }
         DataType::LargeUtf8 => {
@@ -220,7 +220,7 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             let (offsets, first, last) = unsigned_offsets(s.value_offsets());
             Column::String {
                 offsets,
-                bytes: s.value_data()[first..last].to_vec(),
+                text: text_of(&s.value_data()[first..last])?,
             }
         }
         DataType::Utf8View => array
@@ -228,7 +228,7 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             .iter()
             .map(std::option::Option::unwrap_or_default)
             .collect::<Vec<&str>>()
-            .into_column(),
+            .into(),
         DataType::List(_) => {
             let l = array.as_list::<i32>();
             let (offsets, first, last) = unsigned_offsets(l.value_offsets());
@@ -278,4 +278,10 @@ fn from_dense(array: &dyn Array, name: &str) -> Result<Column> {
             )));
         }
     })
+}
+
+/// A string array's bytes as text. The array has checked them already; this
+/// is the one place the bytes become a `String`.
+fn text_of(bytes: &[u8]) -> Result<String> {
+    Ok(std::str::from_utf8(bytes).map_err(Error::other)?.to_owned())
 }

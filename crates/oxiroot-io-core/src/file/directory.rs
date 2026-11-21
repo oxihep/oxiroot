@@ -7,7 +7,7 @@
 //! `_directory_format_{small,big}`.
 
 use super::header::FileHeader;
-use super::key::Key;
+use super::key::{Datime, Key};
 use super::source::ByteSource;
 use crate::buffer::RBuffer;
 use crate::cast::SaturatingFrom;
@@ -28,9 +28,9 @@ pub struct Directory {
     /// Directory version (`> 1000` ⇒ 64-bit seek pointers).
     pub version: i16,
     /// Creation date/time (`fDatimeC`, raw packed `Datime`).
-    pub datime_c: u32,
+    pub datime_c: Datime,
     /// Last-modification date/time (`fDatimeM`, raw packed `Datime`).
-    pub datime_m: u32,
+    pub datime_m: Datime,
     /// Size in bytes of the key-list record (`fNbytesKeys`).
     pub nbytes_keys: i32,
     /// Size in bytes of the directory name record (`fNbytesName`).
@@ -61,8 +61,8 @@ impl Directory {
         let mut r = RBuffer::new(&win);
 
         let version = r.be_i16()?;
-        let datime_c = r.be_u32()?;
-        let datime_m = r.be_u32()?;
+        let datime_c = Datime(r.be_u32()?);
+        let datime_m = Datime(r.be_u32()?);
         let nbytes_keys = r.be_i32()?;
         let nbytes_name = r.be_i32()?;
         let (seek_dir, seek_parent, seek_keys) = if version > DIR_BIG_VERSION {

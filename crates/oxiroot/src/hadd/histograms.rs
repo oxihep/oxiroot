@@ -12,15 +12,17 @@
 //! Objects of a class oxiroot cannot read *and* write are skipped and listed in
 //! the returned report rather than silently dropped.
 //!
-//! The output is written through the same typed [`FileWriter`] builder as any
-//! other oxiroot write, so its `TStreamerInfo` matches the bytes exactly (no
-//! reliance on the inputs' streamer versions). [`Merger`](super::Merger)
+//! Each object is written as soon as it is merged, so one is in memory at a
+//! time, and the output's `TStreamerInfo` is built from the objects written
+//! (no reliance on the inputs' streamer versions). The output takes its name
+//! only once complete. [`Merger`](super::Merger)
 //! uses it when a fileset contains no `TTree` or `RNTuple`.
 
 use std::collections::HashSet;
 use std::path::Path;
 
-use oxiroot_io_core::{Compression, FileReader, Result};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, Form, Key, record_of};
+use oxiroot_io_core::{Compression, FileReader, ReadRoot, Result, StreamerSet};
 
 use oxiroot_linalg::{Matrix, SymMatrix, Vector};
 
@@ -29,7 +31,7 @@ use oxiroot_hist::{
     MultiErrorGraph, PolyHist, Profile1D, Profile2D, Profile3D, SparseHist,
 };
 use oxiroot_hist_func::{Func1D, Func2D, Func3D};
-use oxiroot_io_core::{FileWriter, ObjMap, ObjString, Parameter, WriteRoot};
+use oxiroot_io_core::{ObjMap, ObjString, Parameter, WriteRoot};
 
 /// What a histogram merge did with each key: the names that were summed
 /// bin-by-bin, the names copied from the first file, and the `(name, reason)`
@@ -92,38 +94,58 @@ pub(crate) fn merge_histogram_files(
         }
     }
 
+    // One object is in memory at a time: each is merged, written, and
+    // dropped before the next. Only the classes they need are kept, for the
+    // streamer info that closes the file.
     let mut outcome = HistMergeOutcome::default();
-    let mut objects: Vec<Box<dyn WriteRoot>> = Vec::new();
-
-    for (name, class) in &order {
-        // Inputs that hold this key with a matching class, in file order.
-        let contributors: Vec<&FileReader> = inputs
-            .iter()
-            .filter(|f| f.key(name).is_ok_and(|k| k.class_name == *class))
-            .collect();
-        if contributors.is_empty() {
-            continue;
-        }
-
-        match build_object(class, name, &contributors)? {
-            Built::Summed(obj) => {
-                outcome.summed.push(name.clone());
-                objects.push(obj);
+    super::write_atomically(output, false, |sink, file_name, big| {
+        let form = if big { Form::Big } else { Form::Small };
+        let mut file = ContainerWriter::new(sink, file_name, compression, form)?;
+        let mut streamers = StreamerSet::default();
+        outcome = HistMergeOutcome::default();
+        for (name, class) in &order {
+            // Inputs that hold this key with a matching class, in file order.
+            let contributors: Vec<&FileReader> = inputs
+                .iter()
+                .filter(|f| f.key(name).is_ok_and(|k| k.class_name == *class))
+                .collect();
+            if contributors.is_empty() {
+                continue;
             }
-            Built::Copied(obj) => {
-                outcome.copied.push(name.clone());
-                objects.push(obj);
-            }
-            Built::Skipped(reason) => outcome.skipped.push((name.clone(), reason)),
+            let object = match build_object(class, name, &contributors)? {
+                Built::Summed(object) => {
+                    outcome.summed.push(name.clone());
+                    object
+                }
+                Built::Copied(object) => {
+                    outcome.copied.push(name.clone());
+                    object
+                }
+                Built::Skipped(reason) => {
+                    outcome.skipped.push((name.clone(), reason));
+                    continue;
+                }
+            };
+            let record = record_of(&*object);
+            let key_len = Key::header_len(
+                &record.class_name,
+                &record.name,
+                &record.title,
+                file.is_big(),
+            );
+            (record.key_check).check(&record.class_name, &record.name, key_len)?;
+            file.place_key(
+                DirId::TOP,
+                &record.class_name,
+                &record.name,
+                &record.title,
+                &record.object,
+            )?;
+            streamers.add(&*object);
         }
-    }
-
-    let mut file = FileWriter::create(output).compression(compression);
-    for obj in &objects {
-        file = file.add(&**obj);
-    }
-    file.write()?;
-
+        file.place_streamer_info(&[], streamers.classes())?;
+        file.finish().map(drop)
+    })?;
     Ok(outcome)
 }
 
@@ -138,92 +160,92 @@ enum Built {
 /// accumulator), or copy a supported non-summable type from the first
 /// contributor. Unknown classes become [`Built::Skipped`].
 fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result<Built> {
-    // Add every contributor, read as `$T`, onto the first. If any of them cannot
-    // be read, the whole key is skipped with the reason, as `copied!` does, so
-    // one unreadable object neither aborts the merge nor leaves a partial sum.
-    macro_rules! summed {
-        ($T:ty) => {
-            summed!($T, Mergeable::merge)
-        };
-        ($T:ty, $merge:path) => {{
-            let mut acc: Option<$T> = None;
-            let mut unreadable = None;
-            for (i, f) in contributors.iter().enumerate() {
-                let h = match f.get::<$T>(name) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        unreadable = Some(format!(
-                            "cannot read {} from input {} of {}: {e}",
-                            stringify!($T),
-                            i + 1,
-                            contributors.len()
-                        ));
-                        break;
-                    }
-                };
-                match acc.as_mut() {
-                    None => acc = Some(h),
-                    // Through `Mergeable` (or the named merge), so a type that
-                    // cannot be merged cannot be routed here.
-                    Some(a) => $merge(a, &h).map_err(|e| e.context(format_args!("{name:?}")))?,
-                }
-            }
-            match (unreadable, acc) {
-                (Some(reason), _) => Built::Skipped(reason),
-                (None, Some(a)) => Built::Summed(Box::new(a)),
-                (None, None) => Built::Skipped("no input holds it".into()),
-            }
-        }};
-    }
-    // Copy `$T` from the first contributor; a read failure becomes a skip so one
-    // odd object never aborts the whole merge.
-    macro_rules! copied {
-        ($T:ty) => {
-            match contributors[0].get::<$T>(name) {
-                Ok(obj) => Built::Copied(Box::new(obj)),
-                Err(e) => Built::Skipped(format!("cannot read {}: {e}", stringify!($T))),
-            }
-        };
-    }
-
     if let Some(dim) = summable_hist_dim(class) {
         return Ok(match dim {
-            1 => summed!(Hist1D),
-            2 => summed!(Hist2D),
-            _ => summed!(Hist3D),
+            1 => summed(class, name, contributors, Hist1D::merge)?,
+            2 => summed(class, name, contributors, Hist2D::merge)?,
+            _ => summed(class, name, contributors, Hist3D::merge)?,
         });
     }
 
     let built = match class {
-        "TProfile" => summed!(Profile1D),
-        "TProfile2D" => summed!(Profile2D),
-        "TProfile3D" => summed!(Profile3D),
+        "TProfile" => summed(class, name, contributors, Profile1D::merge)?,
+        "TProfile2D" => summed(class, name, contributors, Profile2D::merge)?,
+        "TProfile3D" => summed(class, name, contributors, Profile3D::merge)?,
         // Summed, as ROOT's hadd does: the efficiency's two histograms, the
         // poly's bins, the sparse histogram's filled bins, the graphs' points
         // (appended), the stack's histograms by name, and the parameter's value.
-        "TEfficiency" => summed!(Efficiency),
-        "TH2Poly" => summed!(PolyHist),
-        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => summed!(Graph),
-        "THStack" => summed!(HistStack),
-        c if c.starts_with("THnSparse") => summed!(SparseHist),
+        "TEfficiency" => summed(class, name, contributors, Efficiency::merge)?,
+        "TH2Poly" => summed(class, name, contributors, PolyHist::merge)?,
+        "TGraph" | "TGraphErrors" | "TGraphAsymmErrors" => {
+            summed(class, name, contributors, Graph::merge)?
+        }
+        "THStack" => summed(class, name, contributors, HistStack::merge)?,
+        c if c.starts_with("THnSparse") => summed(class, name, contributors, SparseHist::merge)?,
         // A parameter is not a histogram, so it is not `Mergeable`: add values.
-        c if c.starts_with("TParameter") => summed!(Parameter, Parameter::add),
+        c if c.starts_with("TParameter") => summed(class, name, contributors, Parameter::add)?,
         // Copied from the first file: ROOT's hadd does not merge these either.
         // It writes one key per input instead, which oxiroot cannot do, since
         // it rejects two objects of the same name in one directory.
-        "TF1" => copied!(Func1D),
-        "TF2" => copied!(Func2D),
-        "TF3" => copied!(Func3D),
-        "TGraph2D" => copied!(Graph2D),
+        "TF1" => copied::<Func1D>(class, name, contributors),
+        "TF2" => copied::<Func2D>(class, name, contributors),
+        "TF3" => copied::<Func3D>(class, name, contributors),
+        "TGraph2D" => copied::<Graph2D>(class, name, contributors),
         // ROOT 6.40's hadd crashes merging this one.
-        "TGraphMultiErrors" => copied!(MultiErrorGraph),
-        "TObjString" => copied!(ObjString),
-        "TMultiGraph" => copied!(GraphStack),
-        "TMap" => copied!(ObjMap),
-        c if c.starts_with("TVectorT") => copied!(Vector),
-        c if c.starts_with("TMatrixTSym") => copied!(SymMatrix),
-        c if c.starts_with("TMatrixT") => copied!(Matrix),
+        "TGraphMultiErrors" => copied::<MultiErrorGraph>(class, name, contributors),
+        "TObjString" => copied::<ObjString>(class, name, contributors),
+        "TMultiGraph" => copied::<GraphStack>(class, name, contributors),
+        "TMap" => copied::<ObjMap>(class, name, contributors),
+        c if c.starts_with("TVectorT") => copied::<Vector>(class, name, contributors),
+        c if c.starts_with("TMatrixTSym") => copied::<SymMatrix>(class, name, contributors),
+        c if c.starts_with("TMatrixT") => copied::<Matrix>(class, name, contributors),
         other => Built::Skipped(format!("class {other:?} is not mergeable by oxiroot")),
     };
     Ok(built)
+}
+
+/// Add every contributor, read as `T`, onto the first with `merge`. If any of
+/// them cannot be read, the whole key is skipped with the reason, as
+/// [`copied`] does, so one unreadable object neither aborts the merge nor
+/// leaves a partial sum.
+fn summed<T: ReadRoot + WriteRoot + 'static>(
+    class: &str,
+    name: &str,
+    contributors: &[&FileReader],
+    merge: fn(&mut T, &T) -> Result<()>,
+) -> Result<Built> {
+    let mut sum: Option<T> = None;
+    for (i, file) in contributors.iter().enumerate() {
+        let object = match file.get::<T>(name) {
+            Ok(object) => object,
+            Err(e) => {
+                return Ok(Built::Skipped(format!(
+                    "cannot read {class} from input {} of {}: {e}",
+                    i + 1,
+                    contributors.len()
+                )));
+            }
+        };
+        match sum.as_mut() {
+            None => sum = Some(object),
+            Some(sum) => merge(sum, &object).map_err(|e| e.context(format_args!("{name:?}")))?,
+        }
+    }
+    Ok(match sum {
+        Some(sum) => Built::Summed(Box::new(sum)),
+        None => Built::Skipped("no input holds it".into()),
+    })
+}
+
+/// Copy `T` from the first contributor; a read failure becomes a skip, so one
+/// odd object never aborts the whole merge.
+fn copied<T: ReadRoot + WriteRoot + 'static>(
+    class: &str,
+    name: &str,
+    contributors: &[&FileReader],
+) -> Built {
+    match contributors[0].get::<T>(name) {
+        Ok(object) => Built::Copied(Box::new(object)),
+        Err(e) => Built::Skipped(format!("cannot read {class}: {e}")),
+    }
 }

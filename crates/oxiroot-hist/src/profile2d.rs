@@ -4,7 +4,7 @@
 //! (`sumz2`, the `Hist2D` `fSumw2`). On disk it is a `TH2D` plus the profile members,
 //! exactly as `Profile1D` is a `TH1D` plus profile members.
 
-use oxiroot_io_core::cast::SaturatingFrom;
+use crate::base::Moments;
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
@@ -29,20 +29,8 @@ pub struct Profile2D {
     pub(crate) yaxis: Axis,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of squared weights (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of `w·x` (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of `w·x²` (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
-    /// Sum of `w·y` (`fTsumwy`).
-    pub(crate) tsumwy: f64,
-    /// Sum of `w·y²` (`fTsumwy2`).
-    pub(crate) tsumwy2: f64,
-    /// Sum of `w·x·y` (`fTsumwxy`).
-    pub(crate) tsumwxy: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    pub(crate) moments: Moments,
     /// Per-cell `Σ(w·z)` (the `Hist2D` contents, `fArray`); length `ncells`.
     pub(crate) sums: Vec<f64>,
     /// Per-cell `Σ(w·z²)` (the `Hist2D` `fSumw2`); length `ncells`.
@@ -55,10 +43,6 @@ pub struct Profile2D {
     pub zmin: f64,
     /// Upper `z` accept bound (`fZmax`).
     pub zmax: f64,
-    /// Sum of `w·z` over in-range fills (`fTsumwz`).
-    pub(crate) tsumwz: f64,
-    /// Sum of `w·z²` over in-range fills (`fTsumwz2`).
-    pub(crate) tsumwz2: f64,
     /// Per-cell `Σw²` (`fBinSumw2`); empty unless weighted-error tracking is on.
     pub(crate) bin_sumw2: Vec<f64>,
 }
@@ -68,29 +52,21 @@ impl Profile2D {
     /// restriction. Internal primitive behind the public builder:
     /// [`Hist::reg`](crate::Hist::reg)`(nx, xlo, xhi).reg(ny, ylo, yhi).mean().to_root()?`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(nx: i32, xlo: f64, xhi: f64, ny: i32, ylo: f64, yhi: f64) -> Self {
-        let ncells = usize::saturating_from((nx.max(0) + 2) * (ny.max(0) + 2));
+    pub(crate) fn new(nx: usize, xlo: f64, xhi: f64, ny: usize, ylo: f64, yhi: f64) -> Self {
+        let ncells = (nx + 2) * (ny + 2);
         Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nx, xlo, xhi),
             yaxis: Axis::new("yaxis", ny, ylo, yhi),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
-            tsumwxy: 0.0,
+            moments: Moments::default(),
             sums: vec![0.0; ncells],
             sumz2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
             error_mode: ErrorMode::Mean,
             zmin: 0.0,
             zmax: 0.0,
-            tsumwz: 0.0,
-            tsumwz2: 0.0,
             bin_sumw2: Vec::new(),
         }
     }
@@ -98,13 +74,13 @@ impl Profile2D {
     /// Number of x bins (excluding flow).
     #[must_use]
     pub fn nx(&self) -> usize {
-        usize::saturating_from(self.xaxis.nbins.max(0))
+        self.xaxis.nbins
     }
 
     /// Number of y bins (excluding flow).
     #[must_use]
     pub fn ny(&self) -> usize {
-        usize::saturating_from(self.yaxis.nbins.max(0))
+        self.yaxis.nbins
     }
 
     /// Profiled `z` value per in-range cell as `values[ix][iy]`: `Σ(w·z) / Σw`,
@@ -184,21 +160,20 @@ impl Profile2D {
             xaxis: c.xaxis,
             yaxis: c.yaxis,
             entries: c.entries,
-            tsumw: c.tsumw,
-            tsumw2: c.tsumw2,
-            tsumwx: c.tsumwx,
-            tsumwx2: c.tsumwx2,
-            tsumwy,
-            tsumwy2,
-            tsumwxy,
+            moments: Moments {
+                wy: tsumwy,
+                wy2: tsumwy2,
+                wxy: tsumwxy,
+                wz: tsumwz,
+                wz2: tsumwz2,
+                ..c.moments
+            },
             sums,
             sumz2: c.sumw2,
             bin_entries,
             error_mode,
             zmin,
             zmax,
-            tsumwz,
-            tsumwz2,
             bin_sumw2,
         })
     }

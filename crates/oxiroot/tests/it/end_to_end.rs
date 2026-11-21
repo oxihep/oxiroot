@@ -4,7 +4,9 @@
 //! regression anywhere (writer, reader, or a feature added on top) surfaces here.
 
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::file::ObjString;
 use oxiroot::hadd::Merger;
+use oxiroot::hist::Random;
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};
 use oxiroot::prelude::*;

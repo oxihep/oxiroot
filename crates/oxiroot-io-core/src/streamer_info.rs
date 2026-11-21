@@ -9,6 +9,7 @@
 //! (ROOT reads key objects with `origin = -fKeylen`).
 
 use crate::cast::SaturatingFrom;
+use crate::streamer_types::ElementKind;
 use std::ops::Range;
 
 use crate::buffer::RBuffer;
@@ -43,6 +44,14 @@ pub struct StreamerElement {
     pub count_name: Option<String>,
 }
 
+impl StreamerElement {
+    /// What kind of member this is, from its streamer-element class.
+    #[must_use]
+    pub fn kind(&self) -> ElementKind {
+        ElementKind::of(&self.element_class)
+    }
+}
+
 /// The streamer description of a single class.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -61,6 +70,9 @@ pub struct StreamerInfo {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StreamerRegistry {
     infos: Vec<StreamerInfo>,
+    /// Where each class's infos are in `infos`, in file order: a lookup is
+    /// made for every object, base class and member read.
+    by_class: std::collections::HashMap<String, Vec<usize>>,
 }
 
 impl StreamerRegistry {
@@ -68,7 +80,20 @@ impl StreamerRegistry {
     /// hand-made layout in a test.
     #[must_use]
     pub fn from_infos(infos: Vec<StreamerInfo>) -> Self {
-        Self { infos }
+        let mut by_class = std::collections::HashMap::<String, Vec<usize>>::new();
+        for (i, info) in infos.iter().enumerate() {
+            by_class.entry(info.class_name.clone()).or_default().push(i);
+        }
+        Self { infos, by_class }
+    }
+
+    /// The infos describing `class`, one per class version, in file order.
+    fn of_class(&self, class: &str) -> impl Iterator<Item = &StreamerInfo> {
+        self.by_class
+            .get(class)
+            .into_iter()
+            .flatten()
+            .filter_map(|&i| self.infos.get(i))
     }
 
     /// All streamer infos, in file order.
@@ -80,7 +105,7 @@ impl StreamerRegistry {
     /// Look up the (first) streamer info for a class.
     #[must_use]
     pub fn get(&self, class: &str) -> Option<&StreamerInfo> {
-        self.infos.iter().find(|i| i.class_name == class)
+        self.of_class(class).next()
     }
 
     /// The streamer info describing `class` at class version `version`, or the
@@ -89,16 +114,15 @@ impl StreamerRegistry {
     /// can differ, so decode an object with the description of its own version.
     #[must_use]
     pub fn get_at(&self, class: &str, version: i32) -> Option<&StreamerInfo> {
-        self.infos
-            .iter()
-            .find(|i| i.class_name == class && i.class_version == version)
+        self.of_class(class)
+            .find(|i| i.class_version == version)
             .or_else(|| self.get(class))
     }
 
-    /// The names of all described classes.
-    #[must_use]
-    pub fn class_names(&self) -> Vec<&str> {
-        self.infos.iter().map(|i| i.class_name.as_str()).collect()
+    /// The names of all described classes, in file order (a class described
+    /// at two versions is named twice).
+    pub fn class_names(&self) -> impl Iterator<Item = &str> {
+        self.infos.iter().map(|i| i.class_name.as_str())
     }
 }
 
@@ -113,7 +137,7 @@ pub fn parse_streamer_info(object: &[u8], keylen: usize) -> Result<StreamerRegis
         .into_iter()
         .map(|(info, _)| info)
         .collect();
-    Ok(StreamerRegistry { infos })
+    Ok(StreamerRegistry::from_infos(infos))
 }
 
 /// A class's streamer info as a file stores it, for copying into another file:
@@ -155,7 +179,7 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
     // The top-level object is a TList (known from the key's class).
     let list = r.read_version()?;
     read_object_base(&mut r)?;
-    let _name = r.string()?;
+    r.skip_string()?;
     let count = r.be_i32()?.max(0);
 
     let mut infos = Vec::with_capacity(usize::saturating_from(count).min(r.remaining()));
@@ -168,7 +192,7 @@ fn parse_list(object: &[u8], keylen: usize) -> Result<Vec<(StreamerInfo, Element
         if let Some(end) = header.end {
             r.seek(end)?;
         }
-        let _option = r.string()?;
+        r.skip_string()?;
     }
 
     if let Some(end) = list.end {
@@ -217,17 +241,17 @@ fn parse_element_array(
 ) -> Result<Vec<(StreamerElement, (String, Option<Range<usize>>))>> {
     let _version = r.read_version()?;
     read_object_base(r)?;
-    let _name = r.string()?;
+    r.skip_string()?;
     let size = r.be_i32()?.max(0);
     let _lower_bound = r.be_i32()?;
 
     let mut elements = Vec::with_capacity(usize::saturating_from(size).min(r.remaining()));
     for _ in 0..size {
         let header = tags.read_header(r)?;
-        if let Some(class) = header.class_name.clone() {
+        if let Some(class) = header.class_name.as_deref() {
             let body = header.end.map(|end| r.pos()..end);
-            let element = parse_one_element(r, &class)?;
-            elements.push((element, (class, body)));
+            let element = parse_one_element(r, class)?;
+            elements.push((element, (class.to_string(), body)));
         }
         if let Some(end) = header.end {
             r.seek(end)?;
@@ -244,7 +268,8 @@ fn parse_one_element(r: &mut RBuffer<'_>, element_class: &str) -> Result<Streame
     // so it carries one more version level than the other element subclasses
     // (which wrap `TStreamerElement` directly). Skip the intermediate version so
     // the `TStreamerElement` base lines up.
-    if element_class == "TStreamerSTLstring" {
+    let kind = ElementKind::of(element_class);
+    if kind == ElementKind::StlString {
         let _stl_version = r.read_version()?;
     }
     let element_base = r.read_version()?;
@@ -269,14 +294,14 @@ fn parse_one_element(r: &mut RBuffer<'_>, element_class: &str) -> Result<Streame
     // name, needed to size the array when reading.
     let mut base_version = None;
     let mut count_name = None;
-    match element_class {
-        "TStreamerBase" => base_version = Some(r.be_i32()?),
+    match kind {
+        ElementKind::Base => base_version = Some(r.be_i32()?),
         // `TStreamerLoop` (an array of objects, `T* //[fCount]`) carries the same
         // counter fields as `TStreamerBasicPointer`.
-        "TStreamerBasicPointer" | "TStreamerLoop" => {
+        ElementKind::BasicPointer | ElementKind::Loop => {
             let _count_version = r.be_i32()?; // fCountVersion
             count_name = Some(r.string()?); // fCountName
-            let _count_class = r.string()?; // fCountClass
+            r.skip_string()?; // fCountClass
         }
         _ => {}
     }

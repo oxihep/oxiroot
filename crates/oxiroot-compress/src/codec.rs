@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 
 use xxhash_rust::xxh64::xxh64;
 
-use crate::CompressError;
+use crate::{Algorithm, CompressError};
 
 thread_local! {
     /// One Zstd decoder per thread: its tables and workspace are reused from
@@ -37,7 +37,7 @@ pub(crate) fn zstd_decode_into(
                 expected: uncompressed_size,
                 got: uncompressed_size + 1,
             },
-            e => CompressError::Codec(format!("zstd: {e}")),
+            e => CompressError::codec(Algorithm::Zstd, e),
         })?;
     Ok(())
 }
@@ -57,7 +57,7 @@ pub(crate) fn zlib_decode(
             expected: uncompressed_size,
             got: uncompressed_size + 1,
         }),
-        Err(e) => Err(CompressError::Codec(format!("zlib: {e:?}"))),
+        Err(e) => Err(CompressError::codec(Algorithm::Zlib, format!("{e:?}"))),
     }
 }
 
@@ -70,13 +70,13 @@ pub(crate) fn zlib_decode(
 fn read_bounded(
     decoder: &mut impl Read,
     limit: usize,
-    codec: &str,
+    algorithm: Algorithm,
 ) -> Result<Vec<u8>, CompressError> {
     let mut out = Vec::with_capacity(limit.min(crate::MAX_CHUNK_SIZE));
     decoder
         .take(limit as u64 + 1)
         .read_to_end(&mut out)
-        .map_err(|e| CompressError::Codec(format!("{codec}: {e}")))?;
+        .map_err(|e| CompressError::codec(algorithm, e))?;
     if out.len() > limit {
         return Err(CompressError::SizeMismatch {
             expected: limit,
@@ -102,13 +102,16 @@ pub(crate) fn lz4_decode(
     };
     let stored = u64::from_be_bytes(*checksum);
     if xxh64(data, 0) != stored {
-        return Err(CompressError::Codec("lz4: xxh64 checksum mismatch".into()));
+        return Err(CompressError::codec(
+            Algorithm::Lz4,
+            "xxh64 checksum mismatch",
+        ));
     }
     // `decompress_into` reports a too-small output as an error, where
     // `decompress` may panic, so a forged size cannot crash the reader.
     let mut out = vec![0u8; uncompressed_size];
     let n = lz4_flex::block::decompress_into(data, &mut out)
-        .map_err(|e| CompressError::Codec(format!("lz4: {e}")))?;
+        .map_err(|e| CompressError::codec(Algorithm::Lz4, e))?;
     out.truncate(n);
     Ok(out)
 }
@@ -122,7 +125,7 @@ pub(crate) fn lzma_decode(
 ) -> Result<Vec<u8>, CompressError> {
     // A ROOT block holds exactly one XZ stream, so `allow_multiple_streams=false`.
     let mut reader = lzma_rust2::XzReader::new(payload, false);
-    read_bounded(&mut reader, uncompressed_size, "lzma")
+    read_bounded(&mut reader, uncompressed_size, Algorithm::Lzma)
 }
 
 /// Encode `data` as a single zlib stream — the payload of a ROOT `ZL` block.
@@ -157,18 +160,18 @@ pub(crate) fn zstd_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressErr
         let encoder = match slot {
             Some(e) => {
                 e.set_level(level)
-                    .map_err(|e| CompressError::Codec(format!("zstd: {e}")))?;
+                    .map_err(|e| CompressError::codec(Algorithm::Zstd, e))?;
                 e
             }
             None => slot.insert(
                 zrip::CompressContext::new(level)
-                    .map_err(|e| CompressError::Codec(format!("zstd: {e}")))?,
+                    .map_err(|e| CompressError::codec(Algorithm::Zstd, e))?,
             ),
         };
         encoder
             .compress(data)
             .map(std::borrow::Cow::into_owned)
-            .map_err(|e| CompressError::Codec(format!("zstd: {e}")))
+            .map_err(|e| CompressError::codec(Algorithm::Zstd, e))
     })
 }
 
@@ -182,11 +185,11 @@ pub(crate) fn lzma_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressErr
     // XZ has presets 0 to 9; a higher ROOT level means "the strongest".
     let options = lzma_rust2::XzOptions::with_preset(u32::from(level.min(9)));
     let mut writer = lzma_rust2::XzWriter::new(Vec::new(), options)
-        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
+        .map_err(|e| CompressError::codec(Algorithm::Lzma, e))?;
     writer
         .write_all(data)
-        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))?;
+        .map_err(|e| CompressError::codec(Algorithm::Lzma, e))?;
     writer
         .finish()
-        .map_err(|e| CompressError::Codec(format!("lzma: {e}")))
+        .map_err(|e| CompressError::codec(Algorithm::Lzma, e))
 }

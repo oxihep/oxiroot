@@ -31,6 +31,8 @@ fn main() {
 
 #[cfg(feature = "plot")]
 fn main() -> oxiroot::Result<()> {
+    #[cfg(feature = "fit")]
+    use oxiroot::fit::{FitExt, Model};
     use oxiroot::plot::{
         Axes, Color, ErrorbarOpts, FontSet, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
         ratio_subplots,
@@ -100,7 +102,6 @@ fn main() -> oxiroot::Result<()> {
     // adopts the mplhep frame colour/weight and stacks under the legend.
     #[cfg(feature = "fit")]
     {
-        use oxiroot::fit::Model;
         let model = Model::gaussian("gaus").estimate_from(&mc);
         let r = mc.fit(&model);
         let fitted = model.with_params(r.params.clone());
@@ -221,7 +222,6 @@ fn main() -> oxiroot::Result<()> {
     // (Needs `--features plot,fit`; skipped otherwise.)
     #[cfg(feature = "fit")]
     {
-        use oxiroot::fit::Model;
         let model = Model::gaussian("gaus").estimate_from(&mc);
         let r = mc.fit(&model);
         let fitted = model.with_params(r.params.clone());

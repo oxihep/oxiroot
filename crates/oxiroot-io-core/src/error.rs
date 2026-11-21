@@ -13,9 +13,20 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Errors raised while reading or writing ROOT container structures.
 ///
+/// This is the one error type of the oxiroot crates, which is why it has
+/// variants this crate never raises: [`BinningMismatch`](Self::BinningMismatch)
+/// comes from the histogram crate, [`TypeMismatch`](Self::TypeMismatch) and
+/// [`SchemaChanged`](Self::SchemaChanged) from the tree, `RNTuple` and dataset
+/// crates. Keeping them here lets `?` cross the workspace with no conversion,
+/// and lets a caller match on what went wrong whichever crate found it.
+///
+/// It is not `Clone` or `PartialEq`: it keeps the errors it wraps (an
+/// [`std::io::Error`], a codec's error) whole, as its
+/// [`source`](std::error::Error::source). Compare with `matches!`.
+///
 /// Marked `#[non_exhaustive]`: match with a wildcard arm so new variants can be
 /// added in a minor release without breaking downstream code.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// A read ran past the end of the buffer.
@@ -149,15 +160,9 @@ pub enum Error {
         /// The size the file reached, in bytes.
         size: u64,
     },
-    /// An underlying I/O error. The [`std::io::ErrorKind`] is preserved so
-    /// callers can branch on it; the message is rendered to a string so `Error`
-    /// stays `Clone`.
-    Io {
-        /// The kind of the originating I/O error.
-        kind: std::io::ErrorKind,
-        /// The rendered error message.
-        message: String,
-    },
+    /// An I/O error, whole: its [`kind`](std::io::Error::kind) to branch on,
+    /// and itself as this error's [`source`](std::error::Error::source).
+    Io(std::io::Error),
     /// An error from another crate (statistics, formulas, plotting,
     /// histograms, …), kept whole: [`source`](std::error::Error::source) and
     /// [`downcast_ref`](Error::downcast_ref) give it back. Build one with
@@ -165,10 +170,8 @@ pub enum Error {
     Other(External),
 }
 
-/// An error from outside this crate, held by [`Error::Other`]. Shared (so the
-/// error stays `Clone`) and compared by message.
-#[derive(Clone)]
-pub struct External(std::sync::Arc<dyn std::error::Error + Send + Sync + 'static>);
+/// An error from outside this crate, held by [`Error::Other`].
+pub struct External(Box<dyn std::error::Error + Send + Sync + 'static>);
 
 impl fmt::Debug for External {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -176,18 +179,10 @@ impl fmt::Debug for External {
     }
 }
 
-impl PartialEq for External {
-    fn eq(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.0, &other.0) || self.0.to_string() == other.0.to_string()
-    }
-}
-
-impl Eq for External {}
-
 impl Error {
     /// Wrap an error from another crate (see [`Error::Other`]).
     pub fn other(error: impl std::error::Error + Send + Sync + 'static) -> Self {
-        Self::Other(External(std::sync::Arc::new(error)))
+        Self::Other(External(Box::new(error)))
     }
 
     /// The wrapped error, if this is an [`Error::Other`] holding a `T`.
@@ -281,7 +276,7 @@ impl fmt::Display for Error {
                 "the file reached {size} bytes, more than the 32-bit container form can \
                  address (2 GiB); write it in the 64-bit form"
             ),
-            Self::Io { message, .. } => write!(f, "I/O error: {message}"),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Other(External(e)) => fmt::Display::fmt(e, f),
         }
     }
@@ -313,6 +308,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Decompress { source, .. } => Some(source),
+            Self::Io(e) => Some(e),
             Self::Other(External(e)) => Some(&**e),
             _ => None,
         }
@@ -334,7 +330,11 @@ impl From<CompressError> for Error {
 /// # Errors
 ///
 /// [`Error::Decompress`], naming `what`, if the payload does not decompress to `len` bytes.
-pub fn decompress_payload(payload: &[u8], len: usize, what: impl fmt::Display) -> Result<Vec<u8>> {
+pub fn decompress_payload(
+    payload: &[u8],
+    len: usize,
+    what: impl fmt::Display,
+) -> Result<std::borrow::Cow<'_, [u8]>> {
     oxiroot_compress::decompress(payload, len).map_err(|source| Error::Decompress {
         context: Some(what.to_string()),
         source,
@@ -363,9 +363,6 @@ pub fn check_len(what: impl fmt::Display, expected: usize, found: usize) -> Resu
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Self::Io {
-            kind: e.kind(),
-            message: e.to_string(),
-        }
+        Self::Io(e)
     }
 }

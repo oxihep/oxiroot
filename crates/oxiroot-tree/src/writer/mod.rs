@@ -8,15 +8,12 @@
 //! this crate. The embedded `TStreamerInfo` ([`crate::streamer_gen`]) makes the
 //! file self-describing.
 
-use oxiroot_io_core::cast::SaturatingFrom;
 use std::collections::HashMap;
 use std::io::{Seek, Write};
 
 use oxiroot_io_core::raw::{ContainerWriter, DirId};
 use oxiroot_io_core::streamer_gen::ClassDef;
 use oxiroot_io_core::{Error, Result};
-
-use crate::value::BranchValues;
 
 mod baskets;
 mod branch;
@@ -47,13 +44,6 @@ type LeafRefs = HashMap<String, u32>;
 /// collection), so the writer's value matches never see one.
 const NESTED_NOT_WRITABLE: &str =
     "a vector<string> or vector<vector<T>> write Branch is always a std::vector branch";
-
-/// A representative `TLeafC` string value whose length yields `fLen` = `len`
-/// (longest string + 1), used for a streamed string column's leaf metadata.
-fn str_rep(len: i32) -> BranchValues {
-    let n = usize::saturating_from(len - 1);
-    BranchValues::Str(vec!["\0".repeat(n)])
-}
 
 /// Reject branches whose entry counts differ from the first branch's: the tree
 /// has one entry count, so the others would be cut or read past.
@@ -193,6 +183,7 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::BranchValues;
     use oxiroot_io_core::Compression;
     use oxiroot_io_core::raw::KSTART_BIG_FILE;
 

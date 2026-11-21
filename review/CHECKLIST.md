@@ -91,8 +91,8 @@ Numbers match the table in [api.md](api.md).
 - [x] **A16** `Func*`: ranges as `RangeInclusive`; `params_mut()`; `with_params(&[f64]) -> Result`; `set_param` and `set_params` removed
 - [x] **A17** `.compression(c)` on every writer, default Zstd 5: `FileWriter`, `FileUpdater`, `DatasetWriter`, `Merger`; `Compression::default()` is Zstd 5. The tree and RNTuple writers are under `raw` since A7 and take it as an argument there.
 - [x] **A18** File form automatic for `FileWriter` (the test-only override is the hidden `large_above`) and chosen by `DatasetWriter::large()`; `Form` enum inside. The streaming tree and RNTuple writers under `raw` keep `create_large` / `new_large`: they write as they go and must pick the form before the first byte.
-- [~] **A19** One error type at the facade. Kept `oxiroot::Error` (its typed `Stat` / `Formula` / `Plot` / `Fit` variants are matched on by users and tests, which `Error::Other` would lose) and made the facade's own API return it: `Merger::merge -> oxiroot::Result`. `Clone`/`PartialEq` on the core error and the empty-string sentinels are still to do.
-- [~] **A20** One import path per item: `oxiroot-hist` and `oxiroot-rntuple` no longer re-export `oxiroot-io-core` types (`FileWriter`, `Compression`, `ObjList`, …). The facade's glob re-exports and the size of the prelude are unchanged.
+- [x] **A19** One error type at the facade: `oxiroot::Error`, whose typed `Stat` / `Formula` / `Plot` / `Fit` variants users match on; the facade's own API returns it. The core error is no longer `Clone` / `PartialEq`, so it keeps its sources, and its empty-string sentinels are `Option`.
+- [x] **A20** One import path per item: `oxiroot-hist` and `oxiroot-rntuple` no longer re-export `oxiroot-io-core` types (`FileWriter`, `Compression`, `ObjList`, …). The prelude is 26 names, what reading and writing a file takes: fitting is `oxiroot::fit`, collections and parameters `oxiroot::file`, matrices `oxiroot::linalg`, merging `oxiroot::hadd`, the less common histogram types `oxiroot::hist`. Each facade module is still its crate re-exported whole: that is what a facade module is, and a hand-kept list would only lag behind it.
 - [x] **A21** `Dataset::schema()` gives each column's `DataType`, for both formats (decision E). `TreeReader::branch_names()` and `branch_layout(name)` stay for tree-only metadata; a `BranchInfo` iterator would be a second way to the same answer.
 - [x] **A22** `ObjList::new(kind)`; one `ObjMap::insert`. `add` stays a builder (`self -> Self`), as on `FileWriter`: one style of adding across the crate, so no `&mut self` form.
 - [x] **A23** `Compression` only: `compression_settings` / `split_settings` / `from_setting` removed, `compress` and `compress_if_smaller` take `Compression`, `TryFrom<u32>`; the writers carry `Compression`, not a `u32`.
@@ -118,9 +118,9 @@ Numbers match the table in [api.md](api.md).
 - [x] `ErrorMode::to_code` → `code`
 - [x] `RBuffer::is_empty` → `is_at_end`
 - [x] `Compression::None` → `Stored`; `GraphErrors::None` → `Plain`
-- [ ] `streamer_gen::{El, Ek, strf, objptr, objanyptr}` spelled out
+- [x] `streamer_gen` names spelled out: `ElementDef`, `ElementDefKind`, `string`, `object_ptr`, `object_any_ptr`, `basic_ptr`, `basic_ptr_in`
 - [x] `elements` → `as_slice` on `Vector`, `Matrix`, `SymMatrix`, plus `AsRef<[f64]>` and `From<Vec<f64>>` for `Vector`
-- [ ] `IntoColumn` → `From<…> for Column`
+- [x] `IntoColumn` → `From<…> for Column`
 - [x] `cumulative(bool)`, `project(.., bool)`, `profile(.., bool)`, `project_axis(.., u8)`: gone from the records with A9 (oxihist's API now).
 - [x] `projection_*(name)`: gone with A9
 
@@ -134,16 +134,16 @@ Numbers match the table in [api.md](api.md).
 
 ## Phase 4: structure
 
-- [ ] **S1** `Column` moved below the formats; `BranchValues`, `FieldValues`, the writer `Column` and both `Jagged` structs removed [C5]
-- [ ] **S2** `WriteRoot::write_body(&self, &mut WBuffer)`; the ten `*_to_bytes` wrappers removed
-- [~] **S3** `Form` enum (`Small` / `Big`) replaces `big: bool` throughout `container.rs` and in `ContainerWriter::new` / `append`. `KeySpec` and the named patch offsets are not done.
-- [~] **S4** The `ncells` field is removed from the six records: `ncells()` and the writer derive it from the per-cell vectors, and the file's `fNcells` is no longer carried (the arrays are checked against the axes). Bin counts are still `i32` in `Axis`, as ROOT stores them.
-- [ ] **S5** `ElementKind` and a shared streamer type-code module
-- [ ] **S6** Shared histogram core struct replacing the per-type macros; `Moments` struct
+- [ ] **S1** `Column` moved below the formats; `BranchValues`, `FieldValues`, the writer `Column` and both `Jagged` structs removed [C5] — not started. It rewrites the value model of both format crates (about 600 references in 70 files, most of the tree and RNTuple tests among them), so it is a change of its own rather than the tail of this one. What narrows it since the review: the CLI no longer matches on either enum (it reads through `Dataset`), and `Column` holds text as `String`, takes `From`, and is the only type `oxiroot-dataset` exposes. The order to do it in: move `Column` and `DataType` into `oxiroot-io-core`; give the tree and RNTuple readers a `column()` and the writers a `from_column`, moving the conversions out of `oxiroot-dataset`; then make the decoders build `Column` directly and delete the enums.
+- [x] **S2** `WriteRoot::write_body(&self, &mut WBuffer)`; the ten `*_to_bytes` wrappers removed
+- [x] **S3** `Form` enum (`Small` / `Big`) replaces `big: bool` throughout `container.rs`; key headers are written from a `KeySpec` struct (ten positional arguments before); the header and directory patch offsets are named on `Form` (`header_offsets()`, `dir_seek_keys()`, `DIR_NBYTES_KEYS`).
+- [x] **S4** Bin and cell counts are `usize` in memory: `Axis::nbins`, the record constructors, `ncells()` and `SparseHist::new` take and return `usize`; a negative `fNbins` in a file is a format error, and the writer converts to the `i32` ROOT stores. The `ncells` field is removed from the six records.
+- [x] **S5** `streamer_types`: ROOT's `fType` codes named once (`K_INT`, `K_OFFSET_P`, `K_STL`, …) and used by the streamer writer, the generic object reader and the tree reader, which each had their own numbers. `ElementKind::of(class)` / `StreamerElement::kind()` replace the string comparisons with `"TStreamerBase"`.
+- [x] **S6** `Hist1D`, `Hist2D` and `Hist3D` are one type, `HistRecord<const D: usize>`, so `add`, `class_name`, the accessors and the naming methods are written once as ordinary methods; the sums over the fills are a `Moments` value, added and copied whole. The three profiles keep their own structs and the small macros that serve them: their per-cell arrays have different names and meanings (`sumy2`, `sumz2`, `sumt2`).
 - [x] **S7** `Patch<const N>` (`w.reserve::<4>()`, `Patch::offset()`), `#[must_use]`, neither it nor `CountToken` is `Copy`
-- [ ] **S8** `ReadCtx` in the RNTuple reader instead of `cluster_window` clones
-- [ ] **S9** Tree reader `Branch` as an `enum Layout`; `BranchMetaLite` removed
-- [ ] **S10** Tree writer `LeafMeta` instead of fabricated representative values
+- [x] **S8** `ReadCtx` in the RNTuple reader instead of `cluster_window` clones — done by sharing: the reader holds its header, footer, summaries and page lists behind `Arc`s and a cluster range, so a window is a pointer copy
+- [x] **S9** `BranchMetaLite` is removed: `Branch::rewrite()` is the one place that turns the reader's fields into a kind (`Rewrite::{Fixed, Vector, Jagged}`, or the reason it cannot be written). The stored fields stay as they are: the decoder reads them independently (a leaflist leaf can also be an array), so an `enum` of storage would re-encode combinations the fields already express.
+- [x] **S10** Tree writer `LeafMeta { max, str_len, split_max }` on a branch replaces the fabricated representative values (`str_rep`, `row_of`, a count row): the streaming writer tracks the leaf header's numbers and the serializer reads them.
 
 ## Remaining findings by crate
 
@@ -151,69 +151,69 @@ Items not already covered by a phase entry above.
 
 ### `oxiroot-compress`
 
-- [ ] Passthrough returns `Cow` instead of copying
+- [x] Passthrough returns `Cow`: `compress`, `decompress` and `raw::decompress_payload` borrow when nothing is encoded
 - [x] Zstd blocks decoded into the output buffer (the default codec; about 1% on a 48 MiB payload). The other codecs still decode into their own buffer first.
 - [x] Level type consistent (`u8`); `#[non_exhaustive]` on `Compression`; `Compression::level()`
 - [x] `lzma_encode` clamps its level to XZ's 0 to 9
 - [x] `BlockHeader` 24-bit fields: `write` asserts them in debug builds (`compress` is the only producer and splits to fit). The assertion found a test whose forged size was truncated to 0.
-- [~] `Algorithm: Hash + Display` done. `CompressError::Codec` still holds a message, not the source error: the type is `Clone + Eq`, which io-core's `Error` relies on.
+- [x] `Algorithm: Hash + Display`; `CompressError::Codec { algorithm, source }` keeps the codec's own error as its source
 
 - [ ] **Upstream (zrip)** The pure-Rust Zstd encoder finds no repeats at a distance of about 2000 bytes: data with a 2008-byte period compresses 1.0x, where C `zstd -1` gets 862x and this crate's LZ4 250x. On a realistic event dataset (run, event, pt, hit counts, trigger names) it is still the smallest of the fast codecs, so the default stands; a column with long-range repeats does better with zlib or LZMA.
 
 ### `oxiroot-io-core`
 
-- [ ] `subdir()` returns the shared `Arc<Directory>`
-- [~] `from_bytes(impl Into<Bytes>)` done; the append path still copies the file
-- [ ] `apply_deletions` borrows key names
-- [ ] One `checked_payload_len`; `payload_range` not public
-- [ ] `Directory` times are `Datime`
-- [ ] Header padding with `resize`
-- [ ] Manual `Debug` impls list their fields
-- [ ] `skip_string()` and zero-copy `str()`; `array::<N>()` public
-- [ ] `WBuffer::le_i16`, `le_i32`; `Patch::offset`
+- [x] `subdir()` returns the shared `Arc<Directory>`
+- [x] `from_bytes(impl Into<Bytes>)`; the append path shares the existing file's `Bytes` with its reader (`build_append(&Bytes, ..)`)
+- [x] `apply_deletions` borrows key names
+- [x] One `Key::checked_payload_len`; `payload_range` removed
+- [x] `Directory` times are `Datime`
+- [x] Header padding with `WBuffer::pad_to`
+- [x] Manual `Debug` impls say they are partial (`finish_non_exhaustive`): they summarise a reader or a connection, on purpose
+- [x] `skip_string()`, zero-copy `str()` and `cstr()`; `array::<N>()` public. 27 strings that were read to be dropped are skipped.
+- [x] `WBuffer::le_i16`, `le_i32`; `Patch::offset`
 - [x] `read_object.rs`: three `expect("checked")` removed (`if let` guards)
-- [ ] `streamer_gen.rs`: `unreachable!` removed
-- [ ] `StreamerRegistry` indexed by class name; `class_names()` an iterator
-- [ ] `TagReader` uses `Rc<str>`; `read_cstring` scans for NUL
-- [ ] `root_class() -> Cow<'static, str>`
-- [ ] `struct Member` and `Option<Member>` in collections
+- [x] `streamer_gen.rs`: `unreachable!` removed (one match)
+- [x] `StreamerRegistry` indexed by class name; `class_names()` an iterator
+- [x] `TagReader` shares class names as `Arc<str>` (it must be `Send`); `read_cstring` scans for the NUL
+- [x] `root_class() -> Cow<'static, str>`
+- [x] `struct Member` and `Option<Member>` in collections; a null map entry is written as a null pointer
 - [x] `Value`'s `Display` writes straight to the formatter (an empty array no longer leaves a trailing space)
 - [x] `RecordHeader` derives `Debug`, `back_ref` included
 - [x] `collect_stored` uses a set
-- [ ] Error: histogram, column and schema variants moved or documented
-- [ ] Error: `Clone`/`PartialEq` dropped
+- [x] Error: the histogram, column and schema variants are documented on the enum as raised by the crates above, kept here so `?` crosses the workspace
+- [x] Error: `Clone` / `PartialEq` dropped. `Error::Io` holds the `std::io::Error` and `Error::Other` the boxed error, both as sources.
 - [x] `Error::context` covers the variants that carry a free-text message and says so; the structured ones are returned unchanged, keeping their type.
 
 ### `oxiroot-tree`
 
 - [x] `concat_values` is gone, and so are `append_trees` / `append_ntuples`: `hadd` merges through `Dataset`, and `Merger` is the one way to concatenate.
 - [x] Required members fallible: `fEntries` is read with `required_int`, an error when the description lacks it. The other captured members keep their defaults: each is optional in some class version, or checked where it is used.
-- [~] Baskets sliced from `Bytes`, not copied, when compressed. `Key::read` is not reused for the basket header.
-- [ ] Leaflist and object branches share basket vectors
-- [ ] Return structs in place of tuples (`select_baskets`, `basket_locators`, `read_tbranch_base`, `diag`)
-- [ ] `decode_object_members` walks each object once
-- [ ] `Vec`-returning getters become iterators
+- [x] Baskets sliced from `Bytes`, not copied. The basket's key header is still read in place: `Key::read` allocates three strings and seeks past the `TBasket` fields this reader needs, on the hottest path of a tree read; the strings are skipped without allocating.
+- [x] Leaflist and object branches share basket vectors (`Arc<[u64]>`)
+- [x] Return structs in place of tuples: `BasketSelection`, `BasketLocators`, `BranchBase`, and `Skipped` for the diagnostics
+- [x] `decode_object_members` stops each object's walk at the member its column holds (one member per branch read is the API; the walk no longer decodes what follows it)
+- [x] `Vec`-returning getters are iterators: `branch_names`, `unsupported_branches`, `streamer_classes`, `collection_members`, and `NtupleReader::field_names`
 - [x] `header.class_name.as_deref()` (the clone in `parse.rs`)
-- [ ] Leaflist region loop, bracket scanner written once
-- [ ] Split branch carries no dummy payload
+- [x] Leaflist region loop (`leaflist_regions`) and bracket scanner (`bracketed`) written once; the type-code tables use `streamer_types`
+- [x] Split branch payload: kept as an empty `values`, deliberately. Moving the payload into `BranchKind` threads an `Option` through eighteen sites that never see a split branch, or moves the same empty value to a static.
 - [x] "Impossible" arms are `unreachable!`, not wrong values (`member_type_info`, `stl_info`): the typed constructors build no other variant.
-- [ ] `place_basket` and `chunk_values` stop copying
+- [x] `place_basket` writes the header and the payload without copying the payload. `chunk_values` copies one basket's worth, and only when a one-shot write is cut into several baskets (a branch that fits one basket is written as it is).
 - [x] `#[must_use]` on the writers. `total_entries` stays an `i64`: it is ROOT's `Long64_t fEntries`, which the serializers take.
 
 ### `oxiroot-rntuple`
 
 - [x] `read_blob` keeps the source error: only a read past the end is a format error
-- [ ] Field and column adjacency built once at open
+- [x] Field and column adjacency built once at open
 - [x] `group` moves the values into their entries instead of cloning each (a `std::vector<std::string>` field keeps its strings)
 - [x] `VecU32` / `VecU64` writable, or the gap documented: `hadd` no longer goes through `append_ntuples`, so it merges them. `raw::append_ntuples` / `to_field` still reject them, as their docs say.
-- [ ] Envelopes written into one `WBuffer`
-- [ ] Window selection written once
-- [ ] `read_offsets` emits the leading zero
-- [ ] Variant columns via `unzip`
-- [ ] `read_column(&ColumnDescriptor, ..)`
-- [ ] `fixed` and `optional` infallible signatures
-- [ ] `FieldId` newtype
-- [ ] `lower_column` split up
+- [x] Envelopes written into one `WBuffer`
+- [x] Window selection written once
+- [x] `read_offsets` emits the leading zero
+- [x] Variant columns via `unzip`
+- [x] `read_column(&ColumnDescriptor, ..)`
+- [x] `fixed` and `optional` infallible signatures
+- [x] `FieldId` newtype — done as methods instead: `FieldDescriptor::parent()`, `ColumnDescriptor::field()`, `Header::top_level_fields()`, `top_level_field(name)` and `child_fields(id)` hold the casts, so no caller converts an id
+- [x] `lower_column` split up
 
 ### `oxiroot-linalg`
 
@@ -223,10 +223,10 @@ Items not already covered by a phase entry above.
 
 ### `oxiroot-hist-func`
 
-- [ ] `FuncCore` holds a `GraphFunction`
-- [ ] `Func<const D: usize>` in place of the macro
+- [x] `FuncCore` holds a `GraphFunction`
+- [x] `Func<const D: usize>` in place of the macro
 - [x] Formula errors: reported as `InvalidInput` with the formula and the parser's message. A typed source would mean an `Error::Other` no caller can match on better than the text.
-- [ ] `function_classes` uses `StreamerSet`
+- [x] `function_classes` uses `StreamerSet`
 
 ### `oxiroot-hist`
 
@@ -234,18 +234,18 @@ Items not already covered by a phase entry above.
 - [x] `in_range_cells` is gone with A9; `in_range_sum` allocates two small vectors per call, none per cell.
 - [x] `access.rs` accessors written once: 29 accessors that several types shared word for word are one definition each, listed per type (`accessors!`). 1005 lines to about 470, the same 155 methods.
 - [x] `write_tarray(w, values, kind)` and one `write_th{1,2,3}_obj(w, h, kind)` per dimension replace the 18 per-type functions and the six array writers
-- [ ] `TGraph` base read in one place; `Profile3D` reuses the `TH3` base reader
-- [ ] `list_member_ranges` shared with the tree and core readers
+- [x] `TGraph` base read in one place; `Profile3D` reuses the `TH3` base reader
+- [x] `list_member_ranges` shared with the tree and core readers
 - [x] `write_th1_core` takes a `Th1Core` struct
-- [ ] `SparseHist` index simplified; `PartialEq` hack removed
-- [ ] Conversion: no per-bin `Vec`; `parts` evaluated once
-- [ ] `HistStack` / `GraphStack` as one generic type
+- [x] `SparseHist` index simplified; `PartialEq` hack removed
+- [x] Conversion: no per-bin `Vec`; `parts` evaluated once
+- [x] `HistStack` / `GraphStack` as one generic type
 - [x] Cell counts with checked arithmetic (`cell_count`, tested against a forged axis)
 - [x] `BinContentType::from_code`
-- [ ] Indexed loops rewritten (`family.rs`, `ops.rs`)
+- [x] Indexed loops rewritten (`family.rs`, `ops.rs`)
 - [x] One key lookup per read; fetch helpers merged
 - [x] `quantiles`: gone with A9
-- [ ] `PolyBin` bounding box derived; `bin(number)` binary search
+- [x] `PolyBin` bounding box derived; `bin(number)` binary search
 - [x] One `ThreadedFill` trait: gone with A9 (`ThreadedHist` is oxihist's)
 - [x] Stale docs (`hist_index`, `_ndim`): the doc is fixed, the unused argument removed, and the `THnSparse` dimension count is now checked against its axes
 - [x] `smooth_array`: gone with A9
@@ -255,27 +255,27 @@ Items not already covered by a phase entry above.
 - [x] `Column::slice` cannot panic on an unvalidated column
 - [x] Tree read path matches `Error::Unsupported` only; `TreeReader`'s `flat()` returns it, like the RNTuple reader
 - [x] `DatasetWriter::write(Batch)` by value
-- [ ] String columns stored as `String`
+- [x] String columns stored as `String`
 - [x] `#[must_use]` on `DatasetWriter`
 - [x] `Sink` without `Gone` and `unreachable!`: two options, and `open()` returns the writer. A failed start is an error on every later call (it panicked).
-- [ ] `.parallel()` unconditional in the lower crates
-- [ ] `Batches` without take-and-restore; `step` as `Option<NonZeroU64>`
+- [x] `.parallel()` unconditional in the lower crates
+- [x] `Batches` without take-and-restore; `step` as `Option<NonZeroU64>`
 - [x] `map_scalar!` without `unreachable!`: the other variants' arms are part of the same exhaustive match
-- [ ] Field-conversion closure written once
+- [x] Field-conversion closure written once
 
 ### `oxiroot`
 
 - [x] `merge_tree` / `merge_rntuple` are one `merge_dataset`, through `Dataset` and `DatasetWriter`: the one read / write API, and every column type a `Batch` holds (the raw path refused structs, nested vectors, optionals and `std::vector` of unsigned integers).
-- [ ] `summed!` / `copied!` as generic functions
+- [x] `summed!` / `copied!` as generic functions
 - [x] `with_key` replaced by `Error::context`
-- [ ] Histogram merge does not build the whole output in memory
+- [x] Histogram merge does not build the whole output in memory
 
 ### `oxiroot-cli`
 
 - [x] `show` uses `branch_layout`, reads no data
-- [ ] One cell function over `Column` (after A6)
+- [x] One cell function over `Column` (after A6)
 - [x] `num()` keeps small values (scientific notation below `1e-4`)
-- [ ] Output through one render step instead of `json: bool`
+- [x] Output through one render step instead of `json: bool`
 - [x] `compression_label` uses `Compression`
-- [ ] No import of the hidden `cast` module
+- [x] No import of the hidden `cast` module
 - [x] `show_rntuple` lists the top-level fields by parent, not by first matching name

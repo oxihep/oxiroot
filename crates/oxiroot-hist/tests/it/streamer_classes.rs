@@ -10,6 +10,7 @@ use oxiroot_hist::{
 use oxiroot_io_core::streamer_gen::{ClassDef, base, basic};
 use oxiroot_io_core::{Compression, FileReader, StreamerRegistry, WBuffer};
 use oxiroot_io_core::{FileWriter, ObjList, ObjString, Parameter, WriteRoot};
+use std::borrow::Cow;
 
 /// A class this workspace knows nothing about: `struct Point : TObject { double x, y; }`.
 struct Point {
@@ -19,7 +20,7 @@ struct Point {
 }
 
 impl WriteRoot for Point {
-    fn root_class(&self) -> String {
+    fn root_class(&self) -> Cow<'static, str> {
         "Point".into()
     }
     fn root_name(&self) -> &str {
@@ -28,14 +29,12 @@ impl WriteRoot for Point {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
+    fn write_body(&self, w: &mut WBuffer) {
         let obj = w.begin_object(1);
-        oxiroot_io_core::raw::write_object_base(&mut w, 0);
+        oxiroot_io_core::raw::write_object_base(w, 0);
         w.be_f64(self.x);
         w.be_f64(self.y);
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         vec![ClassDef {
@@ -121,11 +120,7 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
         .compression(Compression::Stored)
         .write()
         .unwrap();
-    let names: Vec<String> = registry(&path)
-        .class_names()
-        .into_iter()
-        .map(String::from)
-        .collect();
+    let names: Vec<String> = registry(&path).class_names().map(String::from).collect();
     assert_eq!(names, ["TParameter<double>", "TObjString"]);
     assert!(
         std::fs::metadata(&path).unwrap().len() < 2_000,
@@ -140,7 +135,7 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
         .write()
         .unwrap();
     let names = registry(&single);
-    assert_eq!(names.class_names(), ["TParameter<int>"]);
+    assert_eq!(names.class_names().collect::<Vec<_>>(), ["TParameter<int>"]);
 }
 
 #[test]
@@ -270,7 +265,7 @@ fn a_histogram_family_object_describes_only_its_classes() {
             .write()
             .unwrap();
         let reg = registry(&path);
-        let classes = reg.class_names();
+        let classes = reg.class_names().collect::<Vec<_>>();
         for class in holds {
             assert!(classes.contains(class), "{name}: no {class} in {classes:?}");
         }

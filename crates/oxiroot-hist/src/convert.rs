@@ -72,13 +72,13 @@
 //! variance, so ROOT's error bars are slightly smaller for bins with few
 //! entries.
 
-use oxiroot_io_core::cast::SaturatingFrom;
-
 use oxihist::{
     AxisKind, Double, FillStats, Histogram, Int64, Mean, MeanBin, Storage, Weight, WeightedMean,
     WeightedMeanBin, WeightedSum,
 };
 use oxiroot_io_core::{Error, Result, WriteRoot};
+
+use crate::base::Moments;
 
 use crate::axis::Axis;
 use crate::base::BinContentType;
@@ -109,13 +109,14 @@ fn root_nbins(a: &oxihist::Axis) -> usize {
     a.size().max(1)
 }
 
-/// `n` as a ROOT bin count.
-fn root_count(n: usize) -> Result<i32> {
-    i32::try_from(n).map_err(|_| {
-        Error::InvalidInput(format!(
+/// `n` as a ROOT bin count, which the file stores in an `i32`.
+fn root_count(n: usize) -> Result<usize> {
+    match i32::try_from(n) {
+        Ok(_) => Ok(n),
+        Err(_) => Err(Error::InvalidInput(format!(
             "an axis of {n} bins does not fit a ROOT axis (at most i32::MAX)"
-        ))
-    })
+        ))),
+    }
 }
 
 /// The ROOT axis for an oxihist axis.
@@ -163,7 +164,7 @@ fn root_axes(axes: &[oxihist::Axis]) -> Result<Vec<Axis>> {
 
 /// The oxihist axis for a ROOT axis.
 fn hist_axis(a: &Axis) -> Result<oxihist::Axis> {
-    let n = usize::saturating_from(a.nbins.max(0));
+    let n = a.nbins;
     let ax = if a.is_labelled() {
         let labels: Vec<String> = (1..=n)
             .map(|i| a.bin_label(i).unwrap_or_default().to_owned())
@@ -238,67 +239,67 @@ impl RootCount for Weight {
 
 /// A histogram's cells and summary moments, in ROOT's layout.
 struct Cells {
-    /// The oxihist axis sizes.
-    sizes: Vec<usize>,
     /// The ROOT axes' in-range bin counts.
     nbins: Vec<usize>,
     contents: Vec<f64>,
     sumw2: Vec<f64>,
     entries: f64,
-    /// `Σw`, `Σw²` over the in-range bins.
-    sw: f64,
-    sw2: f64,
-    /// `Σw·xₖ` and `Σw·xₖ²` per axis, and `Σw·xᵢ·xⱼ` for (0,1), (0,2), (1,2).
-    swx: [f64; 3],
-    swx2: [f64; 3],
-    swxx: [f64; 3],
+    /// The sums over the fills, as a ROOT histogram of any dimension keeps
+    /// them; those of an axis the histogram does not have are zero.
+    moments: Moments,
     /// `Σw·s` and `Σw·s²` of a profile's sampled value (0 for counts).
     sws: f64,
     sws2: f64,
 }
 
+/// The number of cells `h` takes in ROOT's layout, flow bins included.
+fn cell_count<S: Storage, const D: usize>(h: &Histogram<S, D>) -> usize {
+    h.axes().iter().map(|a| root_nbins(a) + 2).product()
+}
+
+/// Lay `h` out as ROOT cells. `each` is called once per bin with the bin's
+/// ROOT cell, and returns its content and variance; a caller that keeps more
+/// per cell stores it from there.
 fn cells<S: Storage, const D: usize>(
     h: &Histogram<S, D>,
-    value: impl Fn(&S::Bin) -> f64,
-    var: impl Fn(&S::Bin) -> f64,
+    mut each: impl FnMut(usize, &S::Bin) -> (f64, f64),
 ) -> Cells {
-    let sizes: Vec<usize> = h.axes().iter().map(oxihist::Axis::size).collect();
+    let sizes: [usize; D] = std::array::from_fn(|k| h.axes()[k].size());
     let nbins: Vec<usize> = h.axes().iter().map(root_nbins).collect();
-    let ncells: usize = nbins.iter().map(|n| n + 2).product();
+    let ncells = cell_count(h);
     let mut c = Cells {
-        sizes: sizes.clone(),
-        nbins: nbins.clone(),
+        nbins,
         contents: vec![0.0; ncells],
         sumw2: vec![0.0; ncells],
         entries: 0.0,
-        sw: 0.0,
-        sw2: 0.0,
-        swx: [0.0; 3],
-        swx2: [0.0; 3],
-        swxx: [0.0; 3],
+        moments: Moments::default(),
         sws: 0.0,
         sws2: 0.0,
     };
     for (idx, b) in h.iter(true) {
-        let cell = root_cell(&idx, &sizes, &nbins);
-        c.contents[cell] = value(b);
-        c.sumw2[cell] = var(b);
+        let cell = root_cell(&idx, &sizes, &c.nbins);
+        (c.contents[cell], c.sumw2[cell]) = each(cell, b);
     }
     // The sums of the fills themselves when the histogram kept them, else
     // their estimate from the bin centers.
     let stats = h.fill_stats().unwrap_or_else(|| h.binned_stats());
     c.entries = stats.entries;
-    c.sw = stats.sum_w;
-    c.sw2 = stats.sum_w2;
-    for k in 0..D {
-        c.swx[k] = stats.sum_wx[k];
-        c.swx2[k] = stats.sum_wxy[k][k];
-    }
-    for (slot, (i, j)) in [(0, 1), (0, 2), (1, 2)].into_iter().enumerate() {
-        if j < D {
-            c.swxx[slot] = stats.sum_wxy[i][j];
-        }
-    }
+    // `Σw·xᵢ` and `Σw·xᵢ·xⱼ`, zero past the histogram's own axes.
+    let x = |i: usize| if i < D { stats.sum_wx[i] } else { 0.0 };
+    let xy = |i: usize, j: usize| if j < D { stats.sum_wxy[i][j] } else { 0.0 };
+    c.moments = Moments {
+        w: stats.sum_w,
+        w2: stats.sum_w2,
+        wx: x(0),
+        wx2: xy(0, 0),
+        wy: x(1),
+        wy2: xy(1, 1),
+        wxy: xy(0, 1),
+        wz: x(2),
+        wz2: xy(2, 2),
+        wxz: xy(0, 2),
+        wyz: xy(1, 2),
+    };
     c.sws = stats.sum_ws;
     c.sws2 = stats.sum_ws2;
     c
@@ -312,15 +313,12 @@ macro_rules! count_to_root {
             fn to_root(&self) -> Result<$root> {
                 let $h = self;
                 let $axes = root_axes(self.axes())?;
-                let $c = cells(self, <$s>::value, <$s>::variance);
+                let $c = cells(self, |_, b| (<$s>::value(b), <$s>::variance(b)));
                 let mut r: $root = $build;
                 r.name.clone_from(&$h.name);
                 r.title.clone_from(&$h.title);
                 r.entries = $c.entries;
-                r.tsumw = $c.sw;
-                r.tsumw2 = $c.sw2;
-                r.tsumwx = $c.swx[0];
-                r.tsumwx2 = $c.swx2[0];
+                r.moments = $c.moments;
                 r.contents = $c.contents;
                 if <$s as RootCount>::SUMW2 {
                     r.sumw2 = $c.sumw2;
@@ -334,7 +332,7 @@ macro_rules! count_to_root {
 macro_rules! counts_1d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 1, Hist1D, |h, c, axes| {
-            let mut r = Hist1D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0);
+            let mut r = Hist1D::new(c.nbins[0], 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r
         });
@@ -343,12 +341,9 @@ macro_rules! counts_1d {
 macro_rules! counts_2d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 2, Hist2D, |h, c, axes| {
-            let mut r = Hist2D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0, i32::saturating_from(c.nbins[1]), 0.0, 1.0);
+            let mut r = Hist2D::new(c.nbins[0], 0.0, 1.0, c.nbins[1], 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
-            r.tsumwy = c.swx[1];
-            r.tsumwy2 = c.swx2[1];
-            r.tsumwxy = c.swxx[0];
             r
         });
     )*};
@@ -357,20 +352,13 @@ macro_rules! counts_3d {
     ($($s:ty),*) => {$(
         count_to_root!($s, 3, Hist3D, |h, c, axes| {
             let mut r = Hist3D::new(
-                i32::saturating_from(c.nbins[0]), 0.0, 1.0,
-                i32::saturating_from(c.nbins[1]), 0.0, 1.0,
-                i32::saturating_from(c.nbins[2]), 0.0, 1.0,
+                c.nbins[0], 0.0, 1.0,
+                c.nbins[1], 0.0, 1.0,
+                c.nbins[2], 0.0, 1.0,
             );
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
             r.zaxis = axes[2].clone();
-            r.tsumwy = c.swx[1];
-            r.tsumwy2 = c.swx2[1];
-            r.tsumwxy = c.swxx[0];
-            r.tsumwz = c.swx[2];
-            r.tsumwz2 = c.swx2[2];
-            r.tsumwxz = c.swxx[1];
-            r.tsumwyz = c.swxx[2];
             r
         });
     )*};
@@ -418,38 +406,27 @@ struct ProfileCells {
 }
 
 fn profile_cells<S: RootMean, const D: usize>(h: &Histogram<S, D>) -> ProfileCells {
-    let cells = cells(
-        h,
-        |b| S::parts(b).0,
-        |b| S::parts(b).1.unwrap_or(S::parts(b).0),
-    );
-    let n = cells.contents.len();
-    let mut p = ProfileCells {
-        sumw2: None,
-        sums: vec![0.0; n],
-        sumy2: vec![0.0; n],
-        swy: 0.0,
-        swy2: 0.0,
-        cells,
-    };
-    let mut sumw2 = vec![0.0; n];
+    let n = cell_count(h);
+    let (mut sums, mut sumy2, mut sumw2) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
     let mut weighted = false;
-    for (idx, b) in h.iter(true) {
-        let (_, w2, sum, sum2) = S::parts(b);
-        let cell = root_cell(&idx, &p.cells.sizes, &p.cells.nbins);
-        p.sums[cell] = sum;
-        p.sumy2[cell] = sum2;
+    let cells = cells(h, |cell, b| {
+        let (w, w2, sum, sum2) = S::parts(b);
+        sums[cell] = sum;
+        sumy2[cell] = sum2;
         if let Some(w2) = w2 {
             sumw2[cell] = w2;
             weighted = true;
         }
+        (w, w2.unwrap_or(w))
+    });
+    ProfileCells {
+        sumw2: weighted.then_some(sumw2),
+        sums,
+        sumy2,
+        swy: cells.sws,
+        swy2: cells.sws2,
+        cells,
     }
-    p.swy = p.cells.sws;
-    p.swy2 = p.cells.sws2;
-    if weighted {
-        p.sumw2 = Some(sumw2);
-    }
-    p
 }
 
 macro_rules! mean_to_root {
@@ -465,10 +442,7 @@ macro_rules! mean_to_root {
                 r.name.clone_from(&self.name);
                 r.title.clone_from(&self.title);
                 r.entries = $c.entries;
-                r.tsumw = $c.sw;
-                r.tsumw2 = $c.sw2;
-                r.tsumwx = $c.swx[0];
-                r.tsumwx2 = $c.swx2[0];
+                r.moments = $c.moments;
                 r.bin_entries = $c.contents.clone();
                 r.sums = p.sums;
                 if let Some(w2) = p.sumw2 {
@@ -481,26 +455,16 @@ macro_rules! mean_to_root {
     };
     (@moments 1, $r:ident, $p:ident, $c:ident) => {
         $r.sumy2 = $p.sumy2;
-        $r.tsumwy = $p.swy;
-        $r.tsumwy2 = $p.swy2;
+        $r.moments.wy = $p.swy;
+        $r.moments.wy2 = $p.swy2;
     };
     (@moments 2, $r:ident, $p:ident, $c:ident) => {
         $r.sumz2 = $p.sumy2;
-        $r.tsumwy = $c.swx[1];
-        $r.tsumwy2 = $c.swx2[1];
-        $r.tsumwxy = $c.swxx[0];
-        $r.tsumwz = $p.swy;
-        $r.tsumwz2 = $p.swy2;
+        $r.moments.wz = $p.swy;
+        $r.moments.wz2 = $p.swy2;
     };
     (@moments 3, $r:ident, $p:ident, $c:ident) => {
         $r.sumt2 = $p.sumy2;
-        $r.tsumwy = $c.swx[1];
-        $r.tsumwy2 = $c.swx2[1];
-        $r.tsumwxy = $c.swxx[0];
-        $r.tsumwz = $c.swx[2];
-        $r.tsumwz2 = $c.swx2[2];
-        $r.tsumwxz = $c.swxx[1];
-        $r.tsumwyz = $c.swxx[2];
         $r.tsumwt = $p.swy;
         $r.tsumwt2 = $p.swy2;
     };
@@ -509,21 +473,21 @@ macro_rules! mean_to_root {
 macro_rules! means {
     ($($s:ty),*) => {$(
         mean_to_root!($s, 1, Profile1D, |c, axes| {
-            let mut r = Profile1D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0);
+            let mut r = Profile1D::new(c.nbins[0], 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r
         });
         mean_to_root!($s, 2, Profile2D, |c, axes| {
-            let mut r = Profile2D::new(i32::saturating_from(c.nbins[0]), 0.0, 1.0, i32::saturating_from(c.nbins[1]), 0.0, 1.0);
+            let mut r = Profile2D::new(c.nbins[0], 0.0, 1.0, c.nbins[1], 0.0, 1.0);
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
             r
         });
         mean_to_root!($s, 3, Profile3D, |c, axes| {
             let mut r = Profile3D::new(
-                i32::saturating_from(c.nbins[0]), 0.0, 1.0,
-                i32::saturating_from(c.nbins[1]), 0.0, 1.0,
-                i32::saturating_from(c.nbins[2]), 0.0, 1.0,
+                c.nbins[0], 0.0, 1.0,
+                c.nbins[1], 0.0, 1.0,
+                c.nbins[2], 0.0, 1.0,
             );
             r.xaxis = axes[0].clone();
             r.yaxis = axes[1].clone();
@@ -647,9 +611,9 @@ impl Hist1D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx],
-                [self.tsumwx2],
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx],
+                [self.moments.wx2],
                 &[],
                 (0.0, 0.0),
             ),
@@ -674,10 +638,10 @@ impl Hist2D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx, self.tsumwy],
-                [self.tsumwx2, self.tsumwy2],
-                &[(0, 1, self.tsumwxy)],
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx, self.moments.wy],
+                [self.moments.wx2, self.moments.wy2],
+                &[(0, 1, self.moments.wxy)],
                 (0.0, 0.0),
             ),
             |c| weighted_sum(&self.contents, &self.sumw2, c),
@@ -705,13 +669,13 @@ impl Hist3D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx, self.tsumwy, self.tsumwz],
-                [self.tsumwx2, self.tsumwy2, self.tsumwz2],
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx, self.moments.wy, self.moments.wz],
+                [self.moments.wx2, self.moments.wy2, self.moments.wz2],
                 &[
-                    (0, 1, self.tsumwxy),
-                    (0, 2, self.tsumwxz),
-                    (1, 2, self.tsumwyz),
+                    (0, 1, self.moments.wxy),
+                    (0, 2, self.moments.wxz),
+                    (1, 2, self.moments.wyz),
                 ],
                 (0.0, 0.0),
             ),
@@ -736,11 +700,11 @@ impl Profile1D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx],
-                [self.tsumwx2],
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx],
+                [self.moments.wx2],
                 &[],
-                (self.tsumwy, self.tsumwy2),
+                (self.moments.wy, self.moments.wy2),
             ),
             |c| {
                 weighted_mean(
@@ -770,11 +734,11 @@ impl Profile2D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx, self.tsumwy],
-                [self.tsumwx2, self.tsumwy2],
-                &[(0, 1, self.tsumwxy)],
-                (self.tsumwz, self.tsumwz2),
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx, self.moments.wy],
+                [self.moments.wx2, self.moments.wy2],
+                &[(0, 1, self.moments.wxy)],
+                (self.moments.wz, self.moments.wz2),
             ),
             |c| {
                 weighted_mean(
@@ -808,13 +772,13 @@ impl Profile3D {
             &self.title,
             root_stats(
                 self.entries,
-                (self.tsumw, self.tsumw2),
-                [self.tsumwx, self.tsumwy, self.tsumwz],
-                [self.tsumwx2, self.tsumwy2, self.tsumwz2],
+                (self.moments.w, self.moments.w2),
+                [self.moments.wx, self.moments.wy, self.moments.wz],
+                [self.moments.wx2, self.moments.wy2, self.moments.wz2],
                 &[
-                    (0, 1, self.tsumwxy),
-                    (0, 2, self.tsumwxz),
-                    (1, 2, self.tsumwyz),
+                    (0, 1, self.moments.wxy),
+                    (0, 2, self.moments.wxz),
+                    (1, 2, self.moments.wyz),
                 ],
                 (self.tsumwt, self.tsumwt2),
             ),
@@ -853,9 +817,9 @@ mod tests {
         assert_eq!(r.sumw2, vec![1.0, 4.0, 0.0, 9.0, 1.0]);
         // The sums of the fills: four entries, and 7.0 where it was filled,
         // not at its bin's center.
-        assert_eq!((r.tsumw, r.tsumw2, r.entries), (5.0, 13.0, 4.0));
-        assert_eq!(r.tsumwx, 2.0 * 0.5 + 3.0 * 7.0);
-        assert_eq!(r.tsumwx2, 2.0 * 0.25 + 3.0 * 49.0);
+        assert_eq!((r.moments.w, r.moments.w2, r.entries), (5.0, 13.0, 4.0));
+        assert_eq!(r.moments.wx, 2.0 * 0.5 + 3.0 * 7.0);
+        assert_eq!(r.moments.wx2, 2.0 * 0.25 + 3.0 * 49.0);
         assert_eq!(r.xaxis.title, "x [cm]");
         assert_eq!(r.class_name(), "TH1D");
         let back = r.to_hist().unwrap();
@@ -872,10 +836,13 @@ mod tests {
         h2.fill(9.0, 1.0);
         let r = h2.to_root().unwrap();
         let s = h2.fill_stats().unwrap();
-        assert_eq!((r.entries, r.tsumw, r.tsumw2), (3.0, 2.5, 4.25));
-        assert_eq!((r.tsumwx, r.tsumwy), (s.sum_wx[0], s.sum_wx[1]));
-        assert_eq!((r.tsumwx2, r.tsumwy2), (s.sum_wxy[0][0], s.sum_wxy[1][1]));
-        assert_eq!(r.tsumwxy, s.sum_wxy[0][1]);
+        assert_eq!((r.entries, r.moments.w, r.moments.w2), (3.0, 2.5, 4.25));
+        assert_eq!((r.moments.wx, r.moments.wy), (s.sum_wx[0], s.sum_wx[1]));
+        assert_eq!(
+            (r.moments.wx2, r.moments.wy2),
+            (s.sum_wxy[0][0], s.sum_wxy[1][1])
+        );
+        assert_eq!(r.moments.wxy, s.sum_wxy[0][1]);
         assert_eq!(r.to_hist().unwrap().fill_stats(), Some(s));
 
         let mut h3 = Hist::reg(2, 0.0, 2.0)
@@ -884,7 +851,10 @@ mod tests {
             .double();
         h3.fill_weight(0.25, 1.0, 1.75, 2.0);
         let r = h3.to_root().unwrap();
-        assert_eq!((r.tsumwxy, r.tsumwxz, r.tsumwyz), (0.5, 0.875, 3.5));
+        assert_eq!(
+            (r.moments.wxy, r.moments.wxz, r.moments.wyz),
+            (0.5, 0.875, 3.5)
+        );
         assert_eq!(r.to_hist().unwrap().fill_stats(), h3.fill_stats());
 
         let mut p = Hist::reg(4, 0.0, 4.0).weighted_mean();
@@ -893,15 +863,18 @@ mod tests {
         p.fill_sample(7.0, 3.0);
         let r = p.to_root().unwrap();
         // ROOT's TProfile::GetStats for these fills.
-        assert_eq!((r.entries, r.tsumw, r.tsumw2), (3.0, 3.0, 5.0));
-        assert_eq!((r.tsumwx, r.tsumwx2), (2.25, 2.0625));
-        assert_eq!((r.tsumwy, r.tsumwy2), (25.0, 225.0));
+        assert_eq!((r.entries, r.moments.w, r.moments.w2), (3.0, 3.0, 5.0));
+        assert_eq!((r.moments.wx, r.moments.wx2), (2.25, 2.0625));
+        assert_eq!((r.moments.wy, r.moments.wy2), (25.0, 225.0));
         assert_eq!(r.to_hist().unwrap().fill_stats(), p.fill_stats());
 
         let mut p2 = Hist::reg(2, 0.0, 2.0).reg(2, 0.0, 2.0).mean();
         p2.fill_sample(0.5, 1.5, 4.0);
         let r = p2.to_root().unwrap();
-        assert_eq!((r.tsumwxy, r.tsumwz, r.tsumwz2), (0.75, 4.0, 16.0));
+        assert_eq!(
+            (r.moments.wxy, r.moments.wz, r.moments.wz2),
+            (0.75, 4.0, 16.0)
+        );
         assert_eq!(r.to_hist().unwrap().fill_stats(), p2.fill_stats());
     }
 
@@ -914,7 +887,7 @@ mod tests {
         let bare =
             Histogram::<Weight, 1>::from_bins([filled.axis(0).clone()], filled.bins()).unwrap();
         let r = bare.to_root().unwrap();
-        assert_eq!((r.entries, r.tsumw, r.tsumwx), (2.5, 2.5, 1.25));
+        assert_eq!((r.entries, r.moments.w, r.moments.wx), (2.5, 2.5, 1.25));
         // The file then carries those sums, and reading takes them as they
         // are.
         assert_eq!(r.to_hist().unwrap().mean(), 0.5);
@@ -922,10 +895,7 @@ mod tests {
         // A ROOT histogram with entries but no sums (SetBinContent) reads
         // without fill statistics, as ROOT recomputes them from the bins.
         let mut set = filled.to_root().unwrap();
-        set.tsumw = 0.0;
-        set.tsumw2 = 0.0;
-        set.tsumwx = 0.0;
-        set.tsumwx2 = 0.0;
+        set.moments = Moments::default();
         let back = set.to_hist().unwrap();
         assert!(back.fill_stats().is_none());
         assert_eq!(back.mean(), 0.5);
@@ -979,7 +949,7 @@ mod tests {
         let r = h.to_root().unwrap();
         // ROOT cell = ix + (nx + 2) * iy, with 1-based in-range bins.
         assert_eq!(r.contents[2 + 4 * 3], 1.0);
-        assert_eq!(r.tsumwxy, 1.5 * 2.5);
+        assert_eq!(r.moments.wxy, 1.5 * 2.5);
         assert_eq!(r.to_hist().unwrap(), h);
         let h3 = Hist::reg(2, 0.0, 2.0)
             .reg(2, 0.0, 2.0)
@@ -1022,7 +992,7 @@ mod tests {
         assert_eq!(r.xaxis.nbins, 1);
         assert_eq!(r.contents, vec![0.0, 0.0, 1.0]);
         assert_eq!(r.sumw2.len(), r.contents.len());
-        assert_eq!((r.tsumw, r.entries), (0.0, 1.0));
+        assert_eq!((r.moments.w, r.entries), (0.0, 1.0));
         // Read back, it is a one-bin regular axis with the overflow kept.
         let back = r.to_hist().unwrap();
         assert_eq!(back.axis(0).size(), 1);

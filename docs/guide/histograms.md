@@ -255,6 +255,7 @@ is provided (no `rand` dependency, reproducible draws).
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::Random;
 
 let mut source = Hist::reg(100, -5.0, 5.0).double();
 for x in [-1.0, 0.0, 0.0, 1.0] {
@@ -293,6 +294,7 @@ otherwise.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::oxihist::Chi2TestKind;
 
 let mut data = Hist::reg(10, 0.0, 10.0).double();
 let mut model = data.clone();
@@ -373,6 +375,7 @@ back; the contents are narrowed only at write time.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::BinContentType;
 
 let h = Hist::reg(100, 0.0, 1.0).double().named("h")
     .to_root()?

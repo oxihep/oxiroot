@@ -67,7 +67,7 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "{} entries, fields: {:?}",
         ntpl.entries(),
-        ntpl.field_names()
+        ntpl.field_names().collect::<Vec<_>>()
     );
     for name in ["tags", "hits", "clusters"] {
         println!("  {name} = {:?}", ntpl.field(name).values()?);

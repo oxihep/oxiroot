@@ -28,6 +28,7 @@ use crate::error::{Error, Result};
 use crate::object::TagReader;
 use crate::streamer::{read_named, read_object_base};
 use crate::streamer_info::{StreamerElement, StreamerRegistry};
+use crate::streamer_types::*;
 use crate::value::Value;
 
 /// Guard against a cyclic or pathologically deep streamer graph.
@@ -158,7 +159,7 @@ fn walk(
         return Ok(());
     }
     for el in elements {
-        if el.element_class == "TStreamerBase" {
+        if el.kind() == ElementKind::Base {
             read_base(reg, &el.name, r, tags, members, depth)?;
             continue;
         }
@@ -247,15 +248,15 @@ fn read_member(
 ) -> Result<Option<Value>> {
     let t = el.el_type;
     let v = match t {
-        65 => Value::Str(r.string()?), // kTString
-        66 => {
+        K_TSTRING => Value::Str(r.string()?),
+        K_TOBJECT => {
             read_object_base(r)?;
             Value::Object {
                 class: "TObject".to_string(),
                 members: Vec::new(),
             }
         }
-        67 => {
+        K_TNAMED => {
             let n = read_named(r)?;
             Value::Object {
                 class: "TNamed".to_string(),
@@ -266,23 +267,29 @@ fn read_member(
             }
         }
         // Inline object by value (kObject / kAny).
-        61 | 62 => read_named_object(reg, &el.type_name, r, tags, depth + 1)?,
+        K_OBJECT | K_ANY => read_named_object(reg, &el.type_name, r, tags, depth + 1)?,
         // Object pointer (kObjectp / kObjectP / kAnyp / kAnyP): ReadObjectAny.
-        63 | 64 | 68 | 69 => read_ref_object(reg, r, tags, depth + 1)?,
+        K_OBJECT_ARROW | K_OBJECT_PTR | K_ANY_ARROW | K_ANY_PTR => {
+            read_ref_object(reg, r, tags, depth + 1)?
+        }
         // STL container (kStreamer / kSTL / kSTLstring / legacy variants).
-        300..=365 | 500 => read_stl(reg, el, r, tags, depth)?,
+        K_STL_FIRST..=K_STL_STRING | K_STL => read_stl(reg, el, r, tags, depth)?,
         // `T* //[fCount]` array of objects (kStreamLoop).
-        501 => read_stream_loop(reg, el, r, tags, read_so_far, depth)?,
+        K_STREAM_LOOP => read_stream_loop(reg, el, r, tags, read_so_far, depth)?,
         // Fixed C array `T[fArrayLength]` (kOffsetL + basic).
-        21..=39 => match read_fixed_array(el, t - 20, r)? {
-            Some(v) => v,
-            None => return Ok(None),
-        },
+        t if (K_OFFSET_L + 1..K_OFFSET_P).contains(&t) => {
+            match read_fixed_array(el, t - K_OFFSET_L, r)? {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
         // Variable array `T* //[fCount]` (kOffsetP + basic).
-        41..=59 => match read_ptr_array(el, t - 40, r, read_so_far)? {
-            Some(v) => v,
-            None => return Ok(None),
-        },
+        t if (K_OFFSET_P + 1..K_OBJECT - 1).contains(&t) => {
+            match read_ptr_array(el, t - K_OFFSET_P, r, read_so_far)? {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
         // Basic scalar.
         _ => match read_basic(r, t)? {
             Some(v) => v,
@@ -371,7 +378,7 @@ fn read_collection(
             items.push(element);
         }
         if is_list {
-            r.string()?; // the per-object option string (TList only)
+            r.skip_string()?; // the per-object option string (TList only)
         }
     }
     if let Some(end) = vh.end {
@@ -400,12 +407,12 @@ fn read_tarray(base: i32, r: &mut RBuffer<'_>) -> Result<Value> {
 /// Map a `TArrayX` class to the basic streamer type of its elements.
 fn tarray_elem(class: &str) -> Option<i32> {
     Some(match class {
-        "TArrayC" => 1,
-        "TArrayS" => 2,
-        "TArrayI" => 3,
-        "TArrayL" | "TArrayL64" => 16,
-        "TArrayF" => 5,
-        "TArrayD" => 8,
+        "TArrayC" => K_CHAR,
+        "TArrayS" => K_SHORT,
+        "TArrayI" => K_INT,
+        "TArrayL" | "TArrayL64" => K_LONG64,
+        "TArrayF" => K_FLOAT,
+        "TArrayD" => K_DOUBLE,
         _ => return None,
     })
 }
@@ -459,19 +466,20 @@ fn read_ptr_array(
 /// their on-disk width (a 4-byte float / a 2-byte packed half).
 fn read_basic(r: &mut RBuffer<'_>, t: i32) -> Result<Option<Value>> {
     Ok(Some(match t {
-        1 => Value::I8(r.i8()?),                 // kChar
-        11 => Value::U8(r.u8()?),                // kUChar
-        18 => Value::Bool(r.u8()? != 0),         // kBool
-        2 => Value::I16(r.be_i16()?),            // kShort
-        12 => Value::U16(r.be_u16()?),           // kUShort
-        3 | 6 => Value::I32(r.be_i32()?),        // kInt / kCounter
-        13 | 15 => Value::U32(r.be_u32()?),      // kUInt / kBits
-        5 => Value::F32(r.be_f32()?),            // kFloat
-        9 => Value::F64(f64::from(r.be_f32()?)), // kDouble32 (default: 4-byte float)
-        8 => Value::F64(r.be_f64()?),            // kDouble
-        4 | 16 => Value::I64(r.be_i64()?),       // kLong / kLong64
-        14 | 17 => Value::U64(r.be_u64()?),      // kULong / kULong64
-        19 => {
+        K_CHAR => Value::I8(r.i8()?),
+        K_UCHAR => Value::U8(r.u8()?),
+        K_BOOL => Value::Bool(r.u8()? != 0),
+        K_SHORT => Value::I16(r.be_i16()?),
+        K_USHORT => Value::U16(r.be_u16()?),
+        K_INT | K_COUNTER => Value::I32(r.be_i32()?),
+        K_UINT | K_BITS => Value::U32(r.be_u32()?),
+        K_FLOAT => Value::F32(r.be_f32()?),
+        // By default a 4-byte float on disk.
+        K_DOUBLE32 => Value::F64(f64::from(r.be_f32()?)),
+        K_DOUBLE => Value::F64(r.be_f64()?),
+        K_LONG | K_LONG64 => Value::I64(r.be_i64()?),
+        K_ULONG | K_ULONG64 => Value::U64(r.be_u64()?),
+        K_FLOAT16 => {
             r.be_u16()?; // kFloat16: packed half — consumed, not decoded
             unsupported("Float16_t", "packed half-float not decoded")
         }
@@ -802,7 +810,7 @@ fn pair_value(first: Value, second: Value) -> Value {
 
 /// Whether a streamer element is a base-class slot.
 fn is_base(el: &StreamerElement) -> bool {
-    el.element_class == "TStreamerBase"
+    el.kind() == ElementKind::Base
 }
 
 /// Strip a leading `std::` and the surrounding whitespace from a type name.

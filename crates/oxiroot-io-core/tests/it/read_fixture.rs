@@ -39,8 +39,9 @@ fn reads_th1d_uncompressed_container() {
     // The fixture is uncompressed: on-disk payload length == uncompressed length.
     assert!(k.is_uncompressed());
     assert_eq!(k.payload_len(), k.obj_len as usize);
-    // The key's payload range must lie within the file.
-    assert!(k.payload_range().end as u64 <= f.size());
+    // The key's payload must lie within the file.
+    assert_eq!(k.checked_payload_len().unwrap(), k.obj_len as usize);
+    assert!(f.key_payload(&k).is_ok());
 }
 
 #[test]

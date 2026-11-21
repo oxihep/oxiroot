@@ -15,7 +15,7 @@ pub struct Axis {
     /// Axis title (`fTitle`).
     pub title: String,
     /// Number of bins (`fNbins`).
-    pub(crate) nbins: i32,
+    pub(crate) nbins: usize,
     /// Low edge of the axis range (`fXmin`).
     pub(crate) xmin: f64,
     /// High edge of the axis range (`fXmax`).
@@ -39,7 +39,7 @@ pub struct Axis {
 impl Axis {
     /// Create a uniform axis of `nbins` bins over `[xmin, xmax)`.
     #[must_use]
-    pub fn new(name: &str, nbins: i32, xmin: f64, xmax: f64) -> Self {
+    pub fn new(name: &str, nbins: usize, xmin: f64, xmax: f64) -> Self {
         Self {
             name: name.to_string(),
             title: String::new(),
@@ -81,7 +81,7 @@ impl Axis {
         Self {
             name: name.to_string(),
             title: String::new(),
-            nbins: i32::saturating_from(edges.len().saturating_sub(1)),
+            nbins: edges.len().saturating_sub(1),
             xmin: edges.first().copied().unwrap_or(0.0),
             xmax: edges.last().copied().unwrap_or(0.0),
             xbins: edges.to_vec(),
@@ -101,7 +101,7 @@ impl Axis {
     )]
     #[must_use]
     pub fn find_bin(&self, x: f64) -> usize {
-        let n = usize::saturating_from(self.nbins.max(0));
+        let n = self.nbins;
         if n == 0 {
             return 0;
         }
@@ -134,9 +134,7 @@ impl Axis {
     /// without allocating either edge array.
     #[must_use]
     pub fn same_binning(&self, other: &Self) -> bool {
-        self.nbins == other.nbins
-            && (0..=usize::saturating_from(self.nbins.max(0)))
-                .all(|i| self.edge(i) == other.edge(i))
+        self.nbins == other.nbins && (0..=self.nbins).all(|i| self.edge(i) == other.edge(i))
     }
 
     /// Read an `Axis` from `r` (positioned at the axis's `{byte-count, version}`
@@ -160,7 +158,8 @@ impl Axis {
         let named = read_named(r)?; // Named base
         skip_versioned(r)?; // TAttAxis base (drawing attributes — not needed)
 
-        let nbins = r.be_i32()?;
+        let nbins = usize::try_from(r.be_i32()?)
+            .map_err(|_| Error::Format("TAxis has a negative bin count".into()))?;
         let xmin = r.be_f64()?;
         let xmax = r.be_f64()?;
 
@@ -185,7 +184,7 @@ impl Axis {
         let time_display = r.u8()? != 0;
         let time_format = r.string()?;
         let labels = if vh.version >= 7 {
-            read_labels(r, usize::saturating_from(nbins.max(0)))? // fLabels (THashList*)
+            read_labels(r, nbins)? // fLabels (THashList*)
         } else {
             Vec::new()
         };
@@ -259,7 +258,7 @@ impl Axis {
     ///
     /// [`Error::InvalidInput`] if the axis has no bin `bin`.
     pub fn set_label(&mut self, bin: usize, label: &str) -> Result<()> {
-        let n = usize::saturating_from(self.nbins.max(0));
+        let n = self.nbins;
         if bin < 1 || bin > n {
             return Err(Error::InvalidInput(format!(
                 "no bin {bin} to label on an axis of {n} bins (bins are numbered from 1)"
@@ -278,7 +277,7 @@ impl Axis {
         if !self.xbins.is_empty() {
             return self.xbins.clone();
         }
-        let n = usize::saturating_from(self.nbins.max(0));
+        let n = self.nbins;
         if n == 0 {
             return vec![self.xmin, self.xmax];
         }
@@ -294,7 +293,7 @@ impl Axis {
         if !self.xbins.is_empty() {
             return self.xbins[i.min(self.xbins.len() - 1)];
         }
-        let n = usize::saturating_from(self.nbins.max(0));
+        let n = self.nbins;
         if n == 0 {
             return if i == 0 { self.xmin } else { self.xmax };
         }
@@ -305,7 +304,7 @@ impl Axis {
     /// The low and high edges of bin `bin` (1-based), or `None` if the axis
     /// has no such bin (the flow bins have no edges).
     fn bin_edges(&self, bin: usize) -> Option<(f64, f64)> {
-        let n = usize::saturating_from(self.nbins.max(0));
+        let n = self.nbins;
         (1..=n)
             .contains(&bin)
             .then(|| (self.edge(bin - 1), self.edge(bin)))
@@ -333,11 +332,11 @@ impl Axis {
 
 /// Check a `TAxis`'s variable edges (`fXbins`) against its bin count: none (a
 /// uniform axis), or exactly `nbins + 1` strictly ascending values.
-fn check_edges(nbins: i32, xbins: &[f64]) -> Result<()> {
+fn check_edges(nbins: usize, xbins: &[f64]) -> Result<()> {
     if xbins.is_empty() {
         return Ok(());
     }
-    let expected = usize::saturating_from(nbins.max(0)) + 1;
+    let expected = nbins + 1;
     if xbins.len() != expected {
         return Err(Error::Format(format!(
             "TAxis has {} bin edges for {nbins} bins, not {expected}",
@@ -363,7 +362,7 @@ fn read_labels(r: &mut RBuffer<'_>, nbins: usize) -> Result<Vec<String>> {
     }
     r.read_version()?; // THashList (a TList, version 5)
     read_object_base(r)?;
-    let _name = r.string()?; // fName (empty)
+    r.skip_string()?; // fName (empty)
     let size = usize::saturating_from(r.be_i32()?.max(0));
 
     let mut labels = vec![String::new(); nbins];
@@ -381,7 +380,7 @@ fn read_labels(r: &mut RBuffer<'_>, nbins: usize) -> Result<Vec<String>> {
         if let Some(end) = body.end {
             r.seek(end)?;
         }
-        let _option = r.string()?; // per-element option string (empty), as in TList
+        r.skip_string()?; // per-element option string (empty), as in TList
     }
     if labels.iter().all(String::is_empty) {
         return Ok(Vec::new());

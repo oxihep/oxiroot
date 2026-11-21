@@ -11,7 +11,7 @@ use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::base::BinContentType;
-use crate::hist1d::Hist1D;
+use crate::record::Hist1D;
 
 /// How a [`Efficiency`]'s confidence interval is computed (ROOT's
 /// `TEfficiency::EStatOption`).
@@ -112,7 +112,7 @@ impl Efficiency {
     /// Create an empty `Efficiency` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and ROOT's default interval parameters.
     #[must_use]
-    pub fn new(nbins: i32, xlo: f64, xhi: f64) -> Self {
+    pub fn new(nbins: usize, xlo: f64, xhi: f64) -> Self {
         let total = Hist1D::new(nbins, xlo, xhi).named("total");
         let passed = Hist1D::new(nbins, xlo, xhi).named("passed");
         Self {

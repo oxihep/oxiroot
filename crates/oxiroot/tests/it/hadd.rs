@@ -1,5 +1,6 @@
 //! End-to-end `hadd`-style file merging via [`oxiroot::hadd`].
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::file::ObjString;
 use oxiroot::hadd::{MergeKind, Merger};
 use oxiroot::ntuple::NtupleReader;
 use oxiroot::ntuple::raw::{Field, FieldValues};

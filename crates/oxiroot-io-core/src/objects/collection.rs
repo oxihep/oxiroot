@@ -9,6 +9,7 @@
 //! reads `TList`/`TObjArray` but has no `ObjMap` model — see [`ObjMap`].)
 
 use crate::cast::SaturatingFrom;
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::FileReader;
@@ -52,7 +53,7 @@ pub struct ObjList {
     kind: ListKind,
     name: String,
     /// Each member as `(class_name, streamed object body)`.
-    members: Vec<(String, Vec<u8>)>,
+    members: Vec<Member>,
     /// The streamer info the members added with [`add`](ObjList::add) need.
     streamers: StreamerSet,
     /// Set for a list read from a file; see [`Origin`].
@@ -97,8 +98,7 @@ impl ObjList {
     pub fn add(mut self, object: &dyn WriteRoot) -> Self {
         self.blocked = self.blocked.or_else(|| unappendable(object));
         self.streamers.add(object);
-        self.members
-            .push((object.root_class(), object.to_root_bytes()));
+        self.members.push(Member::of(object));
         self
     }
 
@@ -124,7 +124,7 @@ impl ObjList {
     }
     /// The class name of every member, in order.
     pub fn class_names(&self) -> impl Iterator<Item = &str> {
-        self.members.iter().map(|(c, _)| c.as_str())
+        self.members.iter().map(|m| m.class.as_str())
     }
 
     /// Decode every member that is a `T`, in order, skipping the rest. For
@@ -137,18 +137,18 @@ impl ObjList {
         self.members
             .iter()
             .enumerate()
-            .filter_map(|(i, (class, bytes))| {
-                T::from_object(&member_object(self.origin.as_ref(), i, class, bytes))
+            .filter_map(|(i, m)| {
+                T::from_object(&member_object(self.origin.as_ref(), i, &m.class, &m.body))
             })
             .collect()
     }
 }
 
 impl WriteRoot for ObjList {
-    fn root_class(&self) -> String {
+    fn root_class(&self) -> Cow<'static, str> {
         match self.kind {
-            ListKind::List => "TList".to_string(),
-            ListKind::Array => "TObjArray".to_string(),
+            ListKind::List => Cow::Borrowed("TList"),
+            ListKind::Array => Cow::Borrowed("TObjArray"),
         }
     }
     fn root_name(&self) -> &str {
@@ -166,48 +166,47 @@ impl WriteRoot for ObjList {
                 .map_or(KeyCheck::Any, KeyCheck::Unwritable),
         }
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
+    fn write_body(&self, w: &mut WBuffer) {
         if let Some(origin) = &self.origin {
             // As read, then whatever was added since.
             let added = &self.members[origin.ranges.len().min(self.members.len())..];
-            let mut w = WBuffer::new();
-            for (class, body) in added {
-                write_object_any(&mut w, class, body);
+            let mut tail = WBuffer::new();
+            for m in added {
+                write_object_any(&mut tail, &m.class, &m.body);
                 if self.kind == ListKind::List {
-                    w.string(""); // the per-object option string
+                    tail.string(""); // the per-object option string
                 }
             }
-            return origin.with_appended(&w.into_vec(), added.len());
+            w.bytes(&origin.with_appended(&tail.into_vec(), added.len()));
+            return;
         }
-        let mut w = WBuffer::new();
         match self.kind {
             ListKind::List => {
                 let obj = w.begin_object(5); // TList version 5
-                write_object_base(&mut w, 0);
+                write_object_base(w, 0);
                 w.string(&self.name); // fName
                 w.be_i32(i32::saturating_from(self.members.len())); // nobjects
-                for (class, body) in &self.members {
-                    write_object_any(&mut w, class, body);
+                for m in &self.members {
+                    write_object_any(w, &m.class, &m.body);
                     w.string(""); // the per-object option string
                 }
                 w.end_object(obj);
             }
             ListKind::Array => {
                 let obj = w.begin_object(3); // TObjArray version 3
-                write_object_base(&mut w, 0);
+                write_object_base(w, 0);
                 w.string(&self.name); // fName
                 w.be_i32(i32::saturating_from(self.members.len())); // nobjects
                 w.be_i32(0); // fLowerBound
-                for (class, body) in &self.members {
-                    write_object_any(&mut w, class, body);
+                for m in &self.members {
+                    write_object_any(w, &m.class, &m.body);
                 }
                 w.end_object(obj);
             }
         }
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        member_streamer_classes(&self.streamers, self.members.iter().map(|(c, _)| c))
+        member_streamer_classes(&self.streamers, self.members.iter().map(|m| &m.class))
     }
 }
 
@@ -222,7 +221,7 @@ fn member_streamer_classes<'a>(
     for class in names {
         set.add_classes(member_classes(class));
     }
-    set.classes().to_vec()
+    set.into_classes()
 }
 
 /// The streamer info `file` stores for the classes of `members` (each a class
@@ -240,11 +239,25 @@ fn source_classes<'a>(
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for (class, body) in members {
-        if !class.is_empty() {
-            collect_stored(&infos, class, object_version(body), &mut seen, &mut out);
-        }
+        collect_stored(&infos, class, object_version(body), &mut seen, &mut out);
     }
     out
+}
+
+/// One object in a collection: its class and its streamed body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Member {
+    class: String,
+    body: Vec<u8>,
+}
+
+impl Member {
+    fn of(object: &dyn WriteRoot) -> Self {
+        Self {
+            class: object.root_class().into_owned(),
+            body: object.to_root_bytes(),
+        }
+    }
 }
 
 /// What a collection read from a file keeps of where it came from.
@@ -398,14 +411,14 @@ fn read_members(class: &str, object: &[u8], keylen: usize) -> Result<Members> {
         let header = tags.read_header(&mut r)?;
         match (header.class_name, header.end) {
             (Some(member_class), Some(end)) => {
-                out.push((member_class, r.pos()..end));
+                out.push((member_class.to_string(), r.pos()..end));
                 r.seek(end)?;
             }
             (_, Some(end)) => r.seek(end)?, // a null/parent slot
             _ => {}
         }
         if kind == ListKind::List {
-            r.string()?; // the per-object option string (TList only)
+            r.skip_string()?; // the per-object option string (TList only)
         }
     }
     Ok(Members {
@@ -426,7 +439,10 @@ fn decode_objlist(class: &str, object: &[u8], keylen: usize) -> Result<ObjList> 
     let members = read
         .ranges
         .iter()
-        .map(|(c, range)| (c.clone(), object[range.clone()].to_vec()))
+        .map(|(class, range)| Member {
+            class: class.clone(),
+            body: object[range.clone()].to_vec(),
+        })
         .collect();
     Ok(ObjList {
         kind,
@@ -458,7 +474,10 @@ fn read_back(object: &Object<'_>, mut list: ObjList) -> ObjList {
         origin.key_name = key.to_string();
         origin.key_title = object.title.to_string();
     }
-    let members = list.members.iter().map(|(c, b)| (c.as_str(), b.as_slice()));
+    let members = list
+        .members
+        .iter()
+        .map(|m| (m.class.as_str(), m.body.as_slice()));
     if let Some(file) = file {
         let classes = source_classes(file, members);
         list.streamers.add_classes(classes);
@@ -468,8 +487,8 @@ fn read_back(object: &Object<'_>, mut list: ObjList) -> ObjList {
 
 // --- ObjMap -----------------------------------------------------------------
 
-/// One side of a [`ObjMap`] pair: a member's `(class_name, streamed body)`.
-type MapEntry = (String, Vec<u8>);
+/// One side of a [`ObjMap`] pair: an object, or `None` for a null pointer.
+type MapEntry = Option<Member>;
 
 /// An `ObjMap` — ROOT's keyed map of object → object, stored under one key (the way
 /// ROOT keeps string-keyed metadata). Build it with [`ObjMap::insert`]; read one back with
@@ -526,10 +545,8 @@ impl ObjMap {
         let key: &dyn WriteRoot = &ObjString::new(key);
         self.streamers.add(key);
         self.streamers.add(value);
-        self.pairs.push((
-            (key.root_class(), key.to_root_bytes()),
-            (value.root_class(), value.to_root_bytes()),
-        ));
+        self.pairs
+            .push((Some(Member::of(key)), Some(Member::of(value))));
         self
     }
 
@@ -555,14 +572,11 @@ impl ObjMap {
     pub fn string_keys(&self) -> Vec<String> {
         self.pairs
             .iter()
-            .filter_map(|((kc, kb), _)| {
-                (kc == "TObjString")
-                    .then(|| {
-                        decode_tobjstring("", kc, kb)
-                            .ok()
-                            .map(|s| s.value().to_string())
-                    })
-                    .flatten()
+            .filter_map(|(key, _)| {
+                let key = key.as_ref().filter(|k| k.class == "TObjString")?;
+                decode_tobjstring("", &key.class, &key.body)
+                    .ok()
+                    .map(|s| s.value().to_string())
             })
             .collect()
     }
@@ -571,21 +585,22 @@ impl ObjMap {
     /// entry has that `ObjString` key or its value is not a `T`.
     #[must_use]
     pub fn get<T: ReadRoot>(&self, key: &str) -> Option<Result<T>> {
-        self.pairs
-            .iter()
-            .enumerate()
-            .find_map(|(i, ((kc, kb), (vc, vb)))| {
-                if kc != "TObjString" {
-                    return None;
+        self.pairs.iter().enumerate().find_map(|(i, (k, v))| {
+            let k = k.as_ref().filter(|k| k.class == "TObjString")?;
+            match decode_tobjstring("", &k.class, &k.body) {
+                Ok(name) if name.value() == key => {
+                    let v = v.as_ref()?;
+                    T::from_object(&member_object(
+                        self.origin.as_ref(),
+                        2 * i + 1,
+                        &v.class,
+                        &v.body,
+                    ))
                 }
-                match decode_tobjstring("", kc, kb) {
-                    Ok(k) if k.value() == key => {
-                        T::from_object(&member_object(self.origin.as_ref(), 2 * i + 1, vc, vb))
-                    }
-                    Ok(_) => None,
-                    Err(e) => Some(Err(e)),
-                }
-            })
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
     }
 
     /// Every value that is a `T`, in insertion order.
@@ -597,16 +612,22 @@ impl ObjMap {
         self.pairs
             .iter()
             .enumerate()
-            .filter_map(|(i, (_, (vc, vb)))| {
-                T::from_object(&member_object(self.origin.as_ref(), 2 * i + 1, vc, vb))
+            .filter_map(|(i, (_, v))| {
+                let v = v.as_ref()?;
+                T::from_object(&member_object(
+                    self.origin.as_ref(),
+                    2 * i + 1,
+                    &v.class,
+                    &v.body,
+                ))
             })
             .collect()
     }
 }
 
 impl WriteRoot for ObjMap {
-    fn root_class(&self) -> String {
-        "TMap".to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed("TMap")
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -623,34 +644,46 @@ impl WriteRoot for ObjMap {
                 .map_or(KeyCheck::Any, KeyCheck::Unwritable),
         }
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
+    fn write_body(&self, w: &mut WBuffer) {
         if let Some(origin) = &self.origin {
             // As read, then whatever was inserted since.
             let added = &self.pairs[(origin.ranges.len() / 2).min(self.pairs.len())..];
-            let mut w = WBuffer::new();
-            for ((kc, kb), (vc, vb)) in added {
-                write_object_any(&mut w, kc, kb);
-                write_object_any(&mut w, vc, vb);
+            let mut tail = WBuffer::new();
+            for (key, value) in added {
+                write_entry(&mut tail, key.as_ref());
+                write_entry(&mut tail, value.as_ref());
             }
-            return origin.with_appended(&w.into_vec(), added.len());
+            w.bytes(&origin.with_appended(&tail.into_vec(), added.len()));
+            return;
         }
-        let mut w = WBuffer::new();
         let obj = w.begin_object(3); // TMap version 3
-        write_object_base(&mut w, 0);
+        write_object_base(w, 0);
         w.string(&self.name); // fName
         w.be_i32(i32::saturating_from(self.pairs.len())); // number of pairs
-        for ((kc, kb), (vc, vb)) in &self.pairs {
-            write_object_any(&mut w, kc, kb); // key object
-            write_object_any(&mut w, vc, vb); // value object
+        for (key, value) in &self.pairs {
+            write_entry(w, key.as_ref()); // key object
+            write_entry(w, value.as_ref()); // value object
         }
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         member_streamer_classes(
             &self.streamers,
-            self.pairs.iter().flat_map(|((kc, _), (vc, _))| [kc, vc]),
+            self.pairs
+                .iter()
+                .flat_map(|(key, value)| [key, value])
+                .flatten()
+                .map(|m| &m.class),
         )
+    }
+}
+
+/// Write one side of a pair: the object, or a null pointer where there is
+/// none.
+fn write_entry(w: &mut WBuffer, entry: Option<&Member>) {
+    match entry {
+        Some(m) => write_object_any(w, &m.class, &m.body),
+        None => w.be_u32(0),
     }
 }
 
@@ -667,13 +700,19 @@ fn read_entry(
             let range = r.pos()..end;
             let body = object[range.clone()].to_vec();
             r.seek(end)?;
-            ((class, body), range)
+            (
+                Some(Member {
+                    class: class.to_string(),
+                    body,
+                }),
+                range,
+            )
         }
         (_, Some(end)) => {
             r.seek(end)?;
-            ((String::new(), Vec::new()), 0..0)
+            (None, 0..0)
         }
-        _ => ((String::new(), Vec::new()), 0..0),
+        _ => (None, 0..0),
     };
     Ok(entry)
 }
@@ -736,7 +775,8 @@ fn map_read_back(object: &Object<'_>, mut map: ObjMap) -> ObjMap {
             .pairs
             .iter()
             .flat_map(|(key, value)| [key, value])
-            .map(|(c, b)| (c.as_str(), b.as_slice()));
+            .flatten()
+            .map(|m| (m.class.as_str(), m.body.as_slice()));
         let classes = source_classes(file, entries);
         map.streamers.add_classes(classes);
     }

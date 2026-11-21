@@ -17,7 +17,10 @@ fn reads_flat_primitive_tree() {
     let f = FileReader::open(fixture("tree_flat.root")).expect("open");
     let t = TreeReader::open(&f, "Events").expect("open tree");
     assert_eq!(t.entries(), 5);
-    assert_eq!(t.branch_names(), ["i4", "i8", "f4", "f8", "b1", "u4"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["i4", "i8", "f4", "f8", "b1", "u4"]
+    );
     check_values(&t);
 }
 

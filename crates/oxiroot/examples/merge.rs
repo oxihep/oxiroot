@@ -12,6 +12,7 @@
 //! hadd merged.root run1.root run2.root
 //! ```
 
+use oxiroot::file::ObjString;
 use oxiroot::hadd::Merger;
 use oxiroot::prelude::*;
 

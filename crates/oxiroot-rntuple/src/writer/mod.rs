@@ -25,10 +25,7 @@ mod lower;
 mod streaming;
 
 use classes::ntuple_classes;
-use envelopes::{
-    build_anchor, build_footer, build_footer_ext, build_header, build_page_list,
-    build_page_list_offsets,
-};
+use envelopes::{Extension, PageRec, build_anchor, build_footer, build_header, build_page_list};
 pub use fields::{Column, Field};
 use lower::{ColumnPlan, FieldPlan, lower};
 pub use streaming::NtupleWriter;
@@ -206,48 +203,41 @@ fn write_one_rntuple<W: Write + Seek>(
         page_offsets.push(offset(file.place_blob(dp)?)?);
     }
     let page_list_offset = offset(file.position())?;
-    let footer_env = if let Some(ext) = &p.ext {
-        // Schema-extended: the late columns' pages start at their first element
-        // index (the page list records the offset), and the late field/column
-        // descriptors go in the footer's schema-extension record.
-        let page_list_env = build_page_list_offsets(
-            p.n_entries,
-            &page_offsets,
-            &p.disk_sizes,
-            &p.cols,
-            &ext.element_offsets,
-            compression,
-            p.header_checksum,
-        )?;
-        file.place_blob(&page_list_env)?;
-        build_footer_ext(
-            p.n_entries,
-            1,
-            page_list_offset,
-            page_list_env.len(),
-            p.header_checksum,
-            &ext.ext_fields,
-            &p.cols[ext.base_col_count..],
-            &ext.first_entries,
-        )
-    } else {
-        let page_list_env = build_page_list(
-            p.n_entries,
-            &page_offsets,
-            &p.disk_sizes,
-            &p.cols,
-            compression,
-            p.header_checksum,
-        )?;
-        file.place_blob(&page_list_env)?;
-        build_footer(
-            p.n_entries,
-            1,
-            page_list_offset,
-            page_list_env.len(),
-            p.header_checksum,
-        )
-    };
+    // One cluster. A column added late starts at its first entry: the page
+    // list records that, and the footer's extension record describes it.
+    let pages = (p
+        .cols
+        .iter()
+        .zip(&page_offsets)
+        .zip(&p.disk_sizes)
+        .enumerate())
+    .map(|(i, ((c, &at), &disk_size))| PageRec {
+        offset: at as u64,
+        disk_size,
+        n_elements: c.n,
+        element_offset: p.ext.as_ref().map_or(0, |ext| ext.element_offsets[i]),
+    })
+    .collect();
+    let page_list_env = build_page_list(
+        &[(0, u64::from(p.n_entries))],
+        &[pages],
+        compression,
+        p.header_checksum,
+    )?;
+    file.place_blob(&page_list_env)?;
+    let extension = p.ext.as_ref().map(|ext| Extension {
+        fields: &ext.ext_fields,
+        columns: &p.cols[ext.base_col_count..],
+        first_entries: &ext.first_entries,
+    });
+    let footer_env = build_footer(
+        p.n_entries,
+        1,
+        page_list_offset,
+        page_list_env.len(),
+        p.header_checksum,
+        extension.as_ref(),
+    );
     let seek_footer = file.place_blob(&footer_env)?;
 
     let anchor = build_anchor(

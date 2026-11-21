@@ -18,7 +18,7 @@ use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
 use crate::base::{BinContentType, bin_content_type_of, check_len};
-use crate::hist1d::Hist1D;
+use crate::record::Hist1D;
 use oxiroot_io_core::cast::SaturatingFrom;
 
 /// Error bars attached to a graph's points.
@@ -277,6 +277,23 @@ impl Graph {
     }
 }
 
+/// The start of a `TGraph` record, after its version header: the name and
+/// title, the three attribute bases, then the points. Every class built on
+/// `TGraph` reads this much the same way; they differ in what they take from
+/// the rest of the record.
+pub(crate) fn read_graph_points(
+    r: &mut RBuffer<'_>,
+) -> Result<(oxiroot_io_core::raw::Named, Vec<f64>, Vec<f64>)> {
+    let named = read_named(r)?;
+    skip_versioned(r)?; // TAttLine
+    skip_versioned(r)?; // TAttFill
+    skip_versioned(r)?; // TAttMarker
+    let npoints = usize::saturating_from(r.be_i32()?.max(0));
+    let x = read_basic_array(r, npoints)?;
+    let y = read_basic_array(r, npoints)?;
+    Ok((named, x, y))
+}
+
 /// Read the `Graph` base (`fName`/`fTitle`/`fX`/`fY`), then seek past the
 /// trailer (`fFunctions`/`fHistogram`/…) to the base object's end.
 ///
@@ -285,13 +302,7 @@ impl Graph {
 /// whose class back-references point outside the slice.
 fn read_tgraph_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -> Result<Graph> {
     let base = r.read_version()?; // Graph v5
-    let named = read_named(r)?;
-    skip_versioned(r)?; // TAttLine
-    skip_versioned(r)?; // TAttFill
-    skip_versioned(r)?; // TAttMarker
-    let npoints = usize::saturating_from(r.be_i32()?.max(0));
-    let x = read_basic_array(r, npoints)?;
-    let y = read_basic_array(r, npoints)?;
+    let (named, x, y) = read_graph_points(r)?;
     let functions = match tags {
         Some(tags) => read_functions(r, tags)?, // fFunctions (TList<Func1D>)
         None => read_functions_untracked(r)?,
@@ -341,7 +352,7 @@ pub(crate) fn read_function_list(
 ) -> Result<Vec<GraphFunction>> {
     let list = r.read_version()?; // TList v5
     let _obj = read_object_base(r)?; // TObject base
-    let _name = r.string()?; // fName (empty)
+    r.skip_string()?; // fName (empty)
     let nfns = usize::saturating_from(r.be_i32()?.max(0));
     let mut functions = Vec::new();
     for _ in 0..nfns {
@@ -353,7 +364,7 @@ pub(crate) fn read_function_list(
             r.seek(end)?;
         }
         // Each element carries an option TString trailer in the TList.
-        let _opt = r.string()?;
+        r.skip_string()?;
     }
     if let Some(end) = list.end {
         r.seek(end)?;
@@ -370,7 +381,7 @@ fn read_functions_untracked(r: &mut RBuffer<'_>) -> Result<Vec<GraphFunction>> {
     };
     let _ver = r.read_version()?; // TList v5
     let _obj = read_object_base(r)?; // TObject base
-    let _name = r.string()?; // fName (empty)
+    r.skip_string()?; // fName (empty)
     let nfns = usize::saturating_from(r.be_i32()?.max(0));
     let mut functions = Vec::new();
     for _ in 0..nfns {
@@ -381,7 +392,7 @@ fn read_functions_untracked(r: &mut RBuffer<'_>) -> Result<Vec<GraphFunction>> {
             r.seek(element.end)?;
         }
         // Each element carries an option TString trailer in the TList.
-        let _opt = r.string()?;
+        r.skip_string()?;
     }
     r.seek(end)?; // skip any remaining TList payload
     Ok(functions)

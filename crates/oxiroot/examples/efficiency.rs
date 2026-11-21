@@ -10,7 +10,6 @@
 //! ```
 
 use oxiroot::prelude::*;
-use oxiroot_io_core::cast::SaturatingFrom;
 
 /// A tiny deterministic RNG (xorshift64) + Box–Muller, so the example needs no
 /// dependency and prints the same numbers every run. Copied verbatim from the
@@ -39,7 +38,7 @@ fn main() -> oxiroot::Result<()> {
     let logistic = |pt: f64| 1.0 / (1.0 + (-(pt - x50) / w).exp());
 
     // 20 uniform bins over the pT range the trigger turns on in.
-    let (nbins, pt_lo, pt_hi) = (20, 0.0, 60.0);
+    let (nbins, pt_lo, pt_hi) = (20_usize, 0.0, 60.0);
     let mut eff = Efficiency::new(nbins, pt_lo, pt_hi)
         .named("trig_turnon")
         .titled("trigger turn-on;p_{T} [GeV];#epsilon");
@@ -59,9 +58,9 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Per-bin efficiency: the recovered turn-on curve. ----------------------
     // Bins are 1-based (bin 0 is underflow); the low edge of bin i is a stride in.
-    let stride = (pt_hi - pt_lo) / f64::from(nbins);
+    let stride = (pt_hi - pt_lo) / nbins as f64;
     println!("\n  bin   pT-center   passed/total     eff     truth");
-    for bin in 1..=usize::saturating_from(nbins) {
+    for bin in 1..=nbins {
         let center = pt_lo + (bin as f64 - 0.5) * stride;
         // `passed`/`total` are the two embedded TH1D histograms; their `contents`
         // are 1-based too, so we can index by `bin` directly.

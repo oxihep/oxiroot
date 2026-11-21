@@ -3,8 +3,8 @@
 //! Streamed layout: `TH1x{ Hist1D{ … }, TArray }`. The `Hist1D` base is shared via
 //! the crate's `base` module; the inline `TArray` holds the bin contents.
 
+use crate::base::Moments;
 use crate::graph::GraphFunction;
-use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Object, ReadRoot};
 use oxiroot_io_core::{RBuffer, Result};
@@ -14,50 +14,14 @@ use crate::base::{
     BinContentType, bin_content_type_of, cell_count, check_cells, is_hist_class, read_th1_object,
 };
 
-/// A 1-D classic histogram (`TH1D` or `TH1F`); contents are widened to `f64`.
-#[derive(Debug, Clone, PartialEq)]
-#[doc(alias = "TH1", alias = "TH1D", alias = "TH1F")]
-pub struct Hist1D {
-    /// On-disk [`BinContentType`] (the class suffix). Read the class name via
-    /// [`class_name`](Hist1D::class_name); `pub(crate)` so the type stays a
-    /// typed value rather than a free-form string.
-    pub(crate) bin_content_type: BinContentType,
-    /// Histogram name (`fName`).
-    pub(crate) name: String,
-    /// Histogram title (`fTitle`).
-    pub(crate) title: String,
-    /// X axis.
-    pub(crate) xaxis: Axis,
-    /// Y axis (degenerate for 1-D).
-    pub(crate) yaxis: Axis,
-    /// Z axis (degenerate for 1-D).
-    pub(crate) zaxis: Axis,
-    /// Number of entries (`fEntries`).
-    pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of squared weights (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of weight*x (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of weight*x^2 (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
-    /// Bin contents including under/overflow (length `ncells`).
-    pub(crate) contents: Vec<f64>,
-    /// Per-bin sum of squared weights (`fSumw2`); empty when the histogram
-    /// does not track errors. When present, a bin's error is
-    /// `sqrt(sumw2[bin])`.
-    pub(crate) sumw2: Vec<f64>,
-    /// The functions attached to the histogram (`fFunctions`).
-    pub(crate) functions: Vec<GraphFunction>,
-}
+use crate::record::Hist1D;
 
 impl Hist1D {
     /// Create an empty `TH1D` with `nbins` uniform bins over `[xmin, xmax)`.
     /// Internal primitive behind the public builder: construct histograms with
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xmin, xmax).double()`.
-    pub(crate) fn new(nbins: i32, xmin: f64, xmax: f64) -> Self {
-        let cells = usize::saturating_from(nbins.max(0)) + 2;
+    pub(crate) fn new(nbins: usize, xmin: f64, xmax: f64) -> Self {
+        let cells = nbins + 2;
         Self {
             bin_content_type: BinContentType::F64,
             name: String::new(),
@@ -66,10 +30,7 @@ impl Hist1D {
             yaxis: Axis::new("yaxis", 1, 0.0, 1.0),
             zaxis: Axis::new("zaxis", 1, 0.0, 1.0),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
+            moments: Moments::default(),
             contents: vec![0.0; cells],
             sumw2: Vec::new(),
             functions: Vec::new(),
@@ -78,7 +39,7 @@ impl Hist1D {
 
     /// Fill the histogram with `x` (weight 1).
     pub(crate) fn fill(&mut self, x: f64) {
-        let nbins = usize::saturating_from(self.xaxis.nbins.max(0));
+        let nbins = self.xaxis.nbins;
         let bin = self.xaxis.find_bin(x);
         if let Some(c) = self.contents.get_mut(bin) {
             *c += 1.0;
@@ -88,10 +49,10 @@ impl Hist1D {
         }
         self.entries += 1.0;
         if (1..=nbins).contains(&bin) {
-            self.tsumw += 1.0;
-            self.tsumw2 += 1.0;
-            self.tsumwx += x;
-            self.tsumwx2 += x * x;
+            self.moments.w += 1.0;
+            self.moments.w2 += 1.0;
+            self.moments.wx += x;
+            self.moments.wx2 += x * x;
         }
     }
 
@@ -114,10 +75,7 @@ impl Hist1D {
             yaxis: c.yaxis,
             zaxis: c.zaxis,
             entries: c.entries,
-            tsumw: c.tsumw,
-            tsumw2: c.tsumw2,
-            tsumwx: c.tsumwx,
-            tsumwx2: c.tsumwx2,
+            moments: c.moments,
             contents,
             sumw2: c.sumw2,
             functions: c.functions,

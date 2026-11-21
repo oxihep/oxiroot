@@ -10,18 +10,18 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Object, ReadRoot};
+use std::borrow::Cow;
 use std::ops::Range;
 
 use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, K_CLASS_MASK, K_NEW_CLASS_TAG, TagReader, read_object_base, write_named,
-    write_object_any, write_object_base,
+    TagReader, read_object_base, write_named, write_object_any, write_object_base,
 };
-use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, objptr};
+use oxiroot_io_core::streamer_gen::{ClassDef, base, basic, object_ptr};
 use oxiroot_io_core::{Error, RBuffer, Result, StreamerSet, WBuffer};
 
 use crate::base::bin_content_type_of;
 use crate::graph::{Graph, read_tgraph};
-use crate::hist1d::Hist1D;
+use crate::record::Hist1D;
 use crate::threaded::Mergeable;
 use crate::write::{WriteRoot, hist_streamer_classes};
 
@@ -41,8 +41,8 @@ fn thstack_class() -> ClassDef<'static> {
         checksum: 1_918_797_077,
         elements: vec![
             base("TNamed", 1),
-            objptr("fHists", "TList*"),
-            objptr("fHistogram", "TH1*"),
+            object_ptr("fHists", "TList*"),
+            object_ptr("fHistogram", "TH1*"),
             basic("fMaximum", 8, 8, "double"),
             basic("fMinimum", 8, 8, "double"),
         ],
@@ -57,9 +57,9 @@ fn tmultigraph_class() -> ClassDef<'static> {
         checksum: 3_767_090_389,
         elements: vec![
             base("TNamed", 1),
-            objptr("fGraphs", "TList*"),
-            objptr("fFunctions", "TList*"),
-            objptr("fHistogram", "TH1F*"),
+            object_ptr("fGraphs", "TList*"),
+            object_ptr("fFunctions", "TList*"),
+            object_ptr("fHistogram", "TH1F*"),
             basic("fMaximum", 8, 8, "double"),
             basic("fMinimum", 8, 8, "double"),
         ],
@@ -101,47 +101,20 @@ fn list_member_ranges(
     r: &mut RBuffer<'_>,
     tags: &mut TagReader,
 ) -> Result<Vec<(String, Range<usize>)>> {
-    let start = r.pos();
-    let word = r.be_u32()?;
-    if word == 0 {
-        return Ok(Vec::new()); // null TList* — no members
-    }
-    r.seek(start)?;
-
-    // The member is a streamed `TList` object: byte count, then a class tag
-    // (new-class marker or a high-bit back-reference) introduces it.
-    let list_end = if word & K_BYTE_COUNT_MASK != 0 {
-        let after = r.pos() + 4;
-        r.seek(after)?;
-        let tag = r.be_u32()?;
-        r.seek(start)?;
-        if tag == K_NEW_CLASS_TAG || tag & K_CLASS_MASK != 0 {
-            let header = tags.read_header(r)?;
-            r.read_version()?; // the list's own (inner) version header
-            header.end
-        } else {
-            r.read_version()?.end
-        }
-    } else {
-        r.read_version()?.end
-    };
-    read_object_base(r)?;
-    r.string()?; // the list's fName
-    let n = r.be_i32()?.max(0);
-
+    let (list_end, n) = tags.open_list(r)?;
     // `n` comes from the file; every entry takes at least a 4-byte header.
-    let mut out = Vec::with_capacity(r.bounded_capacity(usize::saturating_from(n), 4));
+    let mut out = Vec::with_capacity(r.bounded_capacity(n, 4));
     for _ in 0..n {
         let header = tags.read_header(r)?;
         match (header.class_name, header.end) {
             (Some(class), Some(end)) => {
-                out.push((class, r.pos()..end));
+                out.push((class.to_string(), r.pos()..end));
                 r.seek(end)?;
             }
             (_, Some(end)) => r.seek(end)?, // a null/parent slot
             _ => {}
         }
-        r.string()?; // the per-object option string
+        r.skip_string()?; // the per-object option string
     }
     if let Some(end) = list_end {
         r.seek(end)?;
@@ -149,21 +122,120 @@ fn list_member_ranges(
     Ok(out)
 }
 
-// --- HistStack --------------------------------------------------------------
+// --- Stack ------------------------------------------------------------------
 
-/// A `HistStack` — a named stack of histograms (drawn overlaid or summed). Build
-/// one with [`HistStack::new`], name it with [`named`](HistStack::named), and
-/// [`add`](HistStack::add) the histograms; write it through
-/// [`FileWriter`](oxiroot_io_core::FileWriter).
-#[derive(Debug, Clone, Default, PartialEq)]
-#[doc(alias = "THStack")]
-pub struct HistStack {
+/// A named group of histograms or graphs, drawn in one frame: ROOT's
+/// `THStack` for histograms, `TMultiGraph` for graphs. Use it through
+/// [`HistStack`] and [`GraphStack`]. Build one with [`Stack::new`], name it
+/// with [`named`](Stack::named), and [`add`](Stack::add) the members; write
+/// it through [`FileWriter`](oxiroot_io_core::FileWriter).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stack<T: StackMember> {
     name: String,
     title: String,
-    hists: Vec<Hist1D>,
+    members: Vec<T>,
 }
 
-impl HistStack {
+/// A stack of histograms, ROOT's `THStack`.
+#[doc(alias = "THStack")]
+pub type HistStack = Stack<Hist1D>;
+/// Several graphs in one frame, ROOT's `TMultiGraph`.
+#[doc(alias = "TMultiGraph")]
+pub type GraphStack = Stack<Graph>;
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for crate::Hist1D {}
+    impl Sealed for crate::Graph {}
+}
+
+/// What a [`Stack`] can hold: [`Hist1D`] and [`Graph`]. It says which ROOT
+/// class stacks the type and how one member is read; it cannot be
+/// implemented outside this crate.
+pub trait StackMember: WriteRoot + Sized + sealed::Sealed {
+    /// The ROOT class of a stack of these.
+    const STACK_CLASS: &'static str;
+
+    /// The streamer info of that class.
+    fn stack_class() -> ClassDef<'static>;
+
+    /// Write the stack's members that follow its list: the null pointers,
+    /// then the unset `fMaximum` and `fMinimum`.
+    fn write_stack_tail(w: &mut WBuffer);
+
+    /// Read the member of class `class` at the cursor, which shares the
+    /// stack's buffer and so its class tags. `None` if the stack does not
+    /// hold that class as a member.
+    fn read_member(
+        r: &mut RBuffer<'_>,
+        stack: &str,
+        class: &str,
+        tags: &mut TagReader,
+    ) -> Option<Result<Self>>;
+}
+
+impl StackMember for Hist1D {
+    const STACK_CLASS: &'static str = "THStack";
+
+    fn stack_class() -> ClassDef<'static> {
+        thstack_class()
+    }
+
+    fn write_stack_tail(w: &mut WBuffer) {
+        w.be_u32(0); // fHistogram (null TH1*)
+        w.be_f64(UNSET_LIMIT); // fMaximum
+        w.be_f64(UNSET_LIMIT); // fMinimum
+    }
+
+    fn read_member(
+        r: &mut RBuffer<'_>,
+        _stack: &str,
+        class: &str,
+        tags: &mut TagReader,
+    ) -> Option<Result<Self>> {
+        class
+            .starts_with("TH1")
+            .then(|| Self::read(r, bin_content_type_of(class)?, Some(tags)))
+    }
+}
+
+impl StackMember for Graph {
+    const STACK_CLASS: &'static str = "TMultiGraph";
+
+    fn stack_class() -> ClassDef<'static> {
+        tmultigraph_class()
+    }
+
+    fn write_stack_tail(w: &mut WBuffer) {
+        w.be_u32(0); // fFunctions (null TList*)
+        w.be_u32(0); // fHistogram (null TH1F*)
+        w.be_f64(UNSET_LIMIT); // fMaximum
+        w.be_f64(UNSET_LIMIT); // fMinimum
+    }
+
+    fn read_member(
+        r: &mut RBuffer<'_>,
+        stack: &str,
+        class: &str,
+        tags: &mut TagReader,
+    ) -> Option<Result<Self>> {
+        class
+            .starts_with("TGraph")
+            .then(|| read_tgraph(r, stack, class, Some(tags)))
+    }
+}
+
+impl<T: StackMember> Default for Stack<T> {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            title: String::new(),
+            members: Vec::new(),
+        }
+    }
+}
+
+impl<T: StackMember> Stack<T> {
     /// An empty stack (give it a key name with [`named`](Self::named)).
     #[must_use]
     pub fn new() -> Self {
@@ -184,12 +256,12 @@ impl HistStack {
         self
     }
 
-    /// Add a histogram to the stack.
+    /// Add a member to the stack.
     // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
-    pub fn add(mut self, hist: Hist1D) -> Self {
-        self.hists.push(hist);
+    pub fn add(mut self, member: T) -> Self {
+        self.members.push(member);
         self
     }
 
@@ -198,22 +270,47 @@ impl HistStack {
     pub fn name(&self) -> &str {
         &self.name
     }
+
     /// The title.
     #[must_use]
     pub fn title(&self) -> &str {
         &self.title
     }
-    /// The stacked histograms, in the order they were added.
+
+    /// The members, in the order they were added.
     #[must_use]
-    pub fn hists(&self) -> &[Hist1D] {
-        &self.hists
+    pub fn members(&self) -> &[T] {
+        &self.members
+    }
+
+    fn decode(object: &[u8], key_len: usize) -> Result<Self> {
+        let mut r = RBuffer::new(object);
+        r.read_version()?;
+        let (name, title) = read_named(&mut r)?;
+        let mut tags = TagReader::new(key_len);
+        let ranges = list_member_ranges(&mut r, &mut tags)?;
+        let mut members = Vec::with_capacity(ranges.len());
+        for (class, range) in ranges {
+            // Read in place, with the map the list was walked with: the
+            // members share one buffer, and so one set of class tags.
+            let mut member = RBuffer::new(object);
+            member.seek(range.start)?;
+            if let Some(read) = T::read_member(&mut member, &name, &class, &mut tags) {
+                members.push(read?);
+            }
+        }
+        Ok(Self {
+            name,
+            title,
+            members,
+        })
     }
 }
 
-impl Mergeable for HistStack {
+impl Mergeable for Stack<Hist1D> {
     type Error = oxiroot_io_core::Error;
 
-    /// Merge the stacks' histograms by name, as ROOT's `HistStack::Merge` and
+    /// Merge the stacks' histograms by name, as ROOT's `THStack::Merge` and
     /// `hadd` do: a histogram both stacks hold is summed, one only `other`
     /// holds is appended.
     ///
@@ -221,19 +318,19 @@ impl Mergeable for HistStack {
     /// the same name have different binnings; the histograms merged before it
     /// keep their sums.
     fn merge(&mut self, other: &Self) -> Result<()> {
-        for from in &other.hists {
-            match self.hists.iter_mut().find(|h| h.name == from.name) {
+        for from in &other.members {
+            match self.members.iter_mut().find(|h| h.name == from.name) {
                 Some(h) => h.add(from, 1.0)?,
-                None => self.hists.push(from.clone()),
+                None => self.members.push(from.clone()),
             }
         }
         Ok(())
     }
 }
 
-impl WriteRoot for HistStack {
-    fn root_class(&self) -> String {
-        "THStack".to_string()
+impl<T: StackMember> WriteRoot for Stack<T> {
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Borrowed(T::STACK_CLASS)
     }
     fn root_name(&self) -> &str {
         &self.name
@@ -241,219 +338,40 @@ impl WriteRoot for HistStack {
     fn root_title(&self) -> &str {
         &self.title
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
-        let obj = w.begin_object(2); // THStack version 2
-        write_named(&mut w, 0, &self.name, &self.title);
-        let members: Vec<(String, Vec<u8>)> = self
-            .hists
-            .iter()
-            .map(|h| (h.class_name(), h.to_root_bytes()))
+    fn write_body(&self, w: &mut WBuffer) {
+        let obj = w.begin_object(2); // THStack and TMultiGraph are both version 2
+        write_named(w, 0, &self.name, &self.title);
+        let members: Vec<(String, Vec<u8>)> = (self.members.iter())
+            .map(|m| (m.root_class().into_owned(), m.to_root_bytes()))
             .collect();
-        write_object_list(&mut w, "", &members); // fHists
-        w.be_u32(0); // fHistogram (null Hist1D*)
-        w.be_f64(UNSET_LIMIT); // fMaximum
-        w.be_f64(UNSET_LIMIT); // fMinimum
+        write_object_list(w, "", &members);
+        T::write_stack_tail(w);
         w.end_object(obj);
-        w.into_vec()
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        // Its bases and list, the stacked histograms' classes, then its own.
+        // Its bases and list, the members' classes, then its own.
         let mut set = StreamerSet::default();
         set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));
-        for h in &self.hists {
-            set.add(h);
+        for member in &self.members {
+            set.add(member);
         }
-        set.add_classes([thstack_class()]);
-        set.classes().to_vec()
+        set.add_classes([T::stack_class()]);
+        set.into_classes()
     }
 }
 
-fn decode_thstack(class: &str, object: &[u8], keylen: usize) -> Result<HistStack> {
-    if class != "THStack" {
-        return Err(Error::WrongClass {
-            name: None,
-            found: class.to_string(),
-            expected: "THStack".to_string(),
-        });
-    }
-    let mut r = RBuffer::new(object);
-    r.read_version()?; // THStack version
-    let (name, title) = read_named(&mut r)?;
-    let mut tags = TagReader::new(keylen);
-    let ranges = list_member_ranges(&mut r, &mut tags)?;
-    let mut hists = Vec::with_capacity(ranges.len());
-    for (member_class, range) in ranges {
-        if member_class.starts_with("TH1") {
-            // Read in place, with the map the list was walked with.
-            let mut member = RBuffer::new(object);
-            member.seek(range.start)?;
-            hists.push(Hist1D::read(
-                &mut member,
-                bin_content_type_of(&member_class)?,
-                Some(&mut tags),
-            )?);
-        }
-    }
-    Ok(HistStack { name, title, hists })
-}
-
-impl ReadRoot for HistStack {
-    const CLASS: &'static str = "THStack";
+impl<T: StackMember> ReadRoot for Stack<T> {
+    const CLASS: &'static str = T::STACK_CLASS;
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
         (object.class == Self::CLASS).then(|| {
             let key_len = object.key_len.ok_or_else(|| {
-                Error::Unsupported("a THStack inside a collection cannot be read".into())
+                Error::Unsupported(format!(
+                    "a {} inside a collection cannot be read",
+                    T::STACK_CLASS
+                ))
             })?;
-            decode_thstack(object.class, object.bytes, key_len)
-        })
-    }
-}
-
-// --- GraphStack -------------------------------------------------------------
-
-/// A `GraphStack` — several [`Graph`]s drawn in one frame. Build with
-/// [`GraphStack::new`], name it with [`named`](GraphStack::named), and
-/// [`add`](GraphStack::add) the graphs.
-#[derive(Debug, Clone, Default, PartialEq)]
-#[doc(alias = "TMultiGraph")]
-pub struct GraphStack {
-    name: String,
-    title: String,
-    graphs: Vec<Graph>,
-}
-
-impl GraphStack {
-    /// An empty multigraph (give it a key name with [`named`](Self::named)).
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the key name this multigraph is stored under.
-    #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Self {
-        self.name = name.into();
-        self
-    }
-
-    /// Set the multigraph's title.
-    #[must_use]
-    pub fn titled(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    /// Add a graph to the multigraph.
-    // `add` is the natural builder verb here; it is not the arithmetic `Add::add`.
-    #[allow(clippy::should_implement_trait)]
-    #[must_use]
-    pub fn add(mut self, graph: Graph) -> Self {
-        self.graphs.push(graph);
-        self
-    }
-
-    /// The key name.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-    /// The title.
-    #[must_use]
-    pub fn title(&self) -> &str {
-        &self.title
-    }
-    /// The member graphs, in the order they were added.
-    #[must_use]
-    pub fn graphs(&self) -> &[Graph] {
-        &self.graphs
-    }
-}
-
-impl WriteRoot for GraphStack {
-    fn root_class(&self) -> String {
-        "TMultiGraph".to_string()
-    }
-    fn root_name(&self) -> &str {
-        &self.name
-    }
-    fn root_title(&self) -> &str {
-        &self.title
-    }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        let mut w = WBuffer::new();
-        let obj = w.begin_object(2); // TMultiGraph version 2
-        write_named(&mut w, 0, &self.name, &self.title);
-        let members: Vec<(String, Vec<u8>)> = self
-            .graphs
-            .iter()
-            .map(|g| (g.class_name().to_string(), g.to_root_bytes()))
-            .collect();
-        write_object_list(&mut w, "", &members); // fGraphs
-        w.be_u32(0); // fFunctions (null TList*)
-        w.be_u32(0); // fHistogram (null TH1F*)
-        w.be_f64(UNSET_LIMIT); // fMaximum
-        w.be_f64(UNSET_LIMIT); // fMinimum
-        w.end_object(obj);
-        w.into_vec()
-    }
-    fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
-        // Its bases and list, the graphs' classes, then its own.
-        let mut set = StreamerSet::default();
-        set.add_classes(hist_streamer_classes(&["TNamed", "TList"]));
-        for g in &self.graphs {
-            set.add(g);
-        }
-        set.add_classes([tmultigraph_class()]);
-        set.classes().to_vec()
-    }
-}
-
-fn decode_tmultigraph(class: &str, object: &[u8], keylen: usize) -> Result<GraphStack> {
-    if class != "TMultiGraph" {
-        return Err(Error::WrongClass {
-            name: None,
-            found: class.to_string(),
-            expected: "TMultiGraph".to_string(),
-        });
-    }
-    let mut r = RBuffer::new(object);
-    r.read_version()?; // TMultiGraph version
-    let (name, title) = read_named(&mut r)?;
-    let mut tags = TagReader::new(keylen);
-    let ranges = list_member_ranges(&mut r, &mut tags)?;
-    let mut graphs = Vec::with_capacity(ranges.len());
-    for (member_class, range) in ranges {
-        if member_class.starts_with("TGraph") {
-            // Read in place, with the map the list was walked with: the
-            // members share one buffer, and so one set of class tags.
-            let mut member = RBuffer::new(object);
-            member.seek(range.start)?;
-            graphs.push(read_tgraph(
-                &mut member,
-                &name,
-                &member_class,
-                Some(&mut tags),
-            )?);
-        }
-    }
-    Ok(GraphStack {
-        name,
-        title,
-        graphs,
-    })
-}
-
-impl ReadRoot for GraphStack {
-    const CLASS: &'static str = "TMultiGraph";
-
-    fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| {
-            let key_len = object.key_len.ok_or_else(|| {
-                Error::Unsupported("a TMultiGraph inside a collection cannot be read".into())
-            })?;
-            decode_tmultigraph(object.class, object.bytes, key_len)
+            Self::decode(object.bytes, key_len)
         })
     }
 }

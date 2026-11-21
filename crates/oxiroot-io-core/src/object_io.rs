@@ -8,6 +8,7 @@
 //! framework so a leaf crate (e.g. `oxiroot-linalg`) can persist its own types
 //! without depending on `oxiroot-hist`.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use std::io::Cursor;
@@ -122,15 +123,24 @@ pub trait ReadRoot: Sized {
 /// object embeds that description, so uproot can model it.
 pub trait WriteRoot {
     /// The ROOT class name written for this object (e.g. `"TH1D"`, `"Profile1D"`).
-    fn root_class(&self) -> String;
+    fn root_class(&self) -> Cow<'static, str>;
     /// The object's key name (`fName`).
     fn root_name(&self) -> &str;
     /// The object's title (`fTitle`).
     fn root_title(&self) -> &str;
-    /// Serialize the streamed object payload (no file/key framing) — the bytes
-    /// stored under the object's key.
+    /// Write the streamed object payload (no file or key framing) into `w`:
+    /// the bytes stored under the object's key. `w` is empty when this is
+    /// called, so positions in it are positions in the object.
+    fn write_body(&self, w: &mut crate::WBuffer);
+
+    /// The streamed object payload, as [`write_body`](Self::write_body)
+    /// writes it.
     #[must_use]
-    fn to_root_bytes(&self) -> Vec<u8>;
+    fn to_root_bytes(&self) -> Vec<u8> {
+        let mut w = crate::WBuffer::new();
+        self.write_body(&mut w);
+        w.into_vec()
+    }
 
     /// The `TStreamerInfo` entries describing this object's class, and the
     /// classes of any objects it contains, for readers that do not know them.
@@ -198,7 +208,7 @@ impl KeyCheck {
 /// stores one in a file, next to any other objects.
 pub trait WriteInto {
     /// The class of the key that locates the object (e.g. `"TTree"`).
-    fn root_class(&self) -> String;
+    fn root_class(&self) -> Cow<'static, str>;
     /// The name of that key.
     fn root_name(&self) -> &str;
     /// Write the object's records at the end of `file`, with its key in `dir`.
@@ -247,6 +257,12 @@ impl StreamerSet {
         }
     }
 
+    /// The classes, in the order they were added.
+    #[must_use]
+    pub fn into_classes(self) -> Vec<ClassDef<'static>> {
+        self.classes
+    }
+
     /// Add everything `other` holds.
     pub fn extend(&mut self, other: &Self) {
         self.add_classes(other.classes.iter().cloned());
@@ -291,7 +307,7 @@ pub struct ObjectRecord {
 /// multi-object file builder.
 pub fn record_of(object: &dyn WriteRoot) -> ObjectRecord {
     ObjectRecord {
-        class_name: object.root_class(),
+        class_name: object.root_class().into_owned(),
         name: object.root_name().to_string(),
         title: object.root_title().to_string(),
         object: object.to_root_bytes(),
@@ -315,7 +331,7 @@ pub fn object_bytes(file: &FileReader, path: &str) -> Result<(String, Vec<u8>, u
     let payload = file.key_payload(&key)?;
     let object = decompress_payload(&payload, key.obj_len as usize, format_args!("key {path:?}"))?;
     let key_len = key.key_len as usize;
-    Ok((key.class_name, object, key_len))
+    Ok((key.class_name, object.into_owned(), key_len))
 }
 
 impl std::fmt::Debug for ObjectRecord {

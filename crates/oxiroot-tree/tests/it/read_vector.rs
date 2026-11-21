@@ -20,7 +20,10 @@ fn reads_std_vector_branches() {
 
     assert_eq!(t.entries(), 4);
     // The scalar branch and the three vector branches are all visible.
-    assert_eq!(t.branch_names(), ["n", "vf", "vd", "vi"]);
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        ["n", "vf", "vd", "vi"]
+    );
 
     assert_eq!(read("n"), BranchValues::I32(vec![0, 1, 2, 3]));
     assert_eq!(

@@ -40,6 +40,9 @@ mod probes {
     use std::fmt::Write as _;
 
     use oxiroot::fit::BinomialData;
+    use oxiroot::fit::FitExt;
+    use oxiroot::fit::Points;
+    use oxiroot::fit::{FitMethod, FitOptions, FitResult, Model, Simultaneous};
     use oxiroot::hist::oxihist::{Double, WeightedSum};
     use oxiroot::plot::{
         Axes, Color, Colormap, CurveOpts, HAlign, Hist2dOpts, HistOpts, HistType, Style, TextOpts,

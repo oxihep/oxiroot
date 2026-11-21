@@ -9,7 +9,7 @@
 //! in version 4 (ROOT 4) and `fBinSumw2` in version 6 (ROOT 5.24). Versions 2
 //! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
-use oxiroot_io_core::cast::SaturatingFrom;
+use crate::base::Moments;
 use oxiroot_io_core::{Object, ReadRoot};
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -80,14 +80,8 @@ pub struct Profile1D {
     pub(crate) xaxis: Axis,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of weight^2 (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of weight*x (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of weight*x^2 (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    pub(crate) moments: Moments,
     /// Per-bin sums of weight*y (the `TH1D` base contents, length `ncells`).
     pub(crate) sums: Vec<f64>,
     /// Per-bin sums of weight*y^2 (the `Hist1D` base `fSumw2`, length `ncells`).
@@ -100,10 +94,6 @@ pub struct Profile1D {
     pub ymin: f64,
     /// Upper y limit (`fYmax`).
     pub ymax: f64,
-    /// Sum of weight*y (`fTsumwy`).
-    pub(crate) tsumwy: f64,
-    /// Sum of weight*y^2 (`fTsumwy2`).
-    pub(crate) tsumwy2: f64,
     /// Per-bin sum of squared weights (`fBinSumw2`), possibly empty.
     pub(crate) bin_sumw2: Vec<f64>,
 }
@@ -156,18 +146,17 @@ impl Profile1D {
             title: core.title,
             xaxis: core.xaxis,
             entries: core.entries,
-            tsumw: core.tsumw,
-            tsumw2: core.tsumw2,
-            tsumwx: core.tsumwx,
-            tsumwx2: core.tsumwx2,
+            moments: Moments {
+                wy: tsumwy,
+                wy2: tsumwy2,
+                ..core.moments
+            },
             sums,
             sumy2: core.sumw2,
             bin_entries,
             error_mode,
             ymin,
             ymax,
-            tsumwy,
-            tsumwy2,
             bin_sumw2,
         })
     }
@@ -192,25 +181,20 @@ impl Profile1D {
     /// Create an empty `Profile1D` with `nbins` uniform x bins over `[xlo, xhi)`
     /// and no y restriction. Internal primitive behind the public builder:
     /// [`Hist::reg`](crate::Hist::reg)`(nbins, xlo, xhi).mean().to_root()?`.
-    pub(crate) fn new(nbins: i32, xlo: f64, xhi: f64) -> Self {
-        let ncells = usize::saturating_from(nbins.max(0) + 2);
+    pub(crate) fn new(nbins: usize, xlo: f64, xhi: f64) -> Self {
+        let ncells = nbins + 2;
         Self {
             name: String::new(),
             title: String::new(),
             xaxis: Axis::new("xaxis", nbins, xlo, xhi),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
+            moments: Moments::default(),
             sums: vec![0.0; ncells],
             sumy2: vec![0.0; ncells],
             bin_entries: vec![0.0; ncells],
             error_mode: ErrorMode::Mean,
             ymin: 0.0,
             ymax: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
             bin_sumw2: Vec::new(),
         }
     }

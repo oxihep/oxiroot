@@ -28,4 +28,4 @@ mod func;
 mod io;
 mod sample;
 
-pub use func::{Func1D, Func2D, Func3D};
+pub use func::{Func, Func1D, Func2D, Func3D};

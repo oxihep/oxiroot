@@ -16,8 +16,9 @@ use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D};
 use oxiroot_io_core::WriteRoot;
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::write_named;
-use oxiroot_io_core::streamer_gen::{ClassDef, El, any, base, basic};
+use oxiroot_io_core::streamer_gen::{ClassDef, ElementDef, any, base, basic};
 use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
+use std::borrow::Cow;
 
 // --- Axis -------------------------------------------------------------------
 
@@ -110,8 +111,8 @@ struct OldObject {
 }
 
 impl WriteRoot for OldObject {
-    fn root_class(&self) -> String {
-        self.class.to_string()
+    fn root_class(&self) -> Cow<'static, str> {
+        Cow::Owned(self.class.to_string())
     }
     fn root_name(&self) -> &str {
         "p"
@@ -119,8 +120,8 @@ impl WriteRoot for OldObject {
     fn root_title(&self) -> &str {
         ""
     }
-    fn to_root_bytes(&self) -> Vec<u8> {
-        self.bytes.clone()
+    fn write_body(&self, w: &mut WBuffer) {
+        w.bytes(&self.bytes);
     }
     // Only the old class version is described: ROOT knows the current versions
     // of the other classes (TH1D, Axis, …) the profile contains.
@@ -183,7 +184,7 @@ const TPROFILE3D: Members = Members {
 /// `fBinSumw2` holds `n_sumw2` values) as class `version`: drop the trailing
 /// members that version lacks and describe it in streamer info.
 fn downgrade(m: &Members, mut bytes: Vec<u8>, n_sumw2: usize, version: u16) -> OldObject {
-    let mut elements: Vec<El<'static>> = vec![
+    let mut elements: Vec<ElementDef<'static>> = vec![
         base(m.base, m.base_version),
         any("fBinEntries", 24, "TArrayD"),
         basic("fErrorMode", 3, 4, "EErrorType"),

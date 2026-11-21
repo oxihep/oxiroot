@@ -50,13 +50,14 @@ mod polyhist;
 mod profile1d;
 mod profile2d;
 mod profile3d;
+mod record;
 mod sparsehist;
 mod threaded;
 mod write;
 
 pub use axis::Axis;
 pub use base::BinContentType;
-pub use collections::{GraphStack, HistStack};
+pub use collections::{GraphStack, HistStack, Stack, StackMember};
 #[cfg(feature = "fit")]
 pub use fit::{FitData, FitExt, FitMethod, FitOptions, FitResult, Minimizer, Model, Point, Points};
 pub use graph::{Graph, GraphErrors, GraphFunction};
@@ -66,9 +67,6 @@ pub use multierrorgraph::{MultiErrorGraph, SumErrorsMode};
 // resolving.
 pub use convert::ToRoot;
 pub use efficiency::{Efficiency, StatisticOption};
-pub use hist1d::Hist1D;
-pub use hist2d::Hist2D;
-pub use hist3d::Hist3D;
 /// The ROOT-free histogram library these types convert to and from.
 pub use oxihist;
 pub use oxihist::Random;
@@ -79,6 +77,7 @@ pub use polyhist::{PolyBin, PolyHist};
 pub use profile1d::{ErrorMode, Profile1D};
 pub use profile2d::Profile2D;
 pub use profile3d::Profile3D;
+pub use record::{Hist1D, Hist2D, Hist3D, HistRecord};
 pub use sparsehist::{SparseBin, SparseHist};
 #[cfg(feature = "rayon")]
 pub use threaded::fill_par;

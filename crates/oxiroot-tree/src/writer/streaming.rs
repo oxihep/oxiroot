@@ -11,10 +11,10 @@ use oxiroot_io_core::{Compression, Error, Result};
 use super::baskets::{
     BasketRec, PreparedBasket, chunk_values, place_basket, prepare_basket, split_pieces,
 };
-use super::branch::{Branch, BranchKind, SplitMember, check_split_members, split_class};
+use super::branch::{Branch, BranchKind, LeafMeta, SplitMember, check_split_members, split_class};
+use super::check_entry_counts;
 use super::layout::Kind;
 use super::serialize::build_tree_object;
-use super::{check_entry_counts, str_rep};
 use crate::value::BranchValues;
 
 /// A column's identity, used to check that every batch shares the first batch's
@@ -57,42 +57,23 @@ fn col_sig(b: &Branch) -> ColSig {
     }
 }
 
-/// One row of `len` default values, of the same jagged variant as `values`:
-/// what a split member's representative holds, so the parent's `fMaximum`
-/// comes out as `len`.
-fn row_of(values: &BranchValues, len: usize) -> BranchValues {
-    use BranchValues::*;
-    match values {
-        VecBool(_) => VecBool(vec![vec![false; len]]),
-        VecI8(_) => VecI8(vec![vec![0; len]]),
-        VecU8(_) => VecU8(vec![vec![0; len]]),
-        VecI16(_) => VecI16(vec![vec![0; len]]),
-        VecU16(_) => VecU16(vec![vec![0; len]]),
-        VecI32(_) => VecI32(vec![vec![0; len]]),
-        VecU32(_) => VecU32(vec![vec![0; len]]),
-        VecI64(_) => VecI64(vec![vec![0; len]]),
-        VecU64(_) => VecU64(vec![vec![0; len]]),
-        VecF32(_) => VecF32(vec![vec![0.0; len]]),
-        VecF64(_) => VecF64(vec![vec![0.0; len]]),
-        other => chunk_values(other, 0, 0),
-    }
-}
-
-/// A split branch's representative: its class and members, each holding one
-/// row of `max_count` values.
-fn split_rep(b: &Branch, max_count: usize) -> Branch {
+/// A split branch's representative: its class and members, with no values.
+/// What the header says of them is in its [`LeafMeta`].
+fn split_rep(b: &Branch) -> Branch {
     let spec = b.split().expect("a split branch");
-    Branch::split_vector(
+    let mut rep = Branch::split_vector(
         b.name.clone(),
         spec.class_name.clone(),
         spec.members
             .iter()
             .map(|m| SplitMember {
                 name: m.name.clone(),
-                values: row_of(&m.values, max_count),
+                values: chunk_values(&m.values, 0, 0),
             })
             .collect(),
-    )
+    );
+    rep.meta = Some(LeafMeta::default());
+    rep
 }
 
 /// The largest element count in a split branch's count piece (single-element
@@ -424,14 +405,21 @@ impl<W: Write + Seek> TreeWriter<W> {
                 let batch_max = branch.leaf_max();
                 if batch_max > *m {
                     *m = batch_max;
-                    c.rep.values = BranchValues::I32(vec![i32::saturating_from(*m)]);
+                    c.rep.meta = Some(LeafMeta {
+                        max: *m,
+                        ..LeafMeta::default()
+                    });
                 }
             }
             ColAgg::Str(len) => {
                 let batch_len = branch.str_len();
                 if batch_len > *len {
                     *len = batch_len;
-                    c.rep.values = str_rep(*len);
+                    c.rep.meta = Some(LeafMeta {
+                        max: i64::from(*len),
+                        str_len: *len,
+                        ..LeafMeta::default()
+                    });
                 }
             }
             // The count piece (named after the branch) carries the counts;
@@ -440,7 +428,10 @@ impl<W: Write + Seek> TreeWriter<W> {
                 let batch_max = max_count(branch);
                 if batch_max > *m {
                     *m = batch_max;
-                    c.rep = split_rep(&c.rep, *m);
+                    c.rep.meta = Some(LeafMeta {
+                        split_max: i32::saturating_from(*m),
+                        ..LeafMeta::default()
+                    });
                 }
             }
             ColAgg::Split(_) | ColAgg::Data => {}
@@ -454,7 +445,7 @@ impl<W: Write + Seek> TreeWriter<W> {
         for b in branches {
             if b.split().is_some() {
                 cols.push(StreamCol {
-                    rep: split_rep(b, 0),
+                    rep: split_rep(b),
                     baskets: Vec::new(),
                     agg: ColAgg::Split(0),
                 });
@@ -468,26 +459,36 @@ impl<W: Write + Seek> TreeWriter<W> {
                 cols.push(StreamCol {
                     rep: Branch {
                         name: count.name.clone(),
-                        values: BranchValues::I32(vec![i32::saturating_from(m)]),
+                        values: BranchValues::I32(Vec::new()),
                         kind: BranchKind::Count,
+                        meta: Some(LeafMeta {
+                            max: m,
+                            ..LeafMeta::default()
+                        }),
                     },
                     baskets: Vec::new(),
                     agg: ColAgg::Count(m),
                 });
             }
-            let (agg, values) = if matches!(b.kind(), Kind::Str) {
+            let (agg, meta) = if matches!(b.kind(), Kind::Str) {
                 let len = b.str_len();
-                (ColAgg::Str(len), str_rep(len))
+                let meta = LeafMeta {
+                    max: i64::from(len),
+                    str_len: len,
+                    ..LeafMeta::default()
+                };
+                (ColAgg::Str(len), Some(meta))
             } else {
-                // One representative row/element fixes the type and (for a fixed
-                // array) the width; jagged/vector report flen = 1 regardless.
-                (ColAgg::Data, chunk_values(&b.values, 0, 1))
+                (ColAgg::Data, None)
             };
             cols.push(StreamCol {
                 rep: Branch {
                     name: b.name.clone(),
-                    values,
+                    // One row fixes the type and, for a fixed array, the
+                    // width; jagged and vector branches report flen = 1.
+                    values: chunk_values(&b.values, 0, 1),
                     kind: b.chunk_kind(),
+                    meta,
                 },
                 baskets: Vec::new(),
                 agg,

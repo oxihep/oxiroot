@@ -196,12 +196,15 @@ fn streaming_uneven_batch_entries_is_rejected() {
         .write_batch(&[Branch::i32("x", vec![1, 2, 3]), Branch::i32("y", vec![1])])
         .expect_err("uneven entry counts must error");
     assert_eq!(
-        err,
-        oxiroot_io_core::Error::LengthMismatch {
-            what: "branch \"y\" entries".into(),
-            expected: 3,
-            found: 1
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            oxiroot_io_core::Error::LengthMismatch {
+                what: "branch \"y\" entries".into(),
+                expected: 3,
+                found: 1
+            }
+        )
     );
 }
 

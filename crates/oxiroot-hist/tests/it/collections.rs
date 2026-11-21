@@ -25,21 +25,21 @@ fn reads_root_written_collections() {
     let hs = f.get::<HistStack>("hs").unwrap();
     assert_eq!(hs.name(), "hs");
     assert_eq!(hs.title(), "my stack");
-    assert_eq!(hs.hists().len(), 2);
-    assert_eq!(hs.hists()[0].name(), "ha");
-    assert_eq!(hs.hists()[1].name(), "hb");
+    assert_eq!(hs.members().len(), 2);
+    assert_eq!(hs.members()[0].name(), "ha");
+    assert_eq!(hs.members()[1].name(), "hb");
     // ha has bins 1,2 set; hb has bins 3,4 set (in-range bins only shown here).
-    assert_eq!(hs.hists()[0].values(), &[1.0, 2.0, 0.0, 0.0]);
-    assert_eq!(hs.hists()[1].values(), &[0.0, 0.0, 3.0, 4.0]);
+    assert_eq!(hs.members()[0].values(), &[1.0, 2.0, 0.0, 0.0]);
+    assert_eq!(hs.members()[1].values(), &[0.0, 0.0, 3.0, 4.0]);
 
     let mg = f.get::<GraphStack>("mg").unwrap();
     assert_eq!(mg.name(), "mg");
     assert_eq!(mg.title(), "my multigraph");
-    assert_eq!(mg.graphs().len(), 2);
-    assert_eq!(mg.graphs()[0].name(), "g1");
-    assert_eq!(mg.graphs()[0].y(), vec![1.0, 2.0, 3.0]);
-    assert_eq!(mg.graphs()[1].name(), "g2");
-    assert_eq!(mg.graphs()[1].y(), vec![3.0, 2.0, 1.0]);
+    assert_eq!(mg.members().len(), 2);
+    assert_eq!(mg.members()[0].name(), "g1");
+    assert_eq!(mg.members()[0].y(), vec![1.0, 2.0, 3.0]);
+    assert_eq!(mg.members()[1].name(), "g2");
+    assert_eq!(mg.members()[1].y(), vec![3.0, 2.0, 1.0]);
 }
 
 #[test]
@@ -83,12 +83,12 @@ fn round_trips_collections_through_oxiroot() {
 
     let f = FileReader::open(&out).unwrap();
     let hs = f.get::<HistStack>("hs").unwrap();
-    assert_eq!(hs.hists().len(), 2);
-    assert_eq!(hs.hists()[0].name(), "ha");
-    assert_eq!(hs.hists()[0].values(), &[1.0, 0.0, 0.0, 0.0]); // the one fill
+    assert_eq!(hs.members().len(), 2);
+    assert_eq!(hs.members()[0].name(), "ha");
+    assert_eq!(hs.members()[0].values(), &[1.0, 0.0, 0.0, 0.0]); // the one fill
     let mg = f.get::<GraphStack>("mg").unwrap();
-    assert_eq!(mg.graphs().len(), 2);
-    assert_eq!(mg.graphs()[1].y(), vec![3.0, 2.0, 1.0]);
+    assert_eq!(mg.members().len(), 2);
+    assert_eq!(mg.members()[1].y(), vec![3.0, 2.0, 1.0]);
     let _ = std::fs::remove_file(&out);
 }
 
@@ -103,12 +103,12 @@ fn reads_the_functions_of_every_graph_in_a_root_multigraph() {
     .unwrap();
     let mg = f.get::<GraphStack>("mg").unwrap();
     let functions: Vec<Vec<&str>> = mg
-        .graphs()
+        .members()
         .iter()
         .map(|g| g.functions().iter().map(|f| f.name.as_str()).collect())
         .collect();
     assert_eq!(functions, [vec!["lin"], vec!["sq"]]);
-    assert_eq!(mg.graphs()[1].functions()[0].formula, "[p0]*x*x");
+    assert_eq!(mg.members()[1].functions()[0].formula, "[p0]*x*x");
 }
 
 fn list_functions() -> PathBuf {

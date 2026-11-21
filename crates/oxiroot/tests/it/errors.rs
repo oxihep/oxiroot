@@ -96,6 +96,7 @@ fn plotting_errors_convert() {
 /// (review finding 1B H5: this did not compile).
 #[test]
 fn prelude_threaded_hist_takes_builder_histograms() {
+    use oxiroot::hist::ThreadedHist;
     use oxiroot::prelude::*;
     let acc = ThreadedHist::new(Hist::reg(10, 0.0, 10.0).int64());
     std::thread::scope(|s| {

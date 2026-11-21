@@ -32,14 +32,9 @@ fn column_rows(c: &Column) -> Option<Vec<String>> {
         Column::U64(v) => each(v),
         Column::F32(v) => each(v),
         Column::F64(v) => each(v),
-        Column::String { offsets, bytes } => offsets
+        Column::String { offsets, text } => offsets
             .windows(2)
-            .map(|w| {
-                format!(
-                    "{:?}",
-                    std::str::from_utf8(&bytes[ix(w[0])..ix(w[1])]).unwrap()
-                )
-            })
+            .map(|w| format!("{:?}", &text[ix(w[0])..ix(w[1])]))
             .collect(),
         Column::List { offsets, values } => {
             let inner = column_rows(values)?;
@@ -236,12 +231,15 @@ fn typed_access_is_strict() {
     assert_eq!(b.values::<i32>("idx").unwrap(), [0, 1, 2, 3]);
     let err = b.values::<f32>("x").unwrap_err();
     assert_eq!(
-        err,
-        Error::TypeMismatch {
-            name: "x".into(),
-            found: "f64".into(),
-            expected: "f32".into()
-        }
+        format!("{:?}", err),
+        format!(
+            "{:?}",
+            Error::TypeMismatch {
+                name: "x".into(),
+                found: "f64".into(),
+                expected: "f32".into()
+            }
+        )
     );
     assert!(matches!(
         b.values::<f64>("nope"),
@@ -627,7 +625,7 @@ fn a_list_of_structs_streams_into_a_tree_in_many_baskets() {
 
     let tree = ds.as_tree().unwrap();
     assert_eq!(
-        tree.collection_members("hits"),
+        tree.collection_members("hits").collect::<Vec<_>>(),
         ["hits.x", "hits.id", "hits.on"]
     );
     // One basket per member per `write`.
@@ -793,7 +791,6 @@ mod arrow {
 #[cfg(feature = "polars")]
 mod polars {
     use super::*;
-    use oxiroot_dataset::IntoColumn;
     use oxiroot_dataset::polars_rs::prelude::DataType;
 
     fn every_shape() -> Batch {
@@ -804,7 +801,7 @@ mod polars {
                 "os",
                 Column::Optional {
                     valid: vec![true, false, false, true, true],
-                    values: Box::new(vec!["a", "b", "c"].into_column()),
+                    values: Box::new(vec!["a", "b", "c"].into()),
                 },
             )
             .unwrap()

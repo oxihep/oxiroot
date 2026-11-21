@@ -26,7 +26,7 @@ fn introspects_branches_without_reading() {
     assert!(t.branch_title("i4").is_some());
 
     // A clean tree reports no unsupported branches.
-    assert!(t.unsupported_branches().is_empty());
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 }
 
 #[test]

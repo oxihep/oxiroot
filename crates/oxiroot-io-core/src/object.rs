@@ -9,6 +9,7 @@
 
 use crate::cast::SaturatingFrom;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::buffer::{K_BYTE_COUNT_MASK, RBuffer};
 use crate::error::{Error, Result};
@@ -25,8 +26,10 @@ const K_MAP_OFFSET: i64 = 2;
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct RecordHeader {
-    /// The resolved class name, or `None` for a null/parent slot.
-    pub class_name: Option<String>,
+    /// The resolved class name, or `None` for a null/parent slot. Shared with
+    /// the reader's class map: a class is named once per buffer, and every
+    /// object of it after that costs a reference count, not a string.
+    pub class_name: Option<Arc<str>>,
     /// Absolute buffer offset one past the object, when a byte count was present.
     pub end: Option<usize>,
     /// Where the object this slot points back at was written, when the slot held
@@ -89,22 +92,14 @@ pub fn read_pointer_header(r: &mut RBuffer<'_>) -> Result<Option<PointerHeader>>
 
 /// Read a NUL-terminated class name (the `kNewClassTag` path).
 fn read_cstring(r: &mut RBuffer<'_>) -> Result<String> {
-    let mut bytes = Vec::new();
-    loop {
-        let b = r.u8()?;
-        if b == 0 {
-            break;
-        }
-        bytes.push(b);
-    }
-    String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
+    r.cstr().map(str::to_string)
 }
 
 /// Resolves the generic object protocol's class tags, tracking back-references.
 /// Construct one per top-level object with that object's key length, then call
 /// [`read_header`](TagReader::read_header) for each embedded object.
 pub struct TagReader {
-    refs: HashMap<i64, String>,
+    refs: HashMap<i64, Arc<str>>,
     objects: HashMap<i64, ObjectRef>,
     seq: i64,
     keylen: i64,
@@ -121,6 +116,42 @@ impl TagReader {
             seq: 0,
             keylen: i64::saturating_from(keylen),
         }
+    }
+
+    /// Open a `TList*` member: step into the list and return where it ends
+    /// and how many entries follow, each an object header, its body, then an
+    /// option string. A null pointer is no list: `(None, 0)`, and the cursor
+    /// is past it.
+    ///
+    /// A list member is written either as an object, with a class tag, or
+    /// inline with only a version header; the word after the byte count
+    /// tells the two apart.
+    ///
+    /// # Errors
+    ///
+    /// The buffer's errors if the list's header is truncated or malformed.
+    pub fn open_list(&mut self, r: &mut RBuffer<'_>) -> Result<(Option<usize>, usize)> {
+        let start = r.pos();
+        let word = r.be_u32()?;
+        if word == 0 {
+            return Ok((None, 0));
+        }
+        let tagged = word & K_BYTE_COUNT_MASK != 0 && {
+            let tag = r.be_u32()?;
+            tag == K_NEW_CLASS_TAG || tag & K_CLASS_MASK != 0
+        };
+        r.seek(start)?;
+        let end = if tagged {
+            let header = self.read_header(r)?;
+            r.read_version()?; // the list's own version header
+            header.end
+        } else {
+            r.read_version()?.end
+        };
+        crate::streamer::read_object_base(r)?;
+        r.skip_string()?; // the list's fName
+        let n = usize::try_from(r.be_i32()?).unwrap_or(0);
+        Ok((end, n))
     }
 
     /// Read a `ReadObjectAny`-style header, resolving the class name and the
@@ -183,7 +214,7 @@ impl TagReader {
                 back_ref,
             })
         } else if tag == K_NEW_CLASS_TAG {
-            let classname = read_cstring(r)?;
+            let classname: Arc<str> = read_cstring(r)?.into();
             // Register the class at the tag's displacement (+ keylen + offset).
             if versioned {
                 let start_disp = i64::saturating_from(beg + 4) + self.keylen;
@@ -206,9 +237,12 @@ impl TagReader {
                 // Not seen by this reader: the class was named inside an object
                 // it skipped over. The reference says where; read it there.
                 None => {
-                    let name = self.class_declared_at(r, refpos).ok_or_else(|| {
-                        Error::Format(format!("unknown class-tag reference {refpos}"))
-                    })?;
+                    let name: Arc<str> = self
+                        .class_declared_at(r, refpos)
+                        .ok_or_else(|| {
+                            Error::Format(format!("unknown class-tag reference {refpos}"))
+                        })?
+                        .into();
                     self.refs.insert(refpos, name.clone());
                     name
                 }

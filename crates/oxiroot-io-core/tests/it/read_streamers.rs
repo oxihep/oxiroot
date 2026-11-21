@@ -17,7 +17,7 @@ fn parses_streamer_registry() {
     let reg = f.streamer_registry().expect("parse streamer info");
 
     // The exact set of classes uproot reports for this file.
-    let mut names = reg.class_names();
+    let mut names = reg.class_names().collect::<Vec<_>>();
     names.sort_unstable();
     let expected = [
         "TAttAxis",

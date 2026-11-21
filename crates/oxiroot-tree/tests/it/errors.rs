@@ -40,11 +40,14 @@ fn a_key_that_is_not_a_tree_is_the_wrong_class() {
         .unwrap();
     let f = FileReader::from_bytes(bytes).unwrap();
     assert_eq!(
-        TreeReader::open(&f, "s").unwrap_err(),
-        Error::WrongClass {
-            name: Some("s".into()),
-            found: "TObjString".into(),
-            expected: "TTree".into()
-        }
+        format!("{:?}", TreeReader::open(&f, "s").unwrap_err()),
+        format!(
+            "{:?}",
+            Error::WrongClass {
+                name: Some("s".into()),
+                found: "TObjString".into(),
+                expected: "TTree".into()
+            }
+        )
     );
 }

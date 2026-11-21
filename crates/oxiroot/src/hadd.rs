@@ -282,6 +282,34 @@ fn with_form_fallback(large: bool, mut write: impl FnMut(bool) -> Result<()>) ->
     }
 }
 
+/// Write `output` through a file beside it, renamed over it when complete: a
+/// merge that fails part-way (an input with other columns, a full disk)
+/// leaves no output, and an existing one as it was.
+///
+/// `write` gets the file to fill, the output's file name, and whether to use
+/// the 64-bit container form; it runs again in that form if the 32-bit file
+/// turned out too large.
+fn write_atomically(
+    output: &Path,
+    large: bool,
+    mut write: impl FnMut(std::fs::File, &str, bool) -> Result<()>,
+) -> Result<()> {
+    let file_name = output
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file.root");
+    let partial = output.with_file_name(format!(".{file_name}.{}.partial", std::process::id()));
+    let written = with_form_fallback(large, |big| {
+        write(std::fs::File::create(&partial)?, file_name, big)
+    })
+    .and_then(|()| Ok(std::fs::rename(&partial, output)?));
+    if written.is_err() {
+        // Best effort: the error to report is the merge's, not the cleanup's.
+        let _ = std::fs::remove_file(&partial);
+    }
+    written
+}
+
 /// `schema` with every counted array whose counter is not one of `columns`
 /// stored as a `std::vector` instead.
 ///
@@ -329,16 +357,7 @@ fn merge_dataset(
     // The key in the output: the object's own name, without its directory.
     let key = name.rsplit('/').next().unwrap_or(name);
 
-    // Written beside the output and renamed when complete: a merge that fails
-    // part-way (an input with other columns, a full disk) leaves no output,
-    // and an existing one as it was.
-    let file_name = output
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file.root");
-    let partial = output.with_file_name(format!(".{file_name}.{}.partial", std::process::id()));
-    let written = with_form_fallback(large, |big| {
-        let sink = std::fs::File::create(&partial)?;
+    write_atomically(output, large, |sink, file_name, big| {
         let mut writer = DatasetWriter::new(sink, file_name, key, format)
             .compression(compression)
             .schema(schema.clone());
@@ -356,13 +375,7 @@ fn merge_dataset(
             writer.write(first.read(&columns)?)?;
         }
         writer.finish().map(drop)
-    })
-    .and_then(|()| Ok(std::fs::rename(&partial, output)?));
-    if written.is_err() {
-        // Best effort: the error to report is the merge's, not the cleanup's.
-        let _ = std::fs::remove_file(&partial);
-    }
-    written?;
+    })?;
 
     Ok(MergeReport {
         output: output.to_path_buf(),

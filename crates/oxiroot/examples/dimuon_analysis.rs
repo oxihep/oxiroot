@@ -22,6 +22,7 @@ fn main() {
     reason = "generated values stored in f32 branches"
 )]
 fn main() -> oxiroot::Result<()> {
+    use oxiroot::fit::FitExt;
     use oxiroot::fit::{FitMethod, FitOptions, Model};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;

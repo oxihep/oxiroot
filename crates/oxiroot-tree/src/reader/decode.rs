@@ -10,21 +10,28 @@ use super::{Branch, ObjectMember};
 use crate::basket::Basket;
 use crate::value::{BranchValues, LeafType};
 
+/// One leaf of a leaflist branch: its bytes in each entry, which sit at a fixed
+/// offset in a fixed stride. `None` for a branch that is not a leaflist leaf.
+fn leaflist_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Option<Vec<&'a [u8]>> {
+    let (offset, stride) = branch.leaflist?;
+    if stride == 0 {
+        return Some(Vec::new());
+    }
+    let width = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
+    let mut regions = Vec::new();
+    for b in baskets {
+        for chunk in b.entry_data().chunks_exact(stride) {
+            let end = (offset + width).min(chunk.len());
+            regions.push(chunk.get(offset..end).unwrap_or(&[]));
+        }
+    }
+    Some(regions)
+}
+
 /// Per-entry byte regions of a numeric branch (the shared shape behind the
 /// jagged/array/scalar read paths), for the flat [`BranchRead::flat`](super::BranchRead::flat).
 pub(super) fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&'a [u8]> {
-    if let Some((offset, stride)) = branch.leaflist {
-        if stride == 0 {
-            return Vec::new();
-        }
-        let width = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
-        let mut regions = Vec::new();
-        for b in baskets {
-            for chunk in b.entry_data().chunks_exact(stride) {
-                let end = (offset + width).min(chunk.len());
-                regions.push(chunk.get(offset..end).unwrap_or(&[]));
-            }
-        }
+    if let Some(regions) = leaflist_regions(branch, baskets) {
         return regions;
     }
     if baskets.iter().any(|b| b.entry_offsets.is_some()) {
@@ -42,13 +49,25 @@ pub(super) fn entry_regions<'a>(branch: &Branch, baskets: &'a [Basket]) -> Vec<&
 }
 
 /// How [`read_baskets`] decompresses: in order on the calling thread, or, only
-/// when a caller asks for it, across rayon's global pool. Enabling the `rayon`
-/// feature adds the parallel read methods; it never changes the serial ones.
+/// when a caller asks for it, across rayon's global pool. Without the `rayon`
+/// feature there is only the serial way, whatever a caller asks.
 #[derive(Clone, Copy)]
 pub(super) enum Decode {
     Serial,
     #[cfg(feature = "rayon")]
     Parallel,
+}
+
+impl Decode {
+    /// `Parallel` when asked for and the `rayon` feature provides a pool.
+    pub(super) const fn from_parallel(parallel: bool) -> Self {
+        #[cfg(feature = "rayon")]
+        if parallel {
+            return Self::Parallel;
+        }
+        let _ = parallel;
+        Self::Serial
+    }
 }
 
 /// Read the requested baskets of `branch` (by index) and decompress them,
@@ -119,17 +138,9 @@ pub(super) fn decode_baskets(branch: &Branch, baskets: &[Basket]) -> Result<Bran
 
     // A leaflist leaf: take this leaf's bytes out of each entry's fixed stride
     // at its offset, then decode like a scalar / fixed array.
-    if let Some((offset, stride)) = branch.leaflist {
-        if stride == 0 {
+    if let Some(regions) = leaflist_regions(branch, baskets) {
+        if branch.leaflist.is_some_and(|(_, stride)| stride == 0) {
             return decode_scalar(branch.leaf_type, &[]);
-        }
-        let width = usize::saturating_from(branch.leaf_len.max(1)) * branch.leaf_type.size();
-        let mut regions: Vec<&[u8]> = Vec::new();
-        for b in baskets {
-            for chunk in b.entry_data().chunks_exact(stride) {
-                let end = (offset + width).min(chunk.len());
-                regions.push(chunk.get(offset..end).unwrap_or(&[]));
-            }
         }
         if branch.leaf_len > 1 {
             return decode_array(branch.leaf_type, &regions);
@@ -289,7 +300,9 @@ fn decode_object_members(
             &om.class_elements,
             &mut members,
             &mut on_object,
-            "",
+            // The walk ends at the member this column holds: the ones after it
+            // are not decoded for a value nobody reads.
+            &om.member,
         )?;
         values.push(members.remove(&om.member).unwrap_or(MemberVal::Int(0)));
     }

@@ -1,10 +1,10 @@
 //! `oxroot stat` — a one-screen summary of a ROOT file.
 
 use clap::Args as ClapArgs;
-use oxiroot_io_core::cast::SaturatingFrom;
 
 use crate::json::Json;
-use crate::util::{CmdResult, compression_label, parse_spec, root_version};
+use crate::util::{Both, CmdResult, compression_label, count, parse_spec, root_version};
+use std::fmt::Write as _;
 
 /// Arguments for `oxroot stat`.
 #[derive(ClapArgs)]
@@ -14,7 +14,7 @@ pub struct Args {
 }
 
 /// Run `oxroot stat`.
-pub fn run(args: Args, json: bool) -> CmdResult {
+pub fn run(args: &Args) -> CmdResult {
     let (path, _) = parse_spec(&args.file);
     let file = crate::util::open_root(&path)?;
     // The source's own length works for both local files and remote URLs (where
@@ -30,7 +30,7 @@ pub fn run(args: Args, json: bool) -> CmdResult {
     });
     streamers.sort();
 
-    if json {
+    let json = {
         let streamers = Json::Array(
             streamers
                 .iter()
@@ -42,30 +42,30 @@ pub fn run(args: Args, json: bool) -> CmdResult {
                 })
                 .collect(),
         );
-        let out = Json::Object(vec![
-            ("file", Json::s(path)),
+        Json::Object(vec![
+            ("file", Json::s(path.clone())),
             ("size_bytes", Json::Int(size.cast_signed())),
             ("root_version", Json::s(root_version(header.version))),
             ("compression", Json::s(compression_label(header.compress))),
-            ("objects", Json::Int(i64::saturating_from(keys))),
+            ("objects", count(keys)),
             ("streamers", streamers),
-        ]);
-        println!("{}", out.render());
-        return Ok(());
-    }
+        ])
+    };
 
-    println!("file         {path}");
-    println!("size         {}", human_size(size));
-    println!("ROOT version {}", root_version(header.version));
-    println!("compression  {}", compression_label(header.compress));
-    println!("objects      {keys}");
+    // Writing to a `String` cannot fail.
+    let mut text = String::new();
+    let _ = writeln!(text, "file         {path}");
+    let _ = writeln!(text, "size         {}", human_size(size));
+    let _ = writeln!(text, "ROOT version {}", root_version(header.version));
+    let _ = writeln!(text, "compression  {}", compression_label(header.compress));
+    let _ = writeln!(text, "objects      {keys}");
     if !streamers.is_empty() {
-        println!("streamers    {} classes", streamers.len());
+        let _ = writeln!(text, "streamers    {} classes", streamers.len());
         for (class, version) in &streamers {
-            println!("    {class} (v{version})");
+            let _ = writeln!(text, "    {class} (v{version})");
         }
     }
-    Ok(())
+    Both::done(text, json)
 }
 
 /// Bytes as a compact human-readable size.

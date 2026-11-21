@@ -40,6 +40,7 @@ paired by index, so they must all have the same length; a constructor returns
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphErrors;
 
 // Plain Graph.
 let plain = Graph::new(
@@ -72,6 +73,7 @@ Set the name and title with the chainable `named` / `titled` builders:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphErrors;
 
 let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("resolution")
@@ -91,6 +93,7 @@ payload (no file framing).
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphErrors;
 
 let g = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("resolution")
@@ -128,6 +131,7 @@ the matching `errors` variant is filled in:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphErrors;
 use oxiroot::FileReader;
 
 let f = FileReader::open("graph.root")?;
@@ -166,6 +170,8 @@ the graph carries no errors.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::fit::{FitExt, Model};
+use oxiroot::hist::GraphErrors;
 
 let graph = Graph::new(vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0])?.with_errors(GraphErrors::Symmetric { ex: vec![0.1, 0.1, 0.1], ey: vec![1.0, 2.0, 1.5] })?
 .named("g");
@@ -207,6 +213,7 @@ it is stored in ROOT's `[pN]` form.
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::GraphFunction;
 
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
@@ -231,6 +238,7 @@ surface. It is a separate Rust type with the same read/write traits:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::Graph2D;
 use oxiroot::FileReader;
 
 let g = Graph2D::new(
@@ -260,6 +268,7 @@ same points. Start from the first y-error layer and chain `with_y_error`:
 
 ```rust
 use oxiroot::prelude::*;
+use oxiroot::hist::MultiErrorGraph;
 use oxiroot::FileReader;
 
 let g = MultiErrorGraph::new(

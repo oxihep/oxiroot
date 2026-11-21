@@ -25,8 +25,11 @@ fn reads_set_and_map_branches() {
     let t = TreeReader::open(&f, "t").expect("open tree");
     assert_eq!(t.entries(), 3);
     // A set<int> branch is a single jagged integer collection.
-    assert_eq!(t.branch_names(), vec!["s", "m.first", "m.second"]);
-    assert!(t.unsupported_branches().is_empty());
+    assert_eq!(
+        t.branch_names().collect::<Vec<_>>(),
+        vec!["s", "m.first", "m.second"]
+    );
+    assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     assert_eq!(
         t.branch("s").values().unwrap(),

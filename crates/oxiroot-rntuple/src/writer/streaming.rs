@@ -9,21 +9,11 @@ use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, compress_if_
 use oxiroot_io_core::{Compression, Error, Result};
 
 use super::classes::ntuple_streamer_info;
-use super::envelopes::{
-    build_anchor, build_footer, build_header, check_page_limits, envelope, list_frame, record_frame,
-};
+use super::envelopes::{PageRec, build_anchor, build_footer, build_header, build_page_list};
 use super::fields::Field;
 use super::lower::{ColumnPlan, FieldPlan, lower};
 use super::offset;
 use crate::anchor::ANCHOR_CLASS;
-
-/// One page's location for the page list (one page per column per cluster).
-struct PageRec {
-    offset: u64,
-    disk_size: usize,
-    n_elements: u32,
-    element_offset: i64,
-}
 
 /// One batch lowered and its pages compressed, ready to place.
 struct PreparedCluster {
@@ -339,7 +329,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
         let num_clusters = u32::saturating_from(self.summaries.len());
 
         let compression = self.file.compression();
-        let page_list_env = build_page_list_multi(
+        let page_list_env = build_page_list(
             &self.summaries,
             &self.cluster_pages,
             compression,
@@ -353,6 +343,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
             offset(page_list_offset)?,
             page_list_env.len(),
             header.checksum,
+            None,
         );
         let seek_footer = self.file.place_blob(&footer_env)?;
 
@@ -380,54 +371,6 @@ impl<W: Write + Seek> NtupleWriter<W> {
         self.file.place_streamer_info(&header.streamer_info, &[])?;
         self.file.finish()
     }
-}
-
-/// Build the page-list envelope for any number of clusters: cluster summaries,
-/// then page locations nested clusters → columns → (one) page.
-fn build_page_list_multi(
-    summaries: &[(u64, u64)],
-    cluster_pages: &[Vec<PageRec>],
-    compression: Compression,
-    header_checksum: u64,
-) -> Result<Vec<u8>> {
-    let mut p = Vec::new();
-    p.extend_from_slice(&header_checksum.to_le_bytes());
-
-    let summary_frames: Vec<Vec<u8>> = summaries
-        .iter()
-        .map(|&(first, n)| {
-            let mut s = Vec::new();
-            s.extend_from_slice(&first.to_le_bytes());
-            s.extend_from_slice(&n.to_le_bytes()); // high byte = flags (0)
-            record_frame(&s)
-        })
-        .collect();
-    p.extend_from_slice(&list_frame(&summary_frames));
-
-    let mut cluster_frames: Vec<Vec<u8>> = Vec::with_capacity(cluster_pages.len());
-    for cols in cluster_pages {
-        let mut col_frames: Vec<Vec<u8>> = Vec::with_capacity(cols.len());
-        for pr in cols {
-            check_page_limits(pr.n_elements, pr.disk_size)?;
-            let mut page = Vec::new();
-            page.extend_from_slice(&(pr.n_elements).cast_signed().to_le_bytes()); // no checksum
-            page.extend_from_slice(&i32::saturating_from(pr.disk_size).to_le_bytes()); // on-disk size
-            page.extend_from_slice(&pr.offset.to_le_bytes()); // locator offset
-            let mut body = Vec::new();
-            body.extend_from_slice(&1u32.to_le_bytes()); // one page
-            body.extend_from_slice(&page);
-            body.extend_from_slice(&pr.element_offset.to_le_bytes());
-            body.extend_from_slice(&compression.setting().to_le_bytes());
-            let size = i64::saturating_from(8 + body.len());
-            let mut frame = (-size).to_le_bytes().to_vec();
-            frame.extend_from_slice(&body);
-            col_frames.push(frame);
-        }
-        cluster_frames.push(list_frame(&col_frames));
-    }
-    p.extend_from_slice(&list_frame(&cluster_frames));
-
-    Ok(envelope(0x03, &p))
 }
 
 impl<W: Write + Seek> std::fmt::Debug for NtupleWriter<W> {

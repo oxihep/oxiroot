@@ -88,7 +88,7 @@ mod schema;
 mod write;
 
 pub use batch::Batch;
-pub use column::{Column, IntoColumn, Jagged, Primitive, Strings};
+pub use column::{Column, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
 pub use schema::{DataType, Schema};
 pub use write::{DatasetObject, DatasetWriter};

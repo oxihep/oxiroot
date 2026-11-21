@@ -143,7 +143,12 @@ impl<'a> RBuffer<'a> {
         Ok(slice)
     }
 
-    fn array<const N: usize>(&mut self) -> Result<[u8; N]> {
+    /// Read the next `N` bytes as an array.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if fewer than `N` bytes remain.
+    pub fn array<const N: usize>(&mut self) -> Result<[u8; N]> {
         let slice = self.take(N)?;
         let mut arr = [0u8; N];
         arr.copy_from_slice(slice);
@@ -290,10 +295,56 @@ impl<'a> RBuffer<'a> {
     /// [`Error::UnexpectedEof`] if the buffer ends inside the string, and
     /// [`Error::InvalidUtf8`] if its bytes are not UTF-8.
     pub fn string(&mut self) -> Result<String> {
+        self.str().map(str::to_string)
+    }
+
+    /// Read a ROOT `TString` as a slice of the buffer, without copying it.
+    ///
+    /// # Errors
+    ///
+    /// As [`string`](Self::string).
+    pub fn str(&mut self) -> Result<&'a str> {
+        let bytes = self.string_bytes()?;
+        std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
+    }
+
+    /// Read a NUL-terminated string as a slice of the buffer, leaving the
+    /// cursor after the NUL.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends before a NUL, and
+    /// [`Error::InvalidUtf8`] if the bytes are not UTF-8.
+    pub fn cstr(&mut self) -> Result<&'a str> {
+        let rest = &self.data[self.pos..];
+        let len = rest
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or(Error::UnexpectedEof {
+                needed: rest.len() + 1,
+                available: rest.len(),
+            })?;
+        let text = std::str::from_utf8(&rest[..len]).map_err(|_| Error::InvalidUtf8)?;
+        self.pos += len + 1;
+        Ok(text)
+    }
+
+    /// Move past a ROOT `TString` without reading it: nothing is allocated,
+    /// and its bytes are not checked to be UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnexpectedEof`] if the buffer ends inside the string.
+    pub fn skip_string(&mut self) -> Result<()> {
+        self.string_bytes().map(drop)
+    }
+
+    /// The bytes of the `TString` at the cursor: a one-byte length, or 255
+    /// and a four-byte one.
+    fn string_bytes(&mut self) -> Result<&'a [u8]> {
         let n = self.u8()? as usize;
         let n = if n == 255 { self.be_u32()? as usize } else { n };
-        let bytes = self.take(n)?;
-        String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidUtf8)
+        self.take(n)
     }
 
     /// Read a streamed-object version header (`{fByteCount, fVersion}`).

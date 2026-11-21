@@ -25,7 +25,8 @@
 //! only thing not reconstructed is the spatial fast-fill grid. The reader handles
 //! both layouts — when `fCells` yields no bins it falls back to reading `fBins`.
 
-use oxiroot_io_core::raw::{TagReader, read_object_base, skip_versioned};
+use crate::base::Moments;
+use oxiroot_io_core::raw::{TagReader, read_object_base};
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
@@ -42,14 +43,6 @@ pub struct PolyBin {
     pub content: f64,
     /// Polygon area (`fArea`; ROOT computes it lazily, so often `0`).
     pub area: f64,
-    /// Bounding-box minimum x (`fXmin`).
-    pub xmin: f64,
-    /// Bounding-box minimum y (`fYmin`).
-    pub ymin: f64,
-    /// Bounding-box maximum x (`fXmax`).
-    pub xmax: f64,
-    /// Bounding-box maximum y (`fYmax`).
-    pub ymax: f64,
     /// Polygon vertex x coordinates (`fPoly`'s `Graph` `fX`).
     pub x: Vec<f64>,
     /// Polygon vertex y coordinates (`fPoly`'s `Graph` `fY`).
@@ -57,6 +50,20 @@ pub struct PolyBin {
 }
 
 impl PolyBin {
+    /// The polygon's bounding box, as its `x` range and its `y` range
+    /// (`fXmin..=fXmax`, `fYmin..=fYmax`): the least and greatest vertex
+    /// coordinates. A bin with no vertices has an empty box, from `+∞` to
+    /// `-∞`.
+    #[must_use]
+    pub fn bounds(&self) -> (std::ops::RangeInclusive<f64>, std::ops::RangeInclusive<f64>) {
+        let span = |v: &[f64]| {
+            let min = v.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            min..=max
+        };
+        (span(&self.x), span(&self.y))
+    }
+
     /// The polygon's geometric area via the shoelace formula.
     ///
     /// ROOT stores [`area`](Self::area) lazily (`0` until `TH2PolyBin::GetArea`
@@ -91,20 +98,8 @@ pub struct PolyHist {
     pub(crate) yaxis: Axis,
     /// Number of entries (`fEntries`).
     pub(crate) entries: f64,
-    /// Sum of weights (`fTsumw`).
-    pub(crate) tsumw: f64,
-    /// Sum of weight² (`fTsumw2`).
-    pub(crate) tsumw2: f64,
-    /// Sum of weight·x (`fTsumwx`).
-    pub(crate) tsumwx: f64,
-    /// Sum of weight·x² (`fTsumwx2`).
-    pub(crate) tsumwx2: f64,
-    /// Sum of weight·y (`fTsumwy`).
-    pub(crate) tsumwy: f64,
-    /// Sum of weight·y² (`fTsumwy2`).
-    pub(crate) tsumwy2: f64,
-    /// Sum of weight·x·y (`fTsumwxy`).
-    pub(crate) tsumwxy: f64,
+    /// The sums over the fills (`fTsumw` and the rest).
+    pub(crate) moments: Moments,
     /// The 9 over/underflow accumulators (`fOverflow`).
     pub(crate) overflow: [f64; 9],
     /// The polygon bins, sorted by `number`.
@@ -123,13 +118,7 @@ impl PolyHist {
             xaxis: Axis::new("xaxis", 100, xlow, xup),
             yaxis: Axis::new("yaxis", 100, ylow, yup),
             entries: 0.0,
-            tsumw: 0.0,
-            tsumw2: 0.0,
-            tsumwx: 0.0,
-            tsumwx2: 0.0,
-            tsumwy: 0.0,
-            tsumwy2: 0.0,
-            tsumwxy: 0.0,
+            moments: Moments::default(),
             overflow: [0.0; 9],
             bins: Vec::new(),
         }
@@ -141,10 +130,11 @@ impl PolyHist {
         self.bins.len()
     }
 
-    /// Look up a bin by its ROOT `fNumber`.
+    /// Look up a bin by its ROOT `fNumber`. The bins are kept in number order.
     #[must_use]
     pub fn bin(&self, number: i32) -> Option<&PolyBin> {
-        self.bins.iter().find(|b| b.number == number)
+        let at = self.bins.binary_search_by_key(&number, |b| b.number).ok()?;
+        self.bins.get(at)
     }
 
     /// Add a polygon bin from its vertices (`x[i]`, `y[i]`); returns the new
@@ -161,18 +151,10 @@ impl PolyHist {
     /// Add a polygon bin from vertex slices of equal length.
     fn push_bin(&mut self, x: &[f64], y: &[f64]) -> i32 {
         let number = i32::saturating_from(self.bins.len()) + 1;
-        let xmin = x.iter().copied().fold(f64::INFINITY, f64::min);
-        let xmax = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let ymin = y.iter().copied().fold(f64::INFINITY, f64::min);
-        let ymax = y.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         self.bins.push(PolyBin {
             number,
             content: 0.0,
             area: 0.0,
-            xmin,
-            ymin,
-            xmax,
-            ymax,
             x: x.to_vec(),
             y: y.to_vec(),
         });
@@ -219,13 +201,13 @@ impl PolyHist {
             .iter_mut()
             .find(|b| point_in_polygon(&b.x, &b.y, x, y))?;
         bin.content += w;
-        self.tsumw += w;
-        self.tsumw2 += w * w;
-        self.tsumwx += w * x;
-        self.tsumwx2 += w * x * x;
-        self.tsumwy += w * y;
-        self.tsumwy2 += w * y * y;
-        self.tsumwxy += w * x * y;
+        self.moments.w += w;
+        self.moments.w2 += w * w;
+        self.moments.wx += w * x;
+        self.moments.wx2 += w * x * x;
+        self.moments.wy += w * y;
+        self.moments.wy2 += w * y * y;
+        self.moments.wxy += w * x * y;
         Some(bin.number)
     }
 
@@ -288,13 +270,12 @@ impl PolyHist {
             xaxis: core.xaxis,
             yaxis: core.yaxis,
             entries: core.entries,
-            tsumw: core.tsumw,
-            tsumw2: core.tsumw2,
-            tsumwx: core.tsumwx,
-            tsumwx2: core.tsumwx2,
-            tsumwy,
-            tsumwy2,
-            tsumwxy,
+            moments: Moments {
+                wy: tsumwy,
+                wy2: tsumwy2,
+                wxy: tsumwxy,
+                ..core.moments
+            },
             overflow,
             bins,
         })
@@ -335,7 +316,7 @@ fn read_bool_pointer_array(r: &mut RBuffer<'_>, n: usize) -> Result<()> {
 fn read_cell(r: &mut RBuffer<'_>, tags: &mut TagReader, bins: &mut Vec<PolyBin>) -> Result<()> {
     let tlist = r.read_version()?; // TList v5
     read_object_base(r)?;
-    let _name = r.string()?; // fName (empty)
+    r.skip_string()?; // fName (empty)
     let size = r.be_i32()?.max(0);
     for _ in 0..size {
         let header = tags.read_header(r)?;
@@ -345,7 +326,7 @@ fn read_cell(r: &mut RBuffer<'_>, tags: &mut TagReader, bins: &mut Vec<PolyBin>)
         if let Some(end) = header.end {
             r.seek(end)?;
         }
-        let _option = r.string()?; // per-element option string
+        r.skip_string()?; // per-element option string
     }
     if let Some(end) = tlist.end {
         r.seek(end)?;
@@ -362,18 +343,11 @@ fn read_polybin(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<PolyBin> {
     let (x, y) = read_poly_graph(r, tags)?; // fPoly (a Graph)
     let area = r.be_f64()?;
     let content = r.be_f64()?;
-    let xmin = r.be_f64()?;
-    let ymin = r.be_f64()?;
-    let xmax = r.be_f64()?;
-    let ymax = r.be_f64()?;
+    r.skip(32)?; // fXmin, fYmin, fXmax, fYmax: the vertices' bounding box
     Ok(PolyBin {
         number,
         content,
         area,
-        xmin,
-        ymin,
-        xmax,
-        ymax,
         x,
         y,
     })
@@ -391,19 +365,7 @@ fn read_poly_graph(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(Vec<f64
         return Ok((Vec::new(), Vec::new()));
     }
     let _graph = r.read_version()?; // Graph v5
-    skip_versioned(r)?; // Named
-    skip_versioned(r)?; // TAttLine
-    skip_versioned(r)?; // TAttFill
-    skip_versioned(r)?; // TAttMarker
-    let npoints = usize::saturating_from(r.be_i32()?.max(0)); // fNpoints
-    let _x_marker = r.u8()?; // Double_t* //[fNpoints] presence marker
-    let x = (0..npoints)
-        .map(|_| r.be_f64())
-        .collect::<Result<Vec<_>>>()?;
-    let _y_marker = r.u8()?;
-    let y = (0..npoints)
-        .map(|_| r.be_f64())
-        .collect::<Result<Vec<_>>>()?;
+    let (_named, x, y) = crate::graph::read_graph_points(r)?;
     // Skip fHistogram/fMinimum/fMaximum/fFunctions… via the object's byte count.
     if let Some(end) = header.end {
         r.seek(end)?;

@@ -6,7 +6,7 @@
 
 use oxiroot_io_core::{Error, Result};
 
-use crate::reader::{BranchMetaLite, BranchRead};
+use crate::reader::{BranchRead, Rewrite};
 use crate::value::BranchValues;
 use crate::writer::Branch;
 
@@ -23,53 +23,30 @@ impl BranchRead<'_, '_> {
     /// Any error reading the branch, and [`Error::Unsupported`] as described above.
     pub fn to_branch(self) -> Result<Branch> {
         let name = self.name();
-        let meta = self
+        let rewrite = self
             .tree()
-            .branch_meta(name)
+            .branch_rewrite(name)
             .ok_or_else(|| Error::NotFound {
                 what: "branch",
                 name: name.to_string(),
+            })?
+            // Layouts this crate can read but not yet write back.
+            .map_err(|what| {
+                Error::Unsupported(format!(
+                    "branch {name:?} is a {what}, which oxiroot cannot write yet",
+                ))
             })?;
-        build_branch(name, &meta, self.values()?)
+        build_branch(name, rewrite, self.values()?)
     }
 }
 
 /// Rebuild a writable [`Branch`] of the correct kind from a branch's read
 /// metadata and its concatenated values.
-fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Result<Branch> {
-    // Layouts this crate can read but not yet write back.
+fn build_branch(name: &str, flavor: Rewrite, values: BranchValues) -> Result<Branch> {
     let reject = |what: &str| -> Result<Branch> {
         Err(Error::Unsupported(format!(
             "branch {name:?} is a {what}, which oxiroot cannot write yet",
         )))
-    };
-    if meta.has_object_member {
-        return reject("split-object member column");
-    }
-    if meta.has_leaflist {
-        return reject("multi-leaf (leaflist) branch");
-    }
-    if meta.has_nested {
-        return reject("std::vector<std::vector<T>> branch");
-    }
-    if meta.dims_len > 1 {
-        return reject("multidimensional fixed array");
-    }
-
-    // Which flavour a `Vec*` value writes back as: a single fixed dimension
-    // (`x[N]`) → fixed array; else a `std::vector<T>` (marked by a per-entry
-    // streamer header) → STL vector; else a jagged `x[n]`.
-    enum Flavor {
-        Fixed,
-        Stl,
-        Jagged,
-    }
-    let flavor = if meta.dims_len == 1 {
-        Flavor::Fixed
-    } else if meta.elem_header > 0 {
-        Flavor::Stl
-    } else {
-        Flavor::Jagged
     };
 
     use BranchValues::*;
@@ -77,9 +54,9 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
     macro_rules! vec3 {
         ($v:expr, $fixed:ident, $jagged:ident, $stl:ident) => {
             match flavor {
-                Flavor::Fixed => Ok(Branch::$fixed(name, $v)),
-                Flavor::Jagged => Ok(Branch::$jagged(name, $v)),
-                Flavor::Stl => Ok(Branch::$stl(name, $v)),
+                Rewrite::Fixed => Ok(Branch::$fixed(name, $v)),
+                Rewrite::Jagged => Ok(Branch::$jagged(name, $v)),
+                Rewrite::Vector => Ok(Branch::$stl(name, $v)),
             }
         };
     }
@@ -100,9 +77,9 @@ fn build_branch(name: &str, meta: &BranchMetaLite, values: BranchValues) -> Resu
         // `std::vector<bool>` has no writer constructor (bit-packed); the fixed
         // and jagged flavours do.
         VecBool(v) => match flavor {
-            Flavor::Fixed => Ok(Branch::array_bool(name, v)),
-            Flavor::Jagged => Ok(Branch::jagged_bool(name, v)),
-            Flavor::Stl => reject("std::vector<bool> branch"),
+            Rewrite::Fixed => Ok(Branch::array_bool(name, v)),
+            Rewrite::Jagged => Ok(Branch::jagged_bool(name, v)),
+            Rewrite::Vector => reject("std::vector<bool> branch"),
         },
         VecI8(v) => vec3!(v, array_i8, jagged_i8, vector_i8),
         VecU8(v) => vec3!(v, array_u8, jagged_u8, vector_u8),

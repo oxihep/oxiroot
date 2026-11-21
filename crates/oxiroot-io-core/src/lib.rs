@@ -57,6 +57,7 @@ mod streamer;
 #[doc(hidden)]
 pub mod streamer_gen;
 mod streamer_info;
+pub mod streamer_types;
 mod value;
 
 pub use buffer::{CountToken, Patch, RBuffer, WBuffer};
@@ -104,6 +105,7 @@ pub mod raw {
         skip_versioned, write_named, write_object_any, write_object_base, write_object_ptr,
     };
     pub use crate::streamer_info::{StreamerElement, StreamerInfo, parse_streamer_info};
+    pub use crate::streamer_types::ElementKind;
 
     /// A file's streamer-info record as stored: the decompressed
     /// `TList<TStreamerInfo>` bytes and the key length they were written under,

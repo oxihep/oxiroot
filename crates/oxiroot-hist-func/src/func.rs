@@ -1,181 +1,179 @@
-//! The function types: [`Func1D`], [`Func2D`] and [`Func3D`], their evaluation, and the
-//! shared [`FuncCore`] (name, formula, parameters, fit metadata).
+//! The function type: [`Func`], with [`Func1D`], [`Func2D`] and [`Func3D`] as
+//! its one-, two- and three-dimensional forms, and their evaluation.
 
 use oxifit_formula::{Formula, derivative, integrate};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
 use std::ops::RangeInclusive;
 
-/// The data shared by [`Func1D`]/[`Func2D`]/[`Func3D`]: a name and title, the parsed
-/// formula, the parameter values, and the fit-result metadata ROOT stores
-/// (`fParErrors`/`fParMin`/`fParMax`/`fChisquare`/`fNDF`).
+/// A parametric function of `D` variables: a formula, its parameter values,
+/// a range on each axis, and the fit results ROOT stores with it.
+///
+/// Use it through [`Func1D`], [`Func2D`] and [`Func3D`]; ROOT has no function
+/// class past three dimensions, and none can be built here.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FuncCore {
-    name: String,
-    /// ROOT's `fTitle` — the formula as written by the user (`[0]` form).
-    title: String,
+pub struct Func<const D: usize> {
+    /// What ROOT stores for the function: the name, the title (the formula as
+    /// written), the formula in `[pN]` form, the parameters with their errors
+    /// and limits, the `x` range and the fit's chi-square.
+    record: GraphFunction,
+    /// The record's formula, parsed.
     formula: Formula,
-    params: Vec<f64>,
-    par_errors: Vec<f64>,
-    par_min: Vec<f64>,
-    par_max: Vec<f64>,
-    chi2: f64,
-    ndf: i32,
+    /// The ranges of the axes after `x`; the record has `x`'s.
+    outer: [(f64, f64); 2],
 }
 
-impl FuncCore {
-    fn build(name: &str, source: &str) -> Result<Self> {
+/// A 1-D parametric function `f(x; p)`, ROOT's `TF1`.
+#[doc(alias = "TF1")]
+pub type Func1D = Func<1>;
+/// A 2-D parametric function `f(x, y; p)`, ROOT's `TF2`.
+#[doc(alias = "TF2")]
+pub type Func2D = Func<2>;
+/// A 3-D parametric function `f(x, y, z; p)`, ROOT's `TF3`.
+#[doc(alias = "TF3")]
+pub type Func3D = Func<3>;
+
+fn bounds(range: &RangeInclusive<f64>) -> (f64, f64) {
+    (*range.start(), *range.end())
+}
+
+impl<const D: usize> Func<D> {
+    /// A function named `name` from the formula `source`, its parameters zero.
+    fn build(
+        name: &str,
+        source: &str,
+        x: &RangeInclusive<f64>,
+        outer: [(f64, f64); 2],
+    ) -> Result<Self> {
         let formula = Formula::parse(source)
             .map_err(|e| Error::InvalidInput(format!("bad formula {source:?}: {e}")))?;
         let npar = formula.npar();
+        let (xmin, xmax) = bounds(x);
         Ok(Self {
-            name: name.to_string(),
-            title: source.to_string(),
-            params: vec![0.0; npar],
-            par_errors: vec![0.0; npar],
-            par_min: vec![0.0; npar],
-            par_max: vec![0.0; npar],
-            chi2: 0.0,
-            ndf: 0,
+            record: GraphFunction {
+                name: name.to_string(),
+                title: source.to_string(),
+                formula: formula.root_formula().to_owned(),
+                params: vec![0.0; npar],
+                par_errors: vec![0.0; npar],
+                par_min: vec![0.0; npar],
+                par_max: vec![0.0; npar],
+                xmin,
+                xmax,
+                chi2: 0.0,
+                ndf: 0,
+            },
             formula,
+            outer,
         })
     }
 
-    /// The `Func1D` record ROOT stores for this function over `[xmin, xmax]`.
-    pub(crate) fn record(&self, xmin: f64, xmax: f64) -> GraphFunction {
-        GraphFunction {
-            name: self.name.clone(),
-            title: self.title.clone(),
-            formula: self.formula.root_formula().to_owned(),
-            params: self.params.clone(),
-            par_errors: self.par_errors.clone(),
-            par_min: self.par_min.clone(),
-            par_max: self.par_max.clone(),
-            xmin,
-            xmax,
-            chi2: self.chi2,
-            ndf: self.ndf,
-        }
-    }
-
-    /// Parse a `Func1D` record's formula back into a function core.
-    pub(crate) fn from_record(f: GraphFunction) -> Result<Self> {
-        let formula = Formula::parse(&f.formula).map_err(|e| {
-            Error::Unsupported(format!("formula {:?} does not parse: {e}", f.formula))
+    /// A function from the record ROOT stores and the ranges of its axes
+    /// after `x`. The record's formula is kept in the form the parser writes.
+    pub(crate) fn from_record(mut record: GraphFunction, outer: [(f64, f64); 2]) -> Result<Self> {
+        let formula = Formula::parse(&record.formula).map_err(|e| {
+            Error::Unsupported(format!("formula {:?} does not parse: {e}", record.formula))
         })?;
+        formula.root_formula().clone_into(&mut record.formula);
         Ok(Self {
-            name: f.name,
-            title: f.title,
+            record,
             formula,
-            params: f.params,
-            par_errors: f.par_errors,
-            par_min: f.par_min,
-            par_max: f.par_max,
-            chi2: f.chi2,
-            ndf: f.ndf,
+            outer,
         })
+    }
+
+    /// The record ROOT stores: the `TF1` part of the function.
+    pub(crate) const fn record(&self) -> &GraphFunction {
+        &self.record
+    }
+
+    /// The range of axis `axis`, counted from 1 after `x`: 1 is `y`, 2 is `z`.
+    pub(crate) const fn outer(&self, axis: usize) -> (f64, f64) {
+        self.outer[axis - 1]
+    }
+
+    /// Set the key name this function is stored under.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.record.name = name.into();
+        self
+    }
+
+    /// The key name (`fName`).
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.record.name
+    }
+    /// The formula expression as written (`fTitle`).
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.record.title
+    }
+    /// The formula in ROOT's canonical `[pN]` form.
+    #[must_use]
+    pub fn formula(&self) -> &str {
+        &self.record.formula
+    }
+    /// The number of parameters.
+    #[must_use]
+    pub fn npar(&self) -> usize {
+        self.record.params.len()
+    }
+    /// The current parameter values.
+    #[must_use]
+    pub fn params(&self) -> &[f64] {
+        &self.record.params
+    }
+    /// Parameter `i`, or `None` if the formula has no such parameter.
+    #[must_use]
+    pub fn param(&self, i: usize) -> Option<f64> {
+        self.record.params.get(i).copied()
+    }
+    /// The parameter values, to change in place. Their number is fixed by
+    /// the formula.
+    pub fn params_mut(&mut self) -> &mut [f64] {
+        &mut self.record.params
+    }
+    /// Set every parameter value (`[0], [1], …`), as a builder.
+    ///
+    /// # Errors
+    /// [`Error::LengthMismatch`] if `params` does not hold one value per
+    /// parameter of the formula.
+    pub fn with_params(mut self, params: &[f64]) -> Result<Self> {
+        oxiroot_io_core::raw::check_len(
+            "function parameters",
+            self.record.params.len(),
+            params.len(),
+        )?;
+        self.record.params.copy_from_slice(params);
+        Ok(self)
+    }
+    /// The fit χ² stored on the function (`fChisquare`), `0.0` if unfitted.
+    #[must_use]
+    pub fn chi2(&self) -> f64 {
+        self.record.chi2
+    }
+    /// The fit degrees of freedom (`fNDF`).
+    #[must_use]
+    pub fn ndf(&self) -> i32 {
+        self.record.ndf
     }
 }
 
-/// The accessors and parameter mutators common to `Func1D`/`Func2D`/`Func3D`.
-macro_rules! accessors {
-    () => {
-        /// The key name (`fName`).
-        #[must_use]
-        pub fn name(&self) -> &str {
-            &self.core.name
-        }
-        /// The formula expression as written (`fTitle`).
-        #[must_use]
-        pub fn title(&self) -> &str {
-            &self.core.title
-        }
-        /// The formula in ROOT's canonical `[pN]` form.
-        #[must_use]
-        pub fn formula(&self) -> &str {
-            self.core.formula.root_formula()
-        }
-        /// The number of parameters.
-        #[must_use]
-        pub fn npar(&self) -> usize {
-            self.core.params.len()
-        }
-        /// The current parameter values.
-        #[must_use]
-        pub fn params(&self) -> &[f64] {
-            &self.core.params
-        }
-        /// Parameter `i`, or `None` if the formula has no such parameter.
-        #[must_use]
-        pub fn param(&self, i: usize) -> Option<f64> {
-            self.core.params.get(i).copied()
-        }
-        /// The parameter values, to change in place. Their number is fixed by
-        /// the formula.
-        pub fn params_mut(&mut self) -> &mut [f64] {
-            &mut self.core.params
-        }
-        /// Set every parameter value (`[0], [1], …`), as a builder.
-        ///
-        /// # Errors
-        /// [`Error::LengthMismatch`] if `params` does not hold one value per
-        /// parameter of the formula.
-        pub fn with_params(mut self, params: &[f64]) -> Result<Self> {
-            oxiroot_io_core::raw::check_len(
-                "function parameters",
-                self.core.params.len(),
-                params.len(),
-            )?;
-            self.core.params.copy_from_slice(params);
-            Ok(self)
-        }
-        /// The fit χ² stored on the function (`fChisquare`), `0.0` if unfitted.
-        #[must_use]
-        pub fn chi2(&self) -> f64 {
-            self.core.chi2
-        }
-        /// The fit degrees of freedom (`fNDF`).
-        #[must_use]
-        pub fn ndf(&self) -> i32 {
-            self.core.ndf
-        }
-    };
-}
-
-/// A `Func1D` — a 1-D parametric function `f(x; p)`.
-#[derive(Debug, Clone, PartialEq)]
-#[doc(alias = "TF1")]
-pub struct Func1D {
-    pub(crate) core: FuncCore,
-    pub(crate) xmin: f64,
-    pub(crate) xmax: f64,
-}
-
-impl Func1D {
+impl Func<1> {
     /// Build a `Func1D` named `name` from a ROOT `formula` over the range `x`,
     /// with all parameters initialised to zero.
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
     pub fn new(name: &str, formula: &str, x: RangeInclusive<f64>) -> Result<Self> {
-        Ok(Self {
-            core: FuncCore::build(name, formula)?,
-            xmin: *x.start(),
-            xmax: *x.end(),
-        })
-    }
-
-    /// Set the key name this function is stored under.
-    #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Self {
-        self.core.name = name.into();
-        self
+        Self::build(name, formula, &x, [(0.0, 0.0); 2])
     }
 
     /// Evaluate `f(x)` with the current parameters.
     #[must_use]
     pub fn eval(&self, x: f64) -> f64 {
-        self.core.formula.eval1(x, &self.core.params)
+        self.formula.eval1(x, &self.record.params)
     }
 
     /// The definite integral `∫ₐᵇ f(x) dx` (adaptive Gauss–Kronrod), as
@@ -192,12 +190,10 @@ impl Func1D {
         derivative(|x| self.eval(x), x)
     }
 
-    accessors!();
-
     /// The function's range (`fXmin..=fXmax`).
     #[must_use]
     pub const fn range(&self) -> RangeInclusive<f64> {
-        self.xmin..=self.xmax
+        self.record.xmin..=self.record.xmax
     }
 
     /// This function as the `Func1D` record a graph's `fFunctions` list holds, for
@@ -215,7 +211,7 @@ impl Func1D {
     /// ```
     #[must_use]
     pub fn to_graph_function(&self) -> GraphFunction {
-        self.core.record(self.xmin, self.xmax)
+        self.record.clone()
     }
 
     /// Rebuild a `Func1D` from a `Func1D` record, such as a function read from a
@@ -225,17 +221,12 @@ impl Func1D {
     /// # Errors
     /// Returns an error if the record's formula is not a valid expression.
     pub fn from_graph_function(function: GraphFunction) -> Result<Self> {
-        let (xmin, xmax) = (function.xmin, function.xmax);
-        Ok(Self {
-            core: FuncCore::from_record(function)?,
-            xmin,
-            xmax,
-        })
+        Self::from_record(function, [(0.0, 0.0); 2])
     }
 }
 
 #[cfg(feature = "fit")]
-impl Func1D {
+impl Func<1> {
     /// Convert to a fittable [`Model`](oxifit::Model), seeded with this
     /// function's current parameters — so `data.fit(&tf1.to_model())` fits data
     /// to this function's shape. Requires the `fit` feature.
@@ -247,7 +238,7 @@ impl Func1D {
     /// canonical `[pN]` formula.
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.core.formula.clone();
+        let formula = self.formula.clone();
         let names = model_names(self.title(), &formula);
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         oxifit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
@@ -267,18 +258,7 @@ fn model_names(title: &str, formula: &Formula) -> Vec<String> {
     }
 }
 
-/// A `Func2D` — a 2-D parametric function `f(x, y; p)`.
-#[derive(Debug, Clone, PartialEq)]
-#[doc(alias = "TF2")]
-pub struct Func2D {
-    pub(crate) core: FuncCore,
-    pub(crate) xmin: f64,
-    pub(crate) xmax: f64,
-    pub(crate) ymin: f64,
-    pub(crate) ymax: f64,
-}
-
-impl Func2D {
+impl Func<2> {
     /// Build a `Func2D` from a formula in `x` and `y` over the ranges `x` and `y`.
     ///
     /// # Errors
@@ -289,26 +269,13 @@ impl Func2D {
         x: RangeInclusive<f64>,
         y: RangeInclusive<f64>,
     ) -> Result<Self> {
-        Ok(Self {
-            core: FuncCore::build(name, formula)?,
-            xmin: *x.start(),
-            xmax: *x.end(),
-            ymin: *y.start(),
-            ymax: *y.end(),
-        })
-    }
-
-    /// Set the key name this function is stored under.
-    #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Self {
-        self.core.name = name.into();
-        self
+        Self::build(name, formula, &x, [bounds(&y), (0.0, 0.0)])
     }
 
     /// Evaluate `f(x, y)` with the current parameters.
     #[must_use]
     pub fn eval(&self, x: f64, y: f64) -> f64 {
-        self.core.formula.eval(&[x, y], &self.core.params)
+        self.formula.eval(&[x, y], &self.record.params)
     }
 
     /// Convert to a fittable 2-D [`Model`](oxifit::Model), seeded with this
@@ -318,7 +285,7 @@ impl Func2D {
     #[cfg(feature = "fit")]
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.core.formula.clone();
+        let formula = self.formula.clone();
         let names = model_names(self.title(), &formula);
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         oxifit::Model::new2(
@@ -329,29 +296,15 @@ impl Func2D {
         )
     }
 
-    accessors!();
-
     /// The `x` and `y` ranges (`fXmin`/`fXmax`, `fYmin`/`fYmax`).
     #[must_use]
     pub const fn range(&self) -> (RangeInclusive<f64>, RangeInclusive<f64>) {
-        (self.xmin..=self.xmax, self.ymin..=self.ymax)
+        let (ymin, ymax) = self.outer[0];
+        (self.record.xmin..=self.record.xmax, ymin..=ymax)
     }
 }
 
-/// A `Func3D` — a 3-D parametric function `f(x, y, z; p)`.
-#[derive(Debug, Clone, PartialEq)]
-#[doc(alias = "TF3")]
-pub struct Func3D {
-    pub(crate) core: FuncCore,
-    pub(crate) xmin: f64,
-    pub(crate) xmax: f64,
-    pub(crate) ymin: f64,
-    pub(crate) ymax: f64,
-    pub(crate) zmin: f64,
-    pub(crate) zmax: f64,
-}
-
-impl Func3D {
+impl Func<3> {
     /// Build a `Func3D` from a formula in `x`, `y`, `z` over the given box.
     ///
     /// # Errors
@@ -363,28 +316,13 @@ impl Func3D {
         y: RangeInclusive<f64>,
         z: RangeInclusive<f64>,
     ) -> Result<Self> {
-        Ok(Self {
-            core: FuncCore::build(name, formula)?,
-            xmin: *x.start(),
-            xmax: *x.end(),
-            ymin: *y.start(),
-            ymax: *y.end(),
-            zmin: *z.start(),
-            zmax: *z.end(),
-        })
-    }
-
-    /// Set the key name this function is stored under.
-    #[must_use]
-    pub fn named(mut self, name: impl Into<String>) -> Self {
-        self.core.name = name.into();
-        self
+        Self::build(name, formula, &x, [bounds(&y), bounds(&z)])
     }
 
     /// Evaluate `f(x, y, z)` with the current parameters.
     #[must_use]
     pub fn eval(&self, x: f64, y: f64, z: f64) -> f64 {
-        self.core.formula.eval(&[x, y, z], &self.core.params)
+        self.formula.eval(&[x, y, z], &self.record.params)
     }
 
     /// Convert to a fittable 3-D [`Model`](oxifit::Model), seeded with this
@@ -393,7 +331,7 @@ impl Func3D {
     #[cfg(feature = "fit")]
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.core.formula.clone();
+        let formula = self.formula.clone();
         let names = model_names(self.title(), &formula);
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         oxifit::Model::new3(
@@ -404,8 +342,6 @@ impl Func3D {
         )
     }
 
-    accessors!();
-
     /// The `x`, `y`, and `z` ranges.
     #[must_use]
     pub const fn range(
@@ -415,10 +351,11 @@ impl Func3D {
         RangeInclusive<f64>,
         RangeInclusive<f64>,
     ) {
+        let [(ymin, ymax), (zmin, zmax)] = self.outer;
         (
-            self.xmin..=self.xmax,
-            self.ymin..=self.ymax,
-            self.zmin..=self.zmax,
+            self.record.xmin..=self.record.xmax,
+            ymin..=ymax,
+            zmin..=zmax,
         )
     }
 }

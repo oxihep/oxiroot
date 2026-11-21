@@ -10,6 +10,7 @@
 //! cargo run -p oxiroot --example graphs
 //! ```
 
+use oxiroot::hist::{Graph2D, GraphErrors, GraphStack};
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
@@ -95,7 +96,7 @@ fn main() -> oxiroot::Result<()> {
         .add(theory);
     println!(
         "comparison: TMultiGraph holding {} graphs",
-        comparison.graphs().len(),
+        comparison.members().len(),
     );
 
     // --- Write every graph into ONE file with FileWriter. -----------------------
@@ -134,8 +135,8 @@ fn main() -> oxiroot::Result<()> {
     println!(
         "read back multigraph `{}`: {} member graphs ({})",
         mg.name(),
-        mg.graphs().len(),
-        mg.graphs()
+        mg.members().len(),
+        mg.members()
             .iter()
             .map(Graph::name)
             .collect::<Vec<_>>()
