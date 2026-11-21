@@ -4,6 +4,7 @@
 //! the `plot` feature is on, so it is a no-op under the default `cargo test`.
 #![cfg(feature = "plot")]
 
+#[cfg(feature = "fit")]
 use oxiroot::fit::FitExt;
 use oxiroot::plot::{Axes, Color, HistOpts, HistType, SaveOpts};
 use oxiroot::prelude::*;

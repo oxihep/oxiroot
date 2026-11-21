@@ -31,8 +31,8 @@ fn main() {
 
 #[cfg(feature = "plot")]
 fn main() -> oxiroot::Result<()> {
-    use oxiroot::fit::FitExt;
-    use oxiroot::fit::Model;
+    #[cfg(feature = "fit")]
+    use oxiroot::fit::{FitExt, Model};
     use oxiroot::plot::{
         Axes, Color, ErrorbarOpts, FontSet, Hist2dOpts, HistOpts, HistType, SaveOpts, Style,
         ratio_subplots,
