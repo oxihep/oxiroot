@@ -35,6 +35,7 @@ mod analysis {
     use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model};
     use oxiroot::hist::oxihist::Weight;
     use oxiroot::hist::{Graph, GraphErrors};
+    use oxiroot::particle::literals;
     use oxiroot::plot::{Color, CurveOpts, HistOpts, HistType, Style, ratio_subplots_with};
     use oxiroot::prelude::*;
 
@@ -73,6 +74,7 @@ mod analysis {
         let mut mass = Hist::reg(BINS, LO, HI)
             .weight()
             .named(format!("m_mumu_{name}"));
+        let muon = literals::muon().pdgid().abspid().unsigned_abs();
         let mut passed = [0_u64; 4];
         let (mut events, mut masses, mut lead, mut sub) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -97,9 +99,9 @@ mod analysis {
             let kind = batch.jagged::<u32>("lep_type")?;
             for (i, &event) in event.iter().enumerate() {
                 passed[0] += 1;
-                // Muons carry |PDG ID| 13.
+                // The file stores a lepton's kind as |PDG ID|: 13 for a muon.
                 let (kind, q, pt) = (kind.row(i), charge.row(i), pt.row(i));
-                if kind.len() != 2 || kind.iter().any(|&t| t != 13) {
+                if kind.len() != 2 || kind.iter().any(|&t| t != muon) {
                     continue;
                 }
                 passed[1] += 1;
@@ -225,6 +227,13 @@ mod analysis {
         excess.add_scaled(&sim_hist, -1.0)?;
         let outside: f64 = excess.contents()[1..=10].iter().sum();
         println!("3. Simulation scaled by {scale:.4} to the data between 81 and 101 GeV.");
+        let z = literals::z();
+        println!(
+            "   PDG:     {} mass {:.3} GeV, natural width {:.3} GeV",
+            z.name(),
+            z.mass().map_or(f64::NAN, |mev| mev / 1e3),
+            z.width().map_or(f64::NAN, |mev| mev / 1e3),
+        );
         println!(
             "   Z peak:  data {peak_data:.3} ± {err_data:.3} GeV (width {width_data:.2}),  \
              simulation {peak_sim:.3} ± {err_sim:.3} GeV (width {width_sim:.2})"
