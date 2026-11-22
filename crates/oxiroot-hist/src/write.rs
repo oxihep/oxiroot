@@ -334,8 +334,8 @@ pub(crate) fn write_th3_obj(w: &mut WBuffer, h: &Hist3D, contents: BinContentTyp
 /// fBinEntries, fErrorMode, fYmin, fYmax, fTsumwy, fTsumwy2, fBinSumw2 }`.
 pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
     // A 1-D profile keeps degenerate y/z axes, as ROOT's Hist1D constructor does.
-    let yaxis = Axis::new("yaxis", 1, 0.0, 1.0);
-    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
+    let yaxis = Axis::new(1, 0.0, 1.0).named("yaxis");
+    let zaxis = Axis::new(1, 0.0, 1.0).named("zaxis");
 
     let tp = w.begin_object(7); // Profile1D version 7
     let th1d = w.begin_object(3); // TH1D version 3
@@ -372,7 +372,7 @@ pub(crate) fn write_tprofile(w: &mut WBuffer, h: &Profile1D) {
 /// fTsumwz, fTsumwz2, fBinSumw2 }`.
 pub(crate) fn write_tprofile2d(w: &mut WBuffer, h: &Profile2D) {
     // A 2-D profile keeps a degenerate z axis, as ROOT's Hist2D constructor does.
-    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
+    let zaxis = Axis::new(1, 0.0, 1.0).named("zaxis");
 
     let tp = w.begin_object(8); // Profile2D version 8
     let th2d = w.begin_object(4); // TH2D version 4
@@ -594,7 +594,7 @@ pub(crate) fn write_th2poly(w: &mut WBuffer, h: &PolyHist) {
 
     // Hist1D base. fNcells is the polygon-bin count plus the 9 over/underflow
     // regions; fSumw2 is left empty so ROOT falls back to sqrt(content) errors.
-    let zaxis = Axis::new("zaxis", 1, 0.0, 1.0);
+    let zaxis = Axis::new(1, 0.0, 1.0).named("zaxis");
     write_th1_core(
         w,
         &Th1Core {

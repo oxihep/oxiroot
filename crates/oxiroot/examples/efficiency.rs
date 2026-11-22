@@ -84,14 +84,14 @@ fn main() -> oxiroot::Result<()> {
     let k = eff.passed().contents()[mid_bin];
     let n = eff.total().contents()[mid_bin];
     let center = pt_lo + (mid_bin as f64 - 0.5) * stride;
-    let (lo, hi) = oxiroot::stat::clopper_pearson(k, n, eff.conf_level);
+    let (lo, hi) = oxiroot::stat::clopper_pearson(k, n, eff.conf_level());
     let e = eff.efficiency(mid_bin).expect("the middle bin has trials");
     println!("\nBin {mid_bin} (pT ~ {center:.1} GeV, straddles x50): {k:.0}/{n:.0} passed",);
     println!(
         "  efficiency = {e:.4}  +{:.4} -{:.4}   (Clopper-Pearson {:.1}% CL: [{lo:.4}, {hi:.4}])",
         hi - e,
         e - lo,
-        eff.conf_level * 100.0,
+        eff.conf_level() * 100.0,
     );
 
     // --- Write the Efficiency to a ROOT file, then read it back. ---------------

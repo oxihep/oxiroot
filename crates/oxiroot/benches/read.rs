@@ -52,7 +52,7 @@ fn write_files() -> Files {
     let ntuple = dir.join("ntuple.root");
     for (path, format) in [(&tree, Format::Tree), (&ntuple, Format::Ntuple)] {
         let mut out = DatasetWriter::create(path, "events", format).unwrap();
-        out.write(batch.clone()).unwrap();
+        out.append(batch.clone()).unwrap();
         out.finish().unwrap();
     }
 

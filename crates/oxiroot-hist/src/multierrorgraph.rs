@@ -85,7 +85,22 @@ pub struct MultiErrorGraph {
     /// High y errors, one `Vec` per error layer (`fEyH`).
     pub(crate) ey_high: Vec<Vec<f64>>,
     /// How the y-error layers combine when summed (`fSumErrorsMode`).
-    pub sum_errors_mode: SumErrorsMode,
+    pub(crate) sum_errors_mode: SumErrorsMode,
+}
+
+impl MultiErrorGraph {
+    /// How the y-error layers combine when summed (`fSumErrorsMode`).
+    #[must_use]
+    pub fn sum_errors_mode(&self) -> SumErrorsMode {
+        self.sum_errors_mode
+    }
+
+    /// Set [`sum_errors_mode`](Self::sum_errors_mode).
+    #[must_use]
+    pub fn with_sum_errors_mode(mut self, sum_errors_mode: SumErrorsMode) -> Self {
+        self.sum_errors_mode = sum_errors_mode;
+        self
+    }
 }
 
 impl MultiErrorGraph {

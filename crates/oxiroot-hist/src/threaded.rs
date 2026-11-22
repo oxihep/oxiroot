@@ -2,7 +2,7 @@
 //!
 //! [`Mergeable`] is oxihist's reduction trait. It is implemented here for the
 //! ROOT types, with [`oxiroot_io_core::Error`] as the error: `merge` is
-//! [`add(&other, 1.0)`](crate::Hist1D::add), an exact sum of bin contents,
+//! [`add_scaled(&other, 1.0)`](crate::Hist1D::add_scaled), an exact sum of bin contents,
 //! per-bin `Sumw2`, the entry count and every statistical sum. Its
 //! [`merge_all`](Mergeable::merge_all) folds an iterator of records into one,
 //! an in-memory `hadd`.
@@ -28,7 +28,7 @@ use crate::{
 
 macro_rules! impl_mergeable {
     ($($t:ty),+ $(,)?) => {$(
-        /// `merge` is `add(&other, 1.0)`: contents, `Sumw2`, the entry count and
+        /// `merge` is `add_scaled(&other, 1.0)`: contents, `Sumw2`, the entry count and
         /// every moment sum add up, so the result equals one histogram filled
         /// with all the data. [`Error::BinningMismatch`] (leaving `self`
         /// unchanged) if the binnings differ.
@@ -36,7 +36,7 @@ macro_rules! impl_mergeable {
             type Error = Error;
 
             fn merge(&mut self, other: &Self) -> Result<()> {
-                self.add(other, 1.0)
+                self.add_scaled(other, 1.0)
             }
         }
     )+};
@@ -49,7 +49,7 @@ impl Mergeable for Efficiency {
     type Error = Error;
 
     fn merge(&mut self, other: &Self) -> Result<()> {
-        self.add(other)
+        self.merge(other)
     }
 }
 

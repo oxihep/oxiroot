@@ -90,13 +90,54 @@ pub struct Profile1D {
     /// Per-bin entry counts / sums of weight (`fBinEntries`, length `ncells`).
     pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
-    pub error_mode: ErrorMode,
+    pub(crate) error_mode: ErrorMode,
     /// Lower y limit (`fYmin`).
-    pub ymin: f64,
+    pub(crate) ymin: f64,
     /// Upper y limit (`fYmax`).
-    pub ymax: f64,
+    pub(crate) ymax: f64,
     /// Per-bin sum of squared weights (`fBinSumw2`), possibly empty.
     pub(crate) bin_sumw2: Vec<f64>,
+}
+
+impl Profile1D {
+    /// Error computation mode (`fErrorMode`).
+    #[must_use]
+    pub fn error_mode(&self) -> ErrorMode {
+        self.error_mode
+    }
+
+    /// Set [`error_mode`](Self::error_mode).
+    #[must_use]
+    pub fn with_error_mode(mut self, error_mode: ErrorMode) -> Self {
+        self.error_mode = error_mode;
+        self
+    }
+
+    /// Lower y limit (`fYmin`).
+    #[must_use]
+    pub fn ymin(&self) -> f64 {
+        self.ymin
+    }
+
+    /// Set [`ymin`](Self::ymin).
+    #[must_use]
+    pub fn with_ymin(mut self, ymin: f64) -> Self {
+        self.ymin = ymin;
+        self
+    }
+
+    /// Upper y limit (`fYmax`).
+    #[must_use]
+    pub fn ymax(&self) -> f64 {
+        self.ymax
+    }
+
+    /// Set [`ymax`](Self::ymax).
+    #[must_use]
+    pub fn with_ymax(mut self, ymax: f64) -> Self {
+        self.ymax = ymax;
+        self
+    }
 }
 
 impl Profile1D {
@@ -187,7 +228,7 @@ impl Profile1D {
         Self {
             name: String::new(),
             title: String::new(),
-            xaxis: Axis::new("xaxis", nbins, xlo, xhi),
+            xaxis: Axis::new(nbins, xlo, xhi).named("xaxis"),
             entries: 0.0,
             moments: Moments::default(),
             sums: vec![0.0; ncells],

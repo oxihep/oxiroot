@@ -205,7 +205,7 @@ for fun in g.functions() {
 }
 ```
 
-Build one from scratch with `GraphFunction::new(name, formula, params, xmin, xmax)`
+Build one from scratch with `GraphFunction::new(formula, params, xmin, xmax).named(name)`
 (or convert a `Func1D` with `to_graph_function()`, see
 [Functions](functions.md#read-and-write)) and attach it with `with_function`.
 The formula may use either `[0]`/`[1]` or `[p0]`/`[p1]` to reference parameters;
@@ -217,7 +217,7 @@ use oxiroot::hist::GraphFunction;
 
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
-    .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
+    .with_function(GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0).named("line"));
 
 assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
 FileWriter::create("graph_function.root").add(&g).compression(Compression::Stored).write()?;

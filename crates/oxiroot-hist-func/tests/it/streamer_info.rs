@@ -9,7 +9,9 @@ use oxiroot_io_core::{Compression, FileReader};
 #[test]
 fn a_function_file_describes_the_function_classes_only() {
     let path = std::env::temp_dir().join("oxiroot_tf_streamer_info.root");
-    let f = Func2D::new("f2", "[0]*x*y", 0.0..=1.0, 0.0..=1.0).unwrap();
+    let f = Func2D::new("[0]*x*y", 0.0..=1.0, 0.0..=1.0)
+        .unwrap()
+        .named("f2");
     FileWriter::create(&path)
         .add(&f)
         .compression(Compression::Stored)

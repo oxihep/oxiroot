@@ -137,7 +137,7 @@ oxiroot implements it for its records too, which is what `hadd` and
 
 | Type | `merge` |
 | --- | --- |
-| `Hist1D`, `Hist2D`, `Hist3D`, `Profile1D`, `Profile2D`, `Profile3D`, `PolyHist`, `SparseHist` | `add(&other, 1.0)`: contents, `Sumw2`, entries and moment sums |
+| `Hist1D`, `Hist2D`, `Hist3D`, `Profile1D`, `Profile2D`, `Profile3D`, `PolyHist`, `SparseHist` | `add_scaled(&other, 1.0)`: contents, `Sumw2`, entries and moment sums |
 | `Efficiency` | adds the passed and total histograms |
 | `Graph` | appends `other`'s points, as `hadd` does |
 | `HistStack` | merges the stacked histograms by name |
@@ -146,7 +146,7 @@ For these, the error is `oxiroot::file::Error`:
 [`Error::BinningMismatch`](../api/oxiroot/index.html) (leaving `self`
 unchanged) when the binnings differ. For oxihist histograms it is
 `oxihist::Error`; both convert into `oxiroot::Error`, so `?` works either way.
-A `TParameter` is not a histogram and is not `Mergeable`; `Parameter::add`
+A `TParameter` is not a histogram and is not `Mergeable`; `Parameter::merge`
 sums two (which is what `hadd` does).
 
 Its `Mergeable::merge_all` folds an iterator of histograms into one — an in-memory

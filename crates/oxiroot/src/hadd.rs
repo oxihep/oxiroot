@@ -360,19 +360,19 @@ fn merge_dataset(
     write_atomically(output, large, |sink, file_name, big| {
         let mut writer = DatasetWriter::new(sink, file_name, key, format)
             .compression(compression)
-            .schema(schema.clone());
+            .with_schema(schema.clone());
         if big {
             writer = writer.large();
         }
         for (i, part) in parts.iter().enumerate() {
             for batch in part.batches(&columns) {
                 let batch = batch.map_err(|e| e.context(format_args!("input #{i}")))?;
-                writer.write(batch)?;
+                writer.append(batch)?;
             }
         }
         if entries == 0 {
             // No cluster to copy: the columns alone, so the output has them.
-            writer.write(first.read(&columns)?)?;
+            writer.append(first.read(&columns)?)?;
         }
         writer.finish().map(drop)
     })?;

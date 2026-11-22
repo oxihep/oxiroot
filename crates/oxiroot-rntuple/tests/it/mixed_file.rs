@@ -20,7 +20,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
             "events",
             vec![Field::new("x", vec![0.5, 1.5])],
         ))
-        .add(&Parameter::f64("lumi", 12.5))
+        .add(&Parameter::f64(12.5).named("lumi"))
         .dir("aux", |d| {
             d.add(NtupleObject::new("runs", vec![Field::new("run", vec![7])]))
         })
@@ -61,7 +61,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
 fn an_rntuple_can_be_appended_to_an_existing_file() {
     let path = std::env::temp_dir().join("oxiroot_rntuple_append_put.root");
     FileWriter::create(&path)
-        .add(&Parameter::i32("n", 3))
+        .add(&Parameter::i32(3).named("n"))
         .compression(Compression::Stored)
         .write()
         .unwrap();

@@ -110,7 +110,7 @@ impl<const D: usize> HistRecord<D> {
     /// # Errors
     ///
     /// [`Error::BinningMismatch`] if the binnings differ; `self` is left unchanged.
-    pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
+    pub fn add_scaled(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self
             .axes()
             .zip(other.axes())

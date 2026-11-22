@@ -39,13 +39,54 @@ pub struct Profile2D {
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`: 0=mean, 1=spread, 2=spread-i, 3=spread-g).
-    pub error_mode: ErrorMode,
+    pub(crate) error_mode: ErrorMode,
     /// Lower `z` accept bound (`fZmin`; `0` = no restriction when `zmin == zmax`).
-    pub zmin: f64,
+    pub(crate) zmin: f64,
     /// Upper `z` accept bound (`fZmax`).
-    pub zmax: f64,
+    pub(crate) zmax: f64,
     /// Per-cell `Σw²` (`fBinSumw2`); empty unless weighted-error tracking is on.
     pub(crate) bin_sumw2: Vec<f64>,
+}
+
+impl Profile2D {
+    /// Error computation mode (`fErrorMode`: 0=mean, 1=spread, 2=spread-i, 3=spread-g).
+    #[must_use]
+    pub fn error_mode(&self) -> ErrorMode {
+        self.error_mode
+    }
+
+    /// Set [`error_mode`](Self::error_mode).
+    #[must_use]
+    pub fn with_error_mode(mut self, error_mode: ErrorMode) -> Self {
+        self.error_mode = error_mode;
+        self
+    }
+
+    /// Lower `z` accept bound (`fZmin`; `0` = no restriction when `zmin == zmax`).
+    #[must_use]
+    pub fn zmin(&self) -> f64 {
+        self.zmin
+    }
+
+    /// Set [`zmin`](Self::zmin).
+    #[must_use]
+    pub fn with_zmin(mut self, zmin: f64) -> Self {
+        self.zmin = zmin;
+        self
+    }
+
+    /// Upper `z` accept bound (`fZmax`).
+    #[must_use]
+    pub fn zmax(&self) -> f64 {
+        self.zmax
+    }
+
+    /// Set [`zmax`](Self::zmax).
+    #[must_use]
+    pub fn with_zmax(mut self, zmax: f64) -> Self {
+        self.zmax = zmax;
+        self
+    }
 }
 
 impl Profile2D {
@@ -58,8 +99,8 @@ impl Profile2D {
         Self {
             name: String::new(),
             title: String::new(),
-            xaxis: Axis::new("xaxis", nx, xlo, xhi),
-            yaxis: Axis::new("yaxis", ny, ylo, yhi),
+            xaxis: Axis::new(nx, xlo, xhi).named("xaxis"),
+            yaxis: Axis::new(ny, ylo, yhi).named("yaxis"),
             entries: 0.0,
             moments: Moments::default(),
             sums: vec![0.0; ncells],

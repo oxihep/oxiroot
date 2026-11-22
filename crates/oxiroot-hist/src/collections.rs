@@ -320,7 +320,7 @@ impl Mergeable for Stack<Hist1D> {
     fn merge(&mut self, other: &Self) -> Result<()> {
         for from in &other.members {
             match self.members.iter_mut().find(|h| h.name == from.name) {
-                Some(h) => h.add(from, 1.0)?,
+                Some(h) => h.add_scaled(from, 1.0)?,
                 None => self.members.push(from.clone()),
             }
         }

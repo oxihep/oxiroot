@@ -69,7 +69,7 @@ fn map_chunks<T: Send>(
 ///     .column("mass", vec![91.2_f64, 125.1])?
 ///     .column("jet_pt", vec![vec![40.0_f32, 31.5], vec![]])?;
 /// let mut out = DatasetWriter::create("out.root", "events", Format::Tree)?;
-/// out.write(batch)?;
+/// out.append(batch)?;
 /// out.finish()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
@@ -164,12 +164,12 @@ impl<W: Write + Seek> DatasetWriter<W> {
     ///
     /// let batch = Batch::new().column("pt", vec![41.5_f32, 37.2])?;
     /// let mut out = DatasetWriter::create("out.root", "events", Format::Ntuple)?
-    ///     .schema(batch.schema().with("pt", DataType::Half));
-    /// out.write(batch)?;
+    ///     .with_schema(batch.schema().with("pt", DataType::Half));
+    /// out.append(batch)?;
     /// out.finish()?;
     /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
-    pub fn schema(mut self, schema: Schema) -> Self {
+    pub fn with_schema(mut self, schema: Schema) -> Self {
         self.schema = Some(schema);
         self
     }
@@ -202,10 +202,10 @@ impl<W: Write + Seek> DatasetWriter<W> {
     /// # Errors
     ///
     /// On the first batch, a column the format cannot hold or one that does
-    /// not fit the [`schema`](Self::schema) (nothing is written then); later,
+    /// not fit the [`with_schema`](Self::with_schema) (nothing is written then); later,
     /// a batch whose columns differ from the first's; or a write error when a
     /// cluster is flushed.
-    pub fn write(&mut self, batch: Batch) -> Result<()> {
+    pub fn append(&mut self, batch: Batch) -> Result<()> {
         if self.empty.is_none() {
             let schema = self.schema.take().unwrap_or_else(|| batch.schema());
             check_batch(&schema, &batch)?;
@@ -351,10 +351,10 @@ impl<W: Write + Seek> std::fmt::Debug for DatasetWriter<W> {
 ///
 /// let batch = Batch::new().column("energy", vec![10.5_f64, 20.1])?;
 /// let mut events = NamedBatch::new("events", Format::Tree, batch);
-/// events.push(Batch::new().column("energy", vec![7.25_f64])?)?;
+/// events.append(Batch::new().column("energy", vec![7.25_f64])?)?;
 ///
 /// FileWriter::create("run.root")
-///     .add(&Parameter::f64("lumi", 137.5))
+///     .add(&Parameter::f64(137.5).named("lumi"))
 ///     .add(&events)
 ///     .write()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -362,7 +362,7 @@ impl<W: Write + Seek> std::fmt::Debug for DatasetWriter<W> {
 ///
 /// The first batch fixes the columns: a later one must have the same, of the
 /// same types. A column the format cannot hold, or one that does not fit the
-/// [`schema`](Self::schema), is reported when the file is written.
+/// [`with_schema`](Self::with_schema), is reported when the file is written.
 ///
 /// Adding it by reference copies its values into the file being built;
 /// adding it by value hands them over. For a dataset too large to hold, write it with a
@@ -387,8 +387,8 @@ impl NamedBatch {
         }
     }
 
-    /// Store the columns as `schema` says; see [`DatasetWriter::schema`].
-    pub fn schema(mut self, schema: Schema) -> Self {
+    /// Store the columns as `schema` says; see [`DatasetWriter::with_schema`].
+    pub fn with_schema(mut self, schema: Schema) -> Self {
         self.schema = Some(schema);
         self
     }
@@ -399,7 +399,7 @@ impl NamedBatch {
     ///
     /// [`Error::SchemaChanged`] if its columns are not those of the batches
     /// before it.
-    pub fn push(&mut self, batch: Batch) -> Result<()> {
+    pub fn append(&mut self, batch: Batch) -> Result<()> {
         self.batch.append(batch)
     }
 
@@ -417,8 +417,8 @@ impl NamedBatch {
 
     /// The number of entries held.
     #[must_use]
-    pub fn entries(&self) -> usize {
-        self.batch.len()
+    pub fn entries(&self) -> u64 {
+        self.batch.len() as u64
     }
 
     /// The entries held, as one batch.
@@ -736,8 +736,8 @@ mod failed_start_tests {
         for format in [Format::Tree, Format::Ntuple] {
             let batch = || Batch::new().column("x", vec![1.0_f64, 2.0]).unwrap();
             let mut out = DatasetWriter::new(Broken, "f.root", "events", format).cluster_bytes(1);
-            assert!(out.write(batch()).is_err());
-            let err = out.write(batch()).unwrap_err();
+            assert!(out.append(batch()).is_err());
+            let err = out.append(batch()).unwrap_err();
             assert!(err.to_string().contains("could not be started"), "{err}");
             assert!(out.finish().is_err());
         }

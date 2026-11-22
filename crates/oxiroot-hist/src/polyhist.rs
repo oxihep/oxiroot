@@ -115,8 +115,8 @@ impl PolyHist {
         Self {
             name: String::new(),
             title: String::new(),
-            xaxis: Axis::new("xaxis", 100, xlow, xup),
-            yaxis: Axis::new("yaxis", 100, ylow, yup),
+            xaxis: Axis::new(100, xlow, xup).named("xaxis"),
+            yaxis: Axis::new(100, ylow, yup).named("yaxis"),
             entries: 0.0,
             moments: Moments::default(),
             overflow: [0.0; 9],

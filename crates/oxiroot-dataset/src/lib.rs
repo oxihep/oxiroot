@@ -15,7 +15,7 @@
 //!     let pt: &[f32] = batch.values("pt")?;               // a slice, no copy
 //!     let jets = batch.jagged::<f32>("jet_pt")?;          // offsets + flat values
 //!     let keep: Vec<bool> = pt.iter().zip(jets.rows()).map(|(&p, j)| p > 25.0 && j.len() >= 2).collect();
-//!     out.write(batch.filter(&keep)?)?;                   // a skim, no per-type code
+//!     out.append(batch.filter(&keep)?)?;                   // a skim, no per-type code
 //! }
 //! out.finish()?;
 //! # Ok::<(), oxiroot_io_core::Error>(())
@@ -61,8 +61,8 @@
 //! can be a `std::vector`, a `std::set` or a C-style `x[n]`, and an `f32` can
 //! be kept in half precision. A [`Schema`] of [`DataType`]s says so.
 //! [`Dataset::schema`] reports what a file holds, and each column is stored
-//! as its own shape unless [`NamedBatch::schema`] or
-//! [`DatasetWriter::schema`] says otherwise:
+//! as its own shape unless [`NamedBatch::with_schema`] or
+//! [`DatasetWriter::with_schema`] says otherwise:
 //!
 //! | Stored type | Held as | Format |
 //! |---|---|---|

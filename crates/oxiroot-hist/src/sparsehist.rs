@@ -85,7 +85,7 @@ impl SparseHist {
             axes: axes
                 .iter()
                 .enumerate()
-                .map(|(i, &(nb, lo, hi))| Axis::new(&format!("axis{i}"), nb, lo, hi))
+                .map(|(i, &(nb, lo, hi))| Axis::new(nb, lo, hi).named(format!("axis{i}")))
                 .collect(),
             entries: 0.0,
             tsumw: 0.0,

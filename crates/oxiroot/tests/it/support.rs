@@ -7,9 +7,10 @@ use std::borrow::Cow;
 use std::io::Cursor;
 use std::path::Path;
 
+use oxiroot::Compression;
 use oxiroot::file::raw::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use oxiroot::file::streamer_gen::ClassDef;
-use oxiroot::file::{Compression, Result, WriteInto};
+use oxiroot::file::{Result, WriteInto};
 use oxiroot::ntuple::raw::Field;
 use oxiroot::tree::raw;
 use oxiroot::tree::raw::Branch;

@@ -38,9 +38,9 @@ fn round_trips_objects_through_oxiroot() {
     let out = std::env::temp_dir().join("oxiroot_persist_rt.root");
     FileWriter::create(&out)
         .add(&ObjString::new("hello world").named("label"))
-        .add(&Parameter::f64("lumi", 137.5))
-        .add(&Parameter::i32("nevents", 42))
-        .add(&Parameter::i64("bignum", 9_000_000_000))
+        .add(&Parameter::f64(137.5).named("lumi"))
+        .add(&Parameter::i32(42).named("nevents"))
+        .add(&Parameter::i64(9_000_000_000).named("bignum"))
         .compression(Compression::Stored)
         .write()
         .unwrap();
@@ -66,9 +66,9 @@ fn byte_exact_against_root() {
     let f = fixture();
     let cases: [(&str, &dyn WriteRoot); 4] = [
         ("label", &ObjString::new("hello world").named("label")),
-        ("lumi", &Parameter::f64("lumi", 137.5)),
-        ("nevents", &Parameter::i32("nevents", 42)),
-        ("bignum", &Parameter::i64("bignum", 9_000_000_000)),
+        ("lumi", &Parameter::f64(137.5).named("lumi")),
+        ("nevents", &Parameter::i32(42).named("nevents")),
+        ("bignum", &Parameter::i64(9_000_000_000).named("bignum")),
     ];
     for (name, obj) in cases {
         let (_, root_bytes, _) = oxiroot_io_core::raw::object_bytes(&f, name).unwrap();

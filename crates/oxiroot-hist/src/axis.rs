@@ -11,9 +11,9 @@ use crate::base::end_record;
 #[doc(alias = "TAxis")]
 pub struct Axis {
     /// Axis name (`fName`, e.g. "xaxis").
-    pub name: String,
+    pub(crate) name: String,
     /// Axis title (`fTitle`).
-    pub title: String,
+    pub(crate) title: String,
     /// Number of bins (`fNbins`).
     pub(crate) nbins: usize,
     /// Low edge of the axis range (`fXmin`).
@@ -25,23 +25,24 @@ pub struct Axis {
     /// Alphanumeric bin labels (`fLabels`), one per bin (`labels[i]` labels bin
     /// `i + 1`). Empty for an ordinary numeric axis; an unlabelled bin in an
     /// otherwise-labelled axis holds an empty string.
-    pub labels: Vec<String>,
+    pub(crate) labels: Vec<String>,
     /// Whether the axis values are times, to be drawn as dates and clock times
     /// rather than numbers (`fTimeDisplay`). Set it with
     /// [`set_time_format`](Self::set_time_format).
-    pub time_display: bool,
+    pub(crate) time_display: bool,
     /// How a time axis formats its labels (`fTimeFormat`): a `strftime` format,
     /// optionally followed by `%F` and the epoch the values count from
     /// (`"%d/%m/%Y%F1970-01-01 00:00:00"`). Empty means ROOT's own default.
-    pub time_format: String,
+    pub(crate) time_format: String,
 }
 
 impl Axis {
-    /// Create a uniform axis of `nbins` bins over `[xmin, xmax)`.
+    /// Create a uniform axis of `nbins` bins over `[xmin, xmax)`. Name it
+    /// with [`named`](Self::named).
     #[must_use]
-    pub fn new(name: &str, nbins: usize, xmin: f64, xmax: f64) -> Self {
+    pub fn new(nbins: usize, xmin: f64, xmax: f64) -> Self {
         Self {
-            name: name.to_string(),
+            name: String::new(),
             title: String::new(),
             nbins,
             xmin,
@@ -60,7 +61,7 @@ impl Axis {
     ///
     /// [`Error::InvalidInput`] if `edges` has fewer than two values or is not
     /// strictly ascending.
-    pub fn variable(name: &str, edges: &[f64]) -> Result<Self> {
+    pub fn variable(edges: &[f64]) -> Result<Self> {
         if edges.len() < 2 {
             return Err(Error::InvalidInput(
                 "a variable axis needs at least two edges".to_string(),
@@ -71,7 +72,7 @@ impl Axis {
                 "variable axis edges must be strictly ascending".to_string(),
             ));
         }
-        Ok(Self::from_edges(name, edges))
+        Ok(Self::from_edges("", edges))
     }
 
     /// A variable-width axis from edges already known to be valid: at least
@@ -134,7 +135,7 @@ impl Axis {
     /// without allocating either edge array.
     #[must_use]
     pub fn same_binning(&self, other: &Self) -> bool {
-        self.nbins == other.nbins && (0..=self.nbins).all(|i| self.edge(i) == other.edge(i))
+        self.nbins == other.nbins && (0..=self.nbins).all(|i| self.edge_at(i) == other.edge_at(i))
     }
 
     /// Read an `Axis` from `r` (positioned at the axis's `{byte-count, version}`
@@ -206,6 +207,60 @@ impl Axis {
         })
     }
 
+    /// This axis named `name` (`fName`).
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// This axis titled `title` (`fTitle`), the text drawn along it.
+    #[must_use]
+    pub fn titled(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    /// The axis name (`fName`).
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The axis title (`fTitle`).
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Set the axis title, in place.
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+
+    /// The bin labels, one per bin (`labels()[i]` labels bin `i + 1`): empty
+    /// for a numeric axis, and an empty string for an unlabelled bin of a
+    /// labelled one.
+    #[must_use]
+    pub fn labels(&self) -> &[String] {
+        &self.labels
+    }
+
+    /// Whether the axis values are times, drawn as dates and clock times
+    /// (`fTimeDisplay`). Set with [`set_time_format`](Self::set_time_format).
+    #[must_use]
+    pub fn is_time(&self) -> bool {
+        self.time_display
+    }
+
+    /// How a time axis formats its labels (`fTimeFormat`): a `strftime`
+    /// format, optionally followed by `%F` and the epoch the values count
+    /// from. Empty means ROOT's own default.
+    #[must_use]
+    pub fn time_format(&self) -> &str {
+        &self.time_format
+    }
+
     /// Alphanumeric label for bin `bin` (1-based), or `None` for an unlabelled
     /// bin / numeric axis.
     pub fn bin_label(&self, bin: usize) -> Option<&str> {
@@ -239,7 +294,7 @@ impl Axis {
     /// # use oxiroot_hist::Hist;
     /// let mut h = Hist::reg(24, 0.0, 86_400.0).double().to_root().unwrap().named("rate");
     /// h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
-    /// assert!(h.xaxis().time_display);
+    /// assert!(h.xaxis().is_time());
     /// ```
     pub fn set_time_format(&mut self, format: &str) {
         self.time_display = true;
@@ -288,9 +343,14 @@ impl Axis {
 
     /// The `i`-th bin boundary (`i` in `0..=nbins`: `0` is `xmin`, `nbins` is
     /// `xmax`), computed in O(1) without allocating — unlike [`edges`](Self::edges),
-    /// which materializes the whole array. Out-of-range `i` clamps to an end.
+    /// which materializes the whole array. `None` past the last boundary.
     #[must_use]
-    pub fn edge(&self, i: usize) -> f64 {
+    pub fn edge(&self, i: usize) -> Option<f64> {
+        (i <= self.nbins).then(|| self.edge_at(i))
+    }
+
+    /// Boundary `i`, clamped to the last one.
+    fn edge_at(&self, i: usize) -> f64 {
         if !self.xbins.is_empty() {
             return self.xbins[i.min(self.xbins.len() - 1)];
         }
@@ -308,7 +368,7 @@ impl Axis {
         let n = self.nbins;
         (1..=n)
             .contains(&bin)
-            .then(|| (self.edge(bin - 1), self.edge(bin)))
+            .then(|| (self.edge_at(bin - 1), self.edge_at(bin)))
     }
 
     /// Low edge of bin `bin` (1-based; bin 1 starts at `xmin`), or `None` if

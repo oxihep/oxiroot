@@ -69,7 +69,7 @@ fn main() -> oxiroot::Result<()> {
     for ax in hs.axes() {
         println!(
             "    {:<4} {:>3} bins over [{:>6.1}, {:>6.1}]",
-            ax.name,
+            ax.name(),
             ax.nbins(),
             ax.xmin(),
             ax.xmax()

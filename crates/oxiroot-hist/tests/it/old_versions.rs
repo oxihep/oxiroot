@@ -80,7 +80,7 @@ fn every_streamed_axis_version_reads() {
             (4, -1.0, 1.0),
             "v{version}"
         );
-        assert!(first.labels.is_empty(), "v{version}");
+        assert!(first.labels().is_empty(), "v{version}");
 
         let second =
             Axis::read(&mut r, &mut tags).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));

@@ -8,7 +8,7 @@
 //! # fn main() -> oxiroot_io_core::Result<()> {
 //! # let dir = std::env::temp_dir();
 //! # let path = dir.join("oxiroot-convert-doc.root");
-//! let mut h = Hist::reg(10, 0.0, 10.0).name("pt").title("p_T").weight();
+//! let mut h = Hist::reg(10, 0.0, 10.0).weight().named("pt").titled("p_T");
 //! h.fill_weight(3.5, 2.0);
 //! oxiroot_io_core::FileWriter::create(&path).add(&h.to_root()?).write()?; // a TH1D with Sumw2
 //!
@@ -123,20 +123,20 @@ fn root_count(n: usize) -> Result<usize> {
 fn root_axis(a: &oxihist::Axis, name: &str) -> Result<Axis> {
     let labelled = |labels: Vec<String>| -> Result<Axis> {
         let n = labels.len().max(1);
-        let mut ax = Axis::new(name, root_count(n)?, 0.0, n as f64);
+        let mut ax = Axis::new(root_count(n)?, 0.0, n as f64).named(name);
         for (i, l) in labels.iter().enumerate() {
             ax.set_label(i + 1, l)?;
         }
         Ok(ax)
     };
     let mut ax = match a.kind() {
-        AxisKind::Regular { bins, lo, hi } => Axis::new(name, root_count(*bins)?, *lo, *hi),
+        AxisKind::Regular { bins, lo, hi } => Axis::new(root_count(*bins)?, *lo, *hi).named(name),
         AxisKind::Variable { edges } => {
             root_count(edges.len().saturating_sub(1))?;
-            Axis::variable(name, edges)?
+            Axis::variable(edges)?.named(name)
         }
         AxisKind::Integer { lo, hi } => {
-            Axis::new(name, root_count(a.size())?, *lo as f64, *hi as f64)
+            Axis::new(root_count(a.size())?, *lo as f64, *hi as f64).named(name)
         }
         AxisKind::StrCategory { categories, .. } => labelled(categories.clone())?,
         AxisKind::IntCategory { categories, .. } => {
@@ -805,9 +805,9 @@ mod tests {
     fn weight_1d_round_trips_through_root() {
         let mut h = Hist::var(&[0.0, 1.0, 5.0, 10.0])
             .label("x [cm]")
-            .name("h")
-            .title("t")
-            .weight();
+            .weight()
+            .named("h")
+            .titled("t");
         h.fill_weight(0.5, 2.0);
         h.fill_weight(7.0, 3.0);
         h.fill(-1.0);
@@ -931,7 +931,7 @@ mod tests {
 
     #[test]
     fn categories_become_labelled_axes_and_back() {
-        let mut h = Hist::str_cat(&["ee", "mumu"]).name("c").weight();
+        let mut h = Hist::str_cat(&["ee", "mumu"]).weight().named("c");
         h.fill("mumu");
         h.fill("tautau"); // overflow
         let r = h.to_root().unwrap();
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn profiles_round_trip() {
-        let mut p = Hist::reg(2, 0.0, 2.0).name("p").weighted_mean();
+        let mut p = Hist::reg(2, 0.0, 2.0).weighted_mean().named("p");
         p.fill_sample_weight(0.5, 1.0, 2.0);
         p.fill_sample_weight(0.5, 4.0, 1.0);
         p.fill_sample(1.5, 3.0);
@@ -986,7 +986,7 @@ mod tests {
         // No categories yet: ROOT still gets one (empty) bin, and the overflow
         // lands in ROOT's overflow cell, not in that bin.
         let empty: [&str; 0] = [];
-        let mut h = Hist::str_cat(&empty).name("c").weight();
+        let mut h = Hist::str_cat(&empty).weight().named("c");
         h.fill("ee"); // overflow: the axis does not grow
         let r = h.to_root().unwrap();
         assert_eq!(r.xaxis.nbins, 1);
@@ -1055,7 +1055,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("oxiroot-convert-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("h.root");
-        let mut h = Hist::reg(4, 0.0, 4.0).reg(2, 0.0, 2.0).name("h2").weight();
+        let mut h = Hist::reg(4, 0.0, 4.0).reg(2, 0.0, 2.0).weight().named("h2");
         h.fill_weight(1.5, 0.5, 2.5);
         oxiroot_io_core::FileWriter::create(&path)
             .add(&h.to_root().unwrap())

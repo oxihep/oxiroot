@@ -25,7 +25,7 @@ use crate::{Column, Jagged, Primitive, Strings};
 /// assert_eq!(batch.len(), 2);
 /// assert_eq!(batch.values::<f64>("mass")?, [91.2, 125.1]);
 /// assert_eq!(batch.jagged::<f32>("jet_pt")?.row(0), [40.0, 31.5]);
-/// assert_eq!(batch.strings("label")?.get(1), "H");
+/// assert_eq!(batch.strings("label")?.get(1), Some("H"));
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -112,7 +112,7 @@ impl Batch {
     /// # Errors
     ///
     /// As [`column`](Self::column), or a malformed `column`.
-    pub fn insert(&mut self, name: impl Into<String>, column: Column) -> Result<()> {
+    pub(crate) fn insert(&mut self, name: impl Into<String>, column: Column) -> Result<()> {
         let name = name.into();
         column.validate(&name)?;
         if self.names.contains(&name) {

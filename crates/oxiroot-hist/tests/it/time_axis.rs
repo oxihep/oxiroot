@@ -19,7 +19,7 @@ fn a_time_axis_survives_a_file() {
     // The time format is the ROOT axis's, set on the record.
     let mut h = h.to_root().unwrap();
     h.xaxis_mut().set_time_format(FORMAT);
-    assert!(h.xaxis().time_display);
+    assert!(h.xaxis().is_time());
 
     // A graph carries its axes on its display frame, as ROOT stores them.
     let mut frame = Hist::reg(2, 0.0, 7_200.0)
@@ -44,14 +44,14 @@ fn a_time_axis_survives_a_file() {
 
     let f = FileReader::open(&out).expect("reopen");
     let read = f.get::<Hist1D>("rate").expect("read hist");
-    assert!(read.xaxis().time_display);
-    assert_eq!(read.xaxis().time_format, FORMAT);
+    assert!(read.xaxis().is_time());
+    assert_eq!(read.xaxis().time_format(), FORMAT);
     assert_eq!(read, h);
 
     let read = f.get::<Graph>("trend").expect("read graph");
     let frame = read.histogram().expect("display frame");
-    assert!(frame.xaxis().time_display);
-    assert_eq!(frame.xaxis().time_format, FORMAT);
+    assert!(frame.xaxis().is_time());
+    assert_eq!(frame.xaxis().time_format(), FORMAT);
 }
 
 #[test]
@@ -59,8 +59,8 @@ fn an_ordinary_axis_stays_numeric() {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("plain");
     h.fill(1.5);
     let h = h.to_root().unwrap();
-    assert!(!h.xaxis().time_display);
-    assert_eq!(h.xaxis().time_format, "");
+    assert!(!h.xaxis().is_time());
+    assert_eq!(h.xaxis().time_format(), "");
 
     let out = std::env::temp_dir().join("oxiroot_plain_axis.root");
     FileWriter::create(&out)
@@ -72,8 +72,8 @@ fn an_ordinary_axis_stays_numeric() {
         .unwrap()
         .get::<Hist1D>("plain")
         .unwrap();
-    assert!(!read.xaxis().time_display);
-    assert_eq!(read.xaxis().time_format, "");
+    assert!(!read.xaxis().is_time());
+    assert_eq!(read.xaxis().time_format(), "");
 
     // Setting and clearing leaves an axis as it started.
     let mut axis = read.xaxis().clone();

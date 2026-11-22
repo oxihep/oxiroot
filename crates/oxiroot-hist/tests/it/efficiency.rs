@@ -36,7 +36,7 @@ fn reads_root_written_tefficiency() {
     assert_eq!(e.efficiency(2), Some(1.0));
     assert_eq!(e.efficiency(3), Some(0.0));
     assert_eq!(e.efficiency(4), Some(1.0));
-    assert!((e.conf_level - 0.682689492137086).abs() < 1e-12);
+    assert!((e.conf_level() - 0.682689492137086).abs() < 1e-12);
 }
 
 #[test]

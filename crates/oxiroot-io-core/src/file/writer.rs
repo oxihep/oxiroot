@@ -255,9 +255,9 @@ impl Entries {
 ///
 /// ```no_run
 /// use oxiroot_io_core::{FileWriter, ObjString, Parameter};
-/// let lumi = Parameter::f64("lumi", 137.5);
+/// let lumi = Parameter::f64(137.5).named("lumi");
 /// let label = ObjString::new("2024 run").named("label");
-/// let cut = Parameter::f32("pt_min", 25.0);
+/// let cut = Parameter::f32(25.0).named("pt_min");
 /// FileWriter::create("out.root")
 ///     .add(&lumi)
 ///     .add(&label)
@@ -522,7 +522,7 @@ impl FileWriter {
 ///
 /// ```no_run
 /// # use oxiroot_io_core::{FileUpdater, Parameter};
-/// # let extra = Parameter::i32("extra", 3);
+/// # let extra = Parameter::i32(3).named("extra");
 /// FileUpdater::open("out.root")?
 ///     .delete("scratch")
 ///     .add(&extra)

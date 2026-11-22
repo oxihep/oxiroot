@@ -1,6 +1,7 @@
 //! The oxiroot-hist histogram integration tests, compiled as one binary so the
 //! suite links once. Each module is one topic.
 
+mod accessors;
 mod collections;
 mod delete_purge;
 mod dirs;

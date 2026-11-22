@@ -437,7 +437,7 @@ fn a_merge_refuses_inputs_whose_columns_differ() {
     let write = |tag: &str, format: Format, batch: Batch| {
         let path = tmp(tag);
         let mut w = DatasetWriter::create(&path, "events", format).unwrap();
-        w.write(batch).unwrap();
+        w.append(batch).unwrap();
         w.finish().unwrap();
         path
     };

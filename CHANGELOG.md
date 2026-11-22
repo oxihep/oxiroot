@@ -33,6 +33,34 @@ change the API.
   - The element type is the data's: `vec![1.0, 2.0]` is `f64`, where
     `Branch::f32("x", vec![1.0, 2.0])` used to say `f32`. Write
     `vec![1.0_f32, 2.0]`.
+- **Breaking: one convention for each thing the API does**, from a second
+  review of the public surface:
+  - **Names.** No constructor takes an object's name; every object is named
+    with `.named(..)`: `Parameter::f64(137.5).named("lumi")`,
+    `Func1D::new("[0]*x", 0.0..=1.0)?.named("f")`,
+    `Axis::new(50, 0.0, 100.0).named("x")`,
+    `GraphFunction::new(formula, params, lo, hi).named("fit")`.
+  - **`append`** adds entries: `DatasetWriter::append(batch)` (was `write`)
+    and `NamedBatch::append(batch)` (was `push`), as `Batch::append`.
+    `write()` only ever produces a file.
+  - **`add`** only puts an object in a container. The arithmetic sum is
+    `add_scaled(&other, c)` on histograms and `merge(&other)` on
+    `Parameter` and `Efficiency`.
+  - **`with_schema`** replaces the `schema(..)` builder on `NamedBatch` and
+    `DatasetWriter`; `schema()` only reads.
+  - **Private fields with accessors** on `Axis` (`name()`, `title()`,
+    `labels()`, `is_time()`, `time_format()`, `set_title(..)`),
+    `Efficiency`, the profiles and `MultiErrorGraph`, with `with_*`
+    builders for what was a public field.
+  - **`Option` for a missing entry:** `Strings::get(i)` and
+    `Axis::edge(i)`. `Column::as_slice::<T>()` replaces `Column::values`.
+  - **One import path:** `FileReader`, `FileWriter`, `FileUpdater`,
+    `Compression` and `Value` at the crate root only; `Column` and
+    `DataType` in `oxiroot::data` only; `RBuffer`, `WBuffer`, `Patch`,
+    `CountToken` and `read_object` in `oxiroot::file::raw`.
+  - `Batch::insert`, the matrix `decode_*` functions and
+    `linalg::streamer_classes` are no longer public.
+  - `NamedBatch::entries()` returns `u64`.
 - **Breaking: a dataset in memory is a `NamedBatch`, added to a file like any
   other object.** `NamedBatch::new(name, format, batch)` replaces `DatasetObject`
   (now in the prelude): `push` takes more batches, and

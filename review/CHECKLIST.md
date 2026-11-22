@@ -279,3 +279,22 @@ Items not already covered by a phase entry above.
 - [x] `compression_label` uses `Compression`
 - [x] No import of the hidden `cast` module
 - [x] `show_rntuple` lists the top-level fields by parent, not by first matching name
+
+## Second API review (2026-11-22)
+
+A pass over all 663 public functions against the nine rules in
+[api.md](api.md), after the checklist above was complete.
+
+- [x] **R1** State in one place. `Axis`, `Efficiency`, `Profile1D`/`2D`/`3D` and `MultiErrorGraph` had public fields beside private ones with accessors; `Axis::labels` had a public field, a setter and a getter. Their fields are private, read through accessors (`axis.labels()`, `axis.is_time()`, `eff.conf_level()`), set with `with_*` builders or, on an axis reached through `xaxis_mut()`, `set_*`. `GraphFunction`, `PolyBin` and `SparseBin` stay plain records of public fields.
+- [x] **R2** Builder names. A by-value builder that sets a property is `with_x` where `x()` reads it (`with_schema` on `NamedBatch` and `DatasetWriter`, where `schema` was a builder on two types and a getter on two others); `named` and `titled` are the two exceptions; an in-place setter is `set_x`. A writer or reader option with nothing to read back keeps its bare name (`compression`, `cluster_bytes`, `step`, `range`).
+- [x] **R3** One way to name a histogram: `.named(..)` and `.titled(..)` on the histogram. oxiroot no longer uses the `Hist` builder's `.name(..)`/`.title(..)`; removing them is a change in oxihist (branch `named-only` there), which needs its own release.
+- [x] **R4** No constructor takes the object's name: `Parameter::f64(v).named(..)`, `Func1D::new(formula, range)?.named(..)`, `Axis::new(n, lo, hi).named(..)`, `GraphFunction::new(..).named(..)`. `NamedBatch::new` keeps it: the name is what it adds to a `Batch`.
+- [x] **R5** `write()` produces a file. Adding entries to a streamed dataset is `DatasetWriter::append(batch)`.
+- [x] **R6** `add` puts an object in a container. The arithmetic sum is `add_scaled(&other, c)` on histograms and `merge(&other)` on `Parameter` and `Efficiency`.
+- [x] **R7** Adding entries is `append` on `Batch`, `NamedBatch` and `DatasetWriter`; `NamedBatch::entries()` is a `u64` like the others.
+- [x] **R8** A column joins a `Batch` through `.column(name, data)?` alone; `insert` is internal.
+- [x] **R9** `Strings::get(i)` and `Axis::edge(i)` return `Option`. `fill` keeps three return types, each for a failure the others cannot have: none on `Efficiency` (out of range goes to the flow bins), the bin hit on `PolyHist`, an error for the wrong number of coordinates on `SparseHist`.
+- [x] **R10** `Column::as_slice::<T>()` replaces `Column::values`, which returned an `Option` where `Batch::values` returns a `Result`. The histogram `values()` keep their shapes (a slice in one dimension, nested rows in two and three).
+- [x] **R11** One import path per item: `FileReader`, `FileWriter`, `FileUpdater`, `Compression` and `Value` at the crate root only, `Column` and `DataType` in `oxiroot::data` only. `oxiroot::file` and `oxiroot::compress` list what they export.
+- [x] **R12** `RBuffer`, `WBuffer`, `Patch`, `CountToken` and `read_object` are under `oxiroot::file::raw`; the matrix decode functions are private.
+- [ ] **Noted, not changed** `EntryList::open(file, name)` is read whole but is not read with `file.get`; name parameters are `&str` in some signatures and `impl Into<String>` in others.

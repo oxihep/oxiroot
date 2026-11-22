@@ -156,28 +156,43 @@ pub struct Parameter {
 }
 
 impl Parameter {
-    /// A `Parameter<double>` named `name`.
-    pub fn f64(name: impl Into<String>, value: f64) -> Self {
-        Self::new(name, ParamValue::Double(value))
+    /// A `Parameter<double>` holding `value`. Name it with
+    /// [`named`](Self::named).
+    #[must_use]
+    pub fn f64(value: f64) -> Self {
+        Self::new(ParamValue::Double(value))
     }
-    /// A `Parameter<float>` named `name`.
-    pub fn f32(name: impl Into<String>, value: f32) -> Self {
-        Self::new(name, ParamValue::Float(value))
+    /// A `Parameter<float>` holding `value`. Name it with
+    /// [`named`](Self::named).
+    #[must_use]
+    pub fn f32(value: f32) -> Self {
+        Self::new(ParamValue::Float(value))
     }
-    /// A `Parameter<int>` named `name`.
-    pub fn i32(name: impl Into<String>, value: i32) -> Self {
-        Self::new(name, ParamValue::Int(value))
+    /// A `Parameter<int>` holding `value`. Name it with
+    /// [`named`](Self::named).
+    #[must_use]
+    pub fn i32(value: i32) -> Self {
+        Self::new(ParamValue::Int(value))
     }
-    /// A `Parameter<Long64_t>` (64-bit integer) named `name`.
-    pub fn i64(name: impl Into<String>, value: i64) -> Self {
-        Self::new(name, ParamValue::Long64(value))
+    /// A `Parameter<Long64_t>` holding `value`. Name it with
+    /// [`named`](Self::named).
+    #[must_use]
+    pub fn i64(value: i64) -> Self {
+        Self::new(ParamValue::Long64(value))
     }
 
-    fn new(name: impl Into<String>, value: ParamValue) -> Self {
+    fn new(value: ParamValue) -> Self {
         Self {
-            name: name.into(),
+            name: String::new(),
             value,
         }
+    }
+
+    /// This parameter named `name`: the key it is stored under.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
     }
 
     /// The parameter name.
@@ -192,7 +207,7 @@ impl Parameter {
     ///
     /// [`Error::InvalidInput`] and makes no change if the two hold
     /// different types (a `Parameter<int>` and a `Parameter<double>`, say).
-    pub fn add(&mut self, other: &Self) -> Result<()> {
+    pub fn merge(&mut self, other: &Self) -> Result<()> {
         self.value = match (self.value, other.value) {
             (ParamValue::Double(a), ParamValue::Double(b)) => ParamValue::Double(a + b),
             (ParamValue::Float(a), ParamValue::Float(b)) => ParamValue::Float(a + b),

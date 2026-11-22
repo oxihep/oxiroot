@@ -36,7 +36,7 @@ fn main() -> oxiroot::Result<()> {
             .column("event", event)?
             .column("hits", hits)?
             .column("label", label)?;
-        out.write(batch)?;
+        out.append(batch)?;
     }
     println!("wrote {} entries to {path}", out.entries());
     out.finish()?;

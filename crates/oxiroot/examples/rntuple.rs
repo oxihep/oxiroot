@@ -66,7 +66,7 @@ fn main() -> oxiroot::Result<()> {
         println!(
             "  {:>3}: label = {:>3}  mass = {:>7.2} GeV  charge = {:+}  jets = {:?}",
             i,
-            labels.get(i),
+            labels.get(i).unwrap_or_default(),
             masses[i],
             charges[i],
             jets.row(i),

@@ -71,7 +71,7 @@ macro_rules! impl_profile_add {
             /// # Errors
             ///
             /// [`Error::BinningMismatch`] if the binnings differ; `self` is left unchanged.
-            pub fn add(&mut self, other: &$ty, c: f64) -> Result<()> {
+            pub fn add_scaled(&mut self, other: &$ty, c: f64) -> Result<()> {
                 let ncells = self.sums.len();
                 let compatible = $(self.$axis.same_binning(&other.$axis))&&+
                     && other.sums.len() == ncells
@@ -197,12 +197,12 @@ impl Efficiency {
     ///
     /// [`Error::BinningMismatch`] and makes no change if the binnings
     /// differ.
-    pub fn add(&mut self, other: &Self) -> Result<()> {
+    pub fn merge(&mut self, other: &Self) -> Result<()> {
         // Both first, so a mismatch leaves the efficiency untouched.
         let mut passed = self.passed.clone();
         let mut total = self.total.clone();
-        passed.add(&other.passed, 1.0)?;
-        total.add(&other.total, 1.0)?;
+        passed.add_scaled(&other.passed, 1.0)?;
+        total.add_scaled(&other.total, 1.0)?;
         self.passed = passed;
         self.total = total;
         Ok(())
@@ -218,7 +218,7 @@ impl PolyHist {
     ///
     /// [`Error::BinningMismatch`] and makes no change unless the two
     /// hold the same bins, in the same order.
-    pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
+    pub fn add_scaled(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.bins.len() == other.bins.len()
             && (self.bins.iter())
                 .zip(&other.bins)
@@ -247,7 +247,7 @@ impl SparseHist {
     ///
     /// [`Error::BinningMismatch`] and makes no change if the axes
     /// differ.
-    pub fn add(&mut self, other: &Self, c: f64) -> Result<()> {
+    pub fn add_scaled(&mut self, other: &Self, c: f64) -> Result<()> {
         let same = self.axes.len() == other.axes.len()
             && (self.axes.iter())
                 .zip(&other.axes)

@@ -81,7 +81,7 @@ fn write(format: Format, batches: &[Batch], cluster_bytes: usize) -> Vec<u8> {
         .compression(Compression::Zstd(1))
         .cluster_bytes(cluster_bytes);
     for b in batches {
-        w.write(b.clone()).unwrap();
+        w.append(b.clone()).unwrap();
     }
     w.finish().unwrap().into_inner()
 }
@@ -184,7 +184,8 @@ fn filters_slices_and_selects() {
     let even = b.filter(&[true, false, true, false, true, false]).unwrap();
     assert_eq!(even.values::<i32>("idx").unwrap(), [0, 2, 4]);
     assert_eq!(even.jagged::<f32>("v").unwrap().row(1), [0.25, 1.25]);
-    assert_eq!(even.strings("s").unwrap().get(2), "e4");
+    assert_eq!(even.strings("s").unwrap().get(2), Some("e4"));
+    assert_eq!(even.strings("s").unwrap().get(3), None);
     assert_eq!(even.arrays::<i32>("a").unwrap().0, [0, 0, 2, -2, 4, -4]);
     assert!(b.filter(&[true]).is_err());
 
@@ -231,7 +232,7 @@ fn a_batch_checks_its_columns() {
 fn a_column_the_format_cannot_hold_is_refused_before_writing() {
     let b = Batch::new().column("o", vec![Some(1_i32), None]).unwrap();
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree);
-    let err = w.write(b.clone()).unwrap_err();
+    let err = w.append(b.clone()).unwrap_err();
     assert!(matches!(err, Error::Unsupported(_)), "{err}");
     assert!(err.to_string().contains("Option<i32>"), "{err}");
     assert_eq!(w.entries(), 0);
@@ -247,9 +248,9 @@ fn a_column_the_format_cannot_hold_is_refused_before_writing() {
 #[test]
 fn a_later_batch_must_match_the_first() {
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple);
-    w.write(sample(3, 0)).unwrap();
+    w.append(sample(3, 0)).unwrap();
     let other = Batch::new().column("idx", vec![1.0_f64]).unwrap();
-    assert!(matches!(w.write(other), Err(Error::SchemaChanged { .. })));
+    assert!(matches!(w.append(other), Err(Error::SchemaChanged { .. })));
 }
 
 #[test]
@@ -301,11 +302,11 @@ fn datasets_go_into_a_file_writer_next_to_each_other() {
 #[test]
 fn a_named_batch_takes_more_batches_and_is_added_by_reference() {
     let mut events = NamedBatch::new("events", Format::Tree, sample(4, 0));
-    events.push(sample(3, 4)).unwrap();
+    events.append(sample(3, 4)).unwrap();
     assert_eq!((events.name(), events.entries()), ("events", 7));
     assert_eq!(events.format(), Format::Tree);
 
-    let lumi = Parameter::f64("lumi", 137.5);
+    let lumi = Parameter::f64(137.5).named("lumi");
     let bytes = FileWriter::create("named.root")
         .add(&lumi)
         .add(&events)
@@ -328,7 +329,7 @@ fn a_named_batch_takes_more_batches_and_is_added_by_reference() {
     // A batch of other columns is refused, and leaves it as it was.
     let other = Batch::new().column("y", vec![1.0_f64]).unwrap();
     assert!(matches!(
-        events.push(other),
+        events.append(other),
         Err(Error::SchemaChanged { .. })
     ));
     assert_eq!(events.entries(), 7);
@@ -341,9 +342,9 @@ fn a_streaming_writer_stores_objects_next_to_its_dataset() {
     for format in [Format::Tree, Format::Ntuple] {
         let mut out = DatasetWriter::new(Cursor::new(Vec::new()), "s.root", "events", format)
             .cluster_bytes(1);
-        out.add(&Parameter::f64("lumi", 137.5)); // before any batch
-        out.write(sample(4, 0)).unwrap();
-        out.write(sample(3, 4)).unwrap();
+        out.add(&Parameter::f64(137.5).named("lumi")); // before any batch
+        out.append(sample(4, 0)).unwrap();
+        out.append(sample(3, 4)).unwrap();
         out.add(&ObjString::new("2024 run").named("label")); // after them
         let file = FileReader::from_bytes(out.finish().unwrap().into_inner()).unwrap();
 
@@ -370,7 +371,7 @@ fn a_streaming_writer_refuses_objects_it_cannot_name() {
     let finish = |objects: &[Add<'_>]| {
         let sink = Cursor::new(Vec::new());
         let mut out = DatasetWriter::new(sink, "s.root", "events", Format::Tree);
-        out.write(sample(2, 0)).unwrap();
+        out.append(sample(2, 0)).unwrap();
         for add in objects {
             add(&mut out);
         }
@@ -381,14 +382,16 @@ fn a_streaming_writer_refuses_objects_it_cannot_name() {
         matches!(unnamed, Err(Error::InvalidInput(_))),
         "{unnamed:?}"
     );
-    let as_dataset = finish(&[&|out| out.add(&Parameter::f64("events", 1.0))]);
+    let as_dataset = finish(&[&|out| out.add(&Parameter::f64(1.0).named("events"))]);
     assert!(
         matches!(&as_dataset, Err(Error::DuplicateName { name, .. }) if name == "events"),
         "{as_dataset:?}"
     );
-    let twice = finish(&[&|out| out.add(&Parameter::f64("lumi", 1.0)), &|out| {
-        out.add(&Parameter::f64("lumi", 2.0))
-    }]);
+    let twice = finish(
+        &[&|out| out.add(&Parameter::f64(1.0).named("lumi")), &|out| {
+            out.add(&Parameter::f64(2.0).named("lumi"))
+        }],
+    );
     assert!(
         matches!(twice, Err(Error::DuplicateName { .. })),
         "{twice:?}"
@@ -499,7 +502,7 @@ fn parallel_reads_match_serial_ones() {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
             .cluster_bytes(64 * 1024);
         for p in &parts {
-            w.write(p.clone()).unwrap();
+            w.append(p.clone()).unwrap();
         }
         let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
         let ds = Dataset::open(&file, "events").unwrap();
@@ -712,7 +715,7 @@ fn an_empty_dataset_is_written_with_its_columns() {
     let b = sample(0, 0);
     for format in [Format::Tree, Format::Ntuple] {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format);
-        w.write(b.clone()).unwrap();
+        w.append(b.clone()).unwrap();
         assert_eq!(w.entries(), 0);
         let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
         let ds = Dataset::open(&file, "events").unwrap();
@@ -947,8 +950,8 @@ fn a_refused_append_leaves_the_batch_as_it_was() -> oxiroot_io_core::Result<()> 
 /// Write `batch` as `format`, stored as `schema` says, and open it again.
 fn write_with_schema(format: Format, batch: &Batch, schema: &Schema) -> FileReader {
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
-        .schema(schema.clone());
-    w.write(batch.clone()).unwrap();
+        .with_schema(schema.clone());
+    w.append(batch.clone()).unwrap();
     FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap()
 }
 
@@ -1110,8 +1113,8 @@ fn a_tree_stores_a_list_as_a_vector_or_as_a_counted_array() {
         .column("c", all.get("c").unwrap().clone())
         .unwrap();
     let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Tree)
-        .schema(on_disk);
-    let err = w.write(wrong).unwrap_err();
+        .with_schema(on_disk);
+    let err = w.append(wrong).unwrap_err();
     assert!(
         err.to_string().contains("does not hold its lengths"),
         "{err}"
@@ -1123,8 +1126,8 @@ fn a_storage_the_format_does_not_have_is_refused_before_anything_is_written() {
     let batch = Batch::new().column("x", vec![1.0_f32, 2.0]).unwrap();
     let refused = |format, data_type: DataType| {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", format)
-            .schema(Schema::new([("x", data_type)]));
-        w.write(batch.clone()).unwrap_err().to_string()
+            .with_schema(Schema::new([("x", data_type)]));
+        w.append(batch.clone()).unwrap_err().to_string()
     };
     // Half precision is an RNTuple encoding.
     let msg = refused(Format::Tree, DataType::Half);
@@ -1135,11 +1138,12 @@ fn a_storage_the_format_does_not_have_is_refused_before_anything_is_written() {
 
     // A counted array is a tree type.
     let lists = Batch::new().column("x", vec![vec![1_i32]]).unwrap();
-    let mut w =
-        DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple).schema(
-            Schema::new([("x", DataType::CArray(Box::new(DataType::I32)))]),
-        );
-    let msg = w.write(lists).unwrap_err().to_string();
+    let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple)
+        .with_schema(Schema::new([(
+            "x",
+            DataType::CArray(Box::new(DataType::I32)),
+        )]));
+    let msg = w.append(lists).unwrap_err().to_string();
     assert!(msg.contains("TTree type"), "{msg}");
 }
 
@@ -1148,8 +1152,8 @@ fn a_batch_that_does_not_fit_the_schema_is_refused() {
     let batch = Batch::new().column("x", vec![1.0_f64, 2.0]).unwrap();
     let write = |schema: Schema| {
         let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "t.root", "events", Format::Ntuple)
-            .schema(schema);
-        w.write(batch.clone()).unwrap_err()
+            .with_schema(schema);
+        w.append(batch.clone()).unwrap_err()
     };
     // Half precision stores an f32, and this column is an f64.
     let err = write(Schema::new([("x", DataType::Half)]));
@@ -1164,7 +1168,7 @@ fn a_batch_that_does_not_fit_the_schema_is_refused() {
 fn a_dataset_object_takes_a_schema_too() {
     let (batch, schema) = encoded();
     let bytes = FileWriter::create("unused.root")
-        .add(NamedBatch::new("events", Format::Ntuple, batch.clone()).schema(schema.clone()))
+        .add(NamedBatch::new("events", Format::Ntuple, batch.clone()).with_schema(schema.clone()))
         .to_bytes()
         .unwrap();
     let file = FileReader::from_bytes(bytes).unwrap();
