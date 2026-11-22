@@ -5,6 +5,7 @@
 //! `Profile1D`/`Profile2D` extend `TH1D`/`TH2D`.
 
 use crate::base::Moments;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Object, ReadRoot};
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -131,7 +132,7 @@ impl Profile3D {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         // fBinSumw2 arrived in class version 7 (ROOT 5.24). The class was added
         // at version 6 (ROOT 5.12), which already had the other members.
         let tp = r.read_version()?; // Profile3D wrapper
@@ -141,7 +142,7 @@ impl Profile3D {
         }
         let _th3d = r.read_version()?; // TH3D wrapper
         let (c, [tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz]) =
-            crate::hist3d::read_th3_base(r)?;
+            crate::hist3d::read_th3_base(r, tags)?;
 
         let sums = read_tarray(r, BinContentType::F64)?; // TH3D TArrayD = Σ(w·t)
         let bin_entries = read_tarray(r, BinContentType::F64)?;
@@ -197,6 +198,9 @@ impl ReadRoot for Profile3D {
     const CLASS: &'static str = "TProfile3D";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+        (object.class == Self::CLASS).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, &mut tags)
+        })
     }
 }

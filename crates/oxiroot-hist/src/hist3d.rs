@@ -6,6 +6,7 @@
 //! `(nx+2)*(ny+2)*(nz+2)` cells with x fastest, then y, then z.
 
 use crate::base::Moments;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::raw::skip_versioned;
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
@@ -22,9 +23,12 @@ use crate::record::Hist3D;
 /// `TProfile3D`: the `TH1` base, then the seven sums over `y` and `z`
 /// (`fTsumwy`, `fTsumwy2`, `fTsumwxy`, `fTsumwz`, `fTsumwz2`, `fTsumwxz`,
 /// `fTsumwyz`), in that order. The buffer is left at the record's end.
-pub(crate) fn read_th3_base(r: &mut RBuffer<'_>) -> Result<(crate::base::HistBase, [f64; 7])> {
+pub(crate) fn read_th3_base(
+    r: &mut RBuffer<'_>,
+    tags: &mut TagReader,
+) -> Result<(crate::base::HistBase, [f64; 7])> {
     let th3 = r.read_version()?;
-    let base = read_th1_base(r, None)?;
+    let base = read_th1_base(r, tags)?;
     skip_versioned(r)?; // TAtt3D base (empty)
     let mut sums = [0.0; 7];
     for sum in &mut sums {
@@ -38,14 +42,19 @@ pub(crate) fn read_th3_base(r: &mut RBuffer<'_>) -> Result<(crate::base::HistBas
 }
 
 impl Hist3D {
-    pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
+    pub(crate) fn read(
+        r: &mut RBuffer<'_>,
+        bin_content_type: BinContentType,
+        tags: &mut TagReader,
+    ) -> Result<Self> {
         let th3x = r.read_version()?; // TH3x wrapper
         // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
         // Hist3D members, with no Hist3D record of their own.
         if th3x.version < 2 {
             return Err(unsupported_version("TH3", th3x.version));
         }
-        let (c, [tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz]) = read_th3_base(r)?;
+        let (c, [tsumwy, tsumwy2, tsumwxy, tsumwz, tsumwz2, tsumwxz, tsumwyz]) =
+            read_th3_base(r, tags)?;
         let contents = read_tarray(r, bin_content_type)?;
 
         let cells = cell_count(&[c.xaxis.nbins, c.yaxis.nbins, c.zaxis.nbins])?;
@@ -150,9 +159,9 @@ impl ReadRoot for Hist3D {
     const CLASS: &'static str = "TH3";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, 3).then(|| decode_th3(object.class, object.bytes))
+        is_hist_class(object.class, 3).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, bin_content_type_of(object.class)?, &mut tags)
+        })
     }
-}
-pub(crate) fn decode_th3(class: &str, object: &[u8]) -> Result<Hist3D> {
-    Hist3D::read(&mut RBuffer::new(object), bin_content_type_of(class)?)
 }

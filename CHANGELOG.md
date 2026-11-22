@@ -33,6 +33,13 @@ change the API.
   - The element type is the data's: `vec![1.0, 2.0]` is `f64`, where
     `Branch::f32("x", vec![1.0, 2.0])` used to say `f32`. Write
     `vec![1.0_f32, 2.0]`.
+- **Breaking: `Axis::read` and `GraphFunction::read_tf1_body` take the
+  buffer's `TagReader`**, and `raw::read_pointer_header` and
+  `raw::PointerHeader` are removed. Every object a histogram, profile,
+  efficiency, sparse histogram, graph or function holds by pointer is read
+  through the class-tag map of its key, which `Object::reader()` builds
+  along with the buffer, so a class named by its position resolves there
+  too.
 - A `std::variant` field is a `Column::Union`: a batch holds it, a
   `Dataset` reads and writes it, and `hadd` merges it. It was refused.
 - `FieldRead::to_field` and a dataset round trip keep every stored type the
@@ -182,6 +189,12 @@ change the API.
 
 ### Fixed
 
+- **A `TEfficiency` over `TH1F` histograms could not be read.** Its two
+  histograms were taken to be `TH1D`; they are read as the class their
+  header names. An efficiency over two- or three-dimensional histograms is
+  refused by name, where it failed with an unrelated error.
+- A graph's frame histogram is read as the class its header names, where a
+  frame named by a back-reference was taken to be a `TH1F`.
 - **A function on the second or later graph of a ROOT `TMultiGraph` was
   dropped.** ROOT names `TF1` in full once per buffer and by a
   back-reference afterwards, and each member graph was decoded on its own,

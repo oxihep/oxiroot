@@ -1,7 +1,7 @@
 //! `Axis` — a histogram axis.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, read_object_base, read_pointer_header, skip_versioned};
+use oxiroot_io_core::raw::{TagReader, read_named, read_object_base, skip_versioned};
 use oxiroot_io_core::{Error, RBuffer, Result};
 
 use crate::base::end_record;
@@ -138,7 +138,8 @@ impl Axis {
     }
 
     /// Read an `Axis` from `r` (positioned at the axis's `{byte-count, version}`
-    /// header), leaving the cursor at the axis's end.
+    /// header), leaving the cursor at the axis's end. `tags` is the class-tag
+    /// map of the buffer `r` reads, which resolves the classes of the labels.
     ///
     /// Class versions 6 to 10 are read (ROOT 3.02 onwards): version 7 added
     /// `fLabels`, version 8 `fBits2`, and version 10 `fModLabs`. Earlier versions
@@ -147,7 +148,7 @@ impl Axis {
     /// # Errors
     ///
     /// If the buffer ends first, or the axis's edges do not match its bin count.
-    pub fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let vh = r.read_version()?; // Axis (e.g. version 10)
         if vh.version < 6 {
             return Err(Error::UnsupportedVersion {
@@ -184,7 +185,7 @@ impl Axis {
         let time_display = r.u8()? != 0;
         let time_format = r.string()?;
         let labels = if vh.version >= 7 {
-            read_labels(r, nbins)? // fLabels (THashList*)
+            read_labels(r, tags, nbins)? // fLabels (THashList*)
         } else {
             Vec::new()
         };
@@ -355,9 +356,8 @@ fn check_edges(nbins: usize, xbins: &[f64]) -> Result<()> {
 /// 1-based bin number in `fUniqueID` and the label text in `fString`. Returns a
 /// `Vec` of length `nbins` (empty strings for unlabelled bins), or empty when
 /// the pointer is null (an ordinary numeric axis).
-fn read_labels(r: &mut RBuffer<'_>, nbins: usize) -> Result<Vec<String>> {
-    // The class is known from context (a THashList), so its tag needs no map.
-    if read_pointer_header(r)?.is_none() {
+fn read_labels(r: &mut RBuffer<'_>, tags: &mut TagReader, nbins: usize) -> Result<Vec<String>> {
+    if tags.read_header(r)?.class_name.is_none() {
         return Ok(Vec::new()); // null fLabels pointer
     }
     r.read_version()?; // THashList (a TList, version 5)
@@ -367,8 +367,12 @@ fn read_labels(r: &mut RBuffer<'_>, nbins: usize) -> Result<Vec<String>> {
 
     let mut labels = vec![String::new(); nbins];
     for _ in 0..size {
-        if read_pointer_header(r)?.is_none() {
-            continue; // null entry
+        let entry = tags.read_header(r)?;
+        if entry.class_name.is_none() {
+            // A null entry, or a label shared with an earlier one: no body
+            // here, only the option string every entry has.
+            r.skip_string()?;
+            continue;
         }
         let body = r.read_version()?; // ObjString body {byte count, version}
         let obj = read_object_base(r)?; // fUniqueID = 1-based bin number

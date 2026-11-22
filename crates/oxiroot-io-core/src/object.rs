@@ -48,48 +48,6 @@ pub struct ObjectRef {
     pub pos: usize,
 }
 
-/// The header of an object held by pointer, read without a class-tag map.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct PointerHeader {
-    /// The object's class, when the header names it. `None` when the header
-    /// refers back to a class named earlier in the buffer, which only a
-    /// [`TagReader`] can resolve; the caller then knows the class from context.
-    pub class_name: Option<String>,
-    /// The buffer offset one past the object.
-    pub end: usize,
-}
-
-/// Read the `{byte count}{class tag}` header of an object held by pointer,
-/// leaving the cursor at the object's body. `None` for a null pointer.
-///
-/// This is for a member whose class the reader already knows (an axis's label
-/// list, an efficiency's two histograms): it does not follow class
-/// back-references. Where the class has to be found out, use a [`TagReader`].
-///
-/// # Errors
-///
-/// [`Error::Format`] if the byte count runs past the buffer, and the buffer's
-/// errors if the header is cut short.
-pub fn read_pointer_header(r: &mut RBuffer<'_>) -> Result<Option<PointerHeader>> {
-    let count = r.be_u32()?;
-    if count == 0 {
-        return Ok(None);
-    }
-    let len = usize::saturating_from(count & !(K_BYTE_COUNT_MASK | K_CLASS_MASK));
-    let end = r
-        .pos()
-        .checked_add(len)
-        .filter(|&end| end <= r.len())
-        .ok_or_else(|| Error::Format(format!("object byte count {len} runs past the buffer")))?;
-    let class_name = if r.be_u32()? == K_NEW_CLASS_TAG {
-        Some(read_cstring(r)?)
-    } else {
-        None
-    };
-    Ok(Some(PointerHeader { class_name, end }))
-}
-
 /// Read a NUL-terminated class name (the `kNewClassTag` path).
 fn read_cstring(r: &mut RBuffer<'_>) -> Result<String> {
     r.cstr().map(str::to_string)

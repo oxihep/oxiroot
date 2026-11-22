@@ -5,6 +5,7 @@
 //! exactly as `Profile1D` is a `TH1D` plus profile members.
 
 use crate::base::Moments;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
@@ -98,7 +99,7 @@ impl Profile2D {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         // Older class versions lack the trailing members: fTsumwz/fTsumwz2 arrived
         // in version 5 (ROOT 4) and fBinSumw2 in version 7 (ROOT 5.24). Version 1
         // (ROOT 1) stored fZmin/fZmax as floats, and its TH2D its members in
@@ -114,7 +115,7 @@ impl Profile2D {
         }
         let th2 = r.read_version()?; // Hist2D wrapper (Hist1D base + Hist2D members)
 
-        let c = read_th1_base(r, None)?;
+        let c = read_th1_base(r, tags)?;
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;
@@ -183,6 +184,9 @@ impl ReadRoot for Profile2D {
     const CLASS: &'static str = "TProfile2D";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+        (object.class == Self::CLASS).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, &mut tags)
+        })
     }
 }

@@ -15,7 +15,7 @@ use oxiroot_hist::ToRoot;
 use oxiroot_hist::{Axis, Hist, Hist2D, Profile1D, Profile2D, Profile3D};
 use oxiroot_io_core::WriteRoot;
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::write_named;
+use oxiroot_io_core::raw::{TagReader, write_named};
 use oxiroot_io_core::streamer_gen::{ClassDef, ElementDef, any, base, basic};
 use oxiroot_io_core::{Compression, Error, FileReader, RBuffer, ReadRoot, WBuffer};
 use std::borrow::Cow;
@@ -71,8 +71,10 @@ fn every_streamed_axis_version_reads() {
         let mut bytes = axis_record(version, 4, -1.0, 1.0, &[]);
         bytes.extend(axis_record(version, 3, 0.0, 3.0, &edges));
         let mut r = RBuffer::new(&bytes);
+        let mut tags = TagReader::new(0);
 
-        let first = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
+        let first =
+            Axis::read(&mut r, &mut tags).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
             (first.nbins(), first.xmin(), first.xmax()),
             (4, -1.0, 1.0),
@@ -80,7 +82,8 @@ fn every_streamed_axis_version_reads() {
         );
         assert!(first.labels.is_empty(), "v{version}");
 
-        let second = Axis::read(&mut r).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
+        let second =
+            Axis::read(&mut r, &mut tags).unwrap_or_else(|e| panic!("TAxis v{version}: {e}"));
         assert_eq!(
             (second.nbins(), second.xbins()),
             (3, &edges[..]),
@@ -93,7 +96,8 @@ fn every_streamed_axis_version_reads() {
 #[test]
 fn an_axis_older_than_streamer_info_is_an_error() {
     let bytes = axis_record(5, 3, 0.0, 3.0, &[]);
-    let Err(Error::UnsupportedVersion { class, version }) = Axis::read(&mut RBuffer::new(&bytes))
+    let Err(Error::UnsupportedVersion { class, version }) =
+        Axis::read(&mut RBuffer::new(&bytes), &mut TagReader::new(0))
     else {
         panic!("TAxis v5 read");
     };

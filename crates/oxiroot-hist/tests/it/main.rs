@@ -5,6 +5,7 @@ mod collections;
 mod delete_purge;
 mod dirs;
 mod efficiency;
+mod embedded_backrefs;
 mod fit;
 mod graph;
 mod graph2d;

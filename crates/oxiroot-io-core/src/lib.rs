@@ -99,10 +99,7 @@ pub mod raw {
         FileHeader, Form, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Uuid, compress_if_smaller,
         find_key, read_free, split_cycle, write_atomic,
     };
-    pub use crate::object::{
-        K_CLASS_MASK, K_NEW_CLASS_TAG, ObjectRef, PointerHeader, RecordHeader, TagReader,
-        read_pointer_header,
-    };
+    pub use crate::object::{K_CLASS_MASK, K_NEW_CLASS_TAG, ObjectRef, RecordHeader, TagReader};
     pub use crate::object_io::{ObjectRecord, object_bytes, record_of};
     pub use crate::streamer::{
         Named, ObjectBase, begin_object_any, end_object_any, read_named, read_object_base,

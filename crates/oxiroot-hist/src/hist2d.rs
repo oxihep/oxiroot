@@ -5,6 +5,7 @@
 //! with the x index varying fastest.
 
 use crate::base::Moments;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
@@ -17,7 +18,11 @@ use crate::base::{
 use crate::record::Hist2D;
 
 impl Hist2D {
-    pub(crate) fn read(r: &mut RBuffer<'_>, bin_content_type: BinContentType) -> Result<Self> {
+    pub(crate) fn read(
+        r: &mut RBuffer<'_>,
+        bin_content_type: BinContentType,
+        tags: &mut TagReader,
+    ) -> Result<Self> {
         let th2x = r.read_version()?; // TH2x wrapper
         // Class version 1 (ROOT 1) streamed the Hist1D base, the bin array, then the
         // Hist2D members, with no Hist2D record of their own.
@@ -26,7 +31,7 @@ impl Hist2D {
         }
         let th2 = r.read_version()?; // Hist2D wrapper (Hist1D base + Hist2D members)
 
-        let c = read_th1_base(r, None)?;
+        let c = read_th1_base(r, tags)?;
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;
@@ -112,9 +117,9 @@ impl ReadRoot for Hist2D {
     const CLASS: &'static str = "TH2";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        is_hist_class(object.class, 2).then(|| decode_th2(object.class, object.bytes))
+        is_hist_class(object.class, 2).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, bin_content_type_of(object.class)?, &mut tags)
+        })
     }
-}
-pub(crate) fn decode_th2(class: &str, object: &[u8]) -> Result<Hist2D> {
-    Hist2D::read(&mut RBuffer::new(object), bin_content_type_of(class)?)
 }

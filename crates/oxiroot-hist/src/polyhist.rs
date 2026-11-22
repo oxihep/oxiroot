@@ -216,7 +216,7 @@ impl PolyHist {
 
         let top = r.read_version()?; // PolyHist v3
         let th2 = r.read_version()?; // Hist2D v5 base
-        let core = read_th1_base(r, None)?; // Hist1D base (name/title/axes/stats)
+        let core = read_th1_base(r, &mut tags)?; // Hist1D base (name/title/axes/stats)
         let _scalefactor = r.be_f64()?;
         let tsumwy = r.be_f64()?;
         let tsumwy2 = r.be_f64()?;

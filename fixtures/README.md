@@ -49,6 +49,7 @@ c++ $(root-config --cflags) scripts/gen_root_fixtures.cpp $(root-config --libs) 
 | `hist_functions.root` | a `TH1F` `h` with two `TF1`s in `fFunctions` (a line, and a `gaus`, which ROOT stores with named parameters) and a `THStack` `hs` of 2×`TH1F` with one each (`scripts/gen_hist_functions.cpp`) | C++ ROOT |
 | `linalg.root` | a `TVectorD` `v`, `TMatrixD` `m` (2×3), `TMatrixDSym` `s` (3×3) (`scripts/gen_linalg.cpp`) | C++ ROOT |
 | `objlist.root` | a `TList` `mylist` (TH1F + TObjString + TParameter) + `TObjArray` `myarr` (2×TH1F) (`scripts/gen_objlist.cpp`) | C++ ROOT |
+| `embedded_backrefs.root` | a `TList` `members` of objects that hold others by pointer, each kind twice so the second names its classes by back-reference (labelled `TH1D` and `TProfile`, `TEfficiency` over `TH1D` and `TH1F`, `THnSparseD`, `TF1`, `TGraph` with a frame), and `TEfficiency` keys `eff_f` (over `TH1F`) and `eff_2d` (over `TH2D`) (`scripts/gen_embedded_backrefs.cpp`) | C++ ROOT |
 | `tmap.root` | a `TMap` `meta` (string keys → TObjString / TParameter / TH1F) (`scripts/gen_tmap.cpp`) | C++ ROOT (uproot has no TMap model) |
 | `tree_index.root` | a `main` tree and a friend `fr` with the same `(run, event)` keys in a different order, `BuildIndex`ed on the friend (`scripts/gen_tree_index.cpp`) | C++ ROOT |
 | `cycles.root` | three cycles of a `TH1D` `h` (bin 1 holds the cycle), a deleted `gone`, and two cycles of `sub/d` (`scripts/gen_cycles.cpp`) | C++ ROOT |

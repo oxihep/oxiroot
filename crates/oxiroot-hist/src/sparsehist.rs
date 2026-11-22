@@ -9,7 +9,7 @@
 //! `fSingleCoordinateSize = ceil(Σ bits / 8)` bytes.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{read_named, read_object_base, read_pointer_header};
+use oxiroot_io_core::raw::{TagReader, read_named, read_object_base};
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 use std::collections::HashMap;
@@ -173,14 +173,14 @@ impl SparseHist {
             .collect()
     }
 
-    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let tt = r.read_version()?; // THnSparseT<TArrayD> wrapper
         let _ts = r.read_version()?; // SparseHist v3
         let thnbase = r.read_version()?; // THnBase v1
 
         let named = read_named(r)?;
         let ndim = usize::saturating_from(r.be_i32()?);
-        let axes = read_axis_array(r)?;
+        let axes = read_axis_array(r, tags)?;
         if axes.len() != ndim {
             return Err(Error::Format(format!(
                 "THnSparse of {ndim} dimensions with {} axes",
@@ -198,7 +198,7 @@ impl SparseHist {
 
         let _chunk_size = r.be_i32()?;
         let _filled_bins = r.be_i64()?;
-        let bins = read_bin_content(r)?;
+        let bins = read_bin_content(r, tags)?;
 
         if let Some(end) = tt.end {
             r.seek(end)?;
@@ -235,8 +235,8 @@ fn axis_bit_width(axis: &Axis) -> u32 {
 
 /// Consume an object-pointer header (`{byte count}{class tag}`), leaving the
 /// cursor at the object body. Returns `false` for a null pointer.
-fn enter_object(r: &mut RBuffer<'_>) -> Result<bool> {
-    Ok(read_pointer_header(r)?.is_some())
+fn enter_object(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<bool> {
+    Ok(tags.read_header(r)?.class_name.is_some())
 }
 
 /// Read a `TObjArray` header, returning the element count.
@@ -250,23 +250,23 @@ fn read_objarray_len(r: &mut RBuffer<'_>) -> Result<usize> {
 }
 
 /// Read `fAxes`: a `TObjArray` of `Axis` object pointers.
-fn read_axis_array(r: &mut RBuffer<'_>) -> Result<Vec<Axis>> {
+fn read_axis_array(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<Axis>> {
     let n = read_objarray_len(r)?;
     (0..n)
         .map(|_| {
-            enter_object(r)?;
-            Axis::read(r)
+            enter_object(r, tags)?;
+            Axis::read(r, tags)
         })
         .collect()
 }
 
 /// Read `fBinContent`: a `TObjArray` of `THnSparseArrayChunk`. Returns each
 /// filled bin as `(compact coordinate, content)`.
-fn read_bin_content(r: &mut RBuffer<'_>) -> Result<Vec<(u64, f64)>> {
+fn read_bin_content(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Vec<(u64, f64)>> {
     let nchunks = read_objarray_len(r)?;
     let mut out = Vec::new();
     for _ in 0..nchunks {
-        if !enter_object(r)? {
+        if !enter_object(r, tags)? {
             continue;
         }
         let _chunk = r.read_version()?; // THnSparseArrayChunk v1
@@ -283,13 +283,13 @@ fn read_bin_content(r: &mut RBuffer<'_>) -> Result<Vec<(u64, f64)>> {
         let _marker = r.u8()?; // char* presence flag
         let coords = r.bytes(coords_size)?.to_vec();
         // fContent: a TArrayD* of the contents (sized to the chunk capacity).
-        let content = if enter_object(r)? {
+        let content = if enter_object(r, tags)? {
             read_tarray(r, BinContentType::F64)?
         } else {
             Vec::new()
         };
         // fSumw2: a TArrayD* (often null); skip it.
-        if enter_object(r)? {
+        if enter_object(r, tags)? {
             read_tarray(r, BinContentType::F64)?;
         }
         let n_filled = coords_size.checked_div(single).unwrap_or(0);
@@ -308,7 +308,10 @@ impl ReadRoot for SparseHist {
     const CLASS: &'static str = "THnSparseT<TArrayD>";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+        (object.class == Self::CLASS).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, &mut tags)
+        })
     }
 }
 
