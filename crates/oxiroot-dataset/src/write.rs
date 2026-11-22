@@ -1,6 +1,7 @@
-//! [`DatasetWriter`]: one writer for a `TTree` or an `RNTuple`, taking
-//! [`Batch`]es; and [`DatasetObject`], a dataset placed in a
-//! [`FileWriter`](oxiroot_io_core::FileWriter) next to other objects.
+//! Writing a `TTree` or an `RNTuple` from [`Batch`]es: [`NamedBatch`], a dataset
+//! held in memory and placed in a [`FileWriter`](oxiroot_io_core::FileWriter)
+//! like any other object; and [`DatasetWriter`], which streams one too large
+//! to hold.
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -8,9 +9,9 @@ use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{ContainerWriter, DirId};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, Objects};
 use oxiroot_io_core::streamer_gen::ClassDef;
-use oxiroot_io_core::{Compression, Error, Result, WriteInto};
+use oxiroot_io_core::{Compression, Error, Result, WriteInto, WriteRoot};
 use oxiroot_rntuple::ANCHOR_CLASS;
 use oxiroot_rntuple::raw::{Field, NtupleWriter};
 use oxiroot_tree::raw::{Branch, TreeWriter};
@@ -90,6 +91,8 @@ pub struct DatasetWriter<W: Write + Seek = File> {
     empty: Option<Batch>,
     buffer: Option<Batch>,
     entries: u64,
+    /// What [`add`](Self::add) took, stored when the file is finished.
+    objects: Objects,
 }
 
 /// The file once its first cluster is written: the options are fixed.
@@ -133,6 +136,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
             empty: None,
             buffer: None,
             entries: 0,
+            objects: Objects::default(),
         }
     }
 
@@ -181,6 +185,16 @@ impl<W: Write + Seek> DatasetWriter<W> {
     #[must_use]
     pub fn entries(&self) -> u64 {
         self.entries
+    }
+
+    /// Store `object` (a histogram, a graph, a parameter) in the same file,
+    /// under a key of its own in the top directory. It is serialized now and
+    /// written by [`finish`](Self::finish), after the dataset.
+    ///
+    /// An unnamed object, or one named as the dataset or as another object,
+    /// is an error when the file is finished.
+    pub fn add<T: WriteRoot + ?Sized>(&mut self, object: &T) {
+        self.objects.add(object);
     }
 
     /// Add `batch`'s entries.
@@ -307,8 +321,8 @@ impl<W: Write + Seek> DatasetWriter<W> {
             }
         }
         match self.opened {
-            Some(Opened::Tree(w)) => w.finish(),
-            Some(Opened::Ntuple(w)) => w.finish(),
+            Some(Opened::Tree(w)) => w.finish_with(&self.objects),
+            Some(Opened::Ntuple(w)) => w.finish_with(&self.objects),
             None => Err(Error::InvalidInput(format!(
                 "dataset {:?}: no entries were written",
                 self.name
@@ -327,33 +341,42 @@ impl<W: Write + Seek> std::fmt::Debug for DatasetWriter<W> {
     }
 }
 
-/// A dataset to place in a [`FileWriter`](oxiroot_io_core::FileWriter) with
-/// `add`, next to histograms or other datasets, in one cluster.
+/// A dataset held in memory: [`Batch`]es under a name, to store as a `TTree`
+/// or an `RNTuple`. It goes in a [`FileWriter`](oxiroot_io_core::FileWriter)
+/// with `add`, like a histogram or a graph, and is written with the file.
 ///
 /// ```no_run
-/// use oxiroot_dataset::{Batch, DatasetObject, Format};
-/// use oxiroot_io_core::FileWriter;
+/// use oxiroot_dataset::{Batch, Format, NamedBatch};
+/// use oxiroot_io_core::{FileWriter, Parameter};
 ///
 /// let batch = Batch::new().column("energy", vec![10.5_f64, 20.1])?;
+/// let mut events = NamedBatch::new("events", Format::Tree, batch);
+/// events.push(Batch::new().column("energy", vec![7.25_f64])?)?;
+///
 /// FileWriter::create("run.root")
-///     .add(DatasetObject::new("events", Format::Tree, batch.clone()))
-///     .add(DatasetObject::new("events_rn", Format::Ntuple, batch))
+///     .add(&Parameter::f64("lumi", 137.5))
+///     .add(&events)
 ///     .write()?;
 /// # Ok::<(), oxiroot_io_core::Error>(())
 /// ```
 ///
-/// A column the format cannot hold, or one that does not fit the
+/// The first batch fixes the columns: a later one must have the same, of the
+/// same types. A column the format cannot hold, or one that does not fit the
 /// [`schema`](Self::schema), is reported when the file is written.
-#[derive(Debug)]
-#[must_use = "a DatasetObject does nothing until added to a FileWriter"]
-pub struct DatasetObject {
+///
+/// Adding it by reference copies its values into the file being built;
+/// adding it by value hands them over. For a dataset too large to hold, write it with a
+/// [`DatasetWriter`], which stores histograms beside it too.
+#[derive(Debug, Clone)]
+#[must_use = "a NamedBatch does nothing until added to a FileWriter"]
+pub struct NamedBatch {
     name: String,
     format: Format,
     batch: Batch,
     schema: Option<Schema>,
 }
 
-impl DatasetObject {
+impl NamedBatch {
     /// `batch` as the dataset `name` in `format`.
     pub fn new(name: &str, format: Format, batch: Batch) -> Self {
         Self {
@@ -368,6 +391,40 @@ impl DatasetObject {
     pub fn schema(mut self, schema: Schema) -> Self {
         self.schema = Some(schema);
         self
+    }
+
+    /// Add the entries of `batch` after those held.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::SchemaChanged`] if its columns are not those of the batches
+    /// before it.
+    pub fn push(&mut self, batch: Batch) -> Result<()> {
+        self.batch.append(batch)
+    }
+
+    /// The dataset's name: the key it is stored under.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The format it is stored in.
+    #[must_use]
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    /// The number of entries held.
+    #[must_use]
+    pub fn entries(&self) -> usize {
+        self.batch.len()
+    }
+
+    /// The entries held, as one batch.
+    #[must_use]
+    pub fn batch(&self) -> &Batch {
+        &self.batch
     }
 
     /// The batch as the format's own records.
@@ -392,7 +449,7 @@ enum Content {
     Ntuple(Vec<Field>),
 }
 
-/// A [`DatasetObject`] converted for its format, or why it could not be.
+/// A [`NamedBatch`] converted for its format, or why it could not be.
 struct Records {
     name: String,
     format: Format,
@@ -424,7 +481,13 @@ impl Deferred {
     }
 }
 
-impl oxiroot_io_core::Storable for DatasetObject {
+impl oxiroot_io_core::Storable for &NamedBatch {
+    fn into_stored(self) -> oxiroot_io_core::Stored {
+        self.clone().into_stored()
+    }
+}
+
+impl oxiroot_io_core::Storable for NamedBatch {
     fn into_stored(self) -> oxiroot_io_core::Stored {
         oxiroot_io_core::Stored::records(Records {
             name: self.name.clone(),

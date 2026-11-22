@@ -11,7 +11,6 @@
 //! cargo run -p oxiroot --example rntuple
 //! ```
 
-use oxiroot::data::DatasetObject;
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
@@ -37,9 +36,9 @@ fn main() -> oxiroot::Result<()> {
 
     // --- Write it as an RNTuple. Pages are Zstd-compressed on disk. -------------
     let path = dir.join("oxiroot_ex_rntuple.root");
-    let mut out = DatasetWriter::create(&path, "events", Format::Ntuple)?;
-    out.write(events.clone())?;
-    out.finish()?;
+    FileWriter::create(&path)
+        .add(NamedBatch::new("events", Format::Ntuple, events.clone()))
+        .write()?;
     println!("wrote RNTuple `events` -> {}", path.display());
 
     // --- Reopen and inspect the schema before touching any data. ---------------
@@ -85,12 +84,12 @@ fn main() -> oxiroot::Result<()> {
         .column("run", vec![101_i32, 102, 103])?
         .column("n_events", vec![12_000_i64, 8_400, 15_250])?;
     FileWriter::create(&multi_path)
-        .add(DatasetObject::new(
+        .add(NamedBatch::new(
             "events",
             Format::Ntuple,
             events.slice(0..2),
         ))
-        .add(DatasetObject::new("runs", Format::Ntuple, runs.clone()))
+        .add(NamedBatch::new("runs", Format::Ntuple, runs.clone()))
         .write()?;
     println!("wrote 2 RNTuples -> {}", multi_path.display());
 

@@ -40,7 +40,7 @@ These nine rules decide every choice below.
 | 4 | Write objects | `obj.write_root(path, c)`, `ToRoot::write_root`, `FileWriter::create().add().write(c)`, `.put()`, `.to_bytes(c)`, `.write_threshold(c, n)` | `FileWriter::create(path).add(&obj).write()` |
 | 5 | Update a file | `FileWriter::open(path)` | `FileWriter::update(path)` |
 | 6 | Read columns | `TreeReader::branch().read/values/flat`, `NtupleReader::field().read/values/flat`, `read_column`, `ChainReader`, `Dataset::read/batches` | `Dataset` and `Batch` |
-| 7 | Write columns | `TreeWriter` + `Branch::*`, `NtupleWriter` + `Field::*`, `raw::write_tree`, `raw::write_ntuple`, `DatasetWriter` + `Batch`, `DatasetObject` | `DatasetWriter` and `Batch` |
+| 7 | Write columns | `TreeWriter` + `Branch::*`, `NtupleWriter` + `Field::*`, `raw::write_tree`, `raw::write_ntuple`, `DatasetWriter` + `Batch`, `DatasetObject` | `NamedBatch` (in memory, added to a `FileWriter`) and `DatasetWriter` (streamed), both taking `Batch` |
 | 8 | Merge files | `merge_files`, `Merger`, `merge_histogram_files`, `append_trees`, `append_ntuples`, `to_branch`, `to_field` | `Merger` |
 | 9 | Hold a histogram | `oxihist::Histogram<S, D>` and `Hist1D`/`Hist2D`/`Hist3D`/`Profile*` | a decision: see [below](#decisions-that-are-yours) |
 | 10 | Convert a histogram | `to_root`, `try_to_root`, `to_root_as`, `try_to_root_as`, `write_root`, `to_hist`, `FromRoot` | `to_root() -> Result`, `to_hist() -> Result` |

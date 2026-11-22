@@ -191,9 +191,13 @@ mod splot {
         // ---- 1. The candidates ---------------------------------------------
         let (m, t) = sample(2026);
         let tree_path = dir.join("b0_candidates.root");
-        let mut out = DatasetWriter::create(&tree_path, "b0", Format::Tree)?;
-        out.write(Batch::new().column("mass", m)?.column("time", t)?)?;
-        out.finish()?;
+        FileWriter::create(&tree_path)
+            .add(NamedBatch::new(
+                "b0",
+                Format::Tree,
+                Batch::new().column("mass", m)?.column("time", t)?,
+            ))
+            .write()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "b0")?;
         let data = tree.read(["mass", "time"])?;
@@ -219,13 +223,15 @@ mod splot {
         let sw = sweights(&m, &fit);
         let (w_sig, w_bkg) = (sw.weights(0).to_vec(), sw.weights(1).to_vec());
         let sw_path = dir.join("b0_sweights.root");
-        let mut out = DatasetWriter::create(&sw_path, "sweights", Format::Tree)?;
-        out.write(
-            Batch::new()
-                .column("n_sig_sw", w_sig.clone())?
-                .column("n_bkg_sw", w_bkg.clone())?,
-        )?;
-        out.finish()?;
+        FileWriter::create(&sw_path)
+            .add(NamedBatch::new(
+                "sweights",
+                Format::Tree,
+                Batch::new()
+                    .column("n_sig_sw", w_sig.clone())?
+                    .column("n_bkg_sw", w_bkg.clone())?,
+            ))
+            .write()?;
         println!(
             "\n3. sWeights: signal weights sum to {:.1}, {} negative — written to {}",
             w_sig.iter().sum::<f64>(),

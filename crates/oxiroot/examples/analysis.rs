@@ -140,16 +140,20 @@ fn main() -> oxiroot::Result<()> {
         .column("label", vec!["Z", "H", "top"])?
         .column("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]])?;
     let ntuple_path = dir.join("analysis_events.root");
-    let mut out = DatasetWriter::create(&ntuple_path, "events", Format::Ntuple)?;
-    out.write(events_batch.clone())?;
-    out.finish()?;
+    FileWriter::create(&ntuple_path)
+        .add(NamedBatch::new(
+            "events",
+            Format::Ntuple,
+            events_batch.clone(),
+        ))
+        .write()?;
     println!("wrote RNTuple -> {}", ntuple_path.display());
 
     // --- The same batch as a classic TTree: only the format changes. -----------
     let tree_path = dir.join("analysis_tree.root");
-    let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
-    out.write(events_batch)?;
-    out.finish()?;
+    FileWriter::create(&tree_path)
+        .add(NamedBatch::new("Events", Format::Tree, events_batch))
+        .write()?;
     println!("wrote TTree   -> {}", tree_path.display());
 
     // --- Read it all back (`file.get::<Hist1D>(path)`; a subdirectory is part of the path).

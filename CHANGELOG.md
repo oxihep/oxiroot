@@ -33,6 +33,12 @@ change the API.
   - The element type is the data's: `vec![1.0, 2.0]` is `f64`, where
     `Branch::f32("x", vec![1.0, 2.0])` used to say `f32`. Write
     `vec![1.0_f32, 2.0]`.
+- **Breaking: a dataset in memory is a `NamedBatch`, added to a file like any
+  other object.** `NamedBatch::new(name, format, batch)` replaces `DatasetObject`
+  (now in the prelude): `push` takes more batches, and
+  `FileWriter::add(&named)` stores it next to histograms and graphs, by
+  reference like them, so everything is built first and written at the end.
+  `.add(named)` hands the values over instead of copying them.
 - **Breaking: `Axis::read` and `GraphFunction::read_tf1_body` take the
   buffer's `TagReader`**, and `raw::read_pointer_header` and
   `raw::PointerHeader` are removed. Every object a histogram, profile,
@@ -265,6 +271,10 @@ change the API.
 
 ### Added
 
+- `DatasetWriter::add(&object)` stores a histogram, a graph or a parameter
+  in the file a dataset is streamed to, so a dataset too large to hold
+  shares its file with them in one pass. `TreeWriter::finish_with` and
+  `NtupleWriter::finish_with` take the same objects (`raw::Objects`).
 - `ClassKind`, what a ROOT class name says about how its objects are
   stored (`Tree`, `Ntuple`, `Directory`, `Hist(dim)`, `Other`): the one
   table the readers, the merger and the CLI now share.

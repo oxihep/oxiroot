@@ -5,7 +5,7 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, compress_if_smaller};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, KSTART_BIG_FILE, Objects, compress_if_smaller};
 use oxiroot_io_core::{Compression, Error, Result};
 
 use super::classes::ntuple_streamer_info;
@@ -322,7 +322,18 @@ impl<W: Write + Seek> NtupleWriter<W> {
     ///
     /// [`Error::InvalidInput`] if no batch was written, [`Error::FileTooLarge`] if a small
     /// file grew past what it can address, and any error writing to the sink.
-    pub fn finish(mut self) -> Result<W> {
+    pub fn finish(self) -> Result<W> {
+        self.finish_with(&Objects::default())
+    }
+
+    /// [`finish`](Self::finish), storing `objects` (histograms, parameters)
+    /// in the top directory next to the ntuple.
+    ///
+    /// # Errors
+    ///
+    /// As [`finish`](Self::finish), and an object that cannot be stored: an
+    /// unnamed one, or one named as the ntuple or as another.
+    pub fn finish_with(mut self, objects: &Objects) -> Result<W> {
         let header = self.header.take().ok_or_else(|| {
             Error::InvalidInput("NtupleWriter finished with no batches written".into())
         })?;
@@ -368,7 +379,9 @@ impl<W: Write + Seek> NtupleWriter<W> {
             "",
             &anchor,
         )?;
-        self.file.place_streamer_info(&header.streamer_info, &[])?;
+        objects.place(&mut self.file, &self.ntuple_name)?;
+        self.file
+            .place_streamer_info(&header.streamer_info, objects.classes())?;
         self.file.finish()
     }
 }

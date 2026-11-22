@@ -157,9 +157,13 @@ mod search {
             masses.push((TRUE_MASS + RESOLUTION * rng.gauss()) as f32);
         }
         let tree_path = dir.join("diphotons.root");
-        let mut out = DatasetWriter::create(&tree_path, "diphotons", Format::Tree)?;
-        out.write(Batch::new().column("m_gg", masses)?)?;
-        out.finish()?;
+        FileWriter::create(&tree_path)
+            .add(NamedBatch::new(
+                "diphotons",
+                Format::Tree,
+                Batch::new().column("m_gg", masses)?,
+            ))
+            .write()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "diphotons")?;
         let data = tree.read(["m_gg"])?;

@@ -51,9 +51,9 @@ let batch = Batch::new()
     .column("n", vec![1_i32, 2, 3])?
     .column("pt", vec![10.5_f64, 20.1, 33.7])?
     .column("jets", vec![vec![30.0_f32], vec![], vec![55.0, 41.2]])?;
-let mut out = DatasetWriter::create("tree.root", "Events", Format::Tree)?; // or Format::Ntuple
-out.write(batch)?;
-out.finish()?;
+FileWriter::create("tree.root")
+    .add(NamedBatch::new("Events", Format::Tree, batch)) // or Format::Ntuple
+    .write()?;
 
 let f = FileReader::open("tree.root")?;
 let events = Dataset::open(&f, "Events")?;

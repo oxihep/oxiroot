@@ -49,9 +49,13 @@ fn main() -> oxiroot::Result<()> {
         ("evt1.root", vec![91.2, 125.0]),
         ("evt2.root", vec![80.4, 172.0, 4.18]),
     ] {
-        let mut out = DatasetWriter::create(path(file), "Events", Format::Tree)?;
-        out.write(Batch::new().column("mass", mass)?)?;
-        out.finish()?;
+        FileWriter::create(path(file))
+            .add(NamedBatch::new(
+                "Events",
+                Format::Tree,
+                Batch::new().column("mass", mass)?,
+            ))
+            .write()?;
     }
 
     // The Merger builder is the composable form of `merge_files`.

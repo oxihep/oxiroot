@@ -76,7 +76,8 @@ None of them is on crates.io yet; depend on them from GitHub (see
   re-exported: PDG ID decoding and a bundled particle table.
 - 📊 **Datasets** (`oxiroot::data`) — one API to read and write `TTree` and
   RNTuple: a `Batch` of flat, Arrow-style columns is what `Dataset` reads and
-  `DatasetWriter` writes, whatever the format. Typed slices with no copies,
+  what is written, whatever the format: as a `NamedBatch` added to a
+  `FileWriter` next to histograms, or streamed by a `DatasetWriter`. Typed slices with no copies,
   cluster-by-cluster iteration, strict types, and skims with no per-type code;
   parallel reads and writes with `rayon`, and conversion to Arrow and Polars.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
@@ -173,9 +174,9 @@ let batch = Batch::new()
     .column("n", vec![1_i32, 2, 3])?
     .column("pt", vec![10.5_f64, 20.1, 33.7])?
     .column("jets", vec![vec![30.0_f32], vec![], vec![55.0, 41.2]])?;
-let mut out = DatasetWriter::create("tree.root", "Events", Format::Tree)?;
-out.write(batch)?;
-out.finish()?;
+FileWriter::create("tree.root")
+    .add(NamedBatch::new("Events", Format::Tree, batch))
+    .write()?;
 let f = FileReader::open("tree.root")?;
 let events = Dataset::open(&f, "Events")?;               // the format is detected
 let back = events.read(["pt", "jets"])?;
@@ -190,7 +191,7 @@ Types are named as Rust, not as C++: no `T` prefix. Readers end in `Reader`
 (`FileReader`, `TreeReader`, `NtupleReader`) and writers in
 `Writer` (`FileWriter`, `DatasetWriter`); a columnar dataset is a `Dataset`; the rest
 is in-memory data named for what it is — `Hist1D`, `Profile1D`, `Graph`,
-`Func1D`, `Axis`, `Matrix`, `Batch`. **Every ROOT class name is a doc alias of the type that models it**,
+`Func1D`, `Axis`, `Matrix`, `Batch`, `NamedBatch`. **Every ROOT class name is a doc alias of the type that models it**,
 so searching the API docs for `TH1`, `TProfile`, `TGraph`, `TF1`, `TFile`,
 `TTree` or `TChain` still lands on the right page.
 
@@ -729,10 +730,12 @@ ax2.save("heatmap.svg")?;
 - **One API for `TTree` and RNTuple.** `Dataset::open(&file, name)` detects
   the format; `read(columns)` returns one `Batch`, and `batches(columns)`
   iterates one cluster at a time (`.step(n)`, `.range(a..b)`, and
-  `.parallel(true)` with `rayon`). `DatasetWriter::create(path, name, format)`
-  takes `Batch`es and closes a cluster every ~32 MiB of values, however the
-  batches are sized. `DatasetObject` puts a dataset into a `FileWriter` next
-  to histograms.
+  `.parallel(true)` with `rayon`). A `NamedBatch` is a dataset
+  held in memory, added to a `FileWriter` like a histogram and written with
+  the file. For one too large to hold, `DatasetWriter::create(path, name,
+  format)` takes `Batch`es and closes a cluster every ~32 MiB of values,
+  however the batches are sized, and its `add` stores histograms in the same
+  file.
 - **Stored types by schema.** `Dataset::schema()` reports how each column is
   stored, and `DatasetWriter::schema(…)` chooses it where the data alone does
   not: half-precision, truncated and quantized floats, `std::set`,
@@ -840,7 +843,7 @@ ax2.save("heatmap.svg")?;
   the footer's schema-extension record as a deferred column (its data covers
   entries `first_entry..N`; earlier ones default). ROOT reads the result as if the
   field had been added mid-writing with a model updater.
-- `FileWriter::add` (with a `DatasetObject`) writes **several RNTuples per file**, RNTuples **inside a
+- `FileWriter::add` (with a `NamedBatch`) writes **several RNTuples per file**, RNTuples **inside a
   `TDirectory`**, and RNTuples next to histograms and trees —
   `FileWriter::create(path).add(events).add(runs).dir("cal", |d|
   d.add(pedestals)).write()`. Read a nested one with

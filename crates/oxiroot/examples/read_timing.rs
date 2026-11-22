@@ -57,9 +57,9 @@ fn write(dir: &Path, n: usize) -> Result<(), Box<dyn std::error::Error>> {
         .column("n", count)?
         .list("jets", offsets, values)?;
     for (file, format) in [("tree.root", Format::Tree), ("ntuple.root", Format::Ntuple)] {
-        let mut out = DatasetWriter::create(dir.join(file), "events", format)?;
-        out.write(batch.clone())?;
-        out.finish()?;
+        FileWriter::create(dir.join(file))
+            .add(NamedBatch::new("events", format, batch.clone()))
+            .write()?;
     }
     Ok(())
 }

@@ -198,9 +198,9 @@ mod probes {
             .column("abs_eta", eta)?
             .column("m_mumu", mass)?
             .column("passed", passed)?;
-        let mut out = DatasetWriter::create(&tree_path, "probes", Format::Tree)?;
-        out.write(probes)?;
-        out.finish()?;
+        FileWriter::create(&tree_path)
+            .add(NamedBatch::new("probes", Format::Tree, probes))
+            .write()?;
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "probes")?;
         let data = tree.read(["pt", "abs_eta", "m_mumu", "passed"])?;

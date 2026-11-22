@@ -81,9 +81,9 @@ fn main() -> oxiroot::Result<()> {
         .column("Muon_eta", eta)?
         .column("Muon_phi", phi)?
         .column("Muon_charge", charge)?;
-    let mut out = DatasetWriter::create(&tree_path, "Events", Format::Tree)?;
-    out.write(muons)?;
-    out.finish()?;
+    FileWriter::create(&tree_path)
+        .add(NamedBatch::new("Events", Format::Tree, muons))
+        .write()?;
     println!("wrote {n_events} events to {}", tree_path.display());
 
     // --- 2. Read them back: flat columns, one view per entry. -----------

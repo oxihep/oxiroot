@@ -4,9 +4,9 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use oxiroot_dataset::{
-    Batch, Column, DataType, Dataset, DatasetObject, DatasetWriter, Format, Schema,
+    Batch, Column, DataType, Dataset, DatasetWriter, Format, NamedBatch, Schema,
 };
-use oxiroot_io_core::{Compression, Error, FileReader, FileWriter};
+use oxiroot_io_core::{Compression, Error, FileReader, FileWriter, ObjString, Parameter};
 use oxiroot_tree::BranchLayout;
 
 fn ix(n: u64) -> usize {
@@ -279,8 +279,8 @@ fn nested_lists_round_trip_through_an_rntuple() {
 fn datasets_go_into_a_file_writer_next_to_each_other() {
     let b = sample(5, 0);
     let bytes = FileWriter::create("multi.root")
-        .add(DatasetObject::new("tree", Format::Tree, b.clone()))
-        .add(DatasetObject::new("ntuple", Format::Ntuple, b.clone()))
+        .add(NamedBatch::new("tree", Format::Tree, b.clone()))
+        .add(NamedBatch::new("ntuple", Format::Ntuple, b.clone()))
         .compression(Compression::Stored)
         .to_bytes()
         .unwrap();
@@ -294,6 +294,105 @@ fn datasets_go_into_a_file_writer_next_to_each_other() {
         Dataset::open(&file, "nope"),
         Err(Error::NotFound { .. })
     ));
+}
+
+/// A named batch grows by whole batches, and goes into a file by reference:
+/// it is still there afterwards, to add to another file.
+#[test]
+fn a_named_batch_takes_more_batches_and_is_added_by_reference() {
+    let mut events = NamedBatch::new("events", Format::Tree, sample(4, 0));
+    events.push(sample(3, 4)).unwrap();
+    assert_eq!((events.name(), events.entries()), ("events", 7));
+    assert_eq!(events.format(), Format::Tree);
+
+    let lumi = Parameter::f64("lumi", 137.5);
+    let bytes = FileWriter::create("named.root")
+        .add(&lumi)
+        .add(&events)
+        .to_bytes()
+        .unwrap();
+    let file = FileReader::from_bytes(bytes).unwrap();
+    assert_eq!(
+        Dataset::open(&file, "events")
+            .unwrap()
+            .read(COLUMNS)
+            .unwrap(),
+        sample(7, 0)
+    );
+    assert_eq!(
+        file.get::<Parameter>("lumi").unwrap().value().as_f64(),
+        137.5
+    );
+    assert_eq!(events.batch(), &sample(7, 0), "it keeps its entries");
+
+    // A batch of other columns is refused, and leaves it as it was.
+    let other = Batch::new().column("y", vec![1.0_f64]).unwrap();
+    assert!(matches!(
+        events.push(other),
+        Err(Error::SchemaChanged { .. })
+    ));
+    assert_eq!(events.entries(), 7);
+}
+
+/// A streamed dataset of several clusters shares its file with other
+/// objects, in both formats.
+#[test]
+fn a_streaming_writer_stores_objects_next_to_its_dataset() {
+    for format in [Format::Tree, Format::Ntuple] {
+        let mut out = DatasetWriter::new(Cursor::new(Vec::new()), "s.root", "events", format)
+            .cluster_bytes(1);
+        out.add(&Parameter::f64("lumi", 137.5)); // before any batch
+        out.write(sample(4, 0)).unwrap();
+        out.write(sample(3, 4)).unwrap();
+        out.add(&ObjString::new("2024 run").named("label")); // after them
+        let file = FileReader::from_bytes(out.finish().unwrap().into_inner()).unwrap();
+
+        let events = Dataset::open(&file, "events").unwrap();
+        assert_eq!(events.format(), format);
+        assert_eq!(events.read(COLUMNS).unwrap(), sample(7, 0));
+        assert!(
+            events.batches(COLUMNS).count() > 1,
+            "{format:?}: one cluster"
+        );
+        assert_eq!(
+            file.get::<Parameter>("lumi").unwrap().value().as_f64(),
+            137.5
+        );
+        assert_eq!(file.get::<ObjString>("label").unwrap().value(), "2024 run");
+    }
+}
+
+/// An object the file cannot address is refused when the file is finished:
+/// one with no name, one named as the dataset, two of one name.
+#[test]
+fn a_streaming_writer_refuses_objects_it_cannot_name() {
+    type Add<'a> = &'a dyn Fn(&mut DatasetWriter<Cursor<Vec<u8>>>);
+    let finish = |objects: &[Add<'_>]| {
+        let sink = Cursor::new(Vec::new());
+        let mut out = DatasetWriter::new(sink, "s.root", "events", Format::Tree);
+        out.write(sample(2, 0)).unwrap();
+        for add in objects {
+            add(&mut out);
+        }
+        out.finish().map(drop)
+    };
+    let unnamed = finish(&[&|out| out.add(&ObjString::new("x"))]);
+    assert!(
+        matches!(unnamed, Err(Error::InvalidInput(_))),
+        "{unnamed:?}"
+    );
+    let as_dataset = finish(&[&|out| out.add(&Parameter::f64("events", 1.0))]);
+    assert!(
+        matches!(&as_dataset, Err(Error::DuplicateName { name, .. }) if name == "events"),
+        "{as_dataset:?}"
+    );
+    let twice = finish(&[&|out| out.add(&Parameter::f64("lumi", 1.0)), &|out| {
+        out.add(&Parameter::f64("lumi", 2.0))
+    }]);
+    assert!(
+        matches!(twice, Err(Error::DuplicateName { .. })),
+        "{twice:?}"
+    );
 }
 
 /// Every committed `TTree` and `RNTuple` fixture reads through `Dataset`, and each
@@ -491,7 +590,7 @@ fn structs_round_trip_and_a_tree_takes_them_in_a_list() {
     assert_eq!(round_trip(Format::Tree, &lists), lists);
     // The refusal comes when the file is written, before anything is.
     let err = FileWriter::create("unused.root")
-        .add(DatasetObject::new("t", Format::Tree, b.clone()))
+        .add(NamedBatch::new("t", Format::Tree, b.clone()))
         .to_bytes()
         .unwrap_err();
     let msg = err.to_string();
@@ -1065,7 +1164,7 @@ fn a_batch_that_does_not_fit_the_schema_is_refused() {
 fn a_dataset_object_takes_a_schema_too() {
     let (batch, schema) = encoded();
     let bytes = FileWriter::create("unused.root")
-        .add(DatasetObject::new("events", Format::Ntuple, batch.clone()).schema(schema.clone()))
+        .add(NamedBatch::new("events", Format::Ntuple, batch.clone()).schema(schema.clone()))
         .to_bytes()
         .unwrap();
     let file = FileReader::from_bytes(bytes).unwrap();

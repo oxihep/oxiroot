@@ -2,14 +2,14 @@
 //! subdirectories, or appending them to an existing file.
 
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
+use std::io::{Cursor, Seek, Write};
 use std::path::Path;
 
 use crate::ClassKind;
 use crate::Compression;
 use crate::error::{Error, Result, decompress_payload};
 use crate::object_io::{KeyCheck, ObjectRecord, StreamerSet, WriteInto, WriteRoot};
-use crate::streamer_gen::StreamerInfoList;
+use crate::streamer_gen::{ClassDef, StreamerInfoList};
 
 use super::container::{ContainerWriter, DirId, KSTART_BIG_FILE};
 use super::key::Key;
@@ -40,14 +40,93 @@ impl Entry {
 
     fn place(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
         match self {
-            Self::Object(r) => {
-                let key_len = Key::header_len(&r.class_name, &r.name, &r.title, file.is_big());
-                r.key_check.check(&r.class_name, &r.name, key_len)?;
-                file.place_key(dir, &r.class_name, &r.name, &r.title, &r.object)
-                    .map(drop)
-            }
+            Self::Object(r) => place_record(file, dir, r),
             Self::Records(o) => o.write_into(file, dir),
         }
+    }
+}
+
+/// Store `record` under its own key in `dir`.
+fn place_record<W: Write + Seek>(
+    file: &mut ContainerWriter<W>,
+    dir: DirId,
+    record: &ObjectRecord,
+) -> Result<()> {
+    let (class, name, title) = (&record.class_name, &record.name, &record.title);
+    let key_len = Key::header_len(class, name, title, file.is_big());
+    record.key_check.check(class, name, key_len)?;
+    file.place_key(dir, class, name, title, &record.object)
+        .map(drop)
+}
+
+/// The objects a streaming writer stores next to its dataset: histograms,
+/// graphs, parameters, each under a key of its own in the top directory.
+///
+/// A streaming writer owns its file from the first cluster on, so these are
+/// held (they are small) and placed when the writer finishes.
+#[derive(Default)]
+pub struct Objects {
+    records: Vec<ObjectRecord>,
+    streamers: StreamerSet,
+}
+
+impl Objects {
+    /// Take `object`, serialized now.
+    pub fn add<T: WriteRoot + ?Sized>(&mut self, object: &T) {
+        self.streamers.add_classes(object.streamer_classes());
+        self.records.push(ObjectRecord {
+            class_name: object.root_class().into_owned(),
+            name: object.root_name().to_string(),
+            title: object.root_title().to_string(),
+            object: object.to_root_bytes(),
+            key_check: object.key_check(),
+        });
+    }
+
+    /// The `TStreamerInfo` entries the objects need.
+    #[must_use]
+    pub fn classes(&self) -> &[ClassDef<'static>] {
+        self.streamers.classes()
+    }
+
+    /// Store every object in the top directory of `file`, which already
+    /// holds a key named `dataset`.
+    ///
+    /// # Errors
+    ///
+    /// An unnamed object, two keys sharing a name, an object too large for
+    /// its record, or a failed write.
+    pub fn place<W: Write + Seek>(
+        &self,
+        file: &mut ContainerWriter<W>,
+        dataset: &str,
+    ) -> Result<()> {
+        let mut seen = HashSet::from([dataset]);
+        for record in &self.records {
+            if record.name.is_empty() {
+                return Err(Error::InvalidInput(format!(
+                    "cannot write an unnamed {} in the top directory; give it a key name with \
+                     `.named(\"...\")`",
+                    record.class_name
+                )));
+            }
+            if !seen.insert(record.name.as_str()) {
+                return Err(Error::DuplicateName {
+                    name: record.name.clone(),
+                    location: "the top directory".to_string(),
+                });
+            }
+            place_record(file, DirId::TOP, record)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for Objects {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.records.iter().map(|r| &r.name))
+            .finish()
     }
 }
 

@@ -71,9 +71,10 @@ fn main() -> oxiroot::Result<()> {
     for (label, comp) in codecs {
         // A distinct temp file per codec, all removed before we return.
         let path = dir.join(format!("oxiroot_ex_compression_{}.root", comp.setting()));
-        let mut out = DatasetWriter::create(&path, "Events", Format::Tree)?.compression(comp);
-        out.write(batch.clone())?;
-        out.finish()?;
+        FileWriter::create(&path)
+            .compression(comp)
+            .add(NamedBatch::new("Events", Format::Tree, batch.clone()))
+            .write()?;
         let bytes = std::fs::metadata(&path)?.len();
         sizes.push(bytes);
         paths.push(path);
