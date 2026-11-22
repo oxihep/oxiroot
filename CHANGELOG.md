@@ -7,6 +7,47 @@ change the API.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-22
+
+HEP plotting: oxiplot 0.12.0 and oxihist 0.16.0, an efficiency with its
+interval, and examples that use them.
+
+### Added
+
+- **oxiplot 0.12.0** behind the `plot` feature: Poisson error bars, per-width
+  and density normalisation, under- and overflow bins, hatches, more markers,
+  `XyPoints::ratio` / `pull` / `difference`, an uncertainty band around one,
+  shaded spans, explicit ticks, a twin y axis, a legend title and columns,
+  and the `cms`, `atlas`, `lhcb` and `alice` styles. The plotting guide
+  covers them.
+
+- **`Efficiency::interval(bin)`**: the confidence interval of a bin, at the
+  object's confidence level and by its statistic option. Clopper–Pearson,
+  normal, Wilson, Agresti–Coull and the three Bayesian options are computed
+  and agree with ROOT 6.40; Feldman–Cousins and mid-P are refused.
+- **An `Efficiency` is plottable** (`plot` feature): `Axes::errorbar(&eff)`
+  draws a point per bin that holds trials, with its interval. The
+  `efficiency` example draws its turn-on this way.
+
+### Changed
+
+- **oxihist 0.16.0**: a histogram hands its flow bins to a plot.
+- Plots have finer ticks, a stat box rounded to its uncertainties, and a
+  legend kept clear of the data (oxiplot 0.12.0), so figures differ from
+  those of 0.10.
+- The examples use the new plotting: `open_data_zmumu` the ATLAS style,
+  Poisson errors and a ratio with the simulation's uncertainty band;
+  `open_data_dimuon` the CMS style and pairs per GeV; `plot` the ratio
+  helper.
+
+### Fixed
+
+- The `plot` example compares simulation with a data histogram in the same
+  binning, and its ratio panel is computed bin by bin; the pull plot of
+  `tag_and_probe` leaves room for its legend.
+- The plotting guide said records implement oxiplot's data traits; they are
+  drawn through `to_hist()`.
+
 ## [0.10.1] — 2026-11-22
 
 Two examples on real collision data, and oxiparticle 0.2.0. No change to
@@ -1289,7 +1330,8 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/oxihep/oxiroot/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/oxihep/oxiroot/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/oxihep/oxiroot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/oxihep/oxiroot/compare/v0.8.0...v0.9.0

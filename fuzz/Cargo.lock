@@ -180,8 +180,8 @@ dependencies = [
 
 [[package]]
 name = "oxihist"
-version = "0.15.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.15.0#7ed4204528abe09b3d58f025f8ac62127b6e310e"
+version = "0.16.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.16.0#27f9b6dce65b389dc7b9103e3c61d0de75a41902"
 dependencies = [
  "foldhash",
  "oxistats",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-compress"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "lz4_flex",
  "lzma-rust2",
@@ -214,15 +214,16 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "oxihist",
  "oxiroot-io-core",
+ "oxistats",
 ]
 
 [[package]]
 name = "oxiroot-hist-func"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "oxifit-formula",
  "oxiroot-hist",
@@ -231,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-io-core"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "oxiroot-compress",
@@ -239,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-rntuple"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "oxiroot-io-core",
  "xxhash-rust",
@@ -247,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-tree"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "oxiroot-io-core",
 ]
