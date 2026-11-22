@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-compress"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "lz4_flex",
  "lzma-rust2",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "oxihist",
  "oxiroot-io-core",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist-func"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "oxifit-formula",
  "oxiroot-hist",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-io-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytes",
  "oxiroot-compress",
@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-rntuple"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "oxiroot-io-core",
  "xxhash-rust",
@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-tree"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "oxiroot-io-core",
 ]

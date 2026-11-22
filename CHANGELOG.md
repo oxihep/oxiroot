@@ -7,6 +7,11 @@ change the API.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-11-22
+
+Two examples on real collision data, and oxiparticle 0.2.0. No change to
+the library.
+
 ### Added
 
 - **Two examples on real collision data**, read from CERN's open-data
@@ -1284,7 +1289,8 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/oxihep/oxiroot/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/oxihep/oxiroot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/oxihep/oxiroot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/oxihep/oxiroot/compare/v0.7.0...v0.8.0
