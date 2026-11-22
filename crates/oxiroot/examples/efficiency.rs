@@ -2,8 +2,9 @@
 //! transverse momentum `pT`, decide pass/fail against a logistic acceptance
 //! `p(pT) = 1 / (1 + exp(-(pT - x50)/w))`, and let `Efficiency` accumulate the
 //! per-bin passed/total ratio. We print the recovered efficiency, put a
-//! Clopper–Pearson confidence interval on one bin with `oxiroot::stat`, then
-//! write the object to a ROOT file and read it straight back.
+//! Clopper–Pearson confidence interval on one bin, draw the turn-on (with the
+//! `plot` feature), then write the object to a ROOT file and read it straight
+//! back.
 //!
 //! ```sh
 //! cargo run -p oxiroot --example efficiency
@@ -77,14 +78,13 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // --- Clopper–Pearson interval on the bin straddling the 50% point. ---------
-    // `Efficiency` stores ROOT's default 68.27% Clopper–Pearson recipe; here we
-    // reproduce that interval directly from the bin's passed/total counts with
-    // the stats library, and report the efficiency with asymmetric errors.
+    // `Efficiency` stores ROOT's default 68.27% Clopper–Pearson recipe, and
+    // `interval` applies it to a bin: the efficiency with asymmetric errors.
     let mid_bin = ((x50 - pt_lo) / stride).floor() as usize + 1;
     let k = eff.passed().contents()[mid_bin];
     let n = eff.total().contents()[mid_bin];
     let center = pt_lo + (mid_bin as f64 - 0.5) * stride;
-    let (lo, hi) = oxiroot::stat::clopper_pearson(k, n, eff.conf_level());
+    let (lo, hi) = eff.interval(mid_bin)?.expect("the middle bin has trials");
     let e = eff.efficiency(mid_bin).expect("the middle bin has trials");
     println!("\nBin {mid_bin} (pT ~ {center:.1} GeV, straddles x50): {k:.0}/{n:.0} passed",);
     println!(
@@ -93,6 +93,38 @@ fn main() -> oxiroot::Result<()> {
         e - lo,
         eff.conf_level() * 100.0,
     );
+
+    // --- The turn-on, drawn: a point per bin with its interval. ----------------
+    #[cfg(feature = "plot")]
+    {
+        use oxiroot::plot::{Axes, Color, CurveOpts, ErrorbarOpts};
+
+        let xs: Vec<f64> = (0..=200)
+            .map(|i| pt_lo + (pt_hi - pt_lo) * f64::from(i) / 200.0)
+            .collect();
+        let truth: Vec<f64> = xs.iter().map(|&x| logistic(x)).collect();
+        let mut ax = Axes::new();
+        ax.plot_with(
+            &xs,
+            &truth,
+            CurveOpts::new()
+                .color(Color::hex("#bd1f01"))
+                .label("true turn-on"),
+        )?;
+        ax.errorbar_with(
+            &eff,
+            ErrorbarOpts::new()
+                .color(Color::BLACK)
+                .label("measured (Clopper–Pearson)"),
+        );
+        ax.xlabel("$p_T$ [GeV]")
+            .ylabel("Trigger efficiency")
+            .ylim(0.0..1.05)
+            .legend();
+        let png = std::env::temp_dir().join("oxiroot_ex_efficiency.png");
+        ax.save(&png)?;
+        println!("\nplot -> {}", png.display());
+    }
 
     // --- Write the Efficiency to a ROOT file, then read it back. ---------------
     // Temp file, named for this example, removed before we return — no litter.

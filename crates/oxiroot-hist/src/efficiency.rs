@@ -204,6 +204,58 @@ impl Efficiency {
         }
     }
 
+    /// The confidence interval of the efficiency in bin `bin` (1-based), at
+    /// this object's [`conf_level`](Self::conf_level) and by its
+    /// [`statistic_option`](Self::statistic_option): the `(lower, upper)`
+    /// bounds ROOT's `GetEfficiencyErrorLow` and `GetEfficiencyErrorUp` are
+    /// measured from. `None` when the bin has no trials, or does not exist.
+    ///
+    /// Clopper–Pearson (ROOT's default), the normal approximation, Wilson,
+    /// Agresti–Coull and the three Bayesian options (the central interval of
+    /// the Beta posterior) are computed.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unsupported`] for the Feldman–Cousins and mid-P options.
+    pub fn interval(&self, bin: usize) -> Result<Option<(f64, f64)>> {
+        let (Some(&n), Some(&k)) = (self.total.contents.get(bin), self.passed.contents.get(bin))
+        else {
+            return Ok(None);
+        };
+        if n <= 0.0 {
+            return Ok(None);
+        }
+        let level = self.conf_level;
+        // The central interval of a Beta(a, b) posterior.
+        let bayesian = |alpha: f64, beta: f64| {
+            let (a, b) = (k + alpha, n - k + beta);
+            let tail = (1.0 - level) / 2.0;
+            (
+                oxistats::betaincinv(a, b, tail),
+                oxistats::betaincinv(a, b, 1.0 - tail),
+            )
+        };
+        Ok(Some(match self.statistic_option {
+            StatisticOption::ClopperPearson => oxistats::clopper_pearson(k, n, level),
+            StatisticOption::Wilson => oxistats::wilson_interval(k, n, level),
+            StatisticOption::AgrestiCoull => oxistats::agresti_coull_interval(k, n, level),
+            StatisticOption::Normal => {
+                let p = k / n;
+                let half = oxistats::ndtri(1.0 - (1.0 - level) / 2.0) * (p * (1.0 - p) / n).sqrt();
+                ((p - half).max(0.0), (p + half).min(1.0))
+            }
+            StatisticOption::Jeffrey => bayesian(0.5, 0.5),
+            StatisticOption::Uniform => bayesian(1.0, 1.0),
+            StatisticOption::Bayesian => bayesian(self.beta_alpha, self.beta_beta),
+            other => {
+                return Err(Error::Unsupported(format!(
+                    "the {other:?} interval of a TEfficiency (oxiroot computes \
+                     Clopper-Pearson, normal, Wilson, Agresti-Coull and the Bayesian ones)"
+                )));
+            }
+        }))
+    }
+
     /// Efficiency in bin `bin` (1-based; `0` and `nbins + 1` are the flow
     /// bins): `passed / total`. `None` when the bin has no trials, or does not
     /// exist.
@@ -279,5 +331,119 @@ impl ReadRoot for Efficiency {
             let (mut r, mut tags) = object.reader()?;
             Self::read(&mut r, &mut tags)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Efficiency, StatisticOption};
+
+    /// Bins holding 0/10, 3/10, 7/7 and 50/200.
+    fn sample(option: StatisticOption) -> Efficiency {
+        let mut e = Efficiency::new(4, 0.0, 4.0)
+            .with_statistic_option(option)
+            .with_conf_level(0.683);
+        for (bin, (passed, total)) in [(0, 10), (3, 10), (7, 7), (50, 200)]
+            .into_iter()
+            .enumerate()
+        {
+            for i in 0..total {
+                e.fill(i < passed, bin as f64 + 0.5);
+            }
+        }
+        e
+    }
+
+    /// The bounds `TEfficiency::ClopperPearson`, `Wilson`, `AgrestiCoull`,
+    /// `Normal` and `Bayesian` of ROOT 6.40 give at a level of 0.683.
+    #[test]
+    fn the_intervals_are_those_of_root() {
+        use StatisticOption::{AgrestiCoull, ClopperPearson, Jeffrey, Normal, Uniform, Wilson};
+        let expected: [(StatisticOption, [(f64, f64); 4]); 6] = [
+            (
+                ClopperPearson,
+                [
+                    (0.0, 0.168_230_623_728),
+                    (0.141_609_285_811, 0.508_362_076_487),
+                    (0.768_632_009_595, 1.0),
+                    (0.218_283_246_323, 0.284_414_585_847),
+                ],
+            ),
+            (
+                Wilson,
+                [
+                    (0.0, 0.091_015_199_966_3),
+                    (0.178_759_350_075, 0.457_646_729_911),
+                    (0.874_859_577_441, 1.0),
+                    (0.220_658_140_438, 0.281_832_600_042),
+                ],
+            ),
+            (
+                AgrestiCoull,
+                [
+                    (0.0, 0.108_383_637_895),
+                    (0.177_683_520_439, 0.458_722_559_548),
+                    (0.851_755_206_708, 1.0),
+                    (0.220_632_924_274, 0.281_857_816_206),
+                ],
+            ),
+            (
+                Normal,
+                [
+                    (0.0, 0.0),
+                    (0.154_993_222_714, 0.445_006_777_286),
+                    (1.0, 1.0),
+                    (0.219_361_726_303, 0.280_638_273_697),
+                ],
+            ),
+            (
+                Jeffrey,
+                [
+                    (0.001_948_247_754_76, 0.092_399_613_671_9),
+                    (0.179_861_906_722, 0.457_850_918_635),
+                    (0.871_968_950_176, 0.997_247_515_409),
+                    (0.220_668_614_887, 0.281_826_261_09),
+                ],
+            ),
+            (
+                Uniform,
+                [
+                    (0.015_565_697_557_8, 0.154_184_990_168),
+                    (0.198_803_783_358, 0.468_895_315_42),
+                    (0.794_334_925_849, 0.978_659_835_35),
+                    (0.221_925_703_457, 0.283_032_004_47),
+                ],
+            ),
+        ];
+        for (option, bounds) in expected {
+            let e = sample(option);
+            for (i, (lo, hi)) in bounds.into_iter().enumerate() {
+                let (got_lo, got_hi) = e.interval(i + 1).unwrap().unwrap();
+                assert!(
+                    (got_lo - lo).abs() < 1e-9 && (got_hi - hi).abs() < 1e-9,
+                    "{option:?} bin {}: ({got_lo}, {got_hi}) is not ({lo}, {hi})",
+                    i + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_bayesian_interval_uses_the_prior_of_the_object() {
+        let jeffrey = sample(StatisticOption::Jeffrey);
+        let bayesian = sample(StatisticOption::Bayesian)
+            .with_beta_alpha(0.5)
+            .with_beta_beta(0.5);
+        assert_eq!(bayesian.interval(2).unwrap(), jeffrey.interval(2).unwrap());
+    }
+
+    #[test]
+    fn an_empty_or_missing_bin_has_no_interval_and_two_options_are_refused() {
+        let e = Efficiency::new(2, 0.0, 2.0);
+        assert_eq!(e.interval(1).unwrap(), None);
+        assert_eq!(e.interval(9).unwrap(), None);
+        for option in [StatisticOption::FeldmanCousins, StatisticOption::MidP] {
+            assert!(sample(option).interval(2).is_err());
+        }
     }
 }

@@ -13,6 +13,8 @@ description = "Classic ROOT histograms, profiles and graphs (TH1/TH2/TH3/TProfil
 [dependencies]
 oxiroot-io-core = { workspace = true }
 oxihist = { workspace = true }
+# The binomial intervals of an `Efficiency`.
+oxistats = { workspace = true }
 oxifit = { workspace = true, optional = true }
 oxiplot = { workspace = true, optional = true }
 
@@ -30,10 +32,12 @@ rayon = ["oxihist/rayon", "oxifit?/rayon"]
 # Minuit2 minimizer. Off by default to keep the core dependency-light.
 # (`TF1::to_model` is behind the `fit` feature of `oxiroot-hist-func`.)
 fit = ["dep:oxifit", "oxihist/fit"]
-# Opt-in plotting: implements oxiplot's data traits (`Hist1dData`,
-# `Hist2dData`, `PointData`) for `Hist1D`, `Profile1D`, `Hist2D` and `Graph`,
-# so `Axes::hist(&h)` draws them. Brings in oxiplot without its default
-# features; the `oxiroot` facade's `plot` feature turns PNG and TeX math on.
+# Opt-in plotting: implements oxiplot's `PointData` for `Graph`, so
+# `Axes::errorbar(&g)` draws it, and turns on oxihist's own plotting, so
+# `Axes::hist(&h)` draws a `Histogram`. A record read from a file (`Hist1D`,
+# `Profile1D`, `Hist2D`) is drawn through `.to_hist()?`. Brings in oxiplot
+# without its default features; the `oxiroot` facade's `plot` feature turns
+# PNG and TeX math on.
 plot = ["dep:oxiplot", "oxihist/plot"]
 
 [package.metadata.docs.rs]

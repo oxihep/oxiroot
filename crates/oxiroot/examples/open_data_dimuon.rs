@@ -244,20 +244,21 @@ fn main() -> oxiroot::Result<()> {
     }
 
     // ---- 5. The spectrum ---------------------------------------------------
-    // The bins are logarithmic, each 3.9 % wide, so a flat line is a
-    // spectrum falling as 1/m.
-    let mut ax = Axes::with_style(Style::mplhep());
+    // The bins are logarithmic, each 3.9 % wide, so the contents are divided
+    // by the bin widths: pairs per GeV, whatever the binning.
+    let mut ax = Axes::with_style(Style::cms());
     ax.hist_with(
         &spectrum,
         HistOpts::new()
             .histtype(HistType::Step)
+            .per_width(true)
             .color(Color::BLACK)
             .label("CMS open data, 2012"),
     );
     ax.xscale(Scale::Log)
         .yscale(Scale::Log)
         .xlabel("$m_{\\mu\\mu}$ [GeV]")
-        .ylabel("Pairs / bin (60 bins per decade)")
+        .ylabel("Pairs / GeV")
         .hep_label("CMS", "Open Data")
         .hep_rhs("$\\sqrt{s} = 8$ TeV")
         .legend();

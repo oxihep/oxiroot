@@ -469,21 +469,33 @@ mod probes {
             p.iter().for_each(|&v| h.fill(v));
             h
         };
+        let (h_binomial, h_chi2) = (
+            pull_hist("binomial", &pulls_binomial),
+            pull_hist("chi2", &pulls_chi2),
+        );
+        // Leave room above the tallest bin: the two histograms fill the
+        // frame, and the legend needs a clear band to sit in.
+        let tallest = h_binomial
+            .values(false)
+            .into_iter()
+            .chain(h_chi2.values(false))
+            .fold(0.0, f64::max);
         let mut ax = Axes::with_style(Style::mplhep());
         ax.hist_with(
-            &pull_hist("binomial", &pulls_binomial),
+            &h_binomial,
             HistOpts::new()
                 .color(blue)
                 .label(format!("binomial (mean {bm:+.2}, width {bw:.2})")),
         );
         ax.hist_with(
-            &pull_hist("chi2", &pulls_chi2),
+            &h_chi2,
             HistOpts::new()
                 .color(red)
                 .label(format!("χ² (mean {cm:+.2}, width {cw:.2})")),
         );
         ax.xlabel("Threshold pull")
             .ylabel("Toys")
+            .ylim(0.0..1.35 * tallest)
             .hep_label("Demo", "Simulation")
             .legend();
         let pulls_png = dir.join("binomial_vs_chi2.png");

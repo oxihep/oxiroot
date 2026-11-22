@@ -13,7 +13,7 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 ```toml
 [dependencies]
 # the `plot` feature is on by default:
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.10.1" }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.11.0" }
 ```
 
 !!! note "How it works"
@@ -76,8 +76,24 @@ Plotting errors are `oxiroot::plot::Error`, and they convert into
 
 ## Histograms (mplhep style)
 
-`hist` draws a `Hist1D` as an mplhep staircase. `hist_with` takes a `HistOpts`
+`hist` draws a histogram as an mplhep staircase. `hist_with` takes a `HistOpts`
 builder for control over the type, error bars, color, fill, and legend label.
+
+What it takes is the histogram `Hist::reg(..)` builds. A `Hist1D`, `Profile1D`
+or `Hist2D` read from a ROOT file is the stored record: turn it into a
+histogram with `to_hist()` to draw it.
+
+```rust,no_run
+use oxiroot::plot::Axes;
+use oxiroot::prelude::*;
+
+let file = FileReader::open("analysis.root")?;
+let mass = file.get::<Hist1D>("mass")?;
+let mut ax = Axes::new();
+ax.hist(&mass.to_hist()?);
+ax.save("mass.png")?;
+# Ok::<(), oxiroot::Error>(())
+```
 
 | `HistType` | Look |
 |-----------|------|
@@ -109,6 +125,34 @@ weighted or background-subtracted one) extends below zero. Limits you set with
 `xlim`/`ylim` always win, whether set before or after plotting. Bins holding
 NaN or ±∞ are drawn empty rather than breaking the plot.
 
+`HistOpts` carries what a HEP histogram needs beyond its type:
+
+| Option | Effect |
+|--------|--------|
+| `.poisson_errors(true)` | Garwood 68.27 % intervals on counts instead of `±√N`; an empty bin gets its upper limit |
+| `.per_width(true)` | contents divided by the bin widths (events per GeV), for bins of unequal width |
+| `.density(true)` | normalised to unit area |
+| `.flow(Flow::Show)` / `.flow(Flow::Sum)` | the under- and overflow drawn as extra bins, or folded into the edge bins |
+| `.hatch(Hatch::Diagonal)` | a hatched fill or band (`Diagonal`, `BackDiagonal`, `Cross`) |
+| `.marker(Marker::OpenCircle)` | the marker of an `Errorbar` histogram |
+| `.empty_bins(true)` | draw the points of bins with no entries (hidden by default) |
+
+<!-- fragment -->
+```rust
+use oxiroot::plot::{Axes, Color, Flow, HistOpts, HistType};
+
+let mut ax = Axes::new();
+ax.hist_with(
+    &data_hist,
+    HistOpts::new()
+        .histtype(HistType::Errorbar)
+        .poisson_errors(true)
+        .flow(Flow::Sum)
+        .color(Color::BLACK)
+        .label("data"),
+);
+```
+
 ### Stacks
 
 `hist_stack` draws histograms that share a binning on top of each other, as
@@ -137,7 +181,9 @@ arrays, use `Binned1D::categories(&["ee", "μμ", "eμ"], counts)`.
 ## Graphs and profiles
 
 `errorbar` draws a `Graph` (plain, symmetric, or asymmetric errors) as data
-points; `profile` draws a `Profile1D` at bin centers. `ErrorbarOpts` controls the
+points, and an `Efficiency` as one point per bin that holds trials, with the
+bin as its horizontal bar and its confidence interval (`Efficiency::interval`)
+as its vertical one; `profile` draws a `Profile1D` at bin centers. `ErrorbarOpts` controls the
 marker, color, caps, and an optional connecting line.
 
 <!-- fragment -->
@@ -176,6 +222,10 @@ at or below zero (an empty bin, an error bar reaching below zero) run off the
 bottom of the frame, like matplotlib's `nonpositive="clip"`.
 
 ## Legend
+
+`legend_title("Signal region")` heads the legend and `legend_ncol(2)` lays its
+entries out in columns. With the automatic placement, an autoscaled linear y
+axis grows until the legend has a spot clear of the data.
 
 `ax.legend()` shows the labelled artists, in the spot that covers the fewest
 data points, as matplotlib's `loc="best"` does. It tries the upper right first,
@@ -390,6 +440,50 @@ fig.ratio(main, ratio).save("ratio.png")?;
 # Ok::<(), oxiroot::plot::Error>(())
 ```
 
+The points of the lower panel come from two histograms of the same binning:
+`XyPoints::ratio(&data, &mc)` (the numerator's uncertainty over the
+denominator), `XyPoints::pull` and `XyPoints::difference`.
+`Binned1D::relative_uncertainty(&mc)` is the denominator's own uncertainty
+around one, drawn as a band:
+
+<!-- fragment -->
+```rust
+use oxiroot::plot::{Binned1D, Color, ErrorbarOpts, Hatch, HistOpts, HistType, XyPoints, ratio_subplots};
+
+let (_fig, _main, mut ratio) = ratio_subplots();
+ratio.hist_with(
+    &Binned1D::relative_uncertainty(&mc),
+    HistOpts::new().histtype(HistType::Band).hatch(Hatch::Diagonal),
+);
+ratio.errorbar_with(&XyPoints::ratio(&data_hist, &mc)?, ErrorbarOpts::new().color(Color::BLACK));
+ratio.ylim(0.5..1.5).yticks(&[0.75, 1.0, 1.25]);
+# Ok::<(), oxiroot::plot::Error>(())
+```
+
+## Regions, tick positions and a second axis
+
+`axvspan(120.0..130.0)` and `axhspan(-1.0..1.0)` shade a range of x or y (a
+blinded window, a ±1σ strip); their `_with` forms take a `FillOpts` with a
+colour, a hatch and a legend label. `xticks(&[..])` and `yticks(&[..])` put
+the major ticks where you say. `twinx()` returns a second set of axes sharing
+the x axis, with its own y scale on the right.
+
+<!-- fragment -->
+```rust
+use oxiroot::plot::{Axes, Color, FillOpts, Hatch, HistOpts};
+
+let mut ax = Axes::new();
+ax.hist(&mc);
+ax.axvspan_with(
+    85.0..97.0,
+    FillOpts::new().hollow(true).color(Color::BLACK).hatch(Hatch::Diagonal).label("signal region"),
+);
+ax.xticks(&[60.0, 80.0, 91.2, 100.0, 120.0]);
+let right = ax.twinx();
+right.hist_with(&data_hist, HistOpts::new().color(Color::hex("#bd1f01")));
+right.ylabel("data");
+```
+
 ## Grid, output formats, and DPI
 
 `ax.grid()` draws a matplotlib-style light-grey grid at the major ticks (behind
@@ -472,6 +566,11 @@ use oxiroot::plot::{Axes, Style};
 
 let mut ax = Axes::with_style(Style::mplhep());
 ```
+
+`Style::cms()`, `Style::atlas()`, `Style::lhcb()` and `Style::alice()` are the
+experiments' looks: their fonts and tick geometry, and where the experiment
+label goes (`hep_label`): above the frame for CMS, inside it for the others,
+with the y axis given the room.
 
 A `Style` exposes the figure size, dpi, [`fonts`](#fonts), colors, tick geometry,
 and margins if you need to customize further.

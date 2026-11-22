@@ -52,21 +52,16 @@ fn main() -> oxiroot::Result<()> {
         mc.fill(91.0 + 7.5 * rng.gauss());
     }
 
-    // A handful of "data" points with statistical error bars (a TGraphErrors).
-    let dx: Vec<f64> = (0..8).map(|i| 55.0 + 10.0 * f64::from(i)).collect();
-    let dy: Vec<f64> = dx
-        .iter()
-        .map(|x| 2000.0 * (-0.5 * ((x - 91.0) / 7.5).powi(2)).exp())
-        .collect();
-    let dey: Vec<f64> = dy.iter().map(|y| y.sqrt().max(15.0)).collect();
-    let data = Graph::new(dx.clone(), dy.clone())
-        .and_then(|g| {
-            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
-                ex: vec![5.0; dx.len()],
-                ey: dey,
-            })
-        })?
-        .named("data");
+    // The simulation has ten times the data's events: scale it to the data.
+    mc.scale(0.1);
+
+    // "Data": 4000 events of the same shape with their own fluctuations, in
+    // the simulation's binning, so the two compare bin by bin.
+    let mut data = Hist::reg(40, 50.0, 130.0).weight().named("data");
+    let mut rng = Lcg::new(0x0fed_cba9_8765_4321);
+    for _ in 0..4_000 {
+        data.fill(91.0 + 7.5 * rng.gauss());
+    }
 
     // --- 1. Filled MC + data overlay, default matplotlib look. ---
     let mut ax = Axes::new();
@@ -77,7 +72,13 @@ fn main() -> oxiroot::Result<()> {
             .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
             .label("MC"),
     );
-    ax.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+    ax.hist_with(
+        &data,
+        HistOpts::new()
+            .histtype(HistType::Errorbar)
+            .color(Color::BLACK)
+            .label("data"),
+    );
     ax.xlabel("$m_{\\mu\\mu}$ [GeV]");
     ax.ylabel("Events / 2 GeV");
     ax.title("$Z \\rightarrow \\mu\\mu$ candidates");
@@ -140,40 +141,6 @@ fn main() -> oxiroot::Result<()> {
     save_both(&ax2, &out, "heatmap")?;
 
     // --- 4. A ratio plot: filled MC + data over a data/MC ratio panel. ---
-    let mc_vals = mc.values(false);
-    let edges = mc.axis(0).edges().expect("a numeric axis");
-    let bin_content = |x: f64| -> f64 {
-        // The bin whose edges hold `x`, or nothing outside the axis.
-        match edges.partition_point(|&e| e <= x) {
-            bin if (1..edges.len()).contains(&bin) => mc_vals[bin - 1],
-            _ => 0.0,
-        }
-    };
-    let ratio_y: Vec<f64> = dx
-        .iter()
-        .zip(&dy)
-        .map(|(&x, &y)| {
-            let c = bin_content(x);
-            if c > 0.0 { y / c } else { 1.0 }
-        })
-        .collect();
-    let ratio_ey: Vec<f64> = dx
-        .iter()
-        .zip(&dy)
-        .map(|(&x, &y)| {
-            let c = bin_content(x);
-            if c > 0.0 { y.sqrt() / c } else { 0.0 }
-        })
-        .collect();
-    let rgraph = Graph::new(dx.clone(), ratio_y)
-        .and_then(|g| {
-            g.with_errors(oxiroot::hist::GraphErrors::Symmetric {
-                ex: vec![0.0; dx.len()],
-                ey: ratio_ey,
-            })
-        })?
-        .named("r");
-
     let (fig, mut main, mut ratio) = ratio_subplots();
     main.hist_with(
         &mc,
@@ -182,14 +149,44 @@ fn main() -> oxiroot::Result<()> {
             .fill_color(Color::hex("#1f77b4").with_alpha(0.4))
             .label("MC"),
     );
-    main.errorbar_with(&data, ErrorbarOpts::new().color(Color::BLACK).label("data"));
+    main.hist_with(
+        &data,
+        HistOpts::new()
+            .histtype(HistType::Errorbar)
+            // Counts carry Poisson (Garwood) intervals, not ±√n.
+            .poisson_errors(true)
+            .color(Color::BLACK)
+            .label("data"),
+    );
     main.ylabel("Events / 2 GeV");
     main.legend();
-    ratio.errorbar_with(&rgraph, ErrorbarOpts::new().color(Color::BLACK));
-    ratio.ylim(0.5..1.5);
+    // The frame stops where the simulation runs out of events: beyond it a
+    // ratio says nothing.
+    main.xlim(70.0..112.0);
+    ratio.xlim(70.0..112.0);
+    // The ratio in every bin both fill, with the data's uncertainty; the
+    // simulation's own is the hatched band around one.
+    ratio.hist_with(
+        &oxiroot::plot::Binned1D::relative_uncertainty(&mc),
+        HistOpts::new()
+            .histtype(HistType::Band)
+            .hatch(oxiroot::plot::Hatch::Diagonal)
+            .color(Color::hex("#555555")),
+    );
+    ratio.errorbar_with(
+        &oxiroot::plot::XyPoints::ratio(&data, &mc)?,
+        ErrorbarOpts::new().color(Color::BLACK),
+    );
+    ratio.axhline_with(
+        1.0,
+        oxiroot::plot::CurveOpts::new()
+            .color(Color::hex("#888888"))
+            .dashed(vec![4.0, 3.0]),
+    );
+    ratio.ylim(0.4..1.6);
+    ratio.yticks(&[0.5, 1.0, 1.5]);
     ratio.ylabel("data/MC");
     ratio.xlabel("$m_{\\mu\\mu}$ [GeV]");
-    ratio.grid();
     let figr = fig.ratio(main, ratio);
     for ext in ["png", "svg", "pdf"] {
         let path = out.join(format!("ratio.{ext}"));
@@ -207,9 +204,11 @@ fn main() -> oxiroot::Result<()> {
     axs[0].hist(&mc);
     axs[0].ylabel("Events");
     axs[1].hist_with(&mc, HistOpts::new().histtype(HistType::Fill));
-    axs[2].errorbar(&data);
+    axs[2].hist_with(&data, HistOpts::new().histtype(HistType::Errorbar));
     axs[2].ylabel("Events");
-    axs[3].plot(&dx, &dy)?;
+    let edges = data.axis(0).edges().expect("a numeric axis");
+    let centres: Vec<f64> = edges.windows(2).map(|e| 0.5 * (e[0] + e[1])).collect();
+    axs[3].plot(&centres, &data.values(false))?;
     let gfig = gfig
         .sharex(true)
         .sharey(true)

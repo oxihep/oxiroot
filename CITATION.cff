@@ -19,5 +19,5 @@ keywords:
   - RNTuple
   - TTree
   - Rust
-version: 0.10.1
+version: 0.11.0
 date-released: "2026-11-22"

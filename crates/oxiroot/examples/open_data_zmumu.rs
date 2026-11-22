@@ -34,9 +34,11 @@ mod analysis {
     use oxiroot::file::Parameter;
     use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model};
     use oxiroot::hist::oxihist::Weight;
-    use oxiroot::hist::{Graph, GraphErrors};
     use oxiroot::particle::literals;
-    use oxiroot::plot::{Color, CurveOpts, HistOpts, HistType, Style, ratio_subplots_with};
+    use oxiroot::plot::{
+        Binned1D, Color, CurveOpts, ErrorbarOpts, Hatch, HistOpts, HistType, Style, XyPoints,
+        ratio_subplots_with,
+    };
     use oxiroot::prelude::*;
 
     const BASE: &str = "root://eospublic.cern.ch//eos/opendata/atlas/OutreachDatasets/2016-07-29";
@@ -296,7 +298,8 @@ mod analysis {
         assert_eq!(file.get::<Parameter>("sim_scale")?.value().as_f64(), scale);
 
         // ---- The plot: data over simulation, and their ratio -----------------
-        let (fig, mut main, mut lower) = ratio_subplots_with(Style::mplhep());
+        // The ATLAS look: the label inside the frame, and room made for it.
+        let (fig, mut main, mut lower) = ratio_subplots_with(Style::atlas());
         main.hist_with(
             &sim.mass,
             HistOpts::new()
@@ -308,6 +311,8 @@ mod analysis {
             &data.mass,
             HistOpts::new()
                 .histtype(HistType::Errorbar)
+                // Counts carry Poisson (Garwood) intervals, not ±√n.
+                .poisson_errors(true)
                 .color(Color::BLACK)
                 .label("ATLAS data, 2012"),
         );
@@ -316,19 +321,23 @@ mod analysis {
             .hep_rhs("$\\sqrt{s} = 8$ TeV")
             .legend();
 
-        let (d, s) = (data.mass.values(false), sim.mass.values(false));
-        let centres: Vec<f64> = (0..BINS).map(|b| LO + (b as f64 + 0.5)).collect();
-        let ratio: Vec<f64> = d.iter().zip(&s).map(|(d, s)| d / s).collect();
-        let errors: Vec<f64> = d.iter().zip(&s).map(|(d, s)| d.sqrt() / s).collect();
-        lower.errorbar(
-            &Graph::new(centres, ratio)?.with_errors(GraphErrors::Symmetric {
-                ex: vec![0.0; BINS],
-                ey: errors,
-            })?,
+        // The ratio carries the data's uncertainty; the simulation's own is
+        // the hatched band around one.
+        lower.hist_with(
+            &Binned1D::relative_uncertainty(&sim.mass),
+            HistOpts::new()
+                .histtype(HistType::Band)
+                .hatch(Hatch::Diagonal)
+                .color(Color::hex("#555555")),
+        );
+        lower.errorbar_with(
+            &XyPoints::ratio(&data.mass, &sim.mass)?,
+            ErrorbarOpts::new().color(Color::BLACK),
         );
         lower.axhline_with(1.0, CurveOpts::new().dashed(vec![4.0, 3.0]));
         lower
             .ylim(0.6..1.6)
+            .yticks(&[0.8, 1.0, 1.2, 1.4])
             .ylabel("Data / sim.")
             .xlabel("$m_{\\mu\\mu}$ [GeV]");
         let png = std::env::temp_dir().join("open_data_zmumu.png");
