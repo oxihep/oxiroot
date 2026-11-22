@@ -116,7 +116,12 @@ out.finish()?;
   `.parallel(true)` reads a batch's columns concurrently.
 
 Remote files work the same: over `root://` or HTTP a batch's baskets are
-fetched together (see [Reading and writing](reading-writing.md)).
+fetched together (see [Reading and writing](reading-writing.md)). Two examples
+run a whole analysis this way on real collision data from CERN's open-data
+server: [`open_data_dimuon`](https://github.com/oxihep/oxiroot/blob/main/crates/oxiroot/examples/open_data_dimuon.rs)
+streams CMS events and writes a skim with its histograms beside it, and
+[`open_data_zmumu`](https://github.com/oxihep/oxiroot/blob/main/crates/oxiroot/examples/open_data_zmumu.rs)
+compares ATLAS data with simulation and writes the result to one file.
 
 RNTuple records read as `Column::Struct` and a `std::variant` as
 `Column::Union`. `as_ntuple()` reaches the `NtupleReader` underneath, for the

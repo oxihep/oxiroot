@@ -6,9 +6,11 @@
 //!
 //! Writes a scalar, a variable-length list and a string column in batches with
 //! [`DatasetWriter`] (it closes a cluster every ~32 MiB, so memory stays
-//! bounded), then reads them back with [`Dataset`]: all at once, one cluster at
-//! a time, and an entry window that touches only the baskets it needs. The same
-//! code writes an `RNTuple` with `Format::Ntuple`. Pass an output path as the
+//! bounded), with a histogram filled along the way stored in the same file,
+//! then reads them back with [`Dataset`]: all at once, one cluster at a time,
+//! and an entry window that touches only the baskets it needs. The same code
+//! writes an `RNTuple` with `Format::Ntuple`. A dataset that fits in memory
+//! needs no writer of its own: see `NamedBatch` in the `analysis` example. Pass an output path as the
 //! first argument to keep the file.
 
 use oxiroot::prelude::*;
@@ -25,6 +27,7 @@ fn main() -> oxiroot::Result<()> {
     // Five batches of 1000 events: a scalar, a list (rows of differing
     // length), and a string.
     let mut out = DatasetWriter::create(&path, "Events", Format::Tree)?;
+    let mut multiplicity = Hist::reg(3, 0.0, 3.0).double().named("n_hits");
     for chunk in 0..5_i32 {
         let event: Vec<i32> = (chunk * 1000..(chunk + 1) * 1000).collect();
         let hits: Vec<Vec<f64>> = event
@@ -32,12 +35,17 @@ fn main() -> oxiroot::Result<()> {
             .map(|&i| vec![f64::from(i); usize::try_from(i % 3).unwrap_or(0)])
             .collect();
         let label: Vec<String> = event.iter().map(|i| format!("e{i}")).collect();
+        for row in &hits {
+            multiplicity.fill(row.len() as f64 + 0.5);
+        }
         let batch = Batch::new()
             .column("event", event)?
             .column("hits", hits)?
             .column("label", label)?;
         out.append(batch)?;
     }
+    // The histogram is written with the file, next to the tree.
+    out.add(&multiplicity.to_root()?);
     println!("wrote {} entries to {path}", out.entries());
     out.finish()?;
 
@@ -48,6 +56,11 @@ fn main() -> oxiroot::Result<()> {
         events.format(),
         events.entries(),
         events.columns()
+    );
+
+    println!(
+        "and `n_hits` beside it: {:?}",
+        file.get::<Hist1D>("n_hits")?.values()
     );
 
     // Everything at once: typed slices, no copies.
