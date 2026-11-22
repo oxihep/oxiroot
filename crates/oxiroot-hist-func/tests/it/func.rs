@@ -143,3 +143,16 @@ fn builds_and_evaluates_shortcuts() {
     assert_eq!(g.eval(0.0), 2.0);
     assert!((g.integral(-10.0, 10.0) - 2.0 * (2.0 * std::f64::consts::PI).sqrt()).abs() < 1e-4);
 }
+
+/// Two functions in one ROOT-written list: the second names `TFormula` by a
+/// back-reference to the first's, which the list's class-tag map resolves.
+#[test]
+fn reads_functions_held_in_a_root_written_list() {
+    let list = fixture("embedded_backrefs.root")
+        .get::<oxiroot_io_core::ObjList>("members")
+        .unwrap();
+    let functions = list.items::<Func1D>().unwrap();
+    let formulas: Vec<&str> = functions.iter().map(Func1D::formula).collect();
+    assert_eq!(formulas, ["[p0]*x", "[p0]+[p1]*x"]);
+    assert_eq!(functions[1].params(), [1.5, 2.5]);
+}

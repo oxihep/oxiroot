@@ -195,7 +195,7 @@ impl StackMember for Hist1D {
     ) -> Option<Result<Self>> {
         class
             .starts_with("TH1")
-            .then(|| Self::read(r, bin_content_type_of(class)?, Some(tags)))
+            .then(|| Self::read(r, bin_content_type_of(class)?, tags))
     }
 }
 
@@ -221,7 +221,7 @@ impl StackMember for Graph {
     ) -> Option<Result<Self>> {
         class
             .starts_with("TGraph")
-            .then(|| read_tgraph(r, stack, class, Some(tags)))
+            .then(|| read_tgraph(r, stack, class, tags))
     }
 }
 

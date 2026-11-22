@@ -5,12 +5,12 @@
 //! ROOT C++ is the interop oracle here.
 
 use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, K_CLASS_MASK, read_named, read_pointer_header, skip_versioned,
+    K_BYTE_COUNT_MASK, K_CLASS_MASK, TagReader, read_named, skip_versioned,
 };
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::BinContentType;
+use crate::base::{bin_content_type_of, is_hist_class};
 use crate::record::Hist1D;
 
 /// How a [`Efficiency`]'s confidence interval is computed (ROOT's
@@ -147,7 +147,7 @@ impl Efficiency {
         (total != 0.0).then(|| passed / total)
     }
 
-    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let te = r.read_version()?; // Efficiency wrapper (v2)
         let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
@@ -159,9 +159,9 @@ impl Efficiency {
         skip_byte_counted(r)?; // fBeta_bin_params (vector<pair<double,double>>)
         let conf_level = r.be_f64()?;
         skip_byte_counted(r)?; // fFunctions (TList*)
-        let passed = read_embedded_th1d(r)?; // fPassedHistogram
+        let passed = read_embedded_th1(r, tags)?; // fPassedHistogram
         let statistic_option = StatisticOption::from_code(r.be_i32()?)?;
-        let total = read_embedded_th1d(r)?; // fTotalHistogram
+        let total = read_embedded_th1(r, tags)?; // fTotalHistogram
         let weight = r.be_f64()?;
 
         if let Some(end) = te.end {
@@ -188,21 +188,29 @@ fn skip_byte_counted(r: &mut RBuffer<'_>) -> Result<()> {
     r.skip((count & !(K_BYTE_COUNT_MASK | K_CLASS_MASK)) as usize)
 }
 
-/// Read an embedded `TH1D*`: an object pointer whose class is known from the
-/// member (the second histogram names it by a back-reference to the first).
-fn read_embedded_th1d(r: &mut RBuffer<'_>) -> Result<Hist1D> {
-    if read_pointer_header(r)?.is_none() {
+/// Read an embedded `TH1*`: an object pointer whose header names the class
+/// (the second histogram names it by a back-reference to the first).
+fn read_embedded_th1(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Hist1D> {
+    let Some(class) = tags.read_header(r)?.class_name else {
         return Err(Error::Format(
             "a TEfficiency histogram pointer is null".into(),
         ));
+    };
+    if !is_hist_class(&class, 1) {
+        return Err(Error::Unsupported(format!(
+            "a TEfficiency over {class} histograms (oxiroot reads the one-dimensional ones)"
+        )));
     }
-    Hist1D::read(r, BinContentType::F64, None)
+    Hist1D::read(r, bin_content_type_of(&class)?, tags)
 }
 
 impl ReadRoot for Efficiency {
     const CLASS: &'static str = "TEfficiency";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+        (object.class == Self::CLASS).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, &mut tags)
+        })
     }
 }

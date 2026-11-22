@@ -56,12 +56,12 @@ impl Hist1D {
         }
     }
 
-    /// Read a `TH1` at the cursor. `tags` is the class-tag map of the buffer,
-    /// needed to read the attached functions; see [`read_th1_base`].
+    /// Read a `TH1` at the cursor. `tags` is the class-tag map of the buffer;
+    /// see [`read_th1_base`].
     pub(crate) fn read(
         r: &mut RBuffer<'_>,
         bin_content_type: BinContentType,
-        tags: Option<&mut TagReader>,
+        tags: &mut TagReader,
     ) -> Result<Self> {
         let (c, contents) = read_th1_object(r, bin_content_type, tags)?;
         let cells = cell_count(&[c.xaxis.nbins])?;
@@ -147,24 +147,8 @@ impl ReadRoot for Hist1D {
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
         is_hist_class(object.class, 1).then(|| {
             let bin_content_type = bin_content_type_of(object.class)?;
-            match object.within {
-                // A member of a collection: read where it lies, so that the
-                // classes its functions name are found.
-                Some(within) => {
-                    let mut r = RBuffer::new(within.buffer);
-                    r.seek(within.start)?;
-                    let mut tags = TagReader::new(within.key_len);
-                    Self::read(&mut r, bin_content_type, Some(&mut tags))
-                }
-                None => {
-                    let mut tags = object.key_len.map(TagReader::new);
-                    Self::read(
-                        &mut RBuffer::new(object.bytes),
-                        bin_content_type,
-                        tags.as_mut(),
-                    )
-                }
-            }
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, bin_content_type, &mut tags)
         })
     }
 }

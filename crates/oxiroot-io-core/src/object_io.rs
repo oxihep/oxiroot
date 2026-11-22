@@ -14,8 +14,10 @@ use std::fmt;
 use std::io::Cursor;
 
 use crate::FileReader;
+use crate::buffer::RBuffer;
 use crate::error::{Result, decompress_payload};
 use crate::file::{ContainerWriter, DirId};
+use crate::object::TagReader;
 use crate::streamer_gen::ClassDef;
 
 /// A stored object, located and decompressed: what a [`ReadRoot`] type decodes.
@@ -92,6 +94,32 @@ impl<'a> Object<'a> {
                 key_len,
             }),
             ..Self::member(class, buffer.get(range).unwrap_or(&[]))
+        }
+    }
+
+    /// A reader at the object's body, with the class-tag map of the buffer
+    /// it reads: the way every decoder starts.
+    ///
+    /// An object names a class in full once and by its position afterwards,
+    /// counted from the start of the key. So a collection member is read
+    /// where it lies in the key's buffer, and an object from a key with the
+    /// key's header length. A member held on its own has neither: its
+    /// positions count from its own first byte.
+    ///
+    /// # Errors
+    ///
+    /// If a collection member's place lies outside its buffer.
+    pub fn reader(&self) -> Result<(RBuffer<'a>, TagReader)> {
+        match self.within {
+            Some(within) => {
+                let mut r = RBuffer::new(within.buffer);
+                r.seek(within.start)?;
+                Ok((r, TagReader::new(within.key_len)))
+            }
+            None => Ok((
+                RBuffer::new(self.bytes),
+                TagReader::new(self.key_len.unwrap_or(0)),
+            )),
         }
     }
 }

@@ -3,9 +3,7 @@
 //! `oxiroot-hist-func`) share.
 
 use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, PointerHeader, read_named, read_pointer_header, skip_versioned, write_named,
-};
+use oxiroot_io_core::raw::{K_BYTE_COUNT_MASK, TagReader, read_named, skip_versioned, write_named};
 use oxiroot_io_core::{RBuffer, Result, WBuffer};
 
 use crate::graph::GraphFunction;
@@ -14,11 +12,12 @@ use crate::write::write_object_ptr;
 impl GraphFunction {
     /// Decode a streamed `Func1D` object body (version 12), starting at its
     /// byte-count/version header (no class tag). The `TFormula` it embeds gives
-    /// [`formula`](Self::formula) and [`params`](Self::params).
+    /// [`formula`](Self::formula) and [`params`](Self::params). `tags` is the
+    /// class-tag map of the buffer `r` reads.
     ///
     /// # Errors
     /// Returns an error if the buffer ends early or a header is malformed.
-    pub fn read_tf1_body(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub fn read_tf1_body(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let tf1 = r.read_version()?; // Func1D v12
         let named = read_named(r)?;
         skip_versioned(r)?; // TAttLine
@@ -41,7 +40,7 @@ impl GraphFunction {
         let _save = read_vector_f64(r)?;
         let _normalized = r.u8()?;
         let _norm_integral = r.be_f64()?;
-        let (formula, params) = read_tformula_ptr(r)?;
+        let (formula, params) = read_tformula_ptr(r, tags)?;
         if let Some(end) = tf1.end {
             r.seek(end)?; // skip fParams + fComposition
         }
@@ -123,9 +122,10 @@ fn read_vector_f64(r: &mut RBuffer<'_>) -> Result<Vec<f64>> {
 
 /// Read the `fFormula` (`TFormula*`) object pointer, returning
 /// `(fFormula string, fClingParameters)`.
-fn read_tformula_ptr(r: &mut RBuffer<'_>) -> Result<(String, Vec<f64>)> {
-    // The member's type fixes the class, so its tag needs no map.
-    let Some(PointerHeader { end, .. }) = read_pointer_header(r)? else {
+fn read_tformula_ptr(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(String, Vec<f64>)> {
+    let header = tags.read_header(r)?;
+    let (Some(_), Some(end)) = (header.class_name, header.end) else {
+        // A null pointer, or a formula shared with an earlier function.
         return Ok((String::new(), Vec::new()));
     };
     let _ver = r.read_version()?; // TFormula v14

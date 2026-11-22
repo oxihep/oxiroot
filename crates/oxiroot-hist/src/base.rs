@@ -165,7 +165,7 @@ pub struct HistBase {
     /// histogram, but used by `Profile1D` to store the per-bin sum of `y^2`.
     pub sumw2: Vec<f64>,
     /// The `TF1`s in the histogram's function list (`fFunctions`), such as the
-    /// curve `TH1::Fit` leaves there. Empty when read without a class-tag map.
+    /// curve `TH1::Fit` leaves there.
     pub functions: Vec<GraphFunction>,
 }
 
@@ -232,8 +232,8 @@ pub(crate) fn in_range_sum(values: &[f64], sizes: &[usize]) -> f64 {
 /// members up to the core statistics), then seek to the `Hist1D` record's end.
 ///
 /// `tags` is the class-tag map of the buffer `r` reads, which names the
-/// classes in the function list. Without one the functions are not read.
-pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -> Result<HistBase> {
+/// classes of the axis labels and of the function list.
+pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<HistBase> {
     let th1 = r.read_version()?;
     // Class version 1 (ROOT 1) stored fMaximum, fMinimum, fNormFactor and
     // fContour as floats; every later version reads the same up to fSumw2.
@@ -248,9 +248,9 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
 
     // fNcells: the arrays are checked against the axes, which say the same.
     let _ncells = r.be_i32()?;
-    let xaxis = Axis::read(r)?;
-    let yaxis = Axis::read(r)?;
-    let zaxis = Axis::read(r)?;
+    let xaxis = Axis::read(r, tags)?;
+    let yaxis = Axis::read(r, tags)?;
+    let zaxis = Axis::read(r, tags)?;
     let _bar_offset = r.be_i16()?;
     let _bar_width = r.be_i16()?;
     let entries = r.be_f64()?;
@@ -267,13 +267,10 @@ pub(crate) fn read_th1_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -
     // fOption, then fFunctions. A list this crate cannot follow (an older
     // layout, a function that is not a formula) costs the functions, not the
     // histogram: the record's byte count says where it ends either way.
-    let functions = match tags {
-        Some(tags) => r
-            .string()
-            .and_then(|_option| crate::graph::read_function_list(r, tags))
-            .unwrap_or_default(),
-        None => Vec::new(),
-    };
+    let functions = r
+        .string()
+        .and_then(|_option| crate::graph::read_function_list(r, tags))
+        .unwrap_or_default();
 
     let end = th1
         .end
@@ -357,7 +354,7 @@ pub(crate) fn read_tarray(
 pub(crate) fn read_th1_object(
     r: &mut RBuffer<'_>,
     bin_content_type: BinContentType,
-    tags: Option<&mut TagReader>,
+    tags: &mut TagReader,
 ) -> Result<(HistBase, Vec<f64>)> {
     let wrapper = r.read_version()?;
     let core = read_th1_base(r, tags)?;

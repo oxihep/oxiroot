@@ -10,6 +10,7 @@
 //! onwards are read; version 1 (ROOT 1) stored `fYmin`/`fYmax` as floats.
 
 use crate::base::Moments;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::{Object, ReadRoot};
 use oxiroot_io_core::{RBuffer, Result};
 
@@ -99,7 +100,7 @@ pub struct Profile1D {
 }
 
 impl Profile1D {
-    pub(crate) fn read(r: &mut RBuffer<'_>) -> Result<Self> {
+    pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let tprofile = r.read_version()?; // Profile1D wrapper
         let version = tprofile.version;
         if version < 2 {
@@ -107,7 +108,7 @@ impl Profile1D {
         }
 
         // The TH1D base: its own wrapper, the Hist1D base, and the TArrayD sums.
-        let (core, sums) = read_th1_object(r, BinContentType::F64, None)?;
+        let (core, sums) = read_th1_object(r, BinContentType::F64, tags)?;
 
         let bin_entries = read_tarray(r, BinContentType::F64)?;
         let error_mode = ErrorMode::from_code(r.be_i32()?)?;
@@ -204,6 +205,9 @@ impl ReadRoot for Profile1D {
     const CLASS: &'static str = "TProfile";
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| Self::read(&mut RBuffer::new(object.bytes)))
+        (object.class == Self::CLASS).then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            Self::read(&mut r, &mut tags)
+        })
     }
 }

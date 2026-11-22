@@ -4,6 +4,7 @@
 
 use oxiroot_hist::{GraphFunction, hist_streamer_classes};
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::raw::TagReader;
 use oxiroot_io_core::streamer_gen::{
     ClassDef, any, base, basic, object_any_ptr, object_ptr, stl, string,
 };
@@ -164,9 +165,9 @@ fn tf_classes(dim: usize) -> Vec<ClassDef<'static>> {
 // --- read -------------------------------------------------------------------
 
 /// Read a `Func2D` object body (version 4): the `Func1D` base then `fYmin`/`fYmax`.
-fn read_tf2_body(r: &mut RBuffer<'_>) -> Result<(GraphFunction, (f64, f64))> {
+fn read_tf2_body(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(GraphFunction, (f64, f64))> {
     let tf2 = r.read_version()?; // Func2D v4
-    let base = GraphFunction::read_tf1_body(r)?;
+    let base = GraphFunction::read_tf1_body(r, tags)?;
     let ymin = r.be_f64()?;
     let ymax = r.be_f64()?;
     let _npy = r.be_i32()?;
@@ -182,17 +183,18 @@ fn read_tf2_body(r: &mut RBuffer<'_>) -> Result<(GraphFunction, (f64, f64))> {
 
 /// Read a function's object body: the `TF1` record, and for `TF2` and `TF3`
 /// the ranges of the further axes around it.
-fn decode<const D: usize>(object: &[u8]) -> Result<Func<D>> {
-    let mut r = RBuffer::new(object);
+fn decode<const D: usize>(object: &Object<'_>) -> Result<Func<D>> {
+    let (mut r, mut tags) = object.reader()?;
+    let tags = &mut tags;
     match D {
-        1 => Func::from_record(GraphFunction::read_tf1_body(&mut r)?, [(0.0, 0.0); 2]),
+        1 => Func::from_record(GraphFunction::read_tf1_body(&mut r, tags)?, [(0.0, 0.0); 2]),
         2 => {
-            let (record, y) = read_tf2_body(&mut r)?;
+            let (record, y) = read_tf2_body(&mut r, tags)?;
             Func::from_record(record, [y, (0.0, 0.0)])
         }
         _ => {
             let _tf3 = r.read_version()?; // TF3 v3
-            let (record, y) = read_tf2_body(&mut r)?;
+            let (record, y) = read_tf2_body(&mut r, tags)?;
             let z = (r.be_f64()?, r.be_f64()?);
             Func::from_record(record, [y, z])
         }
@@ -203,6 +205,6 @@ impl<const D: usize> ReadRoot for Func<D> {
     const CLASS: &'static str = class_of::<D>();
 
     fn from_object(object: &Object<'_>) -> Option<Result<Self>> {
-        (object.class == Self::CLASS).then(|| decode(object.bytes))
+        (object.class == Self::CLASS).then(|| decode(object))
     }
 }

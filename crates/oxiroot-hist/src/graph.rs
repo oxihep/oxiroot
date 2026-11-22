@@ -11,13 +11,11 @@
 //! `Func1D`s — fitted functions, parsed into [`functions`](Graph::functions)),
 //! `fHistogram` (an optional display frame), `fMinimum`, `fMaximum`, `fOption`.
 
-use oxiroot_io_core::raw::{
-    PointerHeader, TagReader, read_named, read_object_base, read_pointer_header, skip_versioned,
-};
+use oxiroot_io_core::raw::{TagReader, read_named, read_object_base, skip_versioned};
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
 
-use crate::base::{BinContentType, bin_content_type_of, check_len};
+use crate::base::{BinContentType, bin_content_type_of, check_len, is_hist_class};
 use crate::record::Hist1D;
 use oxiroot_io_core::cast::SaturatingFrom;
 
@@ -297,17 +295,13 @@ pub(crate) fn read_graph_points(
 /// Read the `Graph` base (`fName`/`fTitle`/`fX`/`fY`), then seek past the
 /// trailer (`fFunctions`/`fHistogram`/…) to the base object's end.
 ///
-/// `tags` resolves the class tags of the attached functions. It is `None` for
-/// a graph decoded from a slice of a larger buffer (a collection member),
-/// whose class back-references point outside the slice.
-fn read_tgraph_base(r: &mut RBuffer<'_>, tags: Option<&mut TagReader>) -> Result<Graph> {
+/// `tags` resolves the class tags of the attached functions and of the frame
+/// histogram.
+fn read_tgraph_base(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Graph> {
     let base = r.read_version()?; // Graph v5
     let (named, x, y) = read_graph_points(r)?;
-    let functions = match tags {
-        Some(tags) => read_functions(r, tags)?, // fFunctions (TList<Func1D>)
-        None => read_functions_untracked(r)?,
-    };
-    let histogram = read_opt_th1(r)?; // fHistogram (TH1F*, or null)
+    let functions = read_functions(r, tags)?; // fFunctions (TList<Func1D>)
+    let histogram = read_opt_th1(r, tags)?; // fHistogram (TH1F*, or null)
     if let Some(end) = base.end {
         r.seek(end)?; // skip fMinimum/fMaximum/fOption
     }
@@ -358,7 +352,7 @@ pub(crate) fn read_function_list(
     for _ in 0..nfns {
         let element = tags.read_header(r)?;
         if element.class_name.as_deref() == Some("TF1") {
-            functions.push(GraphFunction::read_tf1_body(r)?);
+            functions.push(GraphFunction::read_tf1_body(r, tags)?);
         }
         if let Some(end) = element.end {
             r.seek(end)?;
@@ -372,44 +366,21 @@ pub(crate) fn read_function_list(
     Ok(functions)
 }
 
-/// [`read_functions`] without a class-tag map, for a graph decoded from a slice
-/// of a larger buffer: a function named by a class back-reference cannot be
-/// resolved there and is skipped.
-fn read_functions_untracked(r: &mut RBuffer<'_>) -> Result<Vec<GraphFunction>> {
-    let Some(PointerHeader { end, .. }) = read_pointer_header(r)? else {
-        return Ok(Vec::new()); // null pointer
-    };
-    let _ver = r.read_version()?; // TList v5
-    let _obj = read_object_base(r)?; // TObject base
-    r.skip_string()?; // fName (empty)
-    let nfns = usize::saturating_from(r.be_i32()?.max(0));
-    let mut functions = Vec::new();
-    for _ in 0..nfns {
-        if let Some(element) = read_pointer_header(r)? {
-            if element.class_name.as_deref() == Some("TF1") {
-                functions.push(GraphFunction::read_tf1_body(r)?);
-            }
-            r.seek(element.end)?;
-        }
-        // Each element carries an option TString trailer in the TList.
-        r.skip_string()?;
-    }
-    r.seek(end)?; // skip any remaining TList payload
-    Ok(functions)
-}
-
 /// Read an optional embedded `TH1*` (the `fHistogram` display frame): `None`
-/// for a null pointer. A header that names no class refers back to one named
-/// earlier; `fHistogram` is declared a `TH1F`, so that is what it is.
-fn read_opt_th1(r: &mut RBuffer<'_>) -> Result<Option<Hist1D>> {
-    let Some(header) = read_pointer_header(r)? else {
+/// for a null pointer, and for a frame that is not a one-dimensional
+/// histogram (a `TGraph2D`'s is a `TH2`), which is stepped over.
+fn read_opt_th1(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Option<Hist1D>> {
+    let header = tags.read_header(r)?;
+    let Some(class) = header.class_name else {
         return Ok(None);
     };
-    let bin_content_type = match header.class_name.as_deref() {
-        Some(class) => bin_content_type_of(class)?,
-        None => BinContentType::F32,
-    };
-    Ok(Some(Hist1D::read(r, bin_content_type, None)?))
+    if !is_hist_class(&class, 1) {
+        if let Some(end) = header.end {
+            r.seek(end)?;
+        }
+        return Ok(None);
+    }
+    Ok(Some(Hist1D::read(r, bin_content_type_of(&class)?, tags)?))
 }
 
 /// Read a `Double_t* //[n]` member: a presence-marker byte then (if present)
@@ -430,32 +401,11 @@ impl ReadRoot for Graph {
             object.class,
             "TGraph" | "TGraphErrors" | "TGraphAsymmErrors"
         )
-        .then(|| match object.within {
-            // A member of a collection: read where it lies, so that a class
-            // named in an earlier member is found.
-            Some(within) => {
-                let mut r = RBuffer::new(within.buffer);
-                r.seek(within.start)?;
-                let mut tags = TagReader::new(within.key_len);
-                read_tgraph(&mut r, object.name, object.class, Some(&mut tags))
-            }
-            None => decode_tgraph(object.name, object.class, object.bytes, object.key_len),
+        .then(|| {
+            let (mut r, mut tags) = object.reader()?;
+            read_tgraph(&mut r, object.name, object.class, &mut tags)
         })
     }
-}
-
-/// Decode a graph from its streamed `object`. `keylen` is the header length
-/// of the key the object was read from, or `None` when `object` is a slice of
-/// a larger buffer (see [`read_tgraph_base`]).
-pub(crate) fn decode_tgraph(
-    name: &str,
-    class: &str,
-    object: &[u8],
-    keylen: Option<usize>,
-) -> Result<Graph> {
-    let mut r = RBuffer::new(object);
-    let mut tags = keylen.map(TagReader::new);
-    read_tgraph(&mut r, name, class, tags.as_mut())
 }
 
 /// Read a graph of class `class` at the cursor. `tags` is the class-tag map of
@@ -466,13 +416,13 @@ pub(crate) fn read_tgraph(
     r: &mut RBuffer<'_>,
     name: &str,
     class: &str,
-    mut tags: Option<&mut TagReader>,
+    tags: &mut TagReader,
 ) -> Result<Graph> {
     match class {
         "TGraph" => read_tgraph_base(r, tags),
         "TGraphErrors" => {
             let _wrapper = r.read_version()?; // TGraphErrors v3
-            let mut g = read_tgraph_base(r, tags.as_deref_mut())?;
+            let mut g = read_tgraph_base(r, tags)?;
             let n = g.len();
             let ex = read_basic_array(r, n)?;
             let ey = read_basic_array(r, n)?;
@@ -565,10 +515,6 @@ mod function_list_tests {
         let names: Vec<&str> = read.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["first", "second", "third"]);
         assert_eq!(read[2].params, [4.0]);
-
-        // Without the class-tag map only the function named in full is found.
-        let read = read_functions_untracked(&mut RBuffer::new(&bytes)).unwrap();
-        assert_eq!(read.len(), 1);
     }
 
     #[test]
