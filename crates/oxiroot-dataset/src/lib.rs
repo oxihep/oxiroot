@@ -73,14 +73,13 @@
 //!
 //! The formats' own types (`oxiroot_tree::raw`, `oxiroot_rntuple::raw`) are
 //! underneath, for a tool that works at the level of one format and for what
-//! a batch does not hold: a `std::variant`, schema extension, split objects.
+//! a batch does not hold: schema extension, leaflists, split objects.
 //! A tree's friends and index, and an `RNTuple`'s header and footer, are
 //! reached through [`Dataset::as_tree`] and [`Dataset::as_ntuple`].
 
 #[cfg(feature = "arrow")]
 mod arrow_conv;
 mod batch;
-mod column;
 #[cfg(feature = "polars")]
 mod polars_conv;
 mod read;
@@ -88,9 +87,10 @@ mod schema;
 mod write;
 
 pub use batch::Batch;
-pub use column::{Column, Jagged, Primitive, Strings};
+pub use oxiroot_io_core::DataType;
+pub use oxiroot_io_core::column::{Column, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
-pub use schema::{DataType, Schema};
+pub use schema::Schema;
 pub use write::{DatasetObject, DatasetWriter};
 
 /// The arrow-rs crates the `arrow` feature converts to and from, re-exported

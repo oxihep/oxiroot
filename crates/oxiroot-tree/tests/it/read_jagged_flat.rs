@@ -1,12 +1,11 @@
 //! The offsets+flat jagged view (B9): `read_branch_flat` avoids the Vec<Vec>
 //! allocation and stays consistent with `read_branch`.
 
-use oxiroot_io_core::cast::SaturatingFrom;
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn open() -> FileReader {
     FileReader::open(
@@ -18,44 +17,45 @@ fn open() -> FileReader {
 }
 
 #[test]
-fn flat_view_matches_nested() {
+fn columns_are_flat_whatever_the_branch_shape() {
     let f = open();
     let t = TreeReader::open(&f, "T").expect("open tree");
 
-    // Jagged branch y = [[1,2], [], [3,4,5]].
-    let j = t.branch("y").flat().expect("flat y");
-    assert_eq!(j.offsets, [0, 2, 2, 5]);
-    assert_eq!(j.values, BranchValues::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
-    assert_eq!(j.len(), 3);
-
-    // Fixed array x[3]: offsets step by 3.
-    let x = t.branch("x").flat().expect("flat x");
-    assert_eq!(x.offsets, [0, 3, 6, 9]);
+    // Counted array y = [[1,2], [], [3,4,5]]: offsets over one buffer.
+    let y = t.branch("y").values().expect("y");
     assert_eq!(
-        x.values,
-        BranchValues::F64(vec![0.0, 1.0, 2.0, 10.0, 11.0, 12.0, 20.0, 21.0, 22.0])
+        y,
+        Column::List {
+            offsets: vec![0, 2, 2, 5],
+            values: Box::new(Column::F64(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+        }
+    );
+    assert_eq!(y.len(), 3);
+
+    // Fixed array x[3]: the width, and one buffer.
+    assert_eq!(
+        t.branch("x").values().expect("x"),
+        Column::Array {
+            len: 3,
+            values: Box::new(Column::F64(vec![
+                0.0, 1.0, 2.0, 10.0, 11.0, 12.0, 20.0, 21.0, 22.0
+            ])),
+        }
     );
 
-    // Scalar branch ny: one element per entry.
-    let ny = t.branch("ny").flat().expect("flat ny");
-    assert_eq!(ny.offsets, [0, 1, 2, 3]);
-    assert_eq!(ny.values, BranchValues::I32(vec![2, 0, 3]));
+    // Scalar branch ny: one value per entry.
+    assert_eq!(
+        t.branch("ny").values().expect("ny"),
+        Column::I32(vec![2, 0, 3])
+    );
 
-    // Reshaping the flat y by its offsets reproduces the nested read.
-    let flat = match j.values {
-        BranchValues::F64(v) => v,
-        _ => unreachable!(),
+    // The typed read of y gives the same rows.
+    let rows: Vec<Vec<f64>> = t.branch("y").read().expect("rows of y");
+    assert_eq!(Column::from(rows), y);
+
+    // A string branch is a string column: offsets over one text.
+    let Column::String { offsets, .. } = t.branch("s").values().expect("s") else {
+        panic!("a string branch reads as a string column");
     };
-    let reshaped: Vec<Vec<f64>> = j
-        .offsets
-        .windows(2)
-        .map(|w| flat[usize::saturating_from(w[0])..usize::saturating_from(w[1])].to_vec())
-        .collect();
-    assert_eq!(
-        BranchValues::VecF64(reshaped),
-        t.branch("y").values().expect("nested y")
-    );
-
-    // String branches aren't supported by the flat view.
-    assert!(t.branch("s").flat().is_err());
+    assert_eq!(offsets.len(), 4);
 }

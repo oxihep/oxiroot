@@ -5,9 +5,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(
@@ -32,18 +32,18 @@ fn reads_nested_struct_subbranches() {
 
     assert_eq!(
         t.branch("v.id").values().unwrap(),
-        BranchValues::VecI32(vec![vec![0], vec![0, 1], vec![0, 1, 2]])
+        Column::from(vec![vec![0], vec![0, 1], vec![0, 1, 2]])
     );
     assert_eq!(
         t.branch("v.inner.a").values().unwrap(),
-        BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
+        Column::from(vec![vec![0.5_f32], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
         t.branch("v.inner.b").values().unwrap(),
-        BranchValues::VecI32(vec![vec![0], vec![0, 2], vec![0, 2, 4]])
+        Column::from(vec![vec![0], vec![0, 2], vec![0, 2, 4]])
     );
     assert_eq!(
         t.branch("v.w").values().unwrap(),
-        BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.5], vec![0.0, 1.5, 3.0]])
+        Column::from(vec![vec![0.0_f32], vec![0.0, 1.5], vec![0.0, 1.5, 3.0]])
     );
 }

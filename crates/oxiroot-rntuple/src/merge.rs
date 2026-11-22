@@ -1,69 +1,26 @@
-//! The read → write round trip of one field: an `RNTuple` field's type is
-//! fully determined by its [`FieldValues`] variant, so
-//! [`FieldRead::to_field`] maps it straight back to a [`Field`]. Merging
-//! whole `RNTuple`s is the `oxiroot` facade's `hadd`, which goes through the
-//! `Dataset` reader and writer and handles the types this mapping cannot.
+//! The read → write round trip of one field: [`FieldRead::to_field`] reads a
+//! field and hands it back as a [`Field`] stored the way the file stores it.
+//! Merging whole `RNTuple`s is the `oxiroot` facade's `hadd`, which goes
+//! through the `Dataset` reader and writer.
 
-use oxiroot_io_core::{Error, Result};
+use oxiroot_io_core::Result;
 
-use crate::field::FieldValues;
 use crate::reader::FieldRead;
 use crate::writer::Field;
 
 impl FieldRead<'_, '_> {
     /// Read the field (the [`range`](Self::range) set, if any) as a writable
-    /// [`Field`] of the same name and type, ready for an [`NtupleWriter`](crate::raw::NtupleWriter): the
-    /// round trip of a skim. Types the writer cannot encode (records, nested
-    /// collections, variants, optionals, `std::vector` of unsigned integers)
-    /// are an [`Error::Unsupported`].
+    /// [`Field`] of the same name and stored type, ready for an
+    /// [`NtupleWriter`](crate::raw::NtupleWriter): the round trip of a skim.
     ///
     /// # Errors
     ///
-    /// Any error reading the field, and [`Error::Unsupported`] for a field this crate reads but
-    /// cannot write.
+    /// Any error reading the field.
     pub fn to_field(self) -> Result<Field> {
         let name = self.name();
-        build_field(name, self.values()?)
-    }
-}
-
-/// Rebuild a writable [`Field`] from a field's concatenated values.
-fn build_field(name: &str, values: FieldValues) -> Result<Field> {
-    use FieldValues::*;
-    let reject = |what: &str| -> Result<Field> {
-        Err(Error::Unsupported(format!(
-            "field {name:?} is a {what}, which oxiroot cannot write yet",
-        )))
-    };
-    match values {
-        Bool(v) => Ok(Field::bool(name, v)),
-        I8(v) => Ok(Field::i8(name, v)),
-        U8(v) => Ok(Field::u8(name, v)),
-        I16(v) => Ok(Field::i16(name, v)),
-        U16(v) => Ok(Field::u16(name, v)),
-        I32(v) => Ok(Field::i32(name, v)),
-        I64(v) => Ok(Field::i64(name, v)),
-        U32(v) => Ok(Field::u32(name, v)),
-        U64(v) => Ok(Field::u64(name, v)),
-        F32(v) => Ok(Field::f32(name, v)),
-        F64(v) => Ok(Field::f64(name, v)),
-        Str(v) => Ok(Field::string(name, v)),
-        VecBool(v) => Ok(Field::vector_bool(name, v)),
-        VecI8(v) => Ok(Field::vector_i8(name, v)),
-        VecU8(v) => Ok(Field::vector_u8(name, v)),
-        VecI16(v) => Ok(Field::vector_i16(name, v)),
-        VecU16(v) => Ok(Field::vector_u16(name, v)),
-        VecI32(v) => Ok(Field::vector_i32(name, v)),
-        VecI64(v) => Ok(Field::vector_i64(name, v)),
-        VecF32(v) => Ok(Field::vector_f32(name, v)),
-        VecF64(v) => Ok(Field::vector_f64(name, v)),
-        VecStr(v) => Ok(Field::vector_string(name, v)),
-        // The writer has no column encoding for these vector element types.
-        VecU32(_) => reject("std::vector<uint32_t> field"),
-        VecU64(_) => reject("std::vector<uint64_t> field"),
-        Record(_) => reject("record / struct field"),
-        Nested { .. } => reject("nested collection field (vector<vector> or vector<struct>)"),
-        Variant { .. } => reject("std::variant field"),
-        Opt { .. } => reject("optional / unique_ptr field"),
+        let header = self.header();
+        let values = self.values()?;
+        let data_type = header.stored_type(name, values.data_type());
+        Ok(Field::new(name, values).stored_as(data_type))
     }
 }

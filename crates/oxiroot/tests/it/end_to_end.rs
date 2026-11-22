@@ -4,14 +4,15 @@
 //! regression anywhere (writer, reader, or a feature added on top) surfaces here.
 
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::data::Column;
 use oxiroot::file::ObjString;
 use oxiroot::hadd::Merger;
 use oxiroot::hist::Random;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues};
+use oxiroot::tree::raw::Branch;
 
 fn tmp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("oxiroot_e2e_{name}.root"))
@@ -99,10 +100,10 @@ fn tree_round_trips_through_the_facade() {
         .add(TreeObject::new(
             "Events",
             vec![
-                Branch::i32("i", vec![1, 2, 3]),
-                Branch::f64("x", vec![1.5, 2.5, 3.5]),
-                Branch::string("s", vec!["a".into(), "b".into(), "c".into()]),
-                Branch::jagged_f64("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]),
+                Branch::new("i", vec![1, 2, 3]),
+                Branch::new("x", vec![1.5, 2.5, 3.5]),
+                Branch::new("s", vec!["a".to_string(), "b".into(), "c".into()]),
+                Branch::new("v", vec![vec![1.0], vec![], vec![2.0, 3.0]]).counted(),
             ],
         ))
         .write()
@@ -111,17 +112,14 @@ fn tree_round_trips_through_the_facade() {
     let f = FileReader::open(tmp("tree")).unwrap();
     let t = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(t.entries(), 3);
-    assert_eq!(
-        t.branch("i").values().unwrap(),
-        BranchValues::I32(vec![1, 2, 3])
-    );
+    assert_eq!(t.branch("i").values().unwrap(), Column::I32(vec![1, 2, 3]));
     assert_eq!(
         t.branch("s").values().unwrap(),
-        BranchValues::Str(vec!["a".into(), "b".into(), "c".into()])
+        Column::from(vec!["a".to_string(), "b".into(), "c".into()])
     );
     assert_eq!(
         t.branch("v").values().unwrap(),
-        BranchValues::VecF64(vec![vec![1.0], vec![], vec![2.0, 3.0]])
+        Column::from(vec![vec![1.0], vec![], vec![2.0, 3.0]])
     );
 }
 
@@ -131,9 +129,9 @@ fn rntuple_round_trips_through_the_facade() {
         .add(NtupleObject::new(
             "ntpl",
             vec![
-                Field::f64("mass", vec![91.2, 125.0]),
-                Field::vector_i32("hits", vec![vec![1, 2], vec![3]]),
-                Field::string("tag", vec!["z".into(), "h".into()]),
+                Field::new("mass", vec![91.2, 125.0]),
+                Field::new("hits", vec![vec![1, 2], vec![3]]),
+                Field::new("tag", vec!["z".to_string(), "h".into()]),
             ],
         ))
         .write()
@@ -144,11 +142,11 @@ fn rntuple_round_trips_through_the_facade() {
     assert_eq!(nt.entries(), 2);
     assert_eq!(
         nt.field("mass").values().unwrap(),
-        FieldValues::F64(vec![91.2, 125.0])
+        Column::F64(vec![91.2, 125.0])
     );
     assert_eq!(
         nt.field("hits").values().unwrap(),
-        FieldValues::VecI32(vec![vec![1, 2], vec![3]])
+        Column::from(vec![vec![1, 2], vec![3]])
     );
 }
 

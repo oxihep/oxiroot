@@ -1,9 +1,9 @@
 //! Reading a `TTree` from a nested subdirectory (a `dir/name` path).
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -19,11 +19,11 @@ fn opens_a_tree_in_a_nested_subdirectory() {
     assert_eq!(t.entries(), 5);
     assert_eq!(
         t.branch("i").values().unwrap(),
-        BranchValues::I32(vec![0, 1, 2, 3, 4])
+        Column::I32(vec![0, 1, 2, 3, 4])
     );
     assert_eq!(
         t.branch("x").values().unwrap(),
-        BranchValues::F64(vec![0.0, 1.5, 3.0, 4.5, 6.0])
+        Column::F64(vec![0.0, 1.5, 3.0, 4.5, 6.0])
     );
 
     // A missing level / tree is a clean error, not a panic.

@@ -13,20 +13,21 @@
 //! exposed as their per-member jagged sub-branches (`hits.x`, `hits.y`, …).
 
 use oxiroot_io_core::raw::{Key, StreamerElement, decompress_payload};
-use oxiroot_io_core::{Error, FileReader, Result};
+use oxiroot_io_core::{Column, Error, FileReader, Result};
 
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::value::{BranchValues, FromBranch, Jagged, LeafType};
+use crate::value::{LeafType, integers};
 use oxiroot_io_core::cast::SaturatingFrom;
+use oxiroot_io_core::column::{FromColumn, typed};
 
 mod decode;
 mod members;
 mod parse;
 mod types;
 
-use decode::{Decode, decode_baskets, decode_scalar, entry_regions, read_baskets, slice_values};
+use decode::{Decode, decode_baskets, read_baskets};
 use parse::read_tree;
 
 /// Reads a `TTree` from a [`FileReader`]. Opening parses the tree's name, entry
@@ -238,7 +239,7 @@ struct Branch {
     /// `x[n]` leaf, a `std::vector<T>`, or a split-struct member.
     variable: bool,
     /// Set for a `std::vector<std::vector<T>>` branch: `T`'s element type. The
-    /// entry data is decoded as a doubly-nested collection ([`BranchValues::Nested`])
+    /// entry data is decoded as a list of lists
     /// rather than a flat jagged array.
     nested_elem: Option<LeafType>,
     /// Set for a synthesized member column of an old unsplit `TBranchObject`: the
@@ -405,14 +406,14 @@ impl<'f> TreeReader<'f> {
     /// ```no_run
     /// # use oxiroot_io_core::FileReader;
     /// # use oxiroot_tree::{TreeReader};
-    /// # use oxiroot_tree::raw::{BranchValues};
+    /// # use oxiroot_io_core::Column;
     /// # fn main() -> oxiroot_io_core::Result<()> {
     /// # let (file, friend_file) = (FileReader::open("f.root")?, FileReader::open("f.root")?);
     /// let main = TreeReader::open(&file, "main")?;
     /// let friend = TreeReader::open(&friend_file, "fr")?;
     /// let rows = main.join_by_index(&friend)?;
     ///
-    /// let BranchValues::F64(weights) = friend.branch("weight").values()? else {
+    /// let Column::F64(weights) = friend.branch("weight").values()? else {
     ///     unreachable!("weight is a double branch")
     /// };
     /// // One weight per entry of `main`, in `main`'s order.
@@ -450,11 +451,11 @@ impl<'f> TreeReader<'f> {
     /// Read branch `name` as the integers an index key is made of.
     fn index_column(&self, name: &str) -> Result<Vec<i64>> {
         let values = self.branch(name).values()?;
-        values.to_i64_vec().ok_or_else(|| {
+        integers(&values).ok_or_else(|| {
             Error::InvalidInput(format!(
-                "branch {name:?} of tree {:?} holds {:?} values, which are not index keys",
+                "branch {name:?} of tree {:?} holds {} values, which are not index keys",
                 self.name(),
-                values.leaf_type()
+                values.type_name()
             ))
         })
     }
@@ -593,8 +594,8 @@ impl<'f> TreeReader<'f> {
     /// Read the branch `name`: set a [`range`](BranchRead::range) of entries
     /// or [`parallel`](BranchRead::parallel) decompression on the returned
     /// [`BranchRead`], then take the values typed
-    /// ([`read`](BranchRead::read)), as the [`BranchValues`] enum
-    /// ([`values`](BranchRead::values)), or flat ([`flat`](BranchRead::flat)).
+    /// ([`read`](BranchRead::read)) or as a [`Column`]
+    /// ([`values`](BranchRead::values)).
     ///
     /// ```no_run
     /// # use oxiroot_io_core::FileReader;
@@ -687,12 +688,7 @@ impl<'f> TreeReader<'f> {
         }
     }
 
-    fn read_values(
-        &self,
-        name: &str,
-        range: Option<Range<u64>>,
-        decode: Decode,
-    ) -> Result<BranchValues> {
+    fn read_values(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<Column> {
         let branch = self.require_branch(name)?;
         // A window covering every entry is the whole branch: skip the slicing.
         let range = range.filter(|r| r.start > 0 || r.end < self.entries);
@@ -711,57 +707,7 @@ impl<'f> TreeReader<'f> {
         // `values` covers [first_entry, ..); slice out [start, stop).
         let off = usize::saturating_from(start.saturating_sub(first_entry));
         let len = usize::saturating_from(stop - start);
-        Ok(slice_values(values, off, len))
-    }
-
-    fn read_flat(&self, name: &str, range: Option<Range<u64>>, decode: Decode) -> Result<Jagged> {
-        let branch = self.require_branch(name)?;
-        if branch.leaf_type == LeafType::Str {
-            return Err(Error::Unsupported(format!(
-                "branch {name:?} is a string branch, which has no flat form; use values()"
-            )));
-        }
-        if branch.object_member.is_some() || branch.nested_elem.is_some() {
-            return Err(Error::Unsupported(format!(
-                "branch {name:?} has no flat form; use values()"
-            )));
-        }
-        let range = range.filter(|r| r.start > 0 || r.end < self.entries);
-        let BasketSelection {
-            indices,
-            first_entry,
-            start,
-            stop,
-        } = match range {
-            Some(r) => self.select_baskets(branch, r.start, r.end),
-            None => BasketSelection {
-                indices: (0..branch.n_baskets).collect(),
-                first_entry: 0,
-                start: 0,
-                stop: self.entries,
-            },
-        };
-        let baskets = read_baskets(self.file, branch, indices.iter().copied(), decode)?;
-        let regions = entry_regions(branch, &baskets);
-        let skip = usize::saturating_from(start.saturating_sub(first_entry)).min(regions.len());
-        let take = usize::saturating_from(stop - start).min(regions.len() - skip);
-        let regions = &regions[skip..skip + take];
-        let size = branch.leaf_type.size().max(1);
-
-        let total: usize = regions.iter().map(|r| r.len()).sum();
-        let mut offsets = Vec::with_capacity(regions.len() + 1);
-        offsets.push(0u64);
-        let mut bytes = Vec::with_capacity(total);
-        let mut acc = 0u64;
-        for r in regions {
-            bytes.extend_from_slice(r);
-            acc += (r.len() / size) as u64;
-            offsets.push(acc);
-        }
-        Ok(Jagged {
-            offsets,
-            values: decode_scalar(branch.leaf_type, &bytes)?,
-        })
+        Ok(values.slice(off, off.saturating_add(len)))
     }
 }
 
@@ -788,7 +734,7 @@ pub enum BranchLayout {
 
 /// One branch read, set up by [`TreeReader::branch`]: the entries to read and
 /// how, then the form to read them in.
-#[must_use = "a BranchRead does nothing until read, values or flat is called"]
+#[must_use = "a BranchRead does nothing until read or values is called"]
 pub struct BranchRead<'a, 'f> {
     tree: &'a TreeReader<'f>,
     name: &'a str,
@@ -830,30 +776,20 @@ impl<'a, 'f> BranchRead<'a, 'f> {
     ///
     /// [`Error::NotFound`] if there is no such branch, [`Error::TypeMismatch`] if it does not
     /// hold `T`, and any error reading its baskets.
-    pub fn read<T: FromBranch>(self) -> Result<Vec<T>> {
+    pub fn read<T: FromColumn>(self) -> Result<Vec<T>> {
         let name = self.name;
-        T::from_values(name, self.values()?)
+        typed(name, self.values()?)
     }
 
-    /// The values as the [`BranchValues`] enum, for code that does not know the
-    /// branch's type in advance.
+    /// The values as a [`Column`], stored flat: one buffer of every element,
+    /// with per-entry offsets for a branch of lists. A scalar branch is a
+    /// scalar column, a fixed array `x[N]` an array, a counted array or
+    /// `std::vector` a list, a string branch a string column.
     ///
     /// # Errors
     ///
     /// [`Error::NotFound`] if there is no such branch, and any error reading its baskets.
-    pub fn values(self) -> Result<BranchValues> {
+    pub fn values(self) -> Result<Column> {
         self.tree.read_values(self.name, self.range, self.decode)
-    }
-
-    /// The values flat: one buffer of every element plus per-entry offsets —
-    /// no allocation per entry. Scalar, fixed-array, variable-array and
-    /// `std::vector<T>` branches; not strings or nested vectors.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Unsupported`] for a branch that has no flat form (read it with
-    /// [`values`](Self::values)), and any error reading its baskets.
-    pub fn flat(self) -> Result<Jagged> {
-        self.tree.read_flat(self.name, self.range, self.decode)
     }
 }

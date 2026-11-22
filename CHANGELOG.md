@@ -9,6 +9,37 @@ change the API.
 
 ### Changed
 
+- **Breaking: one column type for every reader and writer.** `Column` and
+  `DataType` (now in `oxiroot-io-core`; `oxiroot::data::{Column, DataType}`
+  as before) are what the tree and RNTuple layers speak too:
+  - `tree.branch(name).values()` and `ntuple.field(name).values()` return a
+    `Column`, stored flat: a list is offsets over one buffer, a fixed array
+    `Column::Array`, a string column offsets over one text, an RNTuple record
+    `Column::Struct`, an optional `Column::Optional`. `BranchValues`,
+    `FieldValues` and both `Jagged` structs are removed, and so is `flat()`,
+    which `values()` now is. `read::<T>()` is unchanged, and takes
+    `Option<T>` for an optional (`FromColumn` replaces `FromBranch` and
+    `FromField`).
+  - `Branch::new(name, data)` replaces `Branch::f64`, `array_*`, `vector_*`,
+    `vector_vector_*`, `string` and `split_vector`: the data's shape says
+    how it is stored. `.counted()` replaces `jagged_*`, and
+    `Column::list_of_structs` with `.class_name()` replaces `SplitMember`.
+    `Branch::with_width` is gone: an array column carries its width.
+  - `Field::new(name, data)` replaces the `Field::*` constructors, and
+    `.stored_as(DataType::…)` replaces `half`, `truncated`, `quantized`,
+    `set_*`, `map`, `unique_ptr_*`, `atomic_*` and `bitset`. The RNTuple
+    writer's own `Column` enum is removed; `Column::variant` builds a
+    `std::variant`.
+  - The element type is the data's: `vec![1.0, 2.0]` is `f64`, where
+    `Branch::f32("x", vec![1.0, 2.0])` used to say `f32`. Write
+    `vec![1.0_f32, 2.0]`.
+- A `std::variant` field is a `Column::Union`: a batch holds it, a
+  `Dataset` reads and writes it, and `hadd` merges it. It was refused.
+- `FieldRead::to_field` and a dataset round trip keep every stored type the
+  RNTuple reader reads (records, nested collections, sets, maps, optionals,
+  variants, reduced-precision reals); `to_field` refused most of them.
+- `Header::stored_type` says how an RNTuple field is stored, given the shape
+  it reads as.
 - **Breaking: `Hist1D`, `Hist2D` and `Hist3D` are one type,
   `HistRecord<const D: usize>`**, under the same three names (now type
   aliases), and `Func1D`, `Func2D`, `Func3D` are `Func<const D: usize>`.

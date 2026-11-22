@@ -1,12 +1,12 @@
 //! Reduced-precision real column encodings written by official ROOT:
 //! `Real16` (half), `Real32Trunc` (mantissa-truncated), and `Real32Quant`
 //! (linearly quantized, including a sub-byte 12-bit width). All surface as f32.
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::FieldValues;
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,9 +15,9 @@ fn open(name: &str) -> FileReader {
     FileReader::open(path).expect("open fixture")
 }
 
-fn f32s(fv: FieldValues) -> Vec<f32> {
+fn f32s(fv: Column) -> Vec<f32> {
     match fv {
-        FieldValues::F32(v) => v,
+        Column::F32(v) => v,
         other => panic!("expected F32, got {other:?}"),
     }
 }

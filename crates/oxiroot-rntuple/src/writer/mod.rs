@@ -26,7 +26,7 @@ mod streaming;
 
 use classes::ntuple_classes;
 use envelopes::{Extension, PageRec, build_anchor, build_footer, build_header, build_page_list};
-pub use fields::{Column, Field};
+pub use fields::Field;
 use lower::{ColumnPlan, FieldPlan, lower};
 pub use streaming::NtupleWriter;
 
@@ -313,7 +313,7 @@ mod tests {
     use super::envelopes::check_page_limits;
     use super::*;
     use crate::NtupleReader;
-    use crate::raw::FieldValues;
+    use oxiroot_io_core::Column;
     use oxiroot_io_core::raw::KSTART_BIG_FILE;
     use oxiroot_io_core::{Compression, FileReader};
 
@@ -343,8 +343,8 @@ mod tests {
     #[test]
     fn one_shot_writes_and_reads_big_format() {
         let fields = vec![
-            Field::i32("x", vec![1, 2, 3, 4]),
-            Field::f64("y", vec![1.5, 2.5, 3.5, 4.5]),
+            Field::new("x", vec![1, 2, 3, 4]),
+            Field::new("y", vec![1.5, 2.5, 3.5, 4.5]),
         ];
 
         // Tiny file, but forced into the 64-bit container form via a low
@@ -361,11 +361,11 @@ mod tests {
         assert_eq!(ntpl.entries(), 4);
         assert_eq!(
             ntpl.field("x").values().unwrap(),
-            FieldValues::I32(vec![1, 2, 3, 4])
+            Column::I32(vec![1, 2, 3, 4])
         );
         assert_eq!(
             ntpl.field("y").values().unwrap(),
-            FieldValues::F64(vec![1.5, 2.5, 3.5, 4.5])
+            Column::F64(vec![1.5, 2.5, 3.5, 4.5])
         );
 
         // The same data under the real threshold stays in small (32-bit) form.
@@ -375,7 +375,7 @@ mod tests {
         let ntpl = NtupleReader::open(&fs, "ntpl").unwrap();
         assert_eq!(
             ntpl.field("x").values().unwrap(),
-            FieldValues::I32(vec![1, 2, 3, 4])
+            Column::I32(vec![1, 2, 3, 4])
         );
     }
 

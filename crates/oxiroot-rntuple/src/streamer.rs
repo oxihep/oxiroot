@@ -11,14 +11,12 @@
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::raw::{StreamerElement, StreamerInfo};
-use oxiroot_io_core::{Error, RBuffer, Result};
+use oxiroot_io_core::{Column, Error, RBuffer, Result};
 
-use crate::field::FieldValues;
-
-/// Decode a streamer field into a struct-of-arrays [`FieldValues::Record`]: one
-/// named column per member, in declaration order. `offsets` are the per-entry
-/// cumulative blob end positions into `bytes`.
-pub(crate) fn decode(info: &StreamerInfo, offsets: &[u64], bytes: &[u8]) -> Result<FieldValues> {
+/// Decode a streamer field into a struct column: one named column per
+/// member, in declaration order. `offsets` are the per-entry cumulative blob
+/// end positions into `bytes`.
+pub(crate) fn decode(info: &StreamerInfo, offsets: &[u64], bytes: &[u8]) -> Result<Column> {
     let mut accs = info
         .elements
         .iter()
@@ -45,7 +43,7 @@ pub(crate) fn decode(info: &StreamerInfo, offsets: &[u64], bytes: &[u8]) -> Resu
         .zip(accs)
         .map(|(el, acc)| (el.name.clone(), acc.into_values()))
         .collect();
-    Ok(FieldValues::Record(record))
+    Ok(Column::Struct(record))
 }
 
 /// Read a streamed object's `{byte count, version}` header. A version of `0`
@@ -120,20 +118,20 @@ impl Acc {
         Ok(())
     }
 
-    fn into_values(self) -> FieldValues {
+    fn into_values(self) -> Column {
         match self {
-            Self::Bool(v) => FieldValues::Bool(v),
-            Self::I8(v) => FieldValues::I8(v),
-            Self::U8(v) => FieldValues::U8(v),
-            Self::I16(v) => FieldValues::I16(v),
-            Self::U16(v) => FieldValues::U16(v),
-            Self::I32(v) => FieldValues::I32(v),
-            Self::U32(v) => FieldValues::U32(v),
-            Self::I64(v) => FieldValues::I64(v),
-            Self::U64(v) => FieldValues::U64(v),
-            Self::F32(v) => FieldValues::F32(v),
-            Self::F64(v) => FieldValues::F64(v),
-            Self::Str(v) => FieldValues::Str(v),
+            Self::Bool(v) => Column::Bool(v),
+            Self::I8(v) => Column::I8(v),
+            Self::U8(v) => Column::U8(v),
+            Self::I16(v) => Column::I16(v),
+            Self::U16(v) => Column::U16(v),
+            Self::I32(v) => Column::I32(v),
+            Self::U32(v) => Column::U32(v),
+            Self::I64(v) => Column::I64(v),
+            Self::U64(v) => Column::U64(v),
+            Self::F32(v) => Column::F32(v),
+            Self::F64(v) => Column::F64(v),
+            Self::Str(v) => v.into(),
         }
     }
 }

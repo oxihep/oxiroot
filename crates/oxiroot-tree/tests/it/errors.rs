@@ -11,7 +11,7 @@ fn a_missing_tree_or_branch_is_not_found() {
     let bytes = tree_file_bytes(
         "f.root",
         "T",
-        &[Branch::f64("x", vec![1.0, 2.0])],
+        &[Branch::new("x", vec![1.0, 2.0])],
         Compression::Stored,
     )
     .unwrap();

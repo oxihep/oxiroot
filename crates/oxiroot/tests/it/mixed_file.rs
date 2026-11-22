@@ -1,13 +1,14 @@
 //! Histograms, a `TTree` and an `RNTuple` in one file, through one `FileWriter`.
 
 use crate::support::{NtupleObject, TreeObject};
+use oxiroot::data::Column;
 use oxiroot::file::Error;
 use oxiroot::file::Parameter;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues};
+use oxiroot::tree::raw::Branch;
 
 fn hist() -> Hist1D {
     let mut h = Hist::reg(4, 0.0, 4.0).double().named("pt");
@@ -25,18 +26,18 @@ fn histograms_trees_and_rntuples_share_a_file() {
         .add(TreeObject::new(
             "Events",
             vec![
-                Branch::f64("energy", vec![10.5, 20.1, 5.0]),
-                Branch::jagged_i32("hits", vec![vec![1], vec![], vec![2, 3]]),
+                Branch::new("energy", vec![10.5, 20.1, 5.0]),
+                Branch::new("hits", vec![vec![1], vec![], vec![2, 3]]).counted(),
             ],
         ))
         .add(NtupleObject::new(
             "ntuple",
-            vec![Field::i32("x", vec![1, 2])],
+            vec![Field::new("x", vec![1, 2])],
         ))
         .dir("cal", |d| {
             d.add(&Parameter::f64("gain", 1.5)).add(TreeObject::new(
                 "Pedestals",
-                vec![Branch::i32("adc", vec![3, 4])],
+                vec![Branch::new("adc", vec![3, 4])],
             ))
         })
         .write()
@@ -47,11 +48,11 @@ fn histograms_trees_and_rntuples_share_a_file() {
     let tree = TreeReader::open(&f, "Events").unwrap();
     assert_eq!(
         tree.branch("energy").values().unwrap(),
-        BranchValues::F64(vec![10.5, 20.1, 5.0])
+        Column::F64(vec![10.5, 20.1, 5.0])
     );
     assert_eq!(
         tree.branch("hits").values().unwrap(),
-        BranchValues::VecI32(vec![vec![1], vec![], vec![2, 3]])
+        Column::from(vec![vec![1], vec![], vec![2, 3]])
     );
     assert_eq!(
         NtupleReader::open(&f, "ntuple")
@@ -59,17 +60,14 @@ fn histograms_trees_and_rntuples_share_a_file() {
             .field("x")
             .values()
             .unwrap(),
-        FieldValues::I32(vec![1, 2])
+        Column::I32(vec![1, 2])
     );
     assert_eq!(
         f.get::<Parameter>("cal/gain").unwrap().value().as_f64(),
         1.5
     );
     let ped = TreeReader::open(&f, "cal/Pedestals").unwrap();
-    assert_eq!(
-        ped.branch("adc").values().unwrap(),
-        BranchValues::I32(vec![3, 4])
-    );
+    assert_eq!(ped.branch("adc").values().unwrap(), Column::I32(vec![3, 4]));
 
     // One streamer-info record describes all of it.
     let registry = f.streamer_registry().unwrap();
@@ -88,7 +86,7 @@ fn histograms_trees_and_rntuples_share_a_file() {
 fn a_tree_and_a_histogram_cannot_share_a_name() {
     let err = FileWriter::create("clash.root")
         .add(&hist())
-        .add(TreeObject::new("pt", vec![Branch::i32("x", vec![1])]))
+        .add(TreeObject::new("pt", vec![Branch::new("x", vec![1])]))
         .compression(Compression::Stored)
         .to_bytes();
     assert!(matches!(err, Err(Error::DuplicateName { .. })), "{err:?}");
@@ -104,7 +102,10 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
         .unwrap();
     oxiroot::FileUpdater::open(&path)
         .unwrap()
-        .add(TreeObject::new("T", vec![Branch::u8("flag", vec![1, 0])]))
+        .add(TreeObject::new(
+            "T",
+            vec![Branch::new("flag", vec![1_u8, 0])],
+        ))
         .compression(Compression::Stored)
         .write()
         .unwrap();
@@ -116,7 +117,7 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
             .branch("flag")
             .values()
             .unwrap(),
-        BranchValues::U8(vec![1, 0])
+        Column::U8(vec![1, 0])
     );
 }
 
@@ -127,7 +128,7 @@ fn a_tree_can_be_appended_to_a_histogram_file() {
 fn compacting_a_file_that_holds_a_tree_is_refused() {
     let path = std::env::temp_dir().join("oxiroot_compact_with_tree.root");
     FileWriter::create(&path)
-        .add(TreeObject::new("T", vec![Branch::i32("x", vec![1, 2, 3])]))
+        .add(TreeObject::new("T", vec![Branch::new("x", vec![1, 2, 3])]))
         .compression(Compression::Stored)
         .write()
         .expect("write");

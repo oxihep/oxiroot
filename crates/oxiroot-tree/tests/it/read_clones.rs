@@ -7,9 +7,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> FileReader {
     FileReader::open(
@@ -28,15 +28,15 @@ fn reads_tclonesarray_subbranches() {
 
     assert_eq!(
         t.branch("parts.px").values().unwrap(),
-        BranchValues::VecF32(vec![vec![0.0], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
+        Column::from(vec![vec![0.0_f32], vec![0.0, 1.0], vec![0.0, 1.0, 2.0]])
     );
     assert_eq!(
         t.branch("parts.py").values().unwrap(),
-        BranchValues::VecF32(vec![vec![0.5], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
+        Column::from(vec![vec![0.5_f32], vec![0.5, 1.5], vec![0.5, 1.5, 2.5]])
     );
     assert_eq!(
         t.branch("parts.pid").values().unwrap(),
-        BranchValues::VecI32(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
+        Column::from(vec![vec![0], vec![0, 10], vec![0, 10, 20]])
     );
 
     // The TObject `fBits` member is the only unsupported sub-branch.

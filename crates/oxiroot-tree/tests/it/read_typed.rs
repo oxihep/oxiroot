@@ -2,9 +2,10 @@
 //! reads, basket boundaries, and the read → write round trip.
 use std::io::Cursor;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::{Compression, Error, FileReader};
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::{Branch, BranchValues, TreeWriter};
+use oxiroot_tree::raw::{Branch, TreeWriter};
 
 use crate::support::write_tree_file_baskets;
 
@@ -17,18 +18,25 @@ fn file(tag: &str) -> FileReader {
         &path,
         "T",
         &[
-            Branch::f32("pt", vec![1.0, 2.0, 3.0, 4.0, 5.0]),
-            Branch::vector_i32(
+            Branch::new("pt", vec![1.0_f32, 2.0, 3.0, 4.0, 5.0]),
+            Branch::new(
                 "idx",
                 vec![vec![1], vec![], vec![2, 3], vec![4], vec![5, 6, 7]],
             ),
-            Branch::jagged_f64(
+            Branch::new(
                 "w",
                 vec![vec![0.5], vec![1.5, 2.5], vec![], vec![3.5], vec![4.5]],
-            ),
-            Branch::string(
+            )
+            .counted(),
+            Branch::new(
                 "tag",
-                vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
+                vec![
+                    "a".to_string(),
+                    "b".into(),
+                    "c".into(),
+                    "d".into(),
+                    "e".into(),
+                ],
             ),
         ],
         Compression::Zstd(1),
@@ -82,11 +90,18 @@ fn a_wrong_type_is_an_error_not_a_conversion() {
 fn reads_a_flat_window() {
     let f = file("flat");
     let t = TreeReader::open(&f, "T").unwrap();
-    let all = t.branch("w").flat().unwrap();
-    assert_eq!(all.offsets, [0, 1, 3, 3, 4, 5]);
-    let window = t.branch("w").range(1..4).flat().unwrap();
-    assert_eq!(window.offsets, [0, 2, 2, 3]);
-    assert_eq!(window.values, BranchValues::F64(vec![1.5, 2.5, 3.5]));
+    let Column::List { offsets, .. } = t.branch("w").values().unwrap() else {
+        panic!("a counted array reads as a list");
+    };
+    assert_eq!(offsets, [0, 1, 3, 3, 4, 5]);
+    // A window's offsets start again at 0, over its own values.
+    assert_eq!(
+        t.branch("w").range(1..4).values().unwrap(),
+        Column::List {
+            offsets: vec![0, 2, 2, 3],
+            values: Box::new(Column::F64(vec![1.5, 2.5, 3.5])),
+        }
+    );
 }
 
 #[test]
@@ -150,11 +165,11 @@ fn write_batches_equals_one_batch_at_a_time() {
     let batches: Vec<Vec<Branch>> = (0..3)
         .map(|k| {
             vec![
-                Branch::f64("x", vec![f64::from(k); 4]),
-                Branch::jagged_i32("j", vec![vec![k], vec![], vec![k, k], vec![1]]),
-                Branch::string(
+                Branch::new("x", vec![f64::from(k); 4]),
+                Branch::new("j", vec![vec![k], vec![], vec![k, k], vec![1]]).counted(),
+                Branch::new(
                     "s",
-                    vec!["a".into(), "bb".into(), String::new(), "c".into()],
+                    vec!["a".to_string(), "bb".into(), String::new(), "c".into()],
                 ),
             ]
         })
@@ -189,10 +204,10 @@ fn writes_vector_bool_string_and_vector_vector() {
     let vvi = vec![vec![vec![1_i64, 2]], vec![vec![]], vec![]];
     let chunk = |r: std::ops::Range<usize>| {
         vec![
-            Branch::vector_bool("vb", vb[r.clone()].to_vec()),
-            Branch::vector_string("vs", vs[r.clone()].to_vec()),
-            Branch::vector_vector_f32("vv", vv[r.clone()].to_vec()),
-            Branch::vector_vector_i64("vvi", vvi[r].to_vec()),
+            Branch::new("vb", vb[r.clone()].to_vec()),
+            Branch::new("vs", vs[r.clone()].to_vec()),
+            Branch::new("vv", vv[r.clone()].to_vec()),
+            Branch::new("vvi", vvi[r].to_vec()),
         ]
     };
     // Two baskets, so each kind is also cut and stitched back.
@@ -215,8 +230,11 @@ fn writes_vector_bool_string_and_vector_vector() {
 fn an_empty_first_batch_writes_a_tree_with_no_entries() {
     let mut w =
         TreeWriter::new(Cursor::new(Vec::new()), "o.root", "T", Compression::Stored).unwrap();
-    w.write_batch(&[Branch::f64("x", vec![]), Branch::vector_i32("v", vec![])])
-        .unwrap();
+    w.write_batch(&[
+        Branch::new("x", Vec::<f64>::new()),
+        Branch::new("v", Vec::<Vec<i32>>::new()),
+    ])
+    .unwrap();
     let file = FileReader::from_bytes(w.finish().unwrap().into_inner()).unwrap();
     let t = TreeReader::open(&file, "T").unwrap();
     assert_eq!(t.entries(), 0);

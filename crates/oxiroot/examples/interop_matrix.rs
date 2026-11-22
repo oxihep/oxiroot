@@ -15,6 +15,8 @@
 //! `cargo run … -- read-big <file>` reads back a >2 GiB oracle file (the `--big`
 //! path of `scripts/interop_local.sh`).
 
+use oxiroot::data::{Column, DataType};
+
 use oxiroot_io_core::cast::SaturatingFrom;
 use std::fmt::Write as _;
 use std::path::Path;
@@ -24,7 +26,7 @@ use oxiroot::hist::BinContentType;
 use oxiroot::ntuple::raw::{Field, NtupleWriter};
 use oxiroot::prelude::*;
 use oxiroot::tree::TreeReader;
-use oxiroot::tree::raw::{Branch, BranchValues, SplitMember, TreeWriter};
+use oxiroot::tree::raw::{Branch, TreeWriter};
 
 #[path = "support/whole_file.rs"]
 mod whole_file;
@@ -864,14 +866,14 @@ fn rntuple_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
     let f64s = vec![1.25f64, 2.5, 3.75, 5.0];
     let strs: Vec<String> = vec!["a".into(), "bb".into(), "ccc".into(), "dddd".into()];
     let fields = vec![
-        Field::bool("fb", bools.clone()),
-        Field::i32("fi32", i32s.clone()),
-        Field::i64("fi64", i64s.clone()),
-        Field::u32("fu32", u32s.clone()),
-        Field::u64("fu64", u64s.clone()),
-        Field::f32("ff32", f32s.clone()),
-        Field::f64("ff64", f64s.clone()),
-        Field::string("fs", strs.clone()),
+        Field::new("fb", bools.clone()),
+        Field::new("fi32", i32s.clone()),
+        Field::new("fi64", i64s.clone()),
+        Field::new("fu32", u32s.clone()),
+        Field::new("fu64", u64s.clone()),
+        Field::new("ff32", f32s.clone()),
+        Field::new("ff64", f64s.clone()),
+        Field::new("fs", strs.clone()),
     ];
     write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -925,11 +927,11 @@ fn rntuple_vectors(id: &'static str, comp: Compression, dir: &Path) -> J {
     let vf32 = vec![vec![0.5f32], vec![], vec![1.5, 2.5]];
     let vf64 = vec![vec![1.0f64, 2.0], vec![3.0], vec![]];
     let fields = vec![
-        Field::vector_bool("vb", vb.clone()),
-        Field::vector_i32("vi32", vi32.clone()),
-        Field::vector_i64("vi64", vi64.clone()),
-        Field::vector_f32("vf32", vf32.clone()),
-        Field::vector_f64("vf64", vf64.clone()),
+        Field::new("vb", vb.clone()),
+        Field::new("vi32", vi32.clone()),
+        Field::new("vi64", vi64.clone()),
+        Field::new("vf32", vf32.clone()),
+        Field::new("vf64", vf64.clone()),
     ];
     write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -981,7 +983,26 @@ fn rntuple_map(id: &'static str, comp: Compression, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     // Keys in order: ROOT iterates a std::map sorted by key.
     let m = vec![vec![(1i32, 1.5f64), (2, 2.5)], vec![], vec![(3, 3.5)]];
-    let fields = vec![Field::map_i32_f64("m", m.clone())];
+    let pairs: Vec<(i32, f64)> = m.iter().flatten().copied().collect();
+    let mut offsets = vec![0u64];
+    for entry in &m {
+        offsets.push(offsets[offsets.len() - 1] + entry.len() as u64);
+    }
+    let entries = Column::List {
+        offsets,
+        values: Box::new(Column::Struct(vec![
+            (
+                "_0".into(),
+                Column::I32(pairs.iter().map(|p| p.0).collect()),
+            ),
+            (
+                "_1".into(),
+                Column::F64(pairs.iter().map(|p| p.1).collect()),
+            ),
+        ])),
+    };
+    let map = DataType::Map(Box::new(DataType::I32), Box::new(DataType::F64));
+    let fields = vec![Field::new("m", entries).stored_as(map)];
     write_rntuple_file(dir.join(&file), "ntpl", &fields, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
     let vals = J::Arr(
@@ -1022,13 +1043,13 @@ fn rntuple_multicluster(id: &'static str, large: bool, dir: &Path) -> J {
     .unwrap_or_else(|e| die(&format!("{id} create: {e}")));
     // Two batches → two clusters.
     w.write_batch(&[
-        Field::i32("x", vec![0, 1, 2]),
-        Field::f64("y", vec![0.0, 1.0, 2.0]),
+        Field::new("x", vec![0, 1, 2]),
+        Field::new("y", vec![0.0, 1.0, 2.0]),
     ])
     .unwrap_or_else(|e| die(&format!("{id} batch1: {e}")));
     w.write_batch(&[
-        Field::i32("x", vec![3, 4, 5]),
-        Field::f64("y", vec![3.0, 4.0, 5.0]),
+        Field::new("x", vec![3, 4, 5]),
+        Field::new("y", vec![3.0, 4.0, 5.0]),
     ])
     .unwrap_or_else(|e| die(&format!("{id} batch2: {e}")));
     w.finish()
@@ -1075,17 +1096,17 @@ fn tree_scalars(id: &'static str, comp: Compression, dir: &Path) -> J {
     let bf32 = vec![0.5f32, 1.5, 2.5];
     let bf64 = vec![0.25f64, 1.25, 2.25];
     let branches = vec![
-        Branch::bool("bb", bb.clone()),
-        Branch::i8("bi8", bi8.clone()),
-        Branch::u8("bu8", bu8.clone()),
-        Branch::i16("bi16", bi16.clone()),
-        Branch::u16("bu16", bu16.clone()),
-        Branch::i32("bi32", bi32.clone()),
-        Branch::u32("bu32", bu32.clone()),
-        Branch::i64("bi64", bi64.clone()),
-        Branch::u64("bu64", bu64.clone()),
-        Branch::f32("bf32", bf32.clone()),
-        Branch::f64("bf64", bf64.clone()),
+        Branch::new("bb", bb.clone()),
+        Branch::new("bi8", bi8.clone()),
+        Branch::new("bu8", bu8.clone()),
+        Branch::new("bi16", bi16.clone()),
+        Branch::new("bu16", bu16.clone()),
+        Branch::new("bi32", bi32.clone()),
+        Branch::new("bu32", bu32.clone()),
+        Branch::new("bi64", bi64.clone()),
+        Branch::new("bu64", bu64.clone()),
+        Branch::new("bf32", bf32.clone()),
+        Branch::new("bf64", bf64.clone()),
     ];
     write_tree_file(dir.join(&file), "T", &branches, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1164,9 +1185,15 @@ fn tree_arrays(id: &'static str, comp: Compression, dir: &Path) -> J {
     let jy = vec![vec![1.0f64], vec![2.0, 3.0], vec![]];
     let bs = vec!["a".to_string(), "bb".to_string(), "ccc".to_string()];
     let branches = vec![
-        Branch::array_f64("fx", fx.clone()),
-        Branch::jagged_f64("jy", jy.clone()),
-        Branch::string("bs", bs.clone()),
+        Branch::new(
+            "fx",
+            Column::Array {
+                len: 3,
+                values: Box::new(Column::F64(fx.concat())),
+            },
+        ),
+        Branch::new("jy", jy.clone()).counted(),
+        Branch::new("bs", bs.clone()),
     ];
     write_tree_file(dir.join(&file), "T", &branches, comp)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
@@ -1210,7 +1237,7 @@ fn tree_arrays(id: &'static str, comp: Compression, dir: &Path) -> J {
 fn tree_stl_vector(id: &'static str, dir: &Path) -> J {
     let file = format!("m_{id}.root");
     let vw = vec![vec![10.0f64, 20.0], vec![], vec![30.0]];
-    let branches = vec![Branch::vector_f64("vw", vw.clone())];
+    let branches = vec![Branch::new("vw", vw.clone())];
     write_tree_file(dir.join(&file), "T", &branches, Compression::Stored)
         .unwrap_or_else(|e| die(&format!("{id}: {e}")));
     let mb = J::Arr(vec![J::Obj(vec![
@@ -1240,15 +1267,13 @@ fn tree_split(id: &'static str, dir: &Path, streamed: bool) -> J {
     let y = [vec![1.5f32], vec![], vec![2.5, 3.5]];
     let idm = [vec![1i32], vec![], vec![2, 3]];
     let branch = |rows: std::ops::Range<usize>| {
-        Branch::split_vector(
-            "hits",
-            "Hit",
-            vec![
-                SplitMember::f32("x", x[rows.clone()].to_vec()),
-                SplitMember::f32("y", y[rows.clone()].to_vec()),
-                SplitMember::i32("id", idm[rows].to_vec()),
-            ],
-        )
+        let hits = Column::list_of_structs([
+            ("x", Column::from(x[rows.clone()].to_vec())),
+            ("y", y[rows.clone()].to_vec().into()),
+            ("id", idm[rows].to_vec().into()),
+        ])
+        .unwrap_or_else(|e| die(&format!("{id}: {e}")));
+        Branch::new("hits", hits).class_name("Hit")
     };
     let comp = if streamed {
         Compression::Zstd(5)
@@ -1344,7 +1369,7 @@ fn read_big(path: &Path) {
         .values()
         .unwrap_or_else(|e| die(&format!("read n: {e}")))
     {
-        BranchValues::I32(v) => {
+        Column::I32(v) => {
             if v.len() as u64 != n {
                 die(&format!("big: read {} values for {n} entries", v.len()));
             }

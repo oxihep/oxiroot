@@ -44,11 +44,6 @@ fn assert_par_matches_serial(t: &TreeReader<'_>) {
             ),
             "range of {name}"
         );
-        assert_eq!(
-            format!("{:?}", t.branch(name).parallel(true).flat()),
-            format!("{:?}", t.branch(name).flat()),
-            "flat {name}"
-        );
     }
 }
 
@@ -72,9 +67,9 @@ fn parallel_reads_match_serial_across_many_baskets() {
         &out,
         "T",
         &[
-            Branch::f64("x", x),
-            Branch::i32("k", k),
-            Branch::jagged_f64("jag", jag),
+            Branch::new("x", x),
+            Branch::new("k", k),
+            Branch::new("jag", jag).counted(),
         ],
         Compression::Zstd(1),
         37, // many baskets per branch

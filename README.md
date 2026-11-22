@@ -765,11 +765,11 @@ ax2.save("heatmap.svg")?;
   whole or streamed — ROOT-C++- and uproot-verified, both directions. A
   `Dataset` reads and writes one as a list of structs.
 - The low-level layer under [Datasets](#datasets-oxirootdata), for what only a
-  tree has. `Branch::{i32, f64, bool, string, …}` for scalars,
-  `Branch::array_*` for fixed arrays, `Branch::jagged_*` for C-style variable
-  arrays, `Branch::vector_*` for `std::vector<T>`, and `Branch::split_vector`
-  for split structs; `tree::raw::write_tree` places a whole tree (split
-  branches included) into an open container.
+  tree has. A branch is a `Column`, the type a batch holds:
+  `Branch::new(name, data)` stores a scalar, a string, a fixed array, a
+  `std::vector<T>` or a split `std::vector<MyStruct>` as the column's shape
+  says, and `.counted()` a C-style variable array; `tree::raw::write_tree`
+  places a whole tree (split branches included) into an open container.
 - `TreeWriter` streams a tree in batches (`write_batch` emits one basket per
   branch straight to disk, then `finish`), so only the current batch is held in
   memory — the way ROOT's `TTree::Fill` flushes baskets. ROOT-C++- and
@@ -779,7 +779,7 @@ ax2.save("heatmap.svg")?;
 - `tree.branch(name)` reads a branch: `.range(a..b)` fetches only the baskets
   covering a window, `.parallel(true)` (with `rayon`) decompresses them in
   parallel, then `.read::<T>()` gives a typed `Vec<T>` (a type mismatch is an
-  error), `.values()` the `BranchValues` enum, `.flat()` an offsets+flat view,
+  error), `.values()` a flat `Column` (offsets over one buffer for a list),
   and `.to_branch()` a writable `Branch` of the same layout (these are the
   format-level types, in `oxiroot::tree::raw`; `Dataset::chain` spans many
   files). Introspect with `branch_type`/`branch_layout`/
@@ -817,23 +817,23 @@ ax2.save("heatmap.svg")?;
   (8/16/32/64-bit, signed & unsigned), reduced-precision reals (half, truncated,
   quantized), and the `Switch` column — on Zstd-compressed pages.
 - Typed field API (`ntuple.field(name)` with `.range(a..b)`, then `.read::<T>()`,
-  `.values()`, `.flat()` or `.to_field()`) for scalars, `std::string`, `std::vector<T>`,
+  `.values()` or `.to_field()`) for scalars, `std::string`, `std::vector<T>`,
   nested collections — `std::vector<std::string>`, `std::vector<std::vector<T>>`,
   and vectors of records (`std::vector<MyStruct>`/`std::pair`) — `std::variant`,
   the nullable / "late" fields `std::optional<T>` / `std::unique_ptr<T>` (read as
-  a [`FieldValues::Opt`] you can zip with `opt_f32()` etc.), `std::atomic<T>`,
+  an optional column, or typed as `Option<T>`), `std::atomic<T>`,
   fixed-size `std::array`/`std::bitset`, and user-defined classes (split into a
   record of their members), across multiple clusters. **Schema-extended**
   RNTuples (fields added late via the footer's schema-extension record) are read
   too — the late fields merge into the schema and their deferred columns
   back-fill the entries written before the field existed.
 - Write the same surface it reads: `bool`, every integer width (8/16/32/64-bit,
-  signed & unsigned), `f32`/`f64`, reduced-precision reals (`Field::half` /
-  `truncated` / `quantized`), `std::string`, `std::vector<T>`, the nested
-  collections (`Field::vector_string` / `vector_vector_*`, `Column::Record`/`Nested`),
-  `std::variant` (`Field::variant`), and the nullable / atomic fields
-  (`Field::optional_*` / `unique_ptr_*` from a `Vec<Option<T>>`, `Field::atomic_*`)
-  — optionally Zstd-compressed.
+  signed & unsigned), `f32`/`f64`, reduced-precision reals, `std::string`,
+  `std::vector<T>`, the nested collections, records, `std::variant`, and the
+  nullable / atomic fields. A field is a `Column`, as in a batch:
+  `Field::new(name, data)` stores it as its shape says, and
+  `.stored_as(DataType::Half)` and the like pick another storage of the same
+  shape — optionally Zstd-compressed.
 - `ntuple::raw::write_ntuple` writes a whole RNTuple into an open container,
   including a **schema late extension**: the base fields go in the header, and
   each late `(first_entry, field)` is added through

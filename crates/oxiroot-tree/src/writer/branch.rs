@@ -1,11 +1,9 @@
-//! The branches a caller builds: [`Branch`] and its constructors, and the
-//! members of a split `std::vector<MyStruct>` branch ([`SplitMember`]).
+//! The branches a caller builds: [`Branch`], one named [`Column`] and how it
+//! is stored.
 
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::streamer_gen::{ClassDef, basic};
-use oxiroot_io_core::{Error, Result};
-
-use crate::value::BranchValues;
+use oxiroot_io_core::{Column, Error, Result};
 
 /// What a leaf's header records about every value of its column. A streaming
 /// writer tracks it across batches instead of keeping the values; the
@@ -21,36 +19,42 @@ pub(super) struct LeafMeta {
     pub(super) split_max: i32,
 }
 
-/// One named branch to write. Use the typed constructors: [`Branch::i32`] … for
-/// scalars, [`Branch::array_f64`] … for fixed-size arrays (`x[N]`),
-/// [`Branch::jagged_f64`] … for C-style variable-length arrays (`x[n]`),
-/// [`Branch::vector_f64`] … for `std::vector<T>`, [`Branch::string`] for
-/// strings — or [`BranchRead::to_branch`](crate::raw::BranchRead::to_branch) to
-/// write back a branch as it was read.
+/// One named branch to write: a [`Column`] and how a tree stores it.
+///
+/// [`Branch::new`] stores the column as its shape says:
+///
+/// | column | branch |
+/// |---|---|
+/// | a scalar (`Vec<f64>`, …) | one value per entry |
+/// | a string (`Vec<String>`) | a `TLeafC` string |
+/// | an array (`Vec<[T; N]>`) | a fixed-size `x[N]` |
+/// | a list (`Vec<Vec<T>>`) | a `std::vector<T>` |
+/// | a list of strings | a `std::vector<std::string>` |
+/// | a list of lists | a `std::vector<std::vector<T>>` |
+/// | a list of structs of scalars | a split `std::vector<Struct>` |
+///
+/// [`counted`](Branch::counted) stores a list as a C-style `x[n]` beside a
+/// count branch instead, and [`class_name`](Branch::class_name) names the
+/// struct of a split branch. A column a tree cannot hold (an optional, a
+/// record at the top level, a variant) is refused when the tree is written.
 pub struct Branch {
     /// Branch (and leaf) name.
     pub(crate) name: String,
-    /// Branch values (a [`BranchValues`] variant — scalar, array, or string).
-    /// Private: a branch is built only through the typed constructors
-    /// ([`Branch::i32`], [`Branch::jagged_f64`], …) so the payload can never
-    /// drift from the `kind` that decides how it is serialized.
-    pub(super) values: BranchValues,
-    /// How the branch is serialized; one private enum instead of three
-    /// independent flags, so an invalid combination is unrepresentable.
+    /// The values. Their shape goes with `kind`, which [`Branch::new`] derives
+    /// from them, so the two cannot drift apart.
+    pub(super) values: Column,
+    /// How the branch is serialized.
     pub(super) kind: BranchKind,
     /// What the leaf's header says of the values, when the writer knows it
     /// without holding them all: see [`LeafMeta`].
     pub(super) meta: Option<LeafMeta>,
 }
 
-/// How a [`Branch`] is written, replacing the old `jagged`/`stl_vector`/`split`
-/// flag triple. The constructors pick the variant; the payload type is the
-/// `Branch`'s `values`.
+/// How a [`Branch`] is written.
 pub(super) enum BranchKind {
     /// A scalar or string (`TLeafC`) branch.
     Plain,
-    /// A fixed-size array `x[N]` of this width. Kept apart from the rows so a
-    /// branch with none still knows `N`.
+    /// A fixed-size array `x[N]` of this width.
     Array(usize),
     /// The `n<name>` count branch of a jagged array: a plain `Int_t` scalar
     /// whose leaf, like ROOT's, is a range (`fIsRange`) whose `fMaximum` is the
@@ -65,6 +69,8 @@ pub(super) enum BranchKind {
     /// A split `std::vector<MyStruct>` branch — a parent `TBranchElement` whose
     /// per-member data lives in sub-branches; the `Branch`'s `values` is unused.
     Split(SplitSpec),
+    /// A column a tree cannot hold, with what it is: refused at write time.
+    Unwritable(String),
 }
 
 /// A split `std::vector<MyStruct>` branch: the struct's class name and one
@@ -74,11 +80,162 @@ pub(super) struct SplitSpec {
     pub(super) members: Vec<SplitMember>,
 }
 
+/// One member of a split `std::vector<MyStruct>` branch: its name and its
+/// values, a list of scalars with the struct's own offsets.
+pub(super) struct SplitMember {
+    pub(super) name: String,
+    pub(super) values: Column,
+}
+
+/// Whether `column` holds numbers or `bool`s, one per entry.
+pub(super) fn is_scalar(column: &Column) -> bool {
+    scalar_type(column).is_some()
+}
+
+/// `(fStreamerType code, C++ type name, element byte size)` of a scalar
+/// column's values.
+pub(super) fn scalar_type(column: &Column) -> Option<(i32, &'static str, i32)> {
+    Some(match column {
+        Column::Bool(_) => (18, "bool", 1),
+        Column::I8(_) => (1, "char", 1),
+        Column::U8(_) => (11, "unsigned char", 1),
+        Column::I16(_) => (2, "short", 2),
+        Column::U16(_) => (12, "unsigned short", 2),
+        Column::I32(_) => (3, "int", 4),
+        Column::U32(_) => (13, "unsigned int", 4),
+        Column::I64(_) => (16, "Long64_t", 8),
+        Column::U64(_) => (17, "ULong64_t", 8),
+        Column::F32(_) => (5, "float", 4),
+        Column::F64(_) => (8, "double", 8),
+        _ => return None,
+    })
+}
+
+/// `name` as a C++ identifier: other characters become `_`, and a leading
+/// digit gets a `_` in front.
+fn identifier(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() || out.starts_with(|c: char| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
+}
+
 impl Branch {
+    /// A branch named `name` holding `data`, stored as its shape says (see
+    /// [`Branch`]).
+    pub fn new(name: impl Into<String>, data: impl Into<Column>) -> Self {
+        let name = name.into();
+        let values = data.into();
+        let unwritable = |values: &Column| BranchKind::Unwritable(values.type_name());
+        let (values, kind) = match values {
+            Column::Array { len, values } if is_scalar(&values) => {
+                (Column::Array { len, values }, BranchKind::Array(len))
+            }
+            Column::List { offsets, values } => match *values {
+                // One sub-branch per member, each with the struct's offsets.
+                Column::Struct(members)
+                    if !members.is_empty() && members.iter().all(|(_, c)| is_scalar(c)) =>
+                {
+                    let members = members
+                        .into_iter()
+                        .map(|(name, values)| SplitMember {
+                            name,
+                            values: Column::List {
+                                offsets: offsets.clone(),
+                                values: Box::new(values),
+                            },
+                        })
+                        .collect();
+                    let spec = SplitSpec {
+                        class_name: identifier(&name),
+                        members,
+                    };
+                    (Column::I32(Vec::new()), BranchKind::Split(spec))
+                }
+                inner => {
+                    let storable = match &inner {
+                        Column::List { values, .. } => is_scalar(values),
+                        Column::String { .. } => true,
+                        other => is_scalar(other),
+                    };
+                    let values = Column::List {
+                        offsets,
+                        values: Box::new(inner),
+                    };
+                    let kind = if storable {
+                        BranchKind::StlVector
+                    } else {
+                        unwritable(&values)
+                    };
+                    (values, kind)
+                }
+            },
+            values @ Column::String { .. } => (values, BranchKind::Plain),
+            values if is_scalar(&values) => (values, BranchKind::Plain),
+            values => {
+                let kind = unwritable(&values);
+                (values, kind)
+            }
+        };
+        Self {
+            name,
+            values,
+            kind,
+            meta: None,
+        }
+    }
+
+    /// This list branch as a C-style variable-length array `x[n]`: the values
+    /// beside a count branch `n<name>`, in place of a `std::vector`. Only a
+    /// list of numbers or `bool`s has this form; another branch is refused
+    /// when the tree is written.
+    #[must_use]
+    pub fn counted(mut self) -> Self {
+        self.kind = match (&self.kind, &self.values) {
+            (BranchKind::StlVector, Column::List { values, .. }) if is_scalar(values) => {
+                BranchKind::Jagged
+            }
+            _ => BranchKind::Unwritable(format!("counted {}", self.values.type_name())),
+        };
+        self
+    }
+
+    /// The C++ class name of this split branch's struct, where
+    /// [`Branch::new`] named it after the branch. Other branches have no
+    /// class and are returned unchanged.
+    #[must_use]
+    pub fn class_name(mut self, class_name: impl Into<String>) -> Self {
+        if let BranchKind::Split(spec) = &mut self.kind {
+            spec.class_name = class_name.into();
+        }
+        self
+    }
+
     /// The branch's name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// A branch this writer builds itself: `values` already has the shape
+    /// `kind` takes.
+    pub(super) fn raw(name: String, values: Column, kind: BranchKind) -> Self {
+        Self {
+            name,
+            values,
+            kind,
+            meta: None,
+        }
     }
 
     pub(super) fn jagged(&self) -> bool {
@@ -104,291 +261,51 @@ impl Branch {
             _ => BranchKind::Plain,
         }
     }
-}
 
-/// One member of a split `std::vector<MyStruct>` branch: its name and the
-/// per-entry jagged values (`Vec<Vec<T>>` via a `VecXxx` [`BranchValues`]).
-pub struct SplitMember {
-    pub(super) name: String,
-    pub(super) values: BranchValues,
-}
-
-macro_rules! split_member_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl SplitMember {
-            $(
-                #[doc = concat!("A `", stringify!($elem), "` member of a split struct branch.")]
-                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> SplitMember {
-                    SplitMember { name: name.into(), values: BranchValues::$variant(values) }
-                }
-            )*
+    /// Refuse a branch a tree cannot hold, and one whose values do not hold
+    /// together.
+    pub(super) fn check(&self) -> Result<()> {
+        if let BranchKind::Unwritable(what) = &self.kind {
+            return Err(Error::Unsupported(format!(
+                "branch {:?} is a {what}, which a TTree written by oxiroot cannot hold",
+                self.name
+            )));
         }
-    };
-}
-split_member_ctors! {
-    bool => VecBool(bool), i8 => VecI8(i8), u8 => VecU8(u8), i16 => VecI16(i16), u16 => VecU16(u16),
-    i32 => VecI32(i32), u32 => VecU32(u32), i64 => VecI64(i64), u64 => VecU64(u64),
-    f32 => VecF32(f32), f64 => VecF64(f64),
-}
-
-macro_rules! branch_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl Branch {
-            $(
-                #[doc = concat!("A branch holding `", stringify!($variant), "` values.")]
-                pub fn $method(name: impl Into<String>, values: Vec<$elem>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Plain, meta: None }
-                }
-            )*
+        self.values.validate(&self.name)?;
+        if let Some(spec) = self.split() {
+            for member in &spec.members {
+                member
+                    .values
+                    .validate(&format!("{}.{}", self.name, member.name))?;
+            }
         }
-    };
-}
-branch_ctors! {
-    bool => Bool(bool), i8 => I8(i8), u8 => U8(u8), i16 => I16(i16), u16 => U16(u16),
-    i32 => I32(i32), u32 => U32(u32), i64 => I64(i64), u64 => U64(u64),
-    f32 => F32(f32), f64 => F64(f64),
-}
-
-/// Generate `Branch::array_<name>` shortcuts for fixed-size array branches (each
-/// inner vector must have the same length `N`, written as `x[N]`).
-macro_rules! vec_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl Branch {
-            $(
-                #[doc = concat!("A fixed-size array branch holding `", stringify!($variant), "` rows, ")]
-                #[doc = "all as long as the first (give a branch with no rows its width with [`Branch::with_width`])."]
-                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    let width = values.first().map_or(0, Vec::len);
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Array(width), meta: None }
-                }
-            )*
-        }
-    };
-}
-vec_ctors! {
-    array_bool => VecBool(bool), array_i8 => VecI8(i8), array_u8 => VecU8(u8),
-    array_i16 => VecI16(i16), array_u16 => VecU16(u16), array_i32 => VecI32(i32),
-    array_u32 => VecU32(u32), array_i64 => VecI64(i64), array_u64 => VecU64(u64),
-    array_f32 => VecF32(f32), array_f64 => VecF64(f64),
-}
-
-/// Generate `Branch::jagged_<name>` shortcuts for variable-length array branches
-/// (rows may differ in length; written as `y[n<name>]` with a paired count
-/// branch). Same backing variants as the fixed-array constructors.
-macro_rules! jagged_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl Branch {
-            $(
-                #[doc = concat!("A variable-length array branch holding `", stringify!($variant), "` rows.")]
-                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::Jagged, meta: None }
-                }
-            )*
-        }
-    };
-}
-jagged_ctors! {
-    jagged_bool => VecBool(bool), jagged_i8 => VecI8(i8), jagged_u8 => VecU8(u8),
-    jagged_i16 => VecI16(i16), jagged_u16 => VecU16(u16), jagged_i32 => VecI32(i32),
-    jagged_u32 => VecU32(u32), jagged_i64 => VecI64(i64), jagged_u64 => VecU64(u64),
-    jagged_f32 => VecF32(f32), jagged_f64 => VecF64(f64),
-}
-
-/// Generate `Branch::vector_<name>` shortcuts for `std::vector<T>` branches,
-/// written as `TBranchElement`s (one per inner vector, variable length).
-macro_rules! vector_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl Branch {
-            $(
-                #[doc = concat!("A `std::vector<", stringify!($elem), ">` branch (a `TBranchElement`).")]
-                pub fn $method(name: impl Into<String>, values: Vec<Vec<$elem>>) -> Branch {
-                    Branch { name: name.into(), values: BranchValues::$variant(values), kind: BranchKind::StlVector, meta: None }
-                }
-            )*
-        }
-    };
-}
-vector_ctors! {
-    vector_bool => VecBool(bool), vector_i8 => VecI8(i8), vector_u8 => VecU8(u8), vector_i16 => VecI16(i16),
-    vector_u16 => VecU16(u16), vector_i32 => VecI32(i32), vector_u32 => VecU32(u32),
-    vector_i64 => VecI64(i64), vector_u64 => VecU64(u64),
-    vector_f32 => VecF32(f32), vector_f64 => VecF64(f64),
-}
-
-/// Generate `Branch::vector_vector_<name>` shortcuts for
-/// `std::vector<std::vector<T>>` branches (a `TBranchElement`).
-macro_rules! vector_vector_ctors {
-    ($($method:ident => $variant:ident($elem:ty)),* $(,)?) => {
-        impl Branch {
-            $(
-                #[doc = concat!("A `std::vector<std::vector<", stringify!($elem), ">>` branch (a `TBranchElement`).")]
-                pub fn $method(name: impl Into<String>, values: Vec<Vec<Vec<$elem>>>) -> Branch {
-                    let mut offsets = Vec::with_capacity(values.len() + 1);
-                    offsets.push(0u64);
-                    let mut acc = 0u64;
-                    for row in &values {
-                        acc += row.len() as u64;
-                        offsets.push(acc);
-                    }
-                    let items = values.into_iter().flatten().collect();
-                    Branch {
-                        name: name.into(),
-                        values: BranchValues::Nested { offsets, items: Box::new(BranchValues::$variant(items)) },
-                        kind: BranchKind::StlVector,
-                        meta: None,
-                    }
-                }
-            )*
-        }
-    };
-}
-vector_vector_ctors! {
-    vector_vector_bool => VecBool(bool), vector_vector_i8 => VecI8(i8),
-    vector_vector_u8 => VecU8(u8), vector_vector_i16 => VecI16(i16),
-    vector_vector_u16 => VecU16(u16), vector_vector_i32 => VecI32(i32),
-    vector_vector_u32 => VecU32(u32), vector_vector_i64 => VecI64(i64),
-    vector_vector_u64 => VecU64(u64), vector_vector_f32 => VecF32(f32),
-    vector_vector_f64 => VecF64(f64),
-}
-
-impl Branch {
-    /// This fixed-size array branch with width `n`: every row must hold `n`
-    /// values. Rows give the width themselves, so this matters for a branch
-    /// with no rows, such as the first, empty batch that fixes a
-    /// [`TreeWriter`](crate::raw::TreeWriter)'s schema. Other kinds of branch are
-    /// returned unchanged.
-    #[must_use]
-    pub fn with_width(mut self, n: usize) -> Self {
-        if let BranchKind::Array(width) = &mut self.kind {
-            *width = n;
-        }
-        self
-    }
-
-    /// A `std::vector<std::string>` branch (a `TBranchElement`).
-    pub fn vector_string(name: impl Into<String>, values: Vec<Vec<String>>) -> Self {
-        Self {
-            name: name.into(),
-            values: BranchValues::VecStr(values),
-            kind: BranchKind::StlVector,
-            meta: None,
-        }
-    }
-
-    /// A string branch (`TLeafC`).
-    pub fn string(name: impl Into<String>, values: Vec<String>) -> Self {
-        Self {
-            name: name.into(),
-            values: BranchValues::Str(values),
-            kind: BranchKind::Plain,
-            meta: None,
-        }
-    }
-
-    /// A split `std::vector<MyStruct>` branch: `class_name` is the struct's C++
-    /// class name and `members` its fields (each a jagged sub-branch, all sharing
-    /// per-entry lengths). Written as a parent `TBranchElement` (`fSplitLevel>0`)
-    /// with one sub-branch per member and the struct's generated `TStreamerInfo`.
-    pub fn split_vector(
-        name: impl Into<String>,
-        class_name: impl Into<String>,
-        members: Vec<SplitMember>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            values: BranchValues::I32(Vec::new()),
-            kind: BranchKind::Split(SplitSpec {
-                class_name: class_name.into(),
-                members,
-            }),
-            meta: None,
-        }
+        Ok(())
     }
 }
 
 /// `(fStreamerType code, C++ type name, element byte size)` for a split-vector
-/// member, from its jagged `BranchValues` variant.
-pub(super) fn member_type_info(values: &BranchValues) -> (i32, &'static str, i32) {
-    use BranchValues::*;
-    match values {
-        VecBool(_) => (18, "bool", 1),
-        VecI8(_) => (1, "char", 1),
-        VecU8(_) => (11, "unsigned char", 1),
-        VecI16(_) => (2, "short", 2),
-        VecU16(_) => (12, "unsigned short", 2),
-        VecI32(_) => (3, "int", 4),
-        VecU32(_) => (13, "unsigned int", 4),
-        VecI64(_) => (16, "Long64_t", 8),
-        VecU64(_) => (17, "ULong64_t", 8),
-        VecF32(_) => (5, "float", 4),
-        VecF64(_) => (8, "double", 8),
-        // `SplitMember`'s constructors build these variants and no other, and
-        // its fields are private. A made-up type code would write a file ROOT
-        // misreads, so this is a bug to stop at, not a value to return.
-        other => unreachable!("a split member holds {other:?}, which no constructor builds"),
-    }
+/// member, from the values its list holds.
+pub(super) fn member_type_info(values: &Column) -> (i32, &'static str, i32) {
+    let inner = match values {
+        Column::List { values, .. } => &**values,
+        other => other,
+    };
+    // `Branch::new` makes a split branch only of scalar members, and the
+    // fields are private. A made-up type code would write a file ROOT
+    // misreads, so this is a bug to stop at, not a value to return.
+    scalar_type(inner)
+        .unwrap_or_else(|| unreachable!("a split member holds a {}", values.type_name()))
 }
 
-/// Per-entry row counts of a jagged `BranchValues` (the element count per entry).
-pub(super) fn vec_row_lengths(values: &BranchValues) -> Vec<i32> {
-    use BranchValues::*;
-    macro_rules! lens {
-        ($r:expr) => {
-            $r.iter().map(|x| i32::saturating_from(x.len())).collect()
-        };
-    }
+/// Per-entry row counts of a list column (the element count per entry).
+pub(super) fn vec_row_lengths(values: &Column) -> Vec<i32> {
     match values {
-        VecBool(r) => lens!(r),
-        VecI8(r) => lens!(r),
-        VecU8(r) => lens!(r),
-        VecI16(r) => lens!(r),
-        VecU16(r) => lens!(r),
-        VecI32(r) => lens!(r),
-        VecU32(r) => lens!(r),
-        VecI64(r) => lens!(r),
-        VecU64(r) => lens!(r),
-        VecF32(r) => lens!(r),
-        VecF64(r) => lens!(r),
+        Column::List { offsets, .. } => offsets
+            .windows(2)
+            .map(|w| i32::saturating_from(w[1].saturating_sub(w[0])))
+            .collect(),
         _ => Vec::new(),
     }
-}
-
-/// A split `std::vector<Struct>` branch stores one element per struct in every
-/// member, and the writer takes the per-entry element counts from the first
-/// member. So there must be at least one member, and every member must have the
-/// same number of entries and the same element count in each entry; otherwise
-/// the file would claim entries some members do not hold.
-pub(super) fn check_split_members(branch: &str, spec: &SplitSpec) -> Result<()> {
-    let Some(first) = spec.members.first() else {
-        return Err(Error::InvalidInput(format!(
-            "branch {branch:?}: a split {:?} branch needs at least one member; \
-             add them with Branch::split_vector(.., vec![SplitMember::..])",
-            spec.class_name
-        )));
-    };
-    let counts = vec_row_lengths(&first.values);
-    for m in &spec.members[1..] {
-        let other = vec_row_lengths(&m.values);
-        // Every member needs one value per struct: the first member's shape.
-        if other.len() != counts.len() {
-            return Err(Error::LengthMismatch {
-                what: format!("branch {branch:?} split member {:?}", m.name),
-                expected: counts.len(),
-                found: other.len(),
-            });
-        }
-        if let Some(entry) = other.iter().zip(&counts).position(|(a, b)| a != b) {
-            return Err(Error::LengthMismatch {
-                what: format!(
-                    "branch {branch:?} split member {:?} in entry {entry}",
-                    m.name
-                ),
-                expected: usize::saturating_from(counts[entry]),
-                found: usize::saturating_from(other[entry]),
-            });
-        }
-    }
-    Ok(())
 }
 
 /// ROOT's class checksum: `id = id*3 + ch` over the class name, then each
@@ -430,14 +347,6 @@ pub(super) fn split_class(spec: &SplitSpec) -> ClassDef<'_> {
 impl std::fmt::Debug for Branch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Branch")
-            .field("name", &self.name)
-            .finish_non_exhaustive()
-    }
-}
-
-impl std::fmt::Debug for SplitMember {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SplitMember")
             .field("name", &self.name)
             .finish_non_exhaustive()
     }

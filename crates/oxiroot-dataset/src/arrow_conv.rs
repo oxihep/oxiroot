@@ -29,8 +29,8 @@ use arrow_schema::{DataType, Field, Fields, Schema};
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
+use crate::Column;
 use crate::batch::Batch;
-use crate::column::Column;
 
 impl Batch {
     /// This batch as an Arrow [`RecordBatch`], copying the values.
@@ -167,6 +167,12 @@ fn to_array(column: Column) -> Result<ArrayRef> {
             Arc::new(
                 StructArray::try_new(Fields::from(fields), arrays, None).map_err(Error::other)?,
             )
+        }
+        other => {
+            return Err(Error::Unsupported(format!(
+                "a {} column has no Arrow form",
+                other.type_name()
+            )));
         }
     })
 }

@@ -7,7 +7,7 @@ use oxiroot_rntuple::NtupleReader;
 use oxiroot_rntuple::raw::Field;
 
 fn bytes() -> Vec<u8> {
-    let fields = [Field::f64("x", vec![1.0, 2.0, 3.0])];
+    let fields = [Field::new("x", vec![1.0, 2.0, 3.0])];
     rntuple_file_bytes("f.root", "events", &fields, Compression::Stored).unwrap()
 }
 

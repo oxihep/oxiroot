@@ -7,10 +7,10 @@
 //! itself. The pairing asserted here is what ROOT's own
 //! `GetEntryNumberWithIndex` reports for this file.
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> String {
     format!(
@@ -63,7 +63,7 @@ fn a_friend_joins_on_its_index_as_root_does() {
 
     // Permuting the friend's column by that mapping lines it up with the main
     // tree: entry i of `main` has key (run, event), and the weight that carries.
-    let BranchValues::F64(weights) = friend.branch("weight").values().unwrap() else {
+    let Column::F64(weights) = friend.branch("weight").values().unwrap() else {
         panic!("weight is a double branch")
     };
     let aligned: Vec<Option<f64>> = rows

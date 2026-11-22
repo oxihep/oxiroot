@@ -1,11 +1,12 @@
 //! An `RNTuple` next to other objects in one file, written without the histogram
 //! crate: this crate depends only on io-core (and, for this test, linalg).
+use oxiroot_io_core::Column;
 
 use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader, FileUpdater, FileWriter, Parameter};
 use oxiroot_linalg::Matrix;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::{Field, FieldValues};
+use oxiroot_rntuple::raw::Field;
 
 #[test]
 fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
@@ -17,11 +18,11 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
         .add(&cov)
         .add(NtupleObject::new(
             "events",
-            vec![Field::f64("x", vec![0.5, 1.5])],
+            vec![Field::new("x", vec![0.5, 1.5])],
         ))
         .add(&Parameter::f64("lumi", 12.5))
         .dir("aux", |d| {
-            d.add(NtupleObject::new("runs", vec![Field::i32("run", vec![7])]))
+            d.add(NtupleObject::new("runs", vec![Field::new("run", vec![7])]))
         })
         .compression(Compression::Zstd(3))
         .write()
@@ -38,7 +39,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
             .field("x")
             .values()
             .unwrap(),
-        FieldValues::F64(vec![0.5, 1.5])
+        Column::F64(vec![0.5, 1.5])
     );
     assert_eq!(
         NtupleReader::open(&f, "aux/runs")
@@ -46,7 +47,7 @@ fn a_matrix_a_parameter_and_an_rntuple_share_a_file() {
             .field("run")
             .values()
             .unwrap(),
-        FieldValues::I32(vec![7])
+        Column::I32(vec![7])
     );
     // Every class is described, and the histogram list is not needed.
     let registry = f.streamer_registry().unwrap();
@@ -66,7 +67,7 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
         .unwrap();
     FileUpdater::open(&path)
         .unwrap()
-        .add(NtupleObject::new("late", vec![Field::i32("x", vec![4, 5])]))
+        .add(NtupleObject::new("late", vec![Field::new("x", vec![4, 5])]))
         .compression(Compression::Stored)
         .write()
         .unwrap();
@@ -79,7 +80,7 @@ fn an_rntuple_can_be_appended_to_an_existing_file() {
             .field("x")
             .values()
             .unwrap(),
-        FieldValues::I32(vec![4, 5])
+        Column::I32(vec![4, 5])
     );
     assert!(
         f.streamer_registry()
@@ -95,10 +96,10 @@ fn a_forced_64_bit_file_with_rntuples_reads_back() {
     FileWriter::create(&path)
         .add(NtupleObject::new(
             "a",
-            vec![Field::f32("x", vec![1.0, 2.0])],
+            vec![Field::new("x", vec![1.0_f32, 2.0])],
         ))
         .dir("d", |d| {
-            d.add(NtupleObject::new("b", vec![Field::i64("y", vec![3])]))
+            d.add(NtupleObject::new("b", vec![Field::new("y", vec![3_i64])]))
         })
         .compression(Compression::Stored)
         .large_above(0)
@@ -112,7 +113,7 @@ fn a_forced_64_bit_file_with_rntuples_reads_back() {
             .field("x")
             .values()
             .unwrap(),
-        FieldValues::F32(vec![1.0, 2.0])
+        Column::F32(vec![1.0, 2.0])
     );
     assert_eq!(
         NtupleReader::open(&f, "d/b")
@@ -120,6 +121,6 @@ fn a_forced_64_bit_file_with_rntuples_reads_back() {
             .field("y")
             .values()
             .unwrap(),
-        FieldValues::I64(vec![3])
+        Column::I64(vec![3])
     );
 }

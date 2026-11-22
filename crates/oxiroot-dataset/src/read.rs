@@ -4,16 +4,14 @@
 use std::num::NonZeroU64;
 use std::ops::Range;
 
-use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{ClassKind, Error, FileReader, Result};
-use oxiroot_rntuple::raw::FieldValues;
-use oxiroot_rntuple::{ANCHOR_CLASS, ColumnType, Header, NtupleReader};
-use oxiroot_tree::raw::BranchValues;
-use oxiroot_tree::{BranchLayout, LeafType, TreeReader};
+use oxiroot_rntuple::{ANCHOR_CLASS, NtupleReader};
+use oxiroot_tree::{BranchLayout, TreeReader};
 
+use crate::Column;
+use crate::DataType;
 use crate::batch::Batch;
-use crate::column::Column;
-use crate::schema::{DataType, Schema};
+use crate::schema::Schema;
 
 /// Which of ROOT's two columnar formats a dataset is stored in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -185,8 +183,8 @@ impl<'f> Dataset<'f> {
         }
     }
 
-    /// The `RNTuple` reader underneath, for what only an `RNTuple` has (records,
-    /// variants, the raw columns).
+    /// The `RNTuple` reader underneath, for what only an `RNTuple` has (the
+    /// schema, the clusters, the raw columns).
     #[must_use]
     pub fn as_ntuple(&self) -> Option<&NtupleReader<'f>> {
         match &self.source {
@@ -202,8 +200,7 @@ impl<'f> Dataset<'f> {
     ///
     /// # Errors
     ///
-    /// A column a [`Batch`] cannot hold (an `RNTuple` variant, a tree branch of
-    /// an unsupported class), or a read error.
+    /// A read error.
     pub fn schema(&self) -> Result<Schema> {
         if let Source::Chain(parts) = &self.source {
             return parts[0].schema();
@@ -218,7 +215,7 @@ impl<'f> Dataset<'f> {
                 let shape = column.data_type();
                 let stored = match &self.source {
                     Source::Tree(t) => tree_type(t, name, shape),
-                    Source::Ntuple(n) => ntuple_type(n.header(), name, shape),
+                    Source::Ntuple(n) => n.header().stored_type(name, shape),
                     Source::Chain(_) => unreachable!("a chain returned above"),
                 };
                 (name, stored)
@@ -230,9 +227,7 @@ impl<'f> Dataset<'f> {
     ///
     /// # Errors
     ///
-    /// A column that does not exist, or one of a shape a [`Batch`] cannot
-    /// hold (an `RNTuple` record or variant); read those through
-    /// [`as_ntuple`](Self::as_ntuple).
+    /// A column that does not exist, or a read error.
     pub fn read<I, S>(&self, columns: I) -> Result<Batch>
     where
         I: IntoIterator<Item = S>,
@@ -442,50 +437,29 @@ impl Iterator for Batches<'_, '_> {
     }
 }
 
-/// Read one tree branch's window as a flat column: straight to offsets and
-/// values where the layout allows, through [`BranchValues`] otherwise.
+/// Read one tree column's window: a branch as the reader gives it, or the
+/// members of a split `std::vector<Struct>` joined into a list of structs.
 fn tree_column(
     t: &TreeReader<'_>,
     name: &str,
     range: Range<u64>,
     parallel: bool,
 ) -> Result<Column> {
-    let Some(layout) = t.branch_layout(name) else {
-        let members = t.collection_members(name).collect::<Vec<_>>();
-        if members.is_empty() {
-            return Err(Error::NotFound {
-                what: "column",
-                name: name.to_string(),
-            });
-        }
-        return tree_collection(t, name, &members, range, parallel);
-    };
-    let is_str = t.branch_type(name) == Some(LeafType::Str);
-    let branch = || t.branch(name).range(range.clone()).parallel(parallel);
-    match layout {
-        BranchLayout::Array(len) if !is_str => match branch().flat() {
-            Ok(j) => Ok(Column::Array {
-                len,
-                values: Box::new(branch_column(j.values)?),
-            }),
-            // Only "no flat form" falls back: a read error is the caller's.
-            Err(Error::Unsupported(_)) => array_of(branch_column(branch().values()?)?, len, name),
-            Err(e) => Err(e),
-        },
-        BranchLayout::List | BranchLayout::CArray if !is_str => match branch().flat() {
-            Ok(j) => Ok(Column::List {
-                offsets: j.offsets,
-                values: Box::new(branch_column(j.values)?),
-            }),
-            Err(Error::Unsupported(_)) => branch_column(branch().values()?),
-            Err(e) => Err(e),
-        },
-        _ => branch_column(branch().values()?),
+    if t.branch_layout(name).is_some() {
+        return t.branch(name).range(range).parallel(parallel).values();
     }
+    let members = t.collection_members(name).collect::<Vec<_>>();
+    if members.is_empty() {
+        return Err(Error::NotFound {
+            what: "column",
+            name: name.to_string(),
+        });
+    }
+    tree_collection(t, name, &members, range, parallel)
 }
 
 /// A split `std::vector<Struct>` collection as a list of structs: each
-/// member read flat, sharing the first member's offsets.
+/// member is a list, and they share the first member's offsets.
 fn tree_collection(
     t: &TreeReader<'_>,
     name: &str,
@@ -493,172 +467,32 @@ fn tree_collection(
     range: Range<u64>,
     parallel: bool,
 ) -> Result<Column> {
-    let mut offsets: Option<Vec<u64>> = None;
-    let mut fields = Vec::with_capacity(members.len());
-    for &member in members {
-        let read = t.branch(member).range(range.clone()).parallel(parallel);
-        let j = read.flat()?;
-        match &offsets {
-            None => offsets = Some(j.offsets),
-            Some(o) if *o == j.offsets => {}
-            Some(_) => {
-                return Err(Error::Format(format!(
-                    "column {name:?}: member {member:?} has other entry lengths than the first"
-                )));
-            }
-        }
+    let lists = members.iter().map(|&member| {
         let short = member
             .strip_prefix(name)
             .and_then(|m| m.strip_prefix('.'))
             .unwrap_or(member);
-        fields.push((short.to_string(), branch_column(j.values)?));
-    }
-    Ok(Column::List {
-        offsets: offsets.unwrap_or_else(|| vec![0]),
-        values: Box::new(Column::Struct(fields)),
-    })
+        let read = t.branch(member).range(range.clone()).parallel(parallel);
+        Ok((short, read.values()?))
+    });
+    let lists = lists.collect::<Result<Vec<_>>>()?;
+    Column::list_of_structs(lists).map_err(|e| Error::Format(format!("column {name:?}: {e}")))
 }
 
-/// A list column whose every entry has `len` values, as an array column.
-fn array_of(column: Column, len: usize, name: &str) -> Result<Column> {
-    match column {
-        Column::List { offsets, values }
-            if offsets.windows(2).all(|w| w[1] - w[0] == len as u64) =>
-        {
-            Ok(Column::Array { len, values })
-        }
-        other => Err(Error::Format(format!(
-            "column {name:?}: expected arrays of {len}, got {}",
-            other.type_name()
-        ))),
-    }
-}
-
-/// A tree branch's values as a column (moving scalar vectors, flattening
-/// nested ones).
-fn branch_column(values: BranchValues) -> Result<Column> {
-    Ok(match values {
-        BranchValues::Bool(v) => Column::Bool(v),
-        BranchValues::I8(v) => Column::I8(v),
-        BranchValues::U8(v) => Column::U8(v),
-        BranchValues::I16(v) => Column::I16(v),
-        BranchValues::U16(v) => Column::U16(v),
-        BranchValues::I32(v) => Column::I32(v),
-        BranchValues::U32(v) => Column::U32(v),
-        BranchValues::I64(v) => Column::I64(v),
-        BranchValues::U64(v) => Column::U64(v),
-        BranchValues::F32(v) => Column::F32(v),
-        BranchValues::F64(v) => Column::F64(v),
-        BranchValues::Str(v) => v.into(),
-        BranchValues::VecBool(v) => v.into(),
-        BranchValues::VecI8(v) => v.into(),
-        BranchValues::VecU8(v) => v.into(),
-        BranchValues::VecI16(v) => v.into(),
-        BranchValues::VecU16(v) => v.into(),
-        BranchValues::VecI32(v) => v.into(),
-        BranchValues::VecU32(v) => v.into(),
-        BranchValues::VecI64(v) => v.into(),
-        BranchValues::VecU64(v) => v.into(),
-        BranchValues::VecF32(v) => v.into(),
-        BranchValues::VecF64(v) => v.into(),
-        BranchValues::VecStr(v) => v.into(),
-        BranchValues::Nested { offsets, items } => Column::List {
-            offsets,
-            values: Box::new(branch_column(*items)?),
-        },
-        other => {
-            return Err(Error::Unsupported(format!(
-                "a {} branch cannot be held in a batch",
-                other.type_name()
-            )));
-        }
-    })
-}
-
-/// Read one `RNTuple` field's window as a flat column.
+/// Read one `RNTuple` field's window.
 fn ntuple_column(
     n: &NtupleReader<'_>,
     name: &str,
     range: Range<u64>,
     parallel: bool,
 ) -> Result<Column> {
-    let field = || n.field(name).range(range.clone()).parallel(parallel);
-    let array_size = n
-        .header()
-        .top_level_fields()
-        .find(|(_, f)| f.name == name)
-        .ok_or_else(|| Error::NotFound {
+    if n.header().top_level_field(name).is_none() {
+        return Err(Error::NotFound {
             what: "column",
             name: name.to_string(),
-        })?
-        .1
-        .array_size;
-    if let Some(len) = array_size {
-        return array_of(
-            field_column(name, field().values()?)?,
-            usize::saturating_from(len),
-            name,
-        );
+        });
     }
-    match field().flat() {
-        Ok(j) => Ok(Column::List {
-            offsets: j.offsets,
-            values: Box::new(field_column(name, j.values)?),
-        }),
-        Err(Error::Unsupported(_)) => field_column(name, field().values()?),
-        Err(e) => Err(e),
-    }
-}
-
-/// An `RNTuple` field's values as a column.
-fn field_column(name: &str, values: FieldValues) -> Result<Column> {
-    Ok(match values {
-        FieldValues::Bool(v) => Column::Bool(v),
-        FieldValues::I8(v) => Column::I8(v),
-        FieldValues::U8(v) => Column::U8(v),
-        FieldValues::I16(v) => Column::I16(v),
-        FieldValues::U16(v) => Column::U16(v),
-        FieldValues::I32(v) => Column::I32(v),
-        FieldValues::U32(v) => Column::U32(v),
-        FieldValues::I64(v) => Column::I64(v),
-        FieldValues::U64(v) => Column::U64(v),
-        FieldValues::F32(v) => Column::F32(v),
-        FieldValues::F64(v) => Column::F64(v),
-        FieldValues::Str(v) => v.into(),
-        FieldValues::VecBool(v) => v.into(),
-        FieldValues::VecI8(v) => v.into(),
-        FieldValues::VecU8(v) => v.into(),
-        FieldValues::VecI16(v) => v.into(),
-        FieldValues::VecU16(v) => v.into(),
-        FieldValues::VecI32(v) => v.into(),
-        FieldValues::VecU32(v) => v.into(),
-        FieldValues::VecI64(v) => v.into(),
-        FieldValues::VecU64(v) => v.into(),
-        FieldValues::VecF32(v) => v.into(),
-        FieldValues::VecF64(v) => v.into(),
-        FieldValues::VecStr(v) => v.into(),
-        FieldValues::Nested { offsets, items } => Column::List {
-            offsets,
-            values: Box::new(field_column(name, *items)?),
-        },
-        FieldValues::Opt { present, values } => Column::Optional {
-            valid: present,
-            values: Box::new(field_column(name, *values)?),
-        },
-        FieldValues::Record(members) => Column::Struct(
-            members
-                .into_iter()
-                .map(|(n, v)| Ok((n, field_column(name, v)?)))
-                .collect::<Result<_>>()?,
-        ),
-        other => {
-            return Err(Error::Unsupported(format!(
-                "field {name:?} is a {}, which a batch cannot hold; read it with \
-                 Dataset::as_ntuple",
-                other.type_name()
-            )));
-        }
-    })
+    n.field(name).range(range).parallel(parallel).values()
 }
 
 /// A tree column's stored type, from its in-memory `shape`: a list counted by
@@ -667,103 +501,5 @@ fn tree_type(t: &TreeReader<'_>, name: &str, shape: DataType) -> DataType {
     match (t.branch_layout(name), shape) {
         (Some(BranchLayout::CArray), DataType::List(item)) => DataType::CArray(item),
         (_, shape) => shape,
-    }
-}
-
-/// An `RNTuple` column's stored type, from its in-memory `shape` and the
-/// header's description of the top-level field `name`.
-fn ntuple_type(header: &Header, name: &str, shape: DataType) -> DataType {
-    let top = header.top_level_field(name);
-    match top {
-        Some(id) => field_type(header, id, shape),
-        None => shape,
-    }
-}
-
-/// The fields directly inside field `id`, in order.
-fn child_fields(header: &Header, id: usize) -> Vec<usize> {
-    header.child_fields(id).collect()
-}
-
-/// Whether the C++ type `name` is the template `template` (`std::set`) or its
-/// unordered or multi form.
-fn is_template(name: &str, template: &str) -> bool {
-    let base = name.split('<').next().unwrap_or(name);
-    let base = base.strip_prefix("std::").unwrap_or(base);
-    [
-        template.to_string(),
-        format!("unordered_{template}"),
-        format!("multi{template}"),
-        format!("unordered_multi{template}"),
-    ]
-    .iter()
-    .any(|t| t == base)
-}
-
-/// Refine `shape` with how field `id` and the fields inside it are stored.
-/// Where the header and the shape do not line up, the shape is kept as it is.
-fn field_type(header: &Header, id: usize, shape: DataType) -> DataType {
-    let field = &header.fields[id];
-    let kids = child_fields(header, id);
-    let type_name = field.type_name.as_str();
-    let inner = |kid: Option<&usize>, shape: DataType| match kid {
-        Some(&kid) => field_type(header, kid, shape),
-        None => shape,
-    };
-    if is_template(type_name, "atomic") && kids.len() == 1 {
-        return DataType::Atomic(Box::new(field_type(header, kids[0], shape)));
-    }
-    match shape {
-        DataType::F32 => {
-            let column = header.columns.iter().find(|c| c.field() == id);
-            match column.map(|c| (c.column_type, c.bits_on_storage, c.value_range)) {
-                Some((ColumnType::Real16 | ColumnType::SplitReal16, ..)) => DataType::Half,
-                Some((ColumnType::Real32Trunc, bits, _)) => DataType::Truncated { bits },
-                Some((ColumnType::Real32Quant, bits, Some((min, max)))) => {
-                    DataType::Quantized { bits, min, max }
-                }
-                _ => DataType::F32,
-            }
-        }
-        DataType::List(item) if is_template(type_name, "set") => {
-            DataType::Set(Box::new(inner(kids.first(), *item)))
-        }
-        DataType::List(item) if is_template(type_name, "map") => {
-            // A map is a collection of `std::pair<K, V>` records.
-            let pair = kids.first().map(|&k| child_fields(header, k));
-            match (*item, pair.as_deref()) {
-                (DataType::Struct(members), Some([key, value])) if members.len() == 2 => {
-                    let mut members = members.into_iter().map(|(_, t)| t);
-                    let (k, v) = (members.next(), members.next());
-                    match (k, v) {
-                        (Some(k), Some(v)) => DataType::Map(
-                            Box::new(field_type(header, *key, k)),
-                            Box::new(field_type(header, *value, v)),
-                        ),
-                        _ => unreachable!("two members were counted"),
-                    }
-                }
-                (item, _) => DataType::List(Box::new(item)),
-            }
-        }
-        DataType::List(item) => DataType::List(Box::new(inner(kids.first(), *item))),
-        DataType::Array(len, item)
-            if type_name.starts_with("std::bitset<") && *item == DataType::Bool =>
-        {
-            DataType::Bitset(len)
-        }
-        DataType::Array(len, item) => DataType::Array(len, Box::new(inner(kids.first(), *item))),
-        DataType::Optional(item) if type_name.starts_with("std::unique_ptr<") => {
-            DataType::UniquePtr(Box::new(inner(kids.first(), *item)))
-        }
-        DataType::Optional(item) => DataType::Optional(Box::new(inner(kids.first(), *item))),
-        DataType::Struct(members) if members.len() == kids.len() => DataType::Struct(
-            members
-                .into_iter()
-                .zip(&kids)
-                .map(|((name, t), &kid)| (name, field_type(header, kid, t)))
-                .collect(),
-        ),
-        other => other,
     }
 }

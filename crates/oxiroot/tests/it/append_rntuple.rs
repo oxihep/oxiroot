@@ -6,8 +6,9 @@
 
 use crate::support::NtupleObject;
 use oxiroot::FileReader;
+use oxiroot::data::Column;
 use oxiroot::ntuple::NtupleReader;
-use oxiroot::ntuple::raw::{Field, FieldValues};
+use oxiroot::ntuple::raw::Field;
 use oxiroot::prelude::*;
 
 #[test]
@@ -15,8 +16,8 @@ fn appends_a_histogram_to_an_rntuple_file() {
     let out = std::env::temp_dir().join("oxiroot_append_rntuple.root");
 
     let fields = vec![
-        Field::f64("mass", vec![91.2, 125.0, 80.4]),
-        Field::i32("n", vec![1, 2, 3]),
+        Field::new("mass", vec![91.2, 125.0, 80.4]),
+        Field::new("n", vec![1, 2, 3]),
     ];
     FileWriter::create(&out)
         .add(NtupleObject::new("events", fields))
@@ -50,12 +51,9 @@ fn appends_a_histogram_to_an_rntuple_file() {
     assert_eq!(nt.entries(), 3);
     assert_eq!(
         nt.field("mass").values().unwrap(),
-        FieldValues::F64(vec![91.2, 125.0, 80.4])
+        Column::F64(vec![91.2, 125.0, 80.4])
     );
-    assert_eq!(
-        nt.field("n").values().unwrap(),
-        FieldValues::I32(vec![1, 2, 3])
-    );
+    assert_eq!(nt.field("n").values().unwrap(), Column::I32(vec![1, 2, 3]));
     assert_eq!(f.get::<Hist1D>("h").unwrap(), h, "appended histogram");
 
     let _ = std::fs::remove_file(&out);

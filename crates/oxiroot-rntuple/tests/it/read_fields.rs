@@ -1,11 +1,11 @@
 //! M3+ typed field API: read fields by name and get reconstructed per-entry
 //! values, on both the uncompressed and Zstd (split) fixtures.
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::FieldValues;
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -26,30 +26,26 @@ fn check_fields(name: &str) {
 
     let field = |n| ntpl.field(n).values().expect("read field");
 
-    assert_eq!(
-        field("i32"),
-        FieldValues::I32(vec![0, 10, 20, 30, 40]),
-        "{name}"
-    );
+    assert_eq!(field("i32"), Column::I32(vec![0, 10, 20, 30, 40]), "{name}");
     assert_eq!(
         field("f32"),
-        FieldValues::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]),
+        Column::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]),
         "{name}"
     );
     assert_eq!(
         field("f64"),
-        FieldValues::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0]),
+        Column::F64(vec![0.0, 1.25, 2.5, 3.75, 5.0]),
         "{name}"
     );
     assert_eq!(
         field("b"),
-        FieldValues::Bool(vec![true, false, true, false, true]),
+        Column::Bool(vec![true, false, true, false, true]),
         "{name}"
     );
     assert_eq!(
         field("s"),
-        FieldValues::Str(vec![
-            "row0".into(),
+        Column::from(vec![
+            "row0".to_string(),
             "row1".into(),
             "row2".into(),
             "row3".into(),
@@ -59,9 +55,9 @@ fn check_fields(name: &str) {
     );
     assert_eq!(
         field("vf"),
-        FieldValues::VecF32(vec![
+        Column::from(vec![
             vec![],
-            vec![1.0],
+            vec![1.0_f32],
             vec![2.0, 2.0],
             vec![3.0, 3.0, 3.0],
             vec![4.0, 4.0, 4.0, 4.0],
@@ -91,13 +87,13 @@ fn reads_real_root_multicluster_collection() {
 
     assert_eq!(
         ntpl.field("n").values().expect("n"),
-        FieldValues::I32((0..9).collect())
+        Column::I32((0..9).collect())
     );
     assert_eq!(
         ntpl.field("v").values().expect("v"),
-        FieldValues::VecF32(vec![
+        Column::from(vec![
             vec![],
-            vec![10.0],
+            vec![10.0_f32],
             vec![20.0, 21.0],
             vec![30.0, 31.0, 32.0],
             vec![],

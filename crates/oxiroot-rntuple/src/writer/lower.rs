@@ -4,9 +4,11 @@
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Error, Result};
 
+use oxiroot_io_core::{Column, DataType};
+
 use super::check::{check_fields, entry_count};
 use super::classes::class_checksum;
-use super::fields::{Column, Field};
+use super::fields::{Field, alternative_types, item_type, member_class, member_types, positional};
 use super::{
     FIELD_FLAG_ARRAY, FIELD_FLAG_CHECKSUM, ROLE_COLLECTION, ROLE_LEAF, ROLE_RECORD, ROLE_VARIANT,
 };
@@ -50,17 +52,6 @@ fn pack_bits(v: &[bool]) -> Vec<u8> {
         }
     }
     out
-}
-
-/// Cumulative end offsets (Index64) for collections, plus the flattened data.
-pub(super) fn flatten<T: Clone>(v: &[Vec<T>]) -> (Vec<u64>, Vec<T>) {
-    let mut offsets = Vec::with_capacity(v.len());
-    let mut data = Vec::new();
-    for inner in v {
-        data.extend_from_slice(inner);
-        offsets.push(data.len() as u64);
-    }
-    (offsets, data)
 }
 
 /// An Index column holds one cumulative end per entry, where a collection
@@ -182,14 +173,8 @@ fn leaf_node(name: &str, type_name: &str, col: RawCol) -> Node {
 }
 
 /// A `std::string` leaf: an Index64 offset column plus a Char column.
-fn string_node(name: &str, v: &[String]) -> Node {
-    let mut bytes = Vec::new();
-    let mut offsets = Vec::with_capacity(v.len());
-    for s in v {
-        bytes.extend_from_slice(s.as_bytes());
-        offsets.push(bytes.len() as u64);
-    }
-    let n_chars = bytes.len();
+fn string_node(name: &str, offsets: &[u64], text: &str) -> Node {
+    let ends = on_disk_offsets(offsets);
     Node {
         name: name.to_string(),
         type_name: "std::string".to_string(),
@@ -198,10 +183,10 @@ fn string_node(name: &str, v: &[String]) -> Node {
             raw(
                 ColumnType::Index64,
                 64,
-                le_bytes(&offsets, |x| x.to_le_bytes()),
-                v.len(),
+                le_bytes(ends, |x| x.to_le_bytes()),
+                ends.len(),
             ),
-            raw(ColumnType::Char, 8, bytes, n_chars),
+            raw(ColumnType::Char, 8, text.as_bytes().to_vec(), text.len()),
         ],
         children: vec![],
         flags: 0,
@@ -336,13 +321,6 @@ fn scalar_node<T: Scalar>(name: &str, values: &[T]) -> Node {
     leaf_node(name, T::TYPE_NAME, column)
 }
 
-/// A `std::vector` field of scalars: the rows' ends, then the values of all
-/// rows as the element field `_0`.
-fn vector_node<T: Scalar>(name: &str, rows: &[Vec<T>]) -> Node {
-    let (offsets, data) = flatten(rows);
-    collection_node(name, &offsets, rows.len(), scalar_node("_0", &data))
-}
-
 /// A field made of other fields, with no column and no flags; the few
 /// fields that have either set them on the result.
 fn parent_node(name: &str, type_name: String, role: u16, children: Vec<Node>) -> Node {
@@ -397,40 +375,26 @@ fn quantized_node(name: &str, values: &[f32], (min, max): (f64, f64), bits: u16)
     leaf_node(name, "float", column)
 }
 
-/// A `std::variant` field: a switch column saying which alternative each
-/// entry holds and where in it, then the alternatives as `_0`, `_1`, ….
-fn variant_node(name: &str, alternatives: &[Column], tags: &[u32]) -> Node {
-    // An entry's index is a running count within its alternative; the switch
-    // column holds an 8-byte index and a 4-byte tag per entry. Tag 0, or one
-    // past the alternatives, is an entry holding nothing.
-    let mut counters = vec![0u64; alternatives.len()];
-    let mut switch = Vec::with_capacity(tags.len() * 12);
-    for &tag in tags {
-        let (index, out_tag) = match counters.get_mut((tag as usize).wrapping_sub(1)) {
-            Some(counter) => {
-                let index = *counter;
-                *counter += 1;
-                (index, tag)
-            }
-            None => (0, 0),
-        };
-        switch.extend_from_slice(&index.to_le_bytes());
-        switch.extend_from_slice(&out_tag.to_le_bytes());
-    }
-    let children: Vec<Node> = alternatives
-        .iter()
-        .enumerate()
-        .map(|(k, c)| lower_column(&format!("_{k}"), c))
-        .collect();
-    let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
-    let type_name = format!("std::variant<{}>", inner.join(","));
-    let mut node = parent_node(name, type_name, ROLE_VARIANT, children);
-    node.cols = vec![raw(ColumnType::Switch, 96, switch, tags.len())];
-    node
+/// A `float` field stored at half precision.
+fn half_node(name: &str, values: &[f32]) -> Node {
+    let page = le_bytes(values, |&x| f32_to_half(x).to_le_bytes());
+    leaf_node(
+        name,
+        "float",
+        raw(ColumnType::Real16, 16, page, values.len()),
+    )
 }
 
-/// Lower one field's [`Column`] into a [`Node`] subtree.
-fn lower_column(name: &str, data: &Column) -> Node {
+/// Lower one field's [`Column`], stored as `data_type`, into a [`Node`]
+/// subtree. `class` names a struct with named members.
+fn lower_column(name: &str, data: &Column, data_type: &DataType, class: &str) -> Node {
+    // std::atomic<T> is a leaf field that delegates to a single child leaf
+    // `_0` carrying the bare value (no column of its own).
+    if let DataType::Atomic(of) = data_type {
+        let child = lower_column("_0", data, of, class);
+        let type_name = format!("std::atomic<{}>", child.type_name);
+        return parent_node(name, type_name, ROLE_LEAF, vec![child]);
+    }
     match data {
         Column::Bool(v) => scalar_node(name, v),
         Column::I8(v) => scalar_node(name, v),
@@ -438,104 +402,97 @@ fn lower_column(name: &str, data: &Column) -> Node {
         Column::I16(v) => scalar_node(name, v),
         Column::U16(v) => scalar_node(name, v),
         Column::I32(v) => scalar_node(name, v),
-        Column::I64(v) => scalar_node(name, v),
         Column::U32(v) => scalar_node(name, v),
+        Column::I64(v) => scalar_node(name, v),
         Column::U64(v) => scalar_node(name, v),
-        Column::F32(v) => scalar_node(name, v),
         Column::F64(v) => scalar_node(name, v),
-        Column::Str(v) => string_node(name, v),
-        Column::VecBool(v) => vector_node(name, v),
-        Column::VecI8(v) => vector_node(name, v),
-        Column::VecU8(v) => vector_node(name, v),
-        Column::VecI16(v) => vector_node(name, v),
-        Column::VecU16(v) => vector_node(name, v),
-        Column::VecI32(v) => vector_node(name, v),
-        Column::VecI64(v) => vector_node(name, v),
-        Column::VecF32(v) => vector_node(name, v),
-        Column::VecF64(v) => vector_node(name, v),
-        Column::VecStr(v) => {
-            let (offsets, data) = flatten(v);
-            collection_node(name, &offsets, v.len(), string_node("_0", &data))
-        }
-        Column::HalfF32(v) => {
-            let page = le_bytes(v, |&x| f32_to_half(x).to_le_bytes());
-            leaf_node(name, "float", raw(ColumnType::Real16, 16, page, v.len()))
-        }
-        Column::TruncF32 { values, bits } => truncated_node(name, values, *bits),
-        Column::QuantF32 {
-            values,
-            range,
-            bits,
-        } => quantized_node(name, values, *range, *bits),
-        Column::Nested { offsets, items } => {
-            let child = lower_column("_0", items);
+        Column::F32(v) => match *data_type {
+            DataType::Half => half_node(name, v),
+            DataType::Truncated { bits } => truncated_node(name, v, bits),
+            DataType::Quantized { bits, min, max } => quantized_node(name, v, (min, max), bits),
+            _ => scalar_node(name, v),
+        },
+        Column::String { offsets, text } => string_node(name, offsets, text),
+        Column::List { offsets, values } => {
+            let child = lower_column("_0", values, &item_type(data_type, values), class);
             let ends = on_disk_offsets(offsets);
-            collection_node(name, ends, ends.len(), child)
+            let mut node = collection_node(name, ends, ends.len(), child);
+            // A set or a map has the shape of a vector; only the name differs.
+            if matches!(data_type, DataType::Set(_) | DataType::Map(..)) {
+                node.type_name = data_type.cpp_name();
+            }
+            node
         }
-        Column::Optional {
-            unique,
-            present,
-            values,
-        } => {
-            // optional/unique_ptr share the collection shape; only the wrapper
-            // type name differs. The index column counts present entries.
-            let child = lower_column("_0", values);
-            let offsets = present_offsets(present);
-            let wrapper = if *unique {
-                "std::unique_ptr"
-            } else {
-                "std::optional"
+        Column::Array { len, values } => match (data_type, &**values) {
+            // A bitset keeps its bits in a column of its own.
+            (DataType::Bitset(_), Column::Bool(bits)) => {
+                let mut node = parent_node(name, format!("std::bitset<{len}>"), ROLE_LEAF, vec![]);
+                node.cols = vec![raw(ColumnType::Bit, 1, pack_bits(bits), bits.len())];
+                node.flags = FIELD_FLAG_ARRAY;
+                node.array_size = Some(*len as u64);
+                node
+            }
+            // A fixed array: no column of its own, one element child `_0`
+            // carrying the flattened values; the field records the count.
+            (_, values) => {
+                let child = lower_column("_0", values, &item_type(data_type, values), class);
+                let type_name = format!("std::array<{},{}>", child.type_name, len);
+                let mut node = parent_node(name, type_name, ROLE_LEAF, vec![child]);
+                node.flags = FIELD_FLAG_ARRAY;
+                node.array_size = Some(*len as u64);
+                node
+            }
+        },
+        Column::Optional { valid, values } => {
+            // optional and unique_ptr share the collection shape; only the
+            // wrapper's name differs. The index column counts present entries.
+            let child = lower_column("_0", values, &item_type(data_type, values), class);
+            let wrapper = match data_type {
+                DataType::UniquePtr(_) => "std::unique_ptr",
+                _ => "std::optional",
             };
-            collection_node_wrapped(name, wrapper, &offsets, present.len(), child)
+            collection_node_wrapped(name, wrapper, &present_offsets(valid), valid.len(), child)
         }
-        Column::Atomic(inner) => {
-            // std::atomic<T> is a Leaf field that delegates to a single child
-            // leaf `_0` carrying the bare value (no column of its own).
-            let child = lower_column("_0", inner);
-            let type_name = format!("std::atomic<{}>", child.type_name);
-            parent_node(name, type_name, ROLE_LEAF, vec![child])
-        }
-        Column::Record(subs) => {
-            let children: Vec<Node> = subs.iter().map(|(n, c)| lower_column(n, c)).collect();
-            parent_node(name, record_type_name(&children), ROLE_RECORD, children)
-        }
-        Column::Variant { alternatives, tags } => variant_node(name, alternatives, tags),
-        Column::Array { len, items } => {
-            // A fixed array: no own column, one element child `_0` carrying the
-            // flattened values; the field flags an `array_size` element count.
-            let child = lower_column("_0", items);
-            let type_name = format!("std::array<{},{}>", child.type_name, len);
-            let mut node = parent_node(name, type_name, ROLE_LEAF, vec![child]);
-            node.flags = FIELD_FLAG_ARRAY;
-            node.array_size = Some(*len as u64);
-            node
-        }
-        Column::Bitset { len, bits } => {
-            let mut node = parent_node(name, format!("std::bitset<{len}>"), ROLE_LEAF, vec![]);
-            node.cols = vec![raw(ColumnType::Bit, 1, pack_bits(bits), bits.len())];
-            node.flags = FIELD_FLAG_ARRAY;
-            node.array_size = Some(*len as u64);
-            node
-        }
-        Column::Object { type_name, members } => {
-            let children: Vec<Node> = members.iter().map(|(n, c)| lower_column(n, c)).collect();
-            let mut node = parent_node(name, type_name.clone(), ROLE_RECORD, children);
+        Column::Struct(members) => {
+            let types = member_types(data_type, members);
+            let children: Vec<Node> = (members.iter().zip(&types))
+                .map(|((n, c), t)| lower_column(n, c, t, &member_class(class, n)))
+                .collect();
+            if positional(members) {
+                return parent_node(name, record_type_name(&children), ROLE_RECORD, children);
+            }
+            // A user class: ROOT checks the checksum against its dictionary.
+            let mut node = parent_node(name, class.to_string(), ROLE_RECORD, children);
             node.flags = FIELD_FLAG_CHECKSUM;
-            node.type_checksum = Some(class_checksum(type_name, members));
+            node.type_checksum = Some(class_checksum(class, members));
             node
         }
-        Column::Assoc {
-            type_name,
-            offsets,
-            items,
+        Column::Union {
+            tags,
+            indices,
+            alternatives,
         } => {
-            // Like a collection, but the field carries the associative type name
-            // (std::set / std::map) instead of std::vector.
-            let ends = on_disk_offsets(offsets);
-            let mut node = collection_node(name, ends, ends.len(), lower_column("_0", items));
-            node.type_name = type_name.clone();
+            // The switch column holds an 8-byte index and a 4-byte tag per
+            // entry; the alternatives follow as `_0`, `_1`, ….
+            let mut switch = Vec::with_capacity(tags.len() * 12);
+            for (&tag, &index) in tags.iter().zip(indices) {
+                switch.extend_from_slice(&index.to_le_bytes());
+                switch.extend_from_slice(&tag.to_le_bytes());
+            }
+            let types = alternative_types(data_type, alternatives);
+            let children: Vec<Node> = (alternatives.iter().zip(&types))
+                .enumerate()
+                .map(|(k, ((_, c), t))| lower_column(&format!("_{k}"), c, t, class))
+                .collect();
+            let inner: Vec<&str> = children.iter().map(|c| c.type_name.as_str()).collect();
+            let type_name = format!("std::variant<{}>", inner.join(","));
+            let mut node = parent_node(name, type_name, ROLE_VARIANT, children);
+            node.cols = vec![raw(ColumnType::Switch, 96, switch, tags.len())];
             node
         }
+        // `Column` can grow a shape; `check_fields` refuses a column whose
+        // type is not its own, so one this writer does not know stops here.
+        other => unreachable!("a {} column has no RNTuple form", other.type_name()),
     }
 }
 
@@ -599,7 +556,7 @@ pub(super) fn lower(fields: &[Field]) -> Result<(Vec<FieldPlan>, Vec<ColumnPlan>
     })?;
     let roots: Vec<Node> = fields
         .iter()
-        .map(|f| lower_column(&f.name, &f.data))
+        .map(|f| lower_column(&f.name, &f.data, &f.data_type, &f.class))
         .collect();
     let (field_plans, columns) = flatten_tree(roots);
     Ok((field_plans, columns, n_entries))

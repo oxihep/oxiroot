@@ -5,9 +5,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -42,12 +42,9 @@ fn friend_branch_aligns_by_entry() {
     let y = friend.branch("y").values().unwrap();
     // Same number of entries: the columns line up 1:1.
     assert_eq!(x.len(), y.len());
-    assert_eq!(x, BranchValues::F32(vec![1.5, 2.5, 3.5, 4.5, 5.5]));
+    assert_eq!(x, Column::F32(vec![1.5, 2.5, 3.5, 4.5, 5.5]));
     // y = run * 100 + evt for each entry, in main-tree order.
-    assert_eq!(
-        y,
-        BranchValues::F64(vec![120.0, 110.0, 205.0, 207.0, 130.0])
-    );
+    assert_eq!(y, Column::F64(vec![120.0, 110.0, 205.0, 207.0, 130.0]));
 }
 
 #[test]

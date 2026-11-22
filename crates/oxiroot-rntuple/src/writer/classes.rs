@@ -1,8 +1,9 @@
 //! The streamer classes an `RNTuple`'s record fields need, and their checksums.
 
 use oxiroot_io_core::streamer_gen::{ClassDef, basic, streamer_info_list};
+use oxiroot_io_core::{Column, DataType};
 
-use super::fields::{Column, Field};
+use super::fields::{Field, alternative_types, item_type, member_class, member_types, positional};
 use crate::anchor::anchor_streamer_class;
 
 /// ROOT's class checksum (`TClass::GetCheckSum`) for a flat record: fold each
@@ -22,9 +23,10 @@ pub(super) fn class_checksum(class_name: &str, members: &[(String, Column)]) -> 
     id
 }
 
-/// How ROOT describes a class member of a plain-number column kind: the C++
-/// spelling its class checksum folds in, and the `(fType, fSize, fTypeName)` of
-/// its streamer element. `None` for any other column kind.
+/// How ROOT describes a class member that is a plain number: the C++ spelling
+/// its class checksum folds in, and the `(fType, fSize, fTypeName)` of its
+/// streamer element. `None` for any other column. An `f32` is a `float`
+/// however its column packs it.
 fn scalar_member(col: &Column) -> Option<(&'static str, i32, i32, &'static str)> {
     Some(match col {
         Column::Bool(_) => ("bool", 18, 1, "bool"),
@@ -36,9 +38,7 @@ fn scalar_member(col: &Column) -> Option<(&'static str, i32, i32, &'static str)>
         Column::U32(_) => ("unsigned int", 13, 4, "unsigned int"),
         Column::I64(_) => ("long long", 16, 8, "Long64_t"),
         Column::U64(_) => ("unsigned long long", 17, 8, "ULong64_t"),
-        Column::F32(_) | Column::HalfF32(_) | Column::TruncF32 { .. } | Column::QuantF32 { .. } => {
-            ("float", 5, 4, "float")
-        }
+        Column::F32(_) => ("float", 5, 4, "float"),
         Column::F64(_) => ("double", 8, 8, "double"),
         _ => return None,
     })
@@ -51,15 +51,28 @@ fn checksum_type_name(col: &Column) -> &'static str {
     scalar_member(col).map_or("void", |(name, ..)| name)
 }
 
-/// Add the `TStreamerInfo` entries for the user classes inside `col` to
-/// `classes`, once per class name. A class is described when every member is a
-/// plain number, as ROOT writes it for a struct without `ClassDef` (version 1);
-/// its checksum is the one the field record carries.
-fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<ClassDef<'a>>) {
+/// Add the `TStreamerInfo` entries for the user classes inside `col`, stored
+/// as `data_type` and named from `class`, to `classes`, once per class name.
+/// The walk is the one the lowering makes, so the two name a struct alike. A
+/// class is described when every member is a plain number, as ROOT writes it
+/// for a struct without `ClassDef` (version 1); its checksum is the one the
+/// field record carries.
+fn collect_classes(
+    col: &Column,
+    data_type: &DataType,
+    class: &str,
+    classes: &mut Vec<ClassDef<'static>>,
+) {
+    if let DataType::Atomic(of) = data_type {
+        return collect_classes(col, of, class, classes);
+    }
     match col {
-        Column::Object { type_name, members } => {
-            for (_, member) in members {
-                collect_classes(member, classes);
+        Column::Struct(members) => {
+            for ((name, member), t) in members.iter().zip(member_types(data_type, members)) {
+                collect_classes(member, &t, &member_class(class, name), classes);
+            }
+            if positional(members) {
+                return;
             }
             let elements: Option<Vec<_>> = members
                 .iter()
@@ -69,33 +82,30 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<ClassDef<'a>>) {
                 })
                 .collect();
             if let Some(elements) = elements
-                && !classes.iter().any(|c| c.name == type_name.as_str())
+                && !classes.iter().any(|c| c.name == class)
             {
-                classes.push(ClassDef {
-                    name: type_name.into(),
-                    version: 1,
-                    checksum: class_checksum(type_name, members),
-                    elements,
-                });
+                classes.push(
+                    ClassDef {
+                        name: class.into(),
+                        version: 1,
+                        checksum: class_checksum(class, members),
+                        elements,
+                    }
+                    .into_owned(),
+                );
             }
         }
-        Column::Record(members) => {
-            for (_, member) in members {
-                collect_classes(member, classes);
+        Column::Union { alternatives, .. } => {
+            let types = alternative_types(data_type, alternatives);
+            for ((_, alternative), t) in alternatives.iter().zip(types) {
+                collect_classes(alternative, &t, class, classes);
             }
         }
-        Column::Variant { alternatives, .. } => {
-            for alt in alternatives {
-                collect_classes(alt, classes);
-            }
+        Column::List { values, .. }
+        | Column::Array { values, .. }
+        | Column::Optional { values, .. } => {
+            collect_classes(values, &item_type(data_type, values), class, classes);
         }
-        Column::Nested { items, .. }
-        | Column::Array { items, .. }
-        | Column::Assoc { items, .. } => {
-            collect_classes(items, classes);
-        }
-        Column::Optional { values, .. } => collect_classes(values, classes),
-        Column::Atomic(inner) => collect_classes(inner, classes),
         _ => {}
     }
 }
@@ -103,10 +113,12 @@ fn collect_classes<'a>(col: &'a Column, classes: &mut Vec<ClassDef<'a>>) {
 /// The `TStreamerInfo` entries a file holding `RNTuples` with these fields needs:
 /// the anchor class, which ROOT describes in every `RNTuple` file, then the user
 /// classes of `fields`.
-pub(super) fn ntuple_classes<'a>(fields: impl IntoIterator<Item = &'a Field>) -> Vec<ClassDef<'a>> {
+pub(super) fn ntuple_classes<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+) -> Vec<ClassDef<'static>> {
     let mut classes = vec![anchor_streamer_class()];
     for field in fields {
-        collect_classes(&field.data, &mut classes);
+        collect_classes(&field.data, &field.data_type, &field.class, &mut classes);
     }
     classes
 }

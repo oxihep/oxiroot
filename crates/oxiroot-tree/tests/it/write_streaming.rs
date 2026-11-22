@@ -1,10 +1,11 @@
 //! Streaming, bounded-memory writes via `TreeWriter` (B13): append entries in
 //! batches (one basket per branch each), then read the file back.
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::cast::SaturatingFrom;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::{Branch, BranchValues, TreeWriter};
+use oxiroot_tree::raw::{Branch, TreeWriter};
 
 /// A unique temp path per test (tests run in parallel in one process).
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -22,7 +23,7 @@ fn streaming_scalars_round_trip() {
         (vec![5, 6, 7, 8], vec![5.0, 6.0, 7.0, 8.0]),
     ];
     for (x, y) in &batches {
-        w.write_batch(&[Branch::i32("x", x.clone()), Branch::f64("y", y.clone())])
+        w.write_batch(&[Branch::new("x", x.clone()), Branch::new("y", y.clone())])
             .expect("batch");
     }
     assert_eq!(w.entries(), 9);
@@ -33,16 +34,16 @@ fn streaming_scalars_round_trip() {
     assert_eq!(t.entries(), 9);
     assert_eq!(
         t.branch("x").values().expect("x"),
-        BranchValues::I32((0..9).collect())
+        Column::I32((0..9).collect())
     );
     assert_eq!(
         t.branch("y").values().expect("y"),
-        BranchValues::F64((0..9).map(f64::from).collect())
+        Column::F64((0..9).map(f64::from).collect())
     );
     // A range straddling basket boundaries (batch 0 ends at 3, batch 1 at 5).
     assert_eq!(
         t.branch("x").range(2..6).values().expect("range"),
-        BranchValues::I32(vec![2, 3, 4, 5])
+        Column::I32(vec![2, 3, 4, 5])
     );
 }
 
@@ -55,7 +56,7 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     let n_batches = 25;
     for b in 0..n_batches {
         let x: Vec<i64> = (0..4).map(|i| i64::from(b * 4 + i)).collect();
-        w.write_batch(&[Branch::i64("x", x)]).expect("batch");
+        w.write_batch(&[Branch::new("x", x)]).expect("batch");
     }
     w.finish().expect("finish");
 
@@ -65,12 +66,12 @@ fn streaming_many_baskets_grow_fmaxbaskets() {
     assert_eq!(t.entries(), total);
     assert_eq!(
         t.branch("x").values().expect("x"),
-        BranchValues::I64((0..total.cast_signed()).collect())
+        Column::I64((0..total.cast_signed()).collect())
     );
     // A range deep in the file (basket 12-ish) reads correctly.
     assert_eq!(
         t.branch("x").range(50..54).values().expect("range"),
-        BranchValues::I64(vec![50, 51, 52, 53])
+        Column::I64(vec![50, 51, 52, 53])
     );
 }
 
@@ -89,9 +90,9 @@ fn streaming_jagged_vector_string_round_trip() {
     // Two batches: [0,2) then [2,4).
     for r in [0usize..2, 2..4] {
         w.write_batch(&[
-            Branch::jagged_f64("j", jag[r.clone()].to_vec()),
-            Branch::vector_i32("v", vec_branch[r.clone()].to_vec()),
-            Branch::string("s", strs[r.clone()].to_vec()),
+            Branch::new("j", jag[r.clone()].to_vec()).counted(),
+            Branch::new("v", vec_branch[r.clone()].to_vec()),
+            Branch::new("s", strs[r.clone()].to_vec()),
         ])
         .expect("batch");
     }
@@ -100,19 +101,13 @@ fn streaming_jagged_vector_string_round_trip() {
     let f = FileReader::open(&out).expect("reopen");
     let t = TreeReader::open(&f, "T").expect("open");
     assert_eq!(t.entries(), 4);
-    assert_eq!(
-        t.branch("j").values().expect("j"),
-        BranchValues::VecF64(jag)
-    );
-    assert_eq!(
-        t.branch("v").values().expect("v"),
-        BranchValues::VecI32(vec_branch)
-    );
-    assert_eq!(t.branch("s").values().expect("s"), BranchValues::Str(strs));
+    assert_eq!(t.branch("j").values().expect("j"), Column::from(jag));
+    assert_eq!(t.branch("v").values().expect("v"), Column::from(vec_branch));
+    assert_eq!(t.branch("s").values().expect("s"), Column::from(strs));
     // The auto-generated count branch is present and correct.
     assert_eq!(
         t.branch("nj").values().expect("nj"),
-        BranchValues::I32(vec![1, 0, 3, 2])
+        Column::I32(vec![1, 0, 3, 2])
     );
 }
 
@@ -130,7 +125,7 @@ fn streaming_create_large_writes_big_container_round_trip() {
         (vec![5, 6, 7, 8], vec![5.0, 6.0, 7.0, 8.0]),
     ];
     for (x, y) in &batches {
-        w.write_batch(&[Branch::i32("x", x.clone()), Branch::f64("y", y.clone())])
+        w.write_batch(&[Branch::new("x", x.clone()), Branch::new("y", y.clone())])
             .expect("batch");
     }
     w.finish().expect("finish");
@@ -145,11 +140,11 @@ fn streaming_create_large_writes_big_container_round_trip() {
     assert_eq!(t.entries(), 9);
     assert_eq!(
         t.branch("x").values().expect("x"),
-        BranchValues::I32((0..9).collect())
+        Column::I32((0..9).collect())
     );
     assert_eq!(
         t.branch("y").values().expect("y"),
-        BranchValues::F64((0..9).map(f64::from).collect())
+        Column::F64((0..9).map(f64::from).collect())
     );
 }
 
@@ -161,7 +156,7 @@ fn streaming_jagged_big_container_round_trips() {
     let mut w = TreeWriter::create_large(&out, "T", Compression::Zlib(6)).expect("create_large");
     let jag: Vec<Vec<f64>> = vec![vec![1.0], vec![], vec![2.0, 3.0, 4.0], vec![5.0, 6.0]];
     for r in [0usize..2, 2..4] {
-        w.write_batch(&[Branch::jagged_f64("j", jag[r.clone()].to_vec())])
+        w.write_batch(&[Branch::new("j", jag[r.clone()].to_vec()).counted()])
             .expect("batch");
     }
     w.finish().expect("finish");
@@ -169,21 +164,18 @@ fn streaming_jagged_big_container_round_trips() {
     let f = FileReader::open(&out).expect("reopen");
     assert!(f.header().is_big());
     let t = TreeReader::open(&f, "T").expect("open");
-    assert_eq!(
-        t.branch("j").values().expect("j"),
-        BranchValues::VecF64(jag)
-    );
+    assert_eq!(t.branch("j").values().expect("j"), Column::from(jag));
 }
 
 #[test]
 fn streaming_schema_mismatch_is_rejected() {
     let out = tmp("mismatch");
     let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
-    w.write_batch(&[Branch::i32("x", vec![1, 2])])
+    w.write_batch(&[Branch::new("x", vec![1, 2])])
         .expect("first");
     // A second batch with a different element type for the same branch.
     let err = w
-        .write_batch(&[Branch::f64("x", vec![3.0])])
+        .write_batch(&[Branch::new("x", vec![3.0])])
         .expect_err("schema change must error");
     assert!(format!("{err}").contains("schema"), "got: {err}");
 }
@@ -193,7 +185,7 @@ fn streaming_uneven_batch_entries_is_rejected() {
     let out = tmp("uneven");
     let mut w = TreeWriter::create(&out, "T", Compression::Stored).expect("create");
     let err = w
-        .write_batch(&[Branch::i32("x", vec![1, 2, 3]), Branch::i32("y", vec![1])])
+        .write_batch(&[Branch::new("x", vec![1, 2, 3]), Branch::new("y", vec![1])])
         .expect_err("uneven entry counts must error");
     assert_eq!(
         format!("{:?}", err),
@@ -232,7 +224,7 @@ fn streaming_real_over_two_gib() {
     for b in 0..n_batches {
         let base = b * per_batch;
         let x: Vec<f64> = (0..per_batch).map(|i| (base + i) as f64).collect();
-        w.write_batch(&[Branch::f64("x", x)]).expect("batch");
+        w.write_batch(&[Branch::new("x", x)]).expect("batch");
     }
     w.finish().expect("finish");
 
@@ -253,7 +245,7 @@ fn streaming_real_over_two_gib() {
     let last = total - 4;
     assert_eq!(
         t.branch("x").range(last..total).values().expect("tail"),
-        BranchValues::F64((last..total).map(|i| i as f64).collect())
+        Column::F64((last..total).map(|i| i as f64).collect())
     );
     let _ = std::fs::remove_file(&out);
 }

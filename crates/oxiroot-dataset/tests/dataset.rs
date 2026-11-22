@@ -7,9 +7,7 @@ use oxiroot_dataset::{
     Batch, Column, DataType, Dataset, DatasetObject, DatasetWriter, Format, Schema,
 };
 use oxiroot_io_core::{Compression, Error, FileReader, FileWriter};
-use oxiroot_rntuple::raw::FieldValues;
 use oxiroot_tree::BranchLayout;
-use oxiroot_tree::raw::BranchValues;
 
 fn ix(n: u64) -> usize {
     usize::try_from(n).unwrap()
@@ -47,85 +45,6 @@ fn column_rows(c: &Column) -> Option<Vec<String>> {
             .chunks(*len)
             .map(|c| format!("[{}]", c.join(", ")))
             .collect(),
-        _ => return None,
-    })
-}
-
-/// The same rendering of the low-level readers' values.
-fn branch_rows(v: &BranchValues) -> Option<Vec<String>> {
-    fn each<T: std::fmt::Debug>(v: &[T]) -> Vec<String> {
-        v.iter().map(|x| format!("{x:?}")).collect()
-    }
-    fn rows<T: std::fmt::Debug>(v: &[Vec<T>]) -> Vec<String> {
-        v.iter()
-            .map(|r| format!("[{}]", each(r).join(", ")))
-            .collect()
-    }
-    use BranchValues as B;
-    Some(match v {
-        B::Bool(v) => each(v),
-        B::I8(v) => each(v),
-        B::U8(v) => each(v),
-        B::I16(v) => each(v),
-        B::U16(v) => each(v),
-        B::I32(v) => each(v),
-        B::U32(v) => each(v),
-        B::I64(v) => each(v),
-        B::U64(v) => each(v),
-        B::F32(v) => each(v),
-        B::F64(v) => each(v),
-        B::Str(v) => each(v),
-        B::VecBool(v) => rows(v),
-        B::VecI8(v) => rows(v),
-        B::VecU8(v) => rows(v),
-        B::VecI16(v) => rows(v),
-        B::VecU16(v) => rows(v),
-        B::VecI32(v) => rows(v),
-        B::VecU32(v) => rows(v),
-        B::VecI64(v) => rows(v),
-        B::VecU64(v) => rows(v),
-        B::VecF32(v) => rows(v),
-        B::VecF64(v) => rows(v),
-        B::VecStr(v) => rows(v),
-        _ => return None,
-    })
-}
-
-fn field_rows(v: &FieldValues) -> Option<Vec<String>> {
-    fn each<T: std::fmt::Debug>(v: &[T]) -> Vec<String> {
-        v.iter().map(|x| format!("{x:?}")).collect()
-    }
-    fn rows<T: std::fmt::Debug>(v: &[Vec<T>]) -> Vec<String> {
-        v.iter()
-            .map(|r| format!("[{}]", each(r).join(", ")))
-            .collect()
-    }
-    use FieldValues as F;
-    Some(match v {
-        F::Bool(v) => each(v),
-        F::I8(v) => each(v),
-        F::U8(v) => each(v),
-        F::I16(v) => each(v),
-        F::U16(v) => each(v),
-        F::I32(v) => each(v),
-        F::U32(v) => each(v),
-        F::I64(v) => each(v),
-        F::U64(v) => each(v),
-        F::F32(v) => each(v),
-        F::F64(v) => each(v),
-        F::Str(v) => each(v),
-        F::VecBool(v) => rows(v),
-        F::VecI8(v) => rows(v),
-        F::VecU8(v) => rows(v),
-        F::VecI16(v) => rows(v),
-        F::VecU16(v) => rows(v),
-        F::VecI32(v) => rows(v),
-        F::VecU32(v) => rows(v),
-        F::VecI64(v) => rows(v),
-        F::VecU64(v) => rows(v),
-        F::VecF32(v) => rows(v),
-        F::VecF64(v) => rows(v),
-        F::VecStr(v) => rows(v),
         _ => return None,
     })
 }
@@ -446,8 +365,8 @@ fn every_fixture_reads_the_same_as_the_low_level_readers() {
                 }
                 // The same entries as the format's own reader.
                 let low = match (ds.as_tree(), ds.as_ntuple()) {
-                    (Some(t), _) => t.branch(column).values().ok().and_then(|v| branch_rows(&v)),
-                    (_, Some(n)) => n.field(column).values().ok().and_then(|v| field_rows(&v)),
+                    (Some(t), _) => t.branch(column).values().ok().and_then(|v| column_rows(&v)),
+                    (_, Some(n)) => n.field(column).values().ok().and_then(|v| column_rows(&v)),
                     _ => None,
                 };
                 if let (Some(low), Some(mine)) = (low, column_rows(got)) {
@@ -674,18 +593,19 @@ fn a_root_written_split_vector_reads_as_a_list_of_structs() {
         "Vec<{x: f32, y: f32, id: i32}>"
     );
     let low = ds.as_tree().unwrap();
-    let x = low.branch("hits.x").flat().unwrap();
+    // The member branch is the same list: the struct's offsets, its values.
+    let Column::List {
+        offsets: member_offsets,
+        values: member_values,
+    } = low.branch("hits.x").values().unwrap()
+    else {
+        panic!("a member of a split vector reads as a list");
+    };
     let Some(Column::List { offsets, values }) = b.get("hits") else {
         panic!("a list");
     };
-    assert_eq!(*offsets, x.offsets);
-    assert_eq!(
-        values.member("x"),
-        Some(&Column::F32(match x.values {
-            BranchValues::F32(v) => v,
-            other => panic!("{other:?}"),
-        }))
-    );
+    assert_eq!(*offsets, member_offsets);
+    assert_eq!(values.member("x"), Some(&*member_values));
 }
 
 #[test]

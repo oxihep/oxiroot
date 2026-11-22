@@ -8,9 +8,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -33,15 +33,15 @@ fn reads_set_and_map_branches() {
 
     assert_eq!(
         t.branch("s").values().unwrap(),
-        BranchValues::VecI32(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
+        Column::from(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
     );
     // map<int,double> splits into parallel key / value collections.
     assert_eq!(
         t.branch("m.first").values().unwrap(),
-        BranchValues::VecI32(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
+        Column::from(vec![vec![11, 22], vec![100], vec![7, 8, 9]])
     );
     assert_eq!(
         t.branch("m.second").values().unwrap(),
-        BranchValues::VecF64(vec![vec![11.5, 22.5], vec![100.5], vec![7.5, 8.5, 9.5]])
+        Column::from(vec![vec![11.5, 22.5], vec![100.5], vec![7.5, 8.5, 9.5]])
     );
 }

@@ -1,12 +1,12 @@
 //! Fixed-size STL fields written by official ROOT: `std::array<int32_t, 3>` (an
 //! array field with an element child) and `std::bitset<8>` (a repetition field
 //! with its own Bit column). Both surface as one fixed-length chunk per entry.
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::FieldValues;
 
 fn open(name: &str) -> FileReader {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -24,12 +24,7 @@ fn check(name: &str) {
     // std::array<int32_t, 3>: entry i = {i, i*10, i*100}.
     assert_eq!(
         field("arr"),
-        FieldValues::VecI32(vec![
-            vec![0, 0, 0],
-            vec![1, 10, 100],
-            vec![2, 20, 200],
-            vec![3, 30, 300],
-        ]),
+        Column::from(vec![[0, 0, 0], [1, 10, 100], [2, 20, 200], [3, 30, 300]]),
         "{name} arr"
     );
 
@@ -39,11 +34,11 @@ fn check(name: &str) {
     let f = false;
     assert_eq!(
         field("bits"),
-        FieldValues::VecBool(vec![
-            vec![f, f, f, f, f, f, f, f],
-            vec![t, f, t, f, f, f, f, f],
-            vec![f, t, f, t, f, f, f, f],
-            vec![t, t, t, t, f, f, f, f],
+        Column::from(vec![
+            [f, f, f, f, f, f, f, f],
+            [t, f, t, f, f, f, f, f],
+            [f, t, f, t, f, f, f, f],
+            [t, t, t, t, f, f, f, f],
         ]),
         "{name} bits"
     );

@@ -4,11 +4,11 @@
 //! `TStreamerInfo` carried in the file and surfaces it as a struct-of-arrays
 //! record. Grounded against ROOT C++ only — uproot does not support unsplit
 //! fields (`NotImplementedError`), so it can't read this file.
+use oxiroot_io_core::Column;
 
 use std::path::PathBuf;
 
 use oxiroot_io_core::FileReader;
-use oxiroot_rntuple::raw::FieldValues;
 use oxiroot_rntuple::{NtupleReader, StructRole};
 
 fn open(name: &str) -> FileReader {
@@ -33,12 +33,12 @@ fn reads_streamer_field() {
     // member by member from the class TStreamerInfo.
     assert_eq!(
         ntpl.field("blob").values().unwrap(),
-        FieldValues::Record(vec![
-            ("id".into(), FieldValues::I32(vec![7, 42, -1])),
-            ("value".into(), FieldValues::F64(vec![3.25, -1.5, 0.0])),
+        Column::Struct(vec![
+            ("id".into(), Column::I32(vec![7, 42, -1])),
+            ("value".into(), Column::F64(vec![3.25, -1.5, 0.0])),
             (
                 "tag".into(),
-                FieldValues::Str(vec!["hello".into(), "world!!".into(), "".into()]),
+                Column::from(vec!["hello".to_string(), "world!!".into(), "".into()]),
             ),
         ])
     );

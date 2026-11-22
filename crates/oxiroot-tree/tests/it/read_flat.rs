@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -43,19 +43,16 @@ fn reads_multi_basket_tree() {
 
 fn check_values(t: &TreeReader<'_>) {
     let read = |n| t.branch(n).values().expect("read branch");
-    assert_eq!(read("i4"), BranchValues::I32(vec![0, 1, 2, 3, 4]));
-    assert_eq!(read("i8"), BranchValues::I64(vec![10, 11, 12, 13, 14]));
-    assert_eq!(read("f4"), BranchValues::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]));
-    assert_eq!(
-        read("f8"),
-        BranchValues::F64(vec![0.25, 1.25, 2.25, 3.25, 4.25])
-    );
+    assert_eq!(read("i4"), Column::I32(vec![0, 1, 2, 3, 4]));
+    assert_eq!(read("i8"), Column::I64(vec![10, 11, 12, 13, 14]));
+    assert_eq!(read("f4"), Column::F32(vec![0.5, 1.5, 2.5, 3.5, 4.5]));
+    assert_eq!(read("f8"), Column::F64(vec![0.25, 1.25, 2.25, 3.25, 4.25]));
     assert_eq!(
         read("b1"),
-        BranchValues::Bool(vec![true, false, true, false, true])
+        Column::Bool(vec![true, false, true, false, true])
     );
     assert_eq!(
         read("u4"),
-        BranchValues::U32(vec![100, 200, 300, 400, 4_000_000_000])
+        Column::U32(vec![100, 200, 300, 400, 4_000_000_000])
     );
 }

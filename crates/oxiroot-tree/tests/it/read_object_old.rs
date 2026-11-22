@@ -7,9 +7,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 fn fixture() -> FileReader {
     FileReader::open(
@@ -40,25 +40,25 @@ fn reads_tbranchobject_members() {
     // Named: two string members.
     assert_eq!(
         t.branch("nm.fName").values().unwrap(),
-        BranchValues::Str(vec!["name0".into(), "name1".into(), "name2".into()])
+        Column::from(vec!["name0".to_string(), "name1".into(), "name2".into()])
     );
     assert_eq!(
         t.branch("nm.fTitle").values().unwrap(),
-        BranchValues::Str(vec!["ttl0".into(), "ttl1".into(), "ttl2".into()])
+        Column::from(vec!["ttl0".to_string(), "ttl1".into(), "ttl2".into()])
     );
     // Parameter<double>: a string name and a double value.
     assert_eq!(
         t.branch("pd.fName").values().unwrap(),
-        BranchValues::Str(vec!["pd".into(), "pd".into(), "pd".into()])
+        Column::from(vec!["pd".to_string(), "pd".into(), "pd".into()])
     );
     assert_eq!(
         t.branch("pd.fVal").values().unwrap(),
-        BranchValues::F64(vec![0.5, 1.5, 2.5])
+        Column::F64(vec![0.5, 1.5, 2.5])
     );
     // Parameter<int>: a string name and an int value.
     assert_eq!(
         t.branch("pi.fVal").values().unwrap(),
-        BranchValues::I32(vec![0, 10, 20])
+        Column::I32(vec![0, 10, 20])
     );
 }
 
@@ -72,6 +72,6 @@ fn object_member_introspection_and_range() {
     // A range read slices the decoded column.
     assert_eq!(
         t.branch("pi.fVal").range(1..3).values().unwrap(),
-        BranchValues::I32(vec![10, 20])
+        Column::I32(vec![10, 20])
     );
 }

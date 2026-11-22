@@ -18,7 +18,6 @@ fuzz_target!(|data: &[u8]| {
         let branches: Vec<String> = t.branch_names().take(8).map(str::to_string).collect();
         for b in &branches {
             let _ = t.branch(b).values();
-            let _ = t.branch(b).flat();
             let _ = t.branch(b).range(1..3).values();
         }
     }

@@ -1,24 +1,31 @@
-//! Checking fields before anything is written: entry counts, offsets and
-//! nesting.
+//! Checking fields before anything is written: that each column holds
+//! together, that it has the shape of the type it is stored as, and that the
+//! fields agree on the number of entries.
 
-use oxiroot_io_core::cast::SaturatingFrom;
-use oxiroot_io_core::{Error, Result};
+use oxiroot_io_core::{Column, DataType, Error, Result};
 
-use super::fields::{Column, Field};
+use super::fields::Field;
 
-/// Reject fields the writer would lay out inconsistently: fields whose entry
-/// counts differ (a cluster has one entry count) and composite columns whose
-/// parts disagree, such as record members of different lengths or offsets that
-/// do not end at their items' length.
+/// Reject fields the writer would lay out inconsistently: a column whose
+/// parts disagree (record members of different lengths, offsets that do not
+/// end at their values), a storage type of another shape than the data, and
+/// fields whose entry counts differ (a cluster has one entry count).
 pub(super) fn check_fields(fields: &[Field]) -> Result<()> {
     let mut expected = None;
     for f in fields {
         let what = format!("field {:?}", f.name);
-        check_column(&what, &f.data)?;
+        f.data.validate(&f.name)?;
+        check_type(&what, &f.data, &f.data_type)?;
         if let Some(n) = entry_count(&f.data) {
             match expected {
                 None => expected = Some(n),
-                Some(e) if e != n => return Err(mismatch(format!("{what} entries"), e, n)),
+                Some(e) if e != n => {
+                    return Err(Error::LengthMismatch {
+                        what: format!("{what} entries"),
+                        expected: e,
+                        found: n,
+                    });
+                }
                 Some(_) => {}
             }
         }
@@ -26,119 +33,57 @@ pub(super) fn check_fields(fields: &[Field]) -> Result<()> {
     Ok(())
 }
 
-/// The number of entries `col` holds, or `None` for a zero-size array or bitset,
-/// whose data does not tell (it holds no values for any number of entries).
+/// The number of entries `col` holds, or `None` for a zero-size array, whose
+/// data does not tell (it holds no values for any number of entries).
 pub(super) fn entry_count(col: &Column) -> Option<usize> {
     match col {
-        Column::Array { len: 0, .. } | Column::Bitset { len: 0, .. } => None,
-        Column::Atomic(inner) => entry_count(inner),
-        Column::Record(members) | Column::Object { members, .. } => {
-            members.iter().find_map(|(_, c)| entry_count(c))
-        }
+        Column::Array { len: 0, .. } => None,
+        Column::Struct(members) => members.iter().find_map(|(_, c)| entry_count(c)),
         _ => Some(col.len()),
     }
 }
 
-/// Check that a composite column's parts agree with each other.
-fn check_column(what: &str, col: &Column) -> Result<()> {
-    match col {
-        Column::Record(members) | Column::Object { members, .. } => {
-            let mut expected = None;
-            for (name, member) in members {
-                let member_what = format!("{what} member {name:?}");
-                check_column(&member_what, member)?;
-                if let Some(n) = entry_count(member) {
-                    match expected {
-                        None => expected = Some(n),
-                        Some(e) if e != n => return Err(mismatch(member_what, e, n)),
-                        Some(_) => {}
-                    }
-                }
-            }
-            Ok(())
-        }
-        Column::Nested { offsets, items } | Column::Assoc { offsets, items, .. } => {
-            // The offsets bound each entry, so they lead with a `0` and rise.
-            if offsets.first() != Some(&0) {
-                return Err(Error::InvalidInput(format!(
-                    "{what}: collection offsets must start with 0, the first entry's start"
-                )));
-            }
-            if let Some(i) = offsets.windows(2).position(|w| w[1] < w[0]) {
-                return Err(Error::InvalidInput(format!(
-                    "{what}: collection offsets decrease at entry {i}"
-                )));
-            }
-            let items_what = format!("{what} items");
-            check_column(&items_what, items)?;
-            let end = offsets.last().map_or(0, |&o| usize::saturating_from(o));
-            match entry_count(items) {
-                Some(n) if n != end => Err(mismatch(items_what, end, n)),
-                _ => Ok(()),
-            }
-        }
-        Column::Variant { alternatives, tags } => {
-            let mut counts = vec![0usize; alternatives.len()];
-            for &tag in tags {
-                match tag as usize {
-                    0 => {}
-                    k if k <= alternatives.len() => counts[k - 1] += 1,
-                    k => {
-                        return Err(Error::InvalidInput(format!(
-                            "{what}: variant tag {k} but only {} alternatives",
-                            alternatives.len()
-                        )));
-                    }
-                }
-            }
-            for (k, (alternative, &n)) in alternatives.iter().zip(&counts).enumerate() {
-                let alt_what = format!("{what} alternative {k}");
-                check_column(&alt_what, alternative)?;
-                match entry_count(alternative) {
-                    Some(len) if len != n => return Err(mismatch(alt_what, n, len)),
-                    _ => {}
-                }
-            }
-            Ok(())
-        }
-        Column::Array { len, items } => {
-            let items_what = format!("{what} items");
-            check_column(&items_what, items)?;
-            match (entry_count(items), *len) {
-                (Some(n), 0) if n != 0 => Err(mismatch(items_what, 0, n)),
-                (Some(n), len) if len != 0 && n % len != 0 => Err(Error::InvalidInput(format!(
-                    "{what}: {n} array items do not divide into arrays of {len}"
-                ))),
-                _ => Ok(()),
-            }
-        }
-        Column::Bitset { len, bits } => match (bits.len(), *len) {
-            (n, 0) if n != 0 => Err(mismatch(format!("{what} bits"), 0, n)),
-            (n, len) if len != 0 && n % len != 0 => Err(Error::InvalidInput(format!(
-                "{what}: {n} bits do not divide into bitsets of {len}"
-            ))),
-            _ => Ok(()),
-        },
-        Column::Optional {
-            present, values, ..
-        } => {
-            let values_what = format!("{what} values");
-            check_column(&values_what, values)?;
-            let n_present = present.iter().filter(|&&p| p).count();
-            match entry_count(values) {
-                Some(n) if n != n_present => Err(mismatch(values_what, n_present, n)),
-                _ => Ok(()),
-            }
-        }
-        Column::Atomic(inner) => check_column(what, inner),
-        _ => Ok(()),
+/// Check that `data_type` is a way to store `data`, and one this writer has.
+fn check_type(what: &str, data: &Column, data_type: &DataType) -> Result<()> {
+    if data_type.storage() != data.data_type() {
+        return Err(Error::InvalidInput(format!(
+            "{what} holds {}, which cannot be stored as {data_type}",
+            data.data_type()
+        )));
+    }
+    match unwritable(data_type) {
+        Some(why) => Err(Error::Unsupported(format!(
+            "{what} is stored as {data_type}: {why}"
+        ))),
+        None => Ok(()),
     }
 }
 
-fn mismatch(what: String, expected: usize, found: usize) -> Error {
-    Error::LengthMismatch {
-        what,
-        expected,
-        found,
+/// Why this writer cannot store `data_type` in an `RNTuple`, if it cannot.
+fn unwritable(data_type: &DataType) -> Option<&'static str> {
+    match data_type {
+        DataType::CArray(_) => Some("a counted array is a TTree layout"),
+        DataType::Truncated { bits } if !(10..=31).contains(bits) => {
+            Some("a truncated float keeps 10 to 31 bits")
+        }
+        DataType::Quantized { bits, .. } if !(1..=32).contains(bits) => {
+            Some("a quantized float takes 1 to 32 bits")
+        }
+        DataType::Quantized { min, max, .. } if !(min.is_finite() && max.is_finite()) => {
+            Some("a quantized float needs a finite range")
+        }
+        DataType::Quantized { min, max, .. } if min > max => {
+            Some("a quantized float's range is empty")
+        }
+        DataType::List(item)
+        | DataType::Set(item)
+        | DataType::Array(_, item)
+        | DataType::Optional(item)
+        | DataType::UniquePtr(item)
+        | DataType::Atomic(item) => unwritable(item),
+        DataType::Map(key, value) => unwritable(key).or_else(|| unwritable(value)),
+        DataType::Struct(members) => members.iter().find_map(|(_, t)| unwritable(t)),
+        DataType::Variant(alternatives) => alternatives.iter().find_map(unwritable),
+        _ => None,
     }
 }

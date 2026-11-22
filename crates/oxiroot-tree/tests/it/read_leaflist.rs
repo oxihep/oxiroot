@@ -4,9 +4,9 @@
 
 use std::path::PathBuf;
 
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 
 #[test]
 fn reads_leaflist_branch() {
@@ -20,7 +20,7 @@ fn reads_leaflist_branch() {
     assert!(t.unsupported_branches().collect::<Vec<_>>().is_empty());
 
     let read = |n| t.branch(n).values().expect("read branch");
-    assert_eq!(read("s.a"), BranchValues::F32(vec![0.5, 1.5, 2.5, 3.5]));
-    assert_eq!(read("s.b"), BranchValues::I32(vec![0, 10, 20, 30]));
-    assert_eq!(read("s.c"), BranchValues::F64(vec![0.0, 1.25, 2.5, 3.75]));
+    assert_eq!(read("s.a"), Column::F32(vec![0.5, 1.5, 2.5, 3.5]));
+    assert_eq!(read("s.b"), Column::I32(vec![0, 10, 20, 30]));
+    assert_eq!(read("s.c"), Column::F64(vec![0.0, 1.25, 2.5, 3.75]));
 }

@@ -1,7 +1,7 @@
 //! Read a `std::vector`<std::string> `TTree` branch (B11).
+use oxiroot_io_core::Column;
 use oxiroot_io_core::FileReader;
 use oxiroot_tree::TreeReader;
-use oxiroot_tree::raw::BranchValues;
 use std::path::PathBuf;
 #[test]
 fn reads_vector_of_strings() {
@@ -15,8 +15,8 @@ fn reads_vector_of_strings() {
     assert_eq!(t.entries(), 3);
     assert_eq!(
         t.branch("vs").values().expect("vs"),
-        BranchValues::VecStr(vec![
-            vec!["s00".into()],
+        Column::from(vec![
+            vec!["s00".to_string()],
             vec!["s10".into(), "s11".into()],
             vec!["s20".into(), "s21".into(), "s22".into()],
         ])

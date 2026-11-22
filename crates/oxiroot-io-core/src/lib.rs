@@ -46,7 +46,9 @@ mod buffer;
 #[doc(hidden)]
 pub mod cast;
 mod class_kind;
+pub mod column;
 mod compression;
+mod data_type;
 mod error;
 mod file;
 mod object;
@@ -61,7 +63,9 @@ pub mod streamer_types;
 mod value;
 
 pub use buffer::{CountToken, Patch, RBuffer, WBuffer};
+pub use column::Column;
 pub use compression::Compression;
+pub use data_type::DataType;
 
 pub use error::{Error, External, Result};
 #[cfg(feature = "mmap")]

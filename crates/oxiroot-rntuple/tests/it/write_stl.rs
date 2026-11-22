@@ -3,11 +3,12 @@
 //! ROOT C++ (`RNTupleReader` typed views over `std::array`/`std::bitset`/the
 //! `Hit` class) and uproot, which both read the oxiroot-written file — ROOT's
 //! strict reader accepts the computed `Hit` class checksum.
+use oxiroot_io_core::{Column, DataType};
 
 use crate::support::NtupleObject;
 use oxiroot_io_core::{Compression, FileReader};
 use oxiroot_rntuple::NtupleReader;
-use oxiroot_rntuple::raw::{Column, Field, FieldValues};
+use oxiroot_rntuple::raw::Field;
 
 fn write_and_reopen(tag: &str, fields: Vec<Field>) -> FileReader {
     let nt = NtupleObject::new("ntpl", fields);
@@ -24,13 +25,13 @@ fn write_and_reopen(tag: &str, fields: Vec<Field>) -> FileReader {
 fn array_field_round_trips() {
     let file = write_and_reopen(
         "array",
-        vec![Field::array_i32("arr", vec![vec![10, 20, 30], vec![40, 50, 60]]).unwrap()],
+        vec![Field::new("arr", vec![[10, 20, 30], [40, 50, 60]])],
     );
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.entries(), 2);
     assert_eq!(
         ntpl.field("arr").values().unwrap(),
-        FieldValues::VecI32(vec![vec![10, 20, 30], vec![40, 50, 60]])
+        Column::from(vec![[10, 20, 30], [40, 50, 60]])
     );
     // The field is a fixed array of 3 (flags + array_size in the header).
     let arr = &ntpl.header().fields[0];
@@ -44,12 +45,15 @@ fn bitset_field_round_trips() {
     let row1 = vec![false, true, false, true, false, false, false, false];
     let file = write_and_reopen(
         "bitset",
-        vec![Field::bitset("bits", vec![row0.clone(), row1.clone()]).unwrap()],
+        vec![bitset("bits", &[row0.clone(), row1.clone()])],
     );
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(
         ntpl.field("bits").values().unwrap(),
-        FieldValues::VecBool(vec![row0, row1])
+        Column::Array {
+            len: 8,
+            values: Box::new(Column::Bool([row0, row1].concat())),
+        }
     );
     assert_eq!(ntpl.header().fields[0].array_size, Some(8));
     assert_eq!(ntpl.header().fields[0].type_name, "std::bitset<8>");
@@ -59,21 +63,23 @@ fn bitset_field_round_trips() {
 fn user_class_field_round_trips() {
     let file = write_and_reopen(
         "user",
-        vec![Field::object(
-            "hit",
-            "Hit",
-            vec![
-                ("id".into(), Column::I32(vec![7, 42])),
-                ("energy".into(), Column::F64(vec![3.25, -1.5])),
-            ],
-        )],
+        vec![
+            Field::new(
+                "hit",
+                Column::Struct(vec![
+                    ("id".into(), Column::I32(vec![7, 42])),
+                    ("energy".into(), Column::F64(vec![3.25, -1.5])),
+                ]),
+            )
+            .class_name("Hit"),
+        ],
     );
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(
         ntpl.field("hit").values().unwrap(),
-        FieldValues::Record(vec![
-            ("id".into(), FieldValues::I32(vec![7, 42])),
-            ("energy".into(), FieldValues::F64(vec![3.25, -1.5])),
+        Column::Struct(vec![
+            ("id".into(), Column::I32(vec![7, 42])),
+            ("energy".into(), Column::F64(vec![3.25, -1.5])),
         ])
     );
     // The record carries the ROOT class checksum so ROOT validates the schema.
@@ -85,26 +91,36 @@ fn all_three_in_one_ntuple() {
     let file = write_and_reopen(
         "all",
         vec![
-            Field::array_f64("xyz", vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap(),
-            Field::bitset("flags", vec![vec![true, true], vec![false, true]]).unwrap(),
-            Field::object(
+            Field::new("xyz", vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+            bitset("flags", &[vec![true, true], vec![false, true]]),
+            Field::new(
                 "hit",
-                "Hit",
-                vec![
+                Column::Struct(vec![
                     ("id".into(), Column::I32(vec![1, 2])),
                     ("energy".into(), Column::F64(vec![0.5, 1.5])),
-                ],
-            ),
+                ]),
+            )
+            .class_name("Hit"),
         ],
     );
     let ntpl = NtupleReader::open(&file, "ntpl").expect("open ntpl");
     assert_eq!(ntpl.entries(), 2);
     assert_eq!(
         ntpl.field("xyz").values().unwrap(),
-        FieldValues::VecF64(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]])
+        Column::from(vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     );
     assert_eq!(
         ntpl.field_names().collect::<Vec<_>>(),
         vec!["xyz", "flags", "hit"]
     );
+}
+
+/// A `std::bitset<N>` field from one row of `N` bits per entry.
+fn bitset(name: &str, rows: &[Vec<bool>]) -> Field {
+    let len = rows.first().map_or(0, Vec::len);
+    let bits = Column::Array {
+        len,
+        values: Box::new(Column::Bool(rows.concat())),
+    };
+    Field::new(name, bits).stored_as(DataType::Bitset(len))
 }
