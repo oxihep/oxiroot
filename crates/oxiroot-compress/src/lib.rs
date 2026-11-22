@@ -249,6 +249,44 @@ mod tests {
         assert_eq!(compress(&data, setting(0)).unwrap(), data);
     }
 
+    /// Bytes as flat as random data's, repeating every `period` bytes.
+    fn flat_repeating(period: usize, len: usize) -> Vec<u8> {
+        let mut s = 0x9E37_79B9_7F4A_7C15_u64;
+        let unit: Vec<u8> = (0..period)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                s.to_le_bytes()[3]
+            })
+            .collect();
+        unit.iter().cycle().take(len).copied().collect()
+    }
+
+    /// Data whose bytes look random but which repeats is searched for
+    /// matches: the encoder's sampling alone would store it raw.
+    #[test]
+    fn zstd_finds_repeats_in_data_that_looks_random() {
+        for (period, at_least) in [(2008, 50), (16_000, 20), (100_000, 5)] {
+            let data = flat_repeating(period, 1 << 20);
+            let compressed = compress(&data, setting(505)).unwrap();
+            assert_eq!(&compressed[0..2], b"ZS", "period {period}");
+            let ratio = data.len() / compressed.len();
+            println!("period {period}: {ratio}x");
+            assert!(ratio >= at_least, "period {period}: only {ratio}x");
+            assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
+        }
+    }
+
+    /// Data that really is random is stored as it is, not grown.
+    #[test]
+    fn zstd_leaves_random_data_alone() {
+        let data = flat_repeating(1 << 20, 1 << 20);
+        let compressed = compress(&data, setting(505)).unwrap();
+        assert_eq!(decompress(&compressed, data.len()).unwrap(), data);
+        assert!(compressed.len() <= data.len() + 64, "{}", compressed.len());
+    }
+
     #[test]
     fn compress_zstd_round_trips() {
         // Zstd level 5 -> settings 505. Compress, then decompress back.
