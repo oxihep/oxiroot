@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.10.0"
+version = "0.10.1"
 edition = "2024"
 rust-version = "1.100"
 license = "MIT"
@@ -40,19 +40,19 @@ format_push_string = "warn"
 [workspace.dependencies]
 # Internal crates. `version` must match `workspace.package.version` above: a
 # published crate's dependencies need one (`cargo publish` rejects bare paths).
-oxiroot-io-core = { path = "crates/oxiroot-io-core", version = "0.10.0" }
-oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.10.0" }
-oxiroot-linalg = { path = "crates/oxiroot-linalg", version = "0.10.0" }
-oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.10.0" }
-oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.10.0" }
-oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.10.0" }
-oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.10.0" }
-oxiroot-dataset = { path = "crates/oxiroot-dataset", version = "0.10.0" }
+oxiroot-io-core = { path = "crates/oxiroot-io-core", version = "0.10.1" }
+oxiroot-compress = { path = "crates/oxiroot-compress", version = "0.10.1" }
+oxiroot-linalg = { path = "crates/oxiroot-linalg", version = "0.10.1" }
+oxiroot-rntuple = { path = "crates/oxiroot-rntuple", version = "0.10.1" }
+oxiroot-hist = { path = "crates/oxiroot-hist", version = "0.10.1" }
+oxiroot-hist-func = { path = "crates/oxiroot-hist-func", version = "0.10.1" }
+oxiroot-tree = { path = "crates/oxiroot-tree", version = "0.10.1" }
+oxiroot-dataset = { path = "crates/oxiroot-dataset", version = "0.10.1" }
 # The facade's batteries-included defaults are for applications; the in-repo
 # consumer (the CLI) opts in to what it needs. Default features must be turned
 # off here: a member's own `default-features = false` is ignored for an
 # inherited dependency.
-oxiroot = { path = "crates/oxiroot", version = "0.10.0", default-features = false }
+oxiroot = { path = "crates/oxiroot", version = "0.10.1", default-features = false }
 # The oxihep crates that moved out of this workspace, each in its own repository
 # (github.com/oxihep). Until they are on crates.io they are git dependencies,
 # pinned to a release tag; `version` is kept so the switch is dropping
