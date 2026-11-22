@@ -183,7 +183,7 @@ fn build_object(class: &str, name: &str, contributors: &[&FileReader]) -> Result
         "THStack" => summed(class, name, contributors, HistStack::merge)?,
         c if c.starts_with("THnSparse") => summed(class, name, contributors, SparseHist::merge)?,
         // A parameter is not a histogram, so it is not `Mergeable`: add values.
-        c if c.starts_with("TParameter") => summed(class, name, contributors, Parameter::add)?,
+        c if c.starts_with("TParameter") => summed(class, name, contributors, Parameter::merge)?,
         // Copied from the first file: ROOT's hadd does not merge these either.
         // It writes one key per input instead, which oxiroot cannot do, since
         // it rejects two objects of the same name in one directory.

@@ -220,7 +220,7 @@ impl ReadRoot for Vector {
 ///
 /// [`Error::WrongClass`] if `class` is not the vector class, and a format error if `object` is
 /// truncated or malformed.
-pub fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<Vector> {
+pub(crate) fn decode_tvectord(name: &str, class: &str, object: &[u8]) -> Result<Vector> {
     if class != VECTOR_CLASS {
         return Err(Error::WrongClass {
             name: Some(name.to_string()),
@@ -351,7 +351,7 @@ impl ReadRoot for Matrix {
 ///
 /// [`Error::WrongClass`] if `class` is not the matrix class, and a format error if `object` is
 /// truncated or malformed.
-pub fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<Matrix> {
+pub(crate) fn decode_tmatrixd(name: &str, class: &str, object: &[u8]) -> Result<Matrix> {
     if class != MATRIX_CLASS {
         return Err(Error::WrongClass {
             name: Some(name.to_string()),
@@ -491,7 +491,7 @@ impl ReadRoot for SymMatrix {
 ///
 /// [`Error::WrongClass`] if `class` is not the symmetric-matrix class, and a format error if
 /// `object` is truncated or malformed.
-pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<SymMatrix> {
+pub(crate) fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<SymMatrix> {
     if class != SYM_MATRIX_CLASS {
         return Err(Error::WrongClass {
             name: Some(name.to_string()),
@@ -542,7 +542,7 @@ pub fn decode_tmatrixdsym(name: &str, class: &str, object: &[u8]) -> Result<SymM
 /// non-matrix class. Each matrix/vector type's
 /// [`WriteRoot::streamer_classes`] returns these.
 #[must_use]
-pub fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
+pub(crate) fn streamer_classes(class: &str) -> Vec<ClassDef<'static>> {
     // `TMatrixTBase<double>` — the dimensions base shared by the matrix classes.
     let matrix_base = || ClassDef {
         name: "TMatrixTBase<double>".into(),

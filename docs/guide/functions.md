@@ -20,7 +20,7 @@ the parameters:
 ```rust
 use oxiroot::prelude::*;
 
-let f = Func1D::new("f", "[0]*sin([1]*x) + [2]", 0.0..=6.283)?
+let f = Func1D::new("[0]*sin([1]*x) + [2]", 0.0..=6.283)?.named("f")
     .with_params(&[2.0, 1.5, 0.5])?;
 
 f.eval(1.0);                       // 2*sin(1.5) + 0.5  = 2.494990
@@ -37,11 +37,11 @@ Richardson-extrapolated central difference, matching `Func1D::Integral` /
 
 ```rust
 use oxiroot::prelude::*;
-let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0..=3.0, -2.0..=2.0)?
+let f2 = Func2D::new("[0]*sin(x) + [1]*y*y", -3.0..=3.0, -2.0..=2.0)?.named("f2")
     .with_params(&[1.5, 0.7])?;
 f2.eval(1.0, 1.0);                            // 1.5*sin(1) + 0.7
 
-let f3 = Func3D::new("f3", "[0]*x + y*z", 0.0..=2.0, 0.0..=2.0, 0.0..=2.0)?
+let f3 = Func3D::new("[0]*x + y*z", 0.0..=2.0, 0.0..=2.0, 0.0..=2.0)?.named("f3")
     .with_params(&[2.0])?;
 f3.eval(1.0, 1.0, 1.0);                       // 3.0
 # Ok::<(), oxiroot::Error>(())
@@ -69,7 +69,7 @@ supports:
 
 ```rust
 use oxiroot::prelude::*;
-let g = Func1D::new("g", "gaus", -5.0..=5.0)?.with_params(&[2.0, 0.0, 1.0])?;
+let g = Func1D::new("gaus", -5.0..=5.0)?.named("g").with_params(&[2.0, 0.0, 1.0])?;
 assert_eq!(g.eval(0.0), 2.0);
 # Ok::<(), oxiroot::Error>(())
 ```
@@ -90,7 +90,7 @@ other object — [Reading & writing](reading-writing.md):
 
 ```rust
 use oxiroot::prelude::*;
-let f = Func1D::new("resp", "[0]*exp(-[1]*x)", 0.0..=5.0)?.with_params(&[10.0, 0.5])?;
+let f = Func1D::new("[0]*exp(-[1]*x)", 0.0..=5.0)?.named("resp").with_params(&[10.0, 0.5])?;
 FileWriter::create("func.root").add(&f).compression(Compression::Stored).write()?;             // a standalone Func1D key
 let back = FileReader::open("func.root")?.get::<Func1D>("resp")?;
 assert!((back.eval(2.0) - f.eval(2.0)).abs() < 1e-12);
@@ -108,7 +108,7 @@ can evaluate:
 
 ```rust
 use oxiroot::prelude::*;
-let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
+let f = Func1D::new("[0]+[1]*x", 0.0..=2.0)?.named("line").with_params(&[1.0, 2.0])?;
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.1, 2.9, 5.2])?
     .named("g")
     .with_function(f.to_graph_function());

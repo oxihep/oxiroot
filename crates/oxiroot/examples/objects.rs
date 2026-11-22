@@ -42,8 +42,8 @@ fn main() -> oxiroot::Result<()> {
 
     // A `Parameter<T>` is a named scalar tagged with its C++ type. Use the typed
     // constructors: `f64` -> Parameter<double>, `i64` -> Parameter<Long64_t>.
-    let lumi = Parameter::f64("integrated_lumi_fb", 32.7); // inverse femtobarns
-    let run = Parameter::i64("run_number", 380_947); // a real-sized run number
+    let lumi = Parameter::f64(32.7).named("integrated_lumi_fb"); // inverse femtobarns
+    let run = Parameter::i64(380_947).named("run_number"); // a real-sized run number
 
     // A `TList` of the input files that fed this histogram. `ObjList::new(ListKind::List)`
     // builds a `TList` (use `array()` for a `TObjArray`); `add` takes any writable

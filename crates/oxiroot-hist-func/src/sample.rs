@@ -28,8 +28,9 @@ mod tests {
     #[test]
     fn tf1_get_random_matches_the_function() {
         // ROOT: Func1D gaus mean 3 sigma 0.8 → GetRandom mean≈3.00, std≈0.80.
-        let f = Func1D::new("g", "gaus", 0.0..=10.0)
+        let f = Func1D::new("gaus", 0.0..=10.0)
             .unwrap()
+            .named("g")
             .with_params(&[1.0, 3.0, 0.8])
             .unwrap();
         let mut rng = Random::seed(3);

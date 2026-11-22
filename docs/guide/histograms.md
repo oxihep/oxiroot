@@ -272,7 +272,7 @@ resampled.fill_random(&source, 100_000, &mut rng);
 
 // …or draw from a function over the histogram's range:
 resampled.fill_random_fn(|x| (-0.5 * x * x).exp(), 100_000, &mut rng);
-let g = Func1D::new("g", "gaus", -5.0..=5.0)?.with_params(&[1.0, 0.0, 1.0])?;
+let g = Func1D::new("gaus", -5.0..=5.0)?.named("g").with_params(&[1.0, 0.0, 1.0])?;
 let y = g.get_random(&mut rng);             // TF1::GetRandom
 ```
 
@@ -345,7 +345,7 @@ format has and oxihist does not:
 - the on-disk bin type and class name (below);
 - axis metadata: [bin labels](#labelled-alphanumeric-axes) and
   [time formats](#time-axes), through `xaxis_mut()`;
-- `add(&other, c)`, the bin-by-bin merge `hadd` performs on records without
+- `add_scaled(&other, c)`, the bin-by-bin merge `hadd` performs on records without
   converting them;
 - on a `Hist1D`, the functions stored with it (`functions()`, `with_function`):
   the curve ROOT's `TH1::Fit` leaves with a histogram, kept through a read and
@@ -433,7 +433,7 @@ rate.fill(3_600.0);
 let mut h = rate.to_root()?;
 h.xaxis_mut().set_time_format("%H:%M%F2024-01-01 00:00:00");
 
-assert!(h.xaxis().time_display);
+assert!(h.xaxis().is_time());
 ```
 
 ROOT and uproot read the axis back as a time axis, and so does oxiroot.

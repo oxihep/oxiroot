@@ -135,8 +135,9 @@ fn main() {
     // file so it can be reused. The file lives in the temp dir and is deleted
     // before we return; nothing is left behind.
     let path = std::env::temp_dir().join("oxiroot_ex_robust_fit.root");
-    let fitted = Func1D::new("robust_line", "[0]+[1]*x", xs[0]..=xs[n - 1])
+    let fitted = Func1D::new("[0]+[1]*x", xs[0]..=xs[n - 1])
         .expect("valid formula")
+        .named("robust_line")
         .with_params(&[cauchy.params[0], cauchy.params[1]])
         .unwrap();
     oxiroot::FileWriter::create(&path)

@@ -203,7 +203,7 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
 
     FileUpdater::open(&out)
         .expect("open")
-        .add(&oxiroot_io_core::Parameter::f64("lumi", 12.5))
+        .add(&oxiroot_io_core::Parameter::f64(12.5).named("lumi"))
         .compression(Compression::Stored)
         .write()
         .expect("append");
@@ -222,7 +222,7 @@ fn appending_adds_the_streamer_info_the_file_lacks() {
     let seek_info = f.header().seek_info;
     FileUpdater::open(&out)
         .expect("open")
-        .add(&oxiroot_io_core::Parameter::f64("lumi2", 1.0))
+        .add(&oxiroot_io_core::Parameter::f64(1.0).named("lumi2"))
         .compression(Compression::Stored)
         .write()
         .expect("append again");

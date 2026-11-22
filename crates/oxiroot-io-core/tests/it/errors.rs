@@ -172,11 +172,11 @@ fn typed_errors_display_what_went_wrong() {
 
 #[test]
 fn parameters_of_different_types_do_not_add() {
-    let mut lumi = Parameter::f64("lumi", 1.5);
-    lumi.add(&Parameter::f64("lumi", 2.0)).unwrap();
+    let mut lumi = Parameter::f64(1.5).named("lumi");
+    lumi.merge(&Parameter::f64(2.0).named("lumi")).unwrap();
     assert_eq!(lumi.value(), ParamValue::Double(3.5));
 
-    let err = lumi.add(&Parameter::i32("n", 1)).unwrap_err();
+    let err = lumi.merge(&Parameter::i32(1).named("n")).unwrap_err();
     assert!(
         matches!(&err, Error::InvalidInput(m) if m.contains("TParameter<int>")),
         "{err:?}"

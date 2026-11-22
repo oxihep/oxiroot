@@ -8,8 +8,9 @@ use oxiroot_io_core::{Compression, WriteRoot};
 use oxiroot_io_core::{FileReader, WBuffer};
 
 fn fitted() -> Func1D {
-    Func1D::new("fit", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0..=6.0)
+    Func1D::new("[0]*exp(-0.5*((x-[1])/[2])^2) + [3]", -2.0..=6.0)
         .unwrap()
+        .named("fit")
         .with_params(&[4.0, 1.5, 0.75, 0.25])
         .unwrap()
 }
@@ -58,14 +59,14 @@ fn attached_function_evaluates_after_a_file_round_trip() {
 
 #[test]
 fn a_bad_formula_is_an_error() {
-    let bad = GraphFunction::new("bad", "[0]*(x", vec![1.0], 0.0, 1.0);
+    let bad = GraphFunction::new("[0]*(x", vec![1.0], 0.0, 1.0).named("bad");
     assert!(Func1D::from_graph_function(bad).is_err());
 }
 
 #[cfg(feature = "fit")]
 #[test]
 fn to_model_works_for_a_function_with_a_free_text_title() {
-    let mut record = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0);
+    let mut record = GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0).named("line");
     record.title = "Linear fit".to_string(); // a legend title, not a formula
     let f = Func1D::from_graph_function(record).unwrap();
     let model = f.to_model();
@@ -79,8 +80,9 @@ fn to_model_works_for_a_function_with_a_free_text_title() {
 #[cfg(feature = "fit")]
 #[test]
 fn to_model_keeps_the_names_of_a_shortcut_formula() {
-    let f = Func1D::new("g", "gaus", -5.0..=5.0)
+    let f = Func1D::new("gaus", -5.0..=5.0)
         .unwrap()
+        .named("g")
         .with_params(&[2.0, 0.5, 1.5])
         .unwrap();
     let model = f.to_model();
@@ -107,8 +109,9 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
             h.fill_weight(x, y, 2.0 + 0.5 * x + 1.5 * y);
         }
     }
-    let f2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", 0.0..=10.0, 0.0..=8.0)
+    let f2 = Func2D::new("[0]+[1]*x+[2]*y", 0.0..=10.0, 0.0..=8.0)
         .unwrap()
+        .named("plane")
         .with_params(&[1.0, 1.0, 1.0])
         .unwrap();
     let model = f2.to_model();
@@ -139,16 +142,11 @@ fn a_func2d_and_a_func3d_fit_their_histograms() {
             }
         }
     }
-    let f3 = Func3D::new(
-        "cube",
-        "[0]+[1]*x+[2]*y+[3]*z",
-        0.0..=4.0,
-        0.0..=3.0,
-        0.0..=5.0,
-    )
-    .unwrap()
-    .with_params(&[0.0, 0.5, 0.0, 1.0])
-    .unwrap();
+    let f3 = Func3D::new("[0]+[1]*x+[2]*y+[3]*z", 0.0..=4.0, 0.0..=3.0, 0.0..=5.0)
+        .unwrap()
+        .named("cube")
+        .with_params(&[0.0, 0.5, 0.0, 1.0])
+        .unwrap();
     let fit = h3.fit(&f3.to_model());
     assert!(fit.valid, "{fit:?}");
     for (got, want) in fit.params.iter().zip([1.0, 1.0, -1.0, 2.0]) {

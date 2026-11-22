@@ -49,7 +49,7 @@ fn round_trips_map_through_oxiroot() {
     let map = ObjMap::new()
         .named("meta")
         .insert("version", &ObjString::new("2.1"))
-        .insert("lumi", &Parameter::f64("lumi", 137.5))
+        .insert("lumi", &Parameter::f64(137.5).named("lumi"))
         .insert("hist", &h);
 
     let out = std::env::temp_dir().join("oxiroot_tmap_rt.root");

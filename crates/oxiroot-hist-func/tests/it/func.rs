@@ -59,8 +59,9 @@ fn tf1_bytes_are_byte_exact_against_root() {
     // the canonical `1`. Both read back as `true`, so we accept `(1, non-zero)`
     // at a single position and require every other byte to match exactly.
     let f = fixture("tf1.root");
-    let obj = Func1D::new("myfunc", "[0]*sin([1]*x) + [2]", 0.0..=6.283)
+    let obj = Func1D::new("[0]*sin([1]*x) + [2]", 0.0..=6.283)
         .unwrap()
+        .named("myfunc")
         .with_params(&[2.0, 1.5, 0.5])
         .unwrap()
         .to_root_bytes();
@@ -80,16 +81,19 @@ fn tf1_bytes_are_byte_exact_against_root() {
 #[test]
 fn round_trips_tf1_tf2_tf3_through_oxiroot() {
     let out = std::env::temp_dir().join("oxiroot_tf_rt.root");
-    let f1 = Func1D::new("f1", "[0]*exp(-[1]*x)", 0.0..=5.0)
+    let f1 = Func1D::new("[0]*exp(-[1]*x)", 0.0..=5.0)
         .unwrap()
+        .named("f1")
         .with_params(&[10.0, 0.5])
         .unwrap();
-    let f2 = Func2D::new("f2", "[0]*x + y", -2.0..=2.0, -2.0..=2.0)
+    let f2 = Func2D::new("[0]*x + y", -2.0..=2.0, -2.0..=2.0)
         .unwrap()
+        .named("f2")
         .with_params(&[3.0])
         .unwrap();
-    let f3 = Func3D::new("f3", "x + y + z + [0]", 0.0..=1.0, 0.0..=1.0, 0.0..=1.0)
+    let f3 = Func3D::new("x + y + z + [0]", 0.0..=1.0, 0.0..=1.0, 0.0..=1.0)
         .unwrap()
+        .named("f3")
         .with_params(&[0.25])
         .unwrap();
 
@@ -118,8 +122,9 @@ fn written_file_embeds_function_streamer_info() {
     let out = std::env::temp_dir().join("oxiroot_tf_streamer.root");
     FileWriter::create(&out)
         .add(
-            &Func2D::new("f2", "[0]*x + y", 0.0..=1.0, 0.0..=1.0)
+            &Func2D::new("[0]*x + y", 0.0..=1.0, 0.0..=1.0)
                 .unwrap()
+                .named("f2")
                 .with_params(&[2.0])
                 .unwrap(),
         )
@@ -136,8 +141,9 @@ fn written_file_embeds_function_streamer_info() {
 
 #[test]
 fn builds_and_evaluates_shortcuts() {
-    let g = Func1D::new("g", "gaus", -5.0..=5.0)
+    let g = Func1D::new("gaus", -5.0..=5.0)
         .unwrap()
+        .named("g")
         .with_params(&[2.0, 0.0, 1.0])
         .unwrap();
     assert_eq!(g.eval(0.0), 2.0);

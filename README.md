@@ -153,7 +153,7 @@ use oxiroot::prelude::*;
 
 // Fill a histogram (oxihist's Hist builder), then save it: `to_root()` is the
 // TH1D a file stores.
-let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("p_{T}").weight();
+let mut h = Hist::reg(50, 0.0, 100.0).weight().named("pt").titled("p_{T}");
 h.fill_weight(42.0, 1.5);
 let h = h.to_root()?;
 FileWriter::create("hist.root").add(&h).write()?;               // any writable object
@@ -161,7 +161,7 @@ let same = FileReader::open("hist.root")?.get::<Hist1D>("pt")?; // any readable 
 let again = same.to_hist()?;                                    // an oxihist histogram again
 
 // Several objects, subdirectories, or appending — FileWriter.
-let prof = Hist::reg(5, 0.0, 5.0).name("prof").title("<pt> per region").mean().to_root()?;
+let prof = Hist::reg(5, 0.0, 5.0).mean().named("prof").titled("<pt> per region").to_root()?;
 FileWriter::create("out.root")
     .add(&h)                              // a histogram, a profile, a graph…
     .dir("by_region", |d| d.add(&prof))   // a TDirectory
@@ -243,7 +243,7 @@ cargo run -p oxiroot --example analysis
   `.to_root()?` turns it into the ROOT record to store, the way uproot writes
   `hist` objects. `Hist1D`/`Hist2D`/`Hist3D` and the `Profile*` types are those
   records: what a file holds.
-  `Hist::reg(50, 0.0, 100.0).name("pt").label("$p_T$ [GeV]").weight().to_root()?`
+  `Hist::reg(50, 0.0, 100.0).label("$p_T$ [GeV]").weight().named("pt").to_root()?`
   is a `TH1D` with `Sumw2`. `var(&edges)` gives variable bins, `.reg`/`.var` again
   a `Hist2D`/`Hist3D`, and the storage picks the class: `double()`→`TH1D`,
   `weight()`→`TH1D`+`Sumw2`, `int64()`→`TH1L`, `mean()`→`Profile1D`;
@@ -447,7 +447,7 @@ use oxiroot::prelude::*;
 use oxiroot::hist::GraphFunction;
 let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
-    .with_function(GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0));
+    .with_function(GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0).named("line"));
 FileWriter::create("gfit.root").add(&g).compression(Compression::Stored).write()?;
 ```
 
@@ -455,7 +455,7 @@ FileWriter::create("gfit.root").add(&g).compression(Compression::Stored).write()
 
 - **Standalone `Func1D`/`Func2D`/`Func3D` keys** — real ROOT function objects (each
   embedding a `TFormula`), built from a formula and a range and read/written like
-  any other object. `Func1D::new("f", "[0]*sin([1]*x)", 0.0..=6.3)?.with_params(&...)?`.
+  any other object. `Func1D::new("[0]*sin([1]*x)", 0.0..=6.3)?.named("f").with_params(&...)?`.
 - **A real `TFormula` expression engine** ([`oxifit-formula`], a dependency-free
   crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
   operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
@@ -484,8 +484,8 @@ use oxiroot::prelude::*;
 use oxiroot::file::{ObjString, Parameter};
 FileWriter::create("meta.root")
     .add(&ObjString::new("v2.1").named("version"))
-    .add(&Parameter::f64("lumi", 137.5))      // Parameter<double>
-    .add(&Parameter::i64("nevents", 9_000_000_000))  // <Long64_t>
+    .add(&Parameter::f64(137.5).named("lumi"))      // Parameter<double>
+    .add(&Parameter::i64(9_000_000_000).named("nevents"))  // <Long64_t>
     .compression(Compression::Stored).write()?;
 
 let f = FileReader::open("meta.root")?;
@@ -592,7 +592,7 @@ use oxiroot::file::{ListKind, ObjList, ObjString, Parameter};
 let list = ObjList::new(ListKind::List).named("systematics")
     .add(&Hist::reg(50, 0.0, 100.0).double().to_root()?.named("nominal"))
     .add(&ObjString::new("2024-data").named("tag"))
-    .add(&Parameter::f64("lumi", 137.5));
+    .add(&Parameter::f64(137.5).named("lumi"));
 FileWriter::create("syst.root").add(&list).compression(Compression::Stored).write()?;
 
 let f = FileReader::open("syst.root")?;
@@ -615,7 +615,7 @@ use oxiroot::prelude::*;
 use oxiroot::file::{ObjMap, ObjString, Parameter};
 let meta = ObjMap::new().named("meta")
     .insert("version", &ObjString::new("2.1"))
-    .insert("lumi", &Parameter::f64("lumi", 137.5));
+    .insert("lumi", &Parameter::f64(137.5).named("lumi"));
 FileWriter::create("meta.root").add(&meta).compression(Compression::Stored).write()?;
 
 let meta = FileReader::open("meta.root")?.get::<ObjMap>("meta")?;
@@ -737,7 +737,7 @@ ax2.save("heatmap.svg")?;
   however the batches are sized, and its `add` stores histograms in the same
   file.
 - **Stored types by schema.** `Dataset::schema()` reports how each column is
-  stored, and `DatasetWriter::schema(…)` chooses it where the data alone does
+  stored, and `DatasetWriter::with_schema(…)` chooses it where the data alone does
   not: half-precision, truncated and quantized floats, `std::set`,
   `std::map`, `std::bitset`, `std::unique_ptr`, `std::atomic`, and a tree's
   C-style `x[n]`. `Dataset::chain` reads several datasets as one, across both

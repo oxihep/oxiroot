@@ -72,13 +72,7 @@ fn graph_function_built_from_scratch() {
         .unwrap()
         .named("gfit")
         .titled("fitted")
-        .with_function(GraphFunction::new(
-            "line",
-            "[0]+[1]*x",
-            vec![1.0, 2.0],
-            0.0,
-            4.0,
-        ));
+        .with_function(GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 4.0).named("line"));
 
     assert_eq!(g.functions().len(), 1);
     assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
@@ -104,14 +98,8 @@ fn multiple_functions_round_trip() {
     let g = Graph::new(vec![0.0, 1.0], vec![0.0, 1.0])
         .unwrap()
         .named("g")
-        .with_function(GraphFunction::new(
-            "lin",
-            "[0]+[1]*x",
-            vec![0.0, 1.0],
-            0.0,
-            1.0,
-        ))
-        .with_function(GraphFunction::new("sq", "[0]*x*x", vec![2.0], -1.0, 1.0));
+        .with_function(GraphFunction::new("[0]+[1]*x", vec![0.0, 1.0], 0.0, 1.0).named("lin"))
+        .with_function(GraphFunction::new("[0]*x*x", vec![2.0], -1.0, 1.0).named("sq"));
 
     let out = std::env::temp_dir().join("oxiroot_graph_multifn.root");
     oxiroot_io_core::FileWriter::create(&out)

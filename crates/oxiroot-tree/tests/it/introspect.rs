@@ -38,12 +38,12 @@ fn branch_values_helpers() {
     assert_eq!(i4.len(), 5);
     assert!(!i4.is_empty());
     assert_eq!(t.branch_type("i4"), Some(LeafType::I32));
-    assert_eq!(i4.values::<i32>(), Some([0, 1, 2, 3, 4].as_slice()));
-    assert_eq!(i4.values::<f64>(), None); // another type than it holds
+    assert_eq!(i4.as_slice::<i32>(), Some([0, 1, 2, 3, 4].as_slice()));
+    assert_eq!(i4.as_slice::<f64>(), None); // another type than it holds
 
     let f8 = t.branch("f8").values().expect("read f8");
     assert_eq!(
-        f8.values::<f64>(),
+        f8.as_slice::<f64>(),
         Some([0.25, 1.25, 2.25, 3.25, 4.25].as_slice())
     );
 }

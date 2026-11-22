@@ -38,20 +38,15 @@ fn bounds(range: &RangeInclusive<f64>) -> (f64, f64) {
 }
 
 impl<const D: usize> Func<D> {
-    /// A function named `name` from the formula `source`, its parameters zero.
-    fn build(
-        name: &str,
-        source: &str,
-        x: &RangeInclusive<f64>,
-        outer: [(f64, f64); 2],
-    ) -> Result<Self> {
+    /// A function from the formula `source`, unnamed, its parameters zero.
+    fn build(source: &str, x: &RangeInclusive<f64>, outer: [(f64, f64); 2]) -> Result<Self> {
         let formula = Formula::parse(source)
             .map_err(|e| Error::InvalidInput(format!("bad formula {source:?}: {e}")))?;
         let npar = formula.npar();
         let (xmin, xmax) = bounds(x);
         Ok(Self {
             record: GraphFunction {
-                name: name.to_string(),
+                name: String::new(),
                 title: source.to_string(),
                 formula: formula.root_formula().to_owned(),
                 params: vec![0.0; npar],
@@ -166,8 +161,8 @@ impl Func<1> {
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    pub fn new(name: &str, formula: &str, x: RangeInclusive<f64>) -> Result<Self> {
-        Self::build(name, formula, &x, [(0.0, 0.0); 2])
+    pub fn new(formula: &str, x: RangeInclusive<f64>) -> Result<Self> {
+        Self::build(formula, &x, [(0.0, 0.0); 2])
     }
 
     /// Evaluate `f(x)` with the current parameters.
@@ -204,7 +199,7 @@ impl Func<1> {
     /// ```
     /// use oxiroot_hist::Graph;
     /// use oxiroot_hist_func::Func1D;
-    /// let f = Func1D::new("line", "[0]+[1]*x", 0.0..=2.0)?.with_params(&[1.0, 2.0])?;
+    /// let f = Func1D::new("[0]+[1]*x", 0.0..=2.0)?.named("line").with_params(&[1.0, 2.0])?;
     /// let g = Graph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
     /// assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
     /// # Ok::<(), oxiroot_io_core::Error>(())
@@ -263,13 +258,8 @@ impl Func<2> {
     ///
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
-    pub fn new(
-        name: &str,
-        formula: &str,
-        x: RangeInclusive<f64>,
-        y: RangeInclusive<f64>,
-    ) -> Result<Self> {
-        Self::build(name, formula, &x, [bounds(&y), (0.0, 0.0)])
+    pub fn new(formula: &str, x: RangeInclusive<f64>, y: RangeInclusive<f64>) -> Result<Self> {
+        Self::build(formula, &x, [bounds(&y), (0.0, 0.0)])
     }
 
     /// Evaluate `f(x, y)` with the current parameters.
@@ -310,13 +300,12 @@ impl Func<3> {
     /// # Errors
     /// Returns an error if `formula` is not a valid expression.
     pub fn new(
-        name: &str,
         formula: &str,
         x: RangeInclusive<f64>,
         y: RangeInclusive<f64>,
         z: RangeInclusive<f64>,
     ) -> Result<Self> {
-        Self::build(name, formula, &x, [bounds(&y), bounds(&z)])
+        Self::build(formula, &x, [bounds(&y), bounds(&z)])
     }
 
     /// Evaluate `f(x, y, z)` with the current parameters.

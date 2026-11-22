@@ -44,7 +44,7 @@ fn bench(c: &mut Criterion) {
             b.iter(|| {
                 let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "w.root", "events", format)
                     .compression(Compression::Zstd(1));
-                w.write(batch.clone()).unwrap();
+                w.append(batch.clone()).unwrap();
                 black_box(w.finish().unwrap())
             });
         });

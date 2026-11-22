@@ -44,8 +44,9 @@ fn writes_and_reads_a_mixed_object_file() {
     prof.fill_sample(1.0, 5.0);
     prof.fill_sample(1.0, 7.0);
 
-    let f = Func1D::new("f", "[0]*sin([1]*x)", 0.0..=6.3)
+    let f = Func1D::new("[0]*sin([1]*x)", 0.0..=6.3)
         .unwrap()
+        .named("f")
         .with_params(&[2.0, 1.5])
         .unwrap();
 

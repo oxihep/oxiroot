@@ -18,7 +18,7 @@ fn reads_alphanumeric_axis_labels() {
     let h = f.get::<Hist1D>("hl").expect("read labelled TH1D");
 
     assert!(h.xaxis().is_labelled());
-    assert_eq!(h.xaxis().labels, ["apple", "banana", "cherry"]);
+    assert_eq!(h.xaxis().labels(), ["apple", "banana", "cherry"]);
     assert_eq!(h.xaxis().bin_label(1), Some("apple"));
     assert_eq!(h.xaxis().bin_label(2), Some("banana"));
     assert_eq!(h.xaxis().find_label("cherry"), Some(3));
@@ -35,7 +35,7 @@ fn numeric_axis_has_no_labels() {
     let f = FileReader::open(fixture("analysis.root")).expect("open");
     let h = f.get::<Hist1D>("h").expect("read numeric TH1D");
     assert!(!h.xaxis().is_labelled());
-    assert!(h.xaxis().labels.is_empty());
+    assert!(h.xaxis().labels().is_empty());
     assert_eq!(h.xaxis().bin_label(1), None);
 }
 
@@ -53,7 +53,7 @@ fn writes_and_round_trips_labels() {
         .write()
         .expect("write");
     let back = FileReader::open(&out).unwrap().get::<Hist1D>("hl").unwrap();
-    assert_eq!(back.xaxis().labels, src.xaxis().labels);
+    assert_eq!(back.xaxis().labels(), src.xaxis().labels());
 
     // Build a labelled histogram from scratch.
     let mut h = Hist::reg(3, 0.0, 3.0)
@@ -75,7 +75,7 @@ fn writes_and_round_trips_labels() {
         .unwrap()
         .get::<Hist1D>("cuts")
         .unwrap();
-    assert_eq!(r.xaxis().labels, ["trigger", "vertex", "isolation"]);
+    assert_eq!(r.xaxis().labels(), ["trigger", "vertex", "isolation"]);
     assert_eq!(r.xaxis().bin_label(2), Some("vertex"));
 }
 
@@ -86,7 +86,7 @@ fn a_bin_the_axis_does_not_have_is_reported() {
     let mut h = Hist::reg(3, 0.0, 3.0).double().to_root().unwrap();
     assert!(h.xaxis_mut().set_label(0, "underflow").is_err());
     assert!(h.xaxis_mut().set_label(4, "overflow").is_err());
-    assert!(h.xaxis().labels.is_empty());
+    assert!(h.xaxis().labels().is_empty());
     assert_eq!(h.xaxis().bin_center(2), Some(1.5));
     assert_eq!(h.xaxis().bin_width(2), Some(1.0));
     assert_eq!(h.xaxis().bin_low_edge(2), Some(1.0));

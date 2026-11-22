@@ -55,13 +55,10 @@ fn a_histogram_is_written_with_its_functions() {
     let stack = file.get::<HistStack>("hs").unwrap();
     let mut mine = Hist::reg(4, 0.0, 4.0).double().named("mine");
     mine.fill(1.5);
-    let mine = mine.to_root().unwrap().with_function(GraphFunction::new(
-        "fit",
-        "[0]*x",
-        vec![2.5],
-        0.0,
-        4.0,
-    ));
+    let mine = mine
+        .to_root()
+        .unwrap()
+        .with_function(GraphFunction::new("[0]*x", vec![2.5], 0.0, 4.0).named("fit"));
 
     let bytes = FileWriter::create("unused.root")
         .add(&h)

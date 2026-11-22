@@ -115,7 +115,7 @@ fn a_foreign_class_is_described_wherever_it_is_stored() {
 fn a_file_without_histograms_does_not_carry_their_streamer_info() {
     let path = std::env::temp_dir().join("oxiroot_sc_param.root");
     FileWriter::create(&path)
-        .add(&Parameter::f64("lumi", 1.5))
+        .add(&Parameter::f64(1.5).named("lumi"))
         .add(&ObjString::new("hello").named("s"))
         .compression(Compression::Stored)
         .write()
@@ -130,7 +130,7 @@ fn a_file_without_histograms_does_not_carry_their_streamer_info() {
     // The same holds for the single-object shorthand.
     let single = std::env::temp_dir().join("oxiroot_sc_param_single.root");
     FileWriter::create(&single)
-        .add(&Parameter::i32("n", 3))
+        .add(&Parameter::i32(3).named("n"))
         .compression(Compression::Stored)
         .write()
         .unwrap();
@@ -146,7 +146,7 @@ fn a_collection_read_back_still_describes_its_members() {
         .add(
             &ObjList::new(oxiroot_io_core::ListKind::List)
                 .named("l")
-                .add(&Parameter::f32("cut", 0.5))
+                .add(&Parameter::f32(0.5).named("cut"))
                 .add(&ObjString::new("x")),
         )
         .compression(Compression::Stored)
@@ -186,7 +186,7 @@ fn family() -> Vec<(&'static str, Box<dyn WriteRoot>)> {
     sp.fill(&[1.5]).unwrap();
     let mut poly = PolyHist::new(0.0, 2.0, 0.0, 2.0).named("poly");
     poly.add_bin_rect(0.0, 0.0, 1.0, 1.0);
-    let line = GraphFunction::new("line", "[0]+[1]*x", vec![1.0, 2.0], 0.0, 3.0);
+    let line = GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 3.0).named("line");
     let g = Graph::new(vec![1.0, 2.0], vec![3.0, 4.0])
         .unwrap()
         .named("g")

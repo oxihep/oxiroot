@@ -7,7 +7,7 @@
 //!
 //! [`Dataset::schema`](crate::Dataset::schema) reports the types a file
 //! holds. A writer infers them from the first batch, and takes a schema
-//! ([`DatasetWriter::schema`](crate::DatasetWriter::schema)) when the stored
+//! ([`DatasetWriter::with_schema`](crate::DatasetWriter::with_schema)) when the stored
 //! type should be something the data alone does not say.
 
 use std::fmt;

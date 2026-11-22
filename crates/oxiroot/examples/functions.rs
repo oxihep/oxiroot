@@ -14,16 +14,23 @@ fn main() -> oxiroot::Result<()> {
     // --- Four 1-D functions, one per formula flavour. --------------------------
     // A hand-written expression: a decaying sine. Parameters are [0], [1], …; the
     // free variable is `x`. `with_params` fills them in builder style.
-    let damped = Func1D::new("damped", "[0]*exp(-[1]*x)*sin([2]*x)", 0.0..=10.0)?
+    let damped = Func1D::new("[0]*exp(-[1]*x)*sin([2]*x)", 0.0..=10.0)?
+        .named("damped")
         .with_params(&[5.0, 0.3, 2.0])?;
 
     // ROOT's `gaus` shortcut expands to `[0]*exp(-0.5*((x-[1])/[2])^2)` — a
     // Gaussian with (constant, mean, sigma). The engine knows the parameter count.
-    let gauss = Func1D::new("gauss", "gaus", -5.0..=5.0)?.with_params(&[2.0, 0.5, 1.2])?;
+    let gauss = Func1D::new("gaus", -5.0..=5.0)?
+        .named("gauss")
+        .with_params(&[2.0, 0.5, 1.2])?;
 
     // `expo` is `exp([0] + [1]*x)`; `pol2` is `[0] + [1]*x + [2]*x^2`.
-    let decay = Func1D::new("decay", "expo", 0.0..=5.0)?.with_params(&[1.0, -0.7])?;
-    let parab = Func1D::new("parab", "pol2", -3.0..=3.0)?.with_params(&[1.0, -2.0, 1.0])?;
+    let decay = Func1D::new("expo", 0.0..=5.0)?
+        .named("decay")
+        .with_params(&[1.0, -0.7])?;
+    let parab = Func1D::new("pol2", -3.0..=3.0)?
+        .named("parab")
+        .with_params(&[1.0, -2.0, 1.0])?;
 
     println!("Four TF1s (formula shown in ROOT's canonical [pN] form):");
     for f in [&damped, &gauss, &decay, &parab] {
@@ -97,10 +104,12 @@ fn main() -> oxiroot::Result<()> {
     );
 
     // --- 2-D and 3-D functions add the y (and z) variables. --------------------
-    let f2 = Func2D::new("f2", "[0]*sin(x) + [1]*y*y", -3.0..=3.0, -2.0..=2.0)?
+    let f2 = Func2D::new("[0]*sin(x) + [1]*y*y", -3.0..=3.0, -2.0..=2.0)?
+        .named("f2")
         .with_params(&[1.5, 0.7])?;
-    let f3 =
-        Func3D::new("f3", "[0]*x + y*z", 0.0..=2.0, 0.0..=2.0, 0.0..=2.0)?.with_params(&[2.0])?;
+    let f3 = Func3D::new("[0]*x + y*z", 0.0..=2.0, 0.0..=2.0, 0.0..=2.0)?
+        .named("f3")
+        .with_params(&[2.0])?;
     println!("\nHigher-dimensional functions:");
     println!(
         "  f2(1,1)   = {:.6}   (1.5·sin1 + 0.7·1)",

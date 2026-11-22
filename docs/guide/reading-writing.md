@@ -146,7 +146,7 @@ large branch keeps memory bounded. Nothing changes in the code that reads.
   explicitly, use `XrootdOptions`:
 
   ```rust,no_run
-  use oxiroot::file::{FileReader, XrootdOptions, XrootdSource};
+  use oxiroot::file::{XrootdOptions, XrootdSource};
 
   let opts = XrootdOptions::new().token(std::fs::read_to_string("token.jwt")?);
   let source = XrootdSource::open_with("roots://eos.example.org//data/run.root", &opts)?;

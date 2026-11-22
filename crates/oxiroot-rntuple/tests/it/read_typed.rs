@@ -135,7 +135,7 @@ fn a_window_of_a_list_is_flat_and_starts_its_offsets_at_zero() {
                 panic!("a std::vector reads as a list");
             };
             assert_eq!(offsets.first(), Some(&0), "[{a}, {b})");
-            let vals = values.values::<i32>().expect("i32 elements");
+            let vals = values.as_slice::<i32>().expect("i32 elements");
             let rows: Vec<Vec<i32>> = offsets
                 .windows(2)
                 .map(|w| {

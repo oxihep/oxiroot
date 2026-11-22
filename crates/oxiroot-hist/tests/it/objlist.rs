@@ -48,7 +48,7 @@ fn round_trips_list_and_array_through_oxiroot() {
         .named("mylist")
         .add(&h)
         .add(&ObjString::new("hello"))
-        .add(&Parameter::f64("lumi", 12.5));
+        .add(&Parameter::f64(12.5).named("lumi"));
     let arr = ObjList::new(ListKind::Array)
         .named("myarr")
         .add(

@@ -40,17 +40,58 @@ pub struct Profile3D {
     /// Per-cell `Σw` (`fBinEntries`); length `ncells`.
     pub(crate) bin_entries: Vec<f64>,
     /// Error computation mode (`fErrorMode`).
-    pub error_mode: ErrorMode,
+    pub(crate) error_mode: ErrorMode,
     /// Lower `t` accept bound (`fTmin`; `0` = no restriction when `tmin == tmax`).
-    pub tmin: f64,
+    pub(crate) tmin: f64,
     /// Upper `t` accept bound (`fTmax`).
-    pub tmax: f64,
+    pub(crate) tmax: f64,
     /// Sum of `w·t` over in-range fills (`fTsumwt`).
     pub(crate) tsumwt: f64,
     /// Sum of `w·t²` over in-range fills (`fTsumwt2`).
     pub(crate) tsumwt2: f64,
     /// Per-cell `Σw²` (`fBinSumw2`); empty unless weighted-error tracking is on.
     pub(crate) bin_sumw2: Vec<f64>,
+}
+
+impl Profile3D {
+    /// Error computation mode (`fErrorMode`).
+    #[must_use]
+    pub fn error_mode(&self) -> ErrorMode {
+        self.error_mode
+    }
+
+    /// Set [`error_mode`](Self::error_mode).
+    #[must_use]
+    pub fn with_error_mode(mut self, error_mode: ErrorMode) -> Self {
+        self.error_mode = error_mode;
+        self
+    }
+
+    /// Lower `t` accept bound (`fTmin`; `0` = no restriction when `tmin == tmax`).
+    #[must_use]
+    pub fn tmin(&self) -> f64 {
+        self.tmin
+    }
+
+    /// Set [`tmin`](Self::tmin).
+    #[must_use]
+    pub fn with_tmin(mut self, tmin: f64) -> Self {
+        self.tmin = tmin;
+        self
+    }
+
+    /// Upper `t` accept bound (`fTmax`).
+    #[must_use]
+    pub fn tmax(&self) -> f64 {
+        self.tmax
+    }
+
+    /// Set [`tmax`](Self::tmax).
+    #[must_use]
+    pub fn with_tmax(mut self, tmax: f64) -> Self {
+        self.tmax = tmax;
+        self
+    }
 }
 
 impl Profile3D {
@@ -80,9 +121,9 @@ impl Profile3D {
         Self {
             name: String::new(),
             title: String::new(),
-            xaxis: Axis::new("xaxis", nx, xlo, xhi),
-            yaxis: Axis::new("yaxis", ny, ylo, yhi),
-            zaxis: Axis::new("zaxis", nz, zlo, zhi),
+            xaxis: Axis::new(nx, xlo, xhi).named("xaxis"),
+            yaxis: Axis::new(ny, ylo, yhi).named("yaxis"),
+            zaxis: Axis::new(nz, zlo, zhi).named("zaxis"),
             entries: 0.0,
             moments: Moments::default(),
             sums: vec![0.0; ncells],
@@ -102,11 +143,13 @@ impl Profile3D {
     pub fn nx(&self) -> usize {
         self.xaxis.nbins
     }
+
     /// Number of y bins (excluding flow).
     #[must_use]
     pub fn ny(&self) -> usize {
         self.yaxis.nbins
     }
+
     /// Number of z bins (excluding flow).
     #[must_use]
     pub fn nz(&self) -> usize {

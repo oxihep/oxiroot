@@ -35,10 +35,11 @@ fn histograms_trees_and_rntuples_share_a_file() {
             vec![Field::new("x", vec![1, 2])],
         ))
         .dir("cal", |d| {
-            d.add(&Parameter::f64("gain", 1.5)).add(TreeObject::new(
-                "Pedestals",
-                vec![Branch::new("adc", vec![3, 4])],
-            ))
+            d.add(&Parameter::f64(1.5).named("gain"))
+                .add(TreeObject::new(
+                    "Pedestals",
+                    vec![Branch::new("adc", vec![3, 4])],
+                ))
         })
         .write()
         .unwrap();
@@ -163,7 +164,7 @@ fn named_batches_and_a_histogram_are_built_then_written_together() {
             .unwrap()
     };
     let mut tree = NamedBatch::new("tree", Format::Tree, batch(0));
-    tree.push(batch(3)).unwrap();
+    tree.append(batch(3)).unwrap();
     let ntuple = NamedBatch::new("ntuple", Format::Ntuple, batch(10));
     let pt = hist();
 
@@ -200,7 +201,7 @@ fn a_streamed_dataset_and_a_histogram_share_a_file() {
                 .map(|i| f64::from(i) + 0.5 + f64::from(chunk))
                 .collect();
             values.iter().for_each(|&v| pt.fill(v));
-            out.write(Batch::new().column("pt", values).unwrap())
+            out.append(Batch::new().column("pt", values).unwrap())
                 .unwrap();
         }
         let pt = pt.to_root().unwrap();

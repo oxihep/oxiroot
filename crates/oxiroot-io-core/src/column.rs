@@ -143,7 +143,7 @@ impl Column {
 
     /// The values as a slice of `T`, if this is a scalar column of that type.
     #[must_use]
-    pub fn values<T: Primitive>(&self) -> Option<&[T]> {
+    pub fn as_slice<T: Primitive>(&self) -> Option<&[T]> {
         T::slice(self)
     }
 
@@ -977,16 +977,18 @@ impl<'a> Strings<'a> {
         self.len() == 0
     }
 
-    /// Entry `i`'s string. Panics if `i` is out of range, like slice indexing.
+    /// Entry `i`'s string, or `None` if there is no such entry.
     #[must_use]
-    pub fn get(&self, i: usize) -> &'a str {
-        &self.text[to_usize(self.offsets[i])..to_usize(self.offsets[i + 1])]
+    pub fn get(&self, i: usize) -> Option<&'a str> {
+        let start = to_usize(*self.offsets.get(i)?);
+        let end = to_usize(*self.offsets.get(i + 1)?);
+        self.text.get(start..end)
     }
 
     /// Every entry's string, in order.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a str> + 'a {
         let s = *self;
-        (0..s.len()).map(move |i| s.get(i))
+        (0..s.len()).map(move |i| s.get(i).unwrap_or_default())
     }
 }
 

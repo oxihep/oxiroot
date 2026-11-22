@@ -80,7 +80,7 @@ fn profile_3d(sets: &[&[Point3]]) -> Profile3D {
 #[test]
 fn adding_2d_profiles_equals_one_combined_fill() {
     let mut merged = profile_2d(&[&SET_A_2D]);
-    merged.add(&profile_2d(&[&SET_B_2D]), 1.0).unwrap();
+    merged.add_scaled(&profile_2d(&[&SET_B_2D]), 1.0).unwrap();
     let want = profile_2d(&[&SET_A_2D, &SET_B_2D]);
     assert_eq!(merged, want);
     // The weighted fills are reflected in the error bookkeeping, not dropped.
@@ -90,7 +90,7 @@ fn adding_2d_profiles_equals_one_combined_fill() {
 #[test]
 fn adding_3d_profiles_equals_one_combined_fill() {
     let mut merged = profile_3d(&[&SET_A_3D]);
-    merged.add(&profile_3d(&[&SET_B_3D]), 1.0).unwrap();
+    merged.add_scaled(&profile_3d(&[&SET_B_3D]), 1.0).unwrap();
     assert_eq!(merged, profile_3d(&[&SET_A_3D, &SET_B_3D]));
     assert!(!merged.bin_sumw2().is_empty());
 }
@@ -98,9 +98,9 @@ fn adding_3d_profiles_equals_one_combined_fill() {
 #[test]
 fn addition_order_does_not_matter() {
     let mut ab = profile_2d(&[&SET_A_2D]);
-    ab.add(&profile_2d(&[&SET_B_2D]), 1.0).unwrap();
+    ab.add_scaled(&profile_2d(&[&SET_B_2D]), 1.0).unwrap();
     let mut ba = profile_2d(&[&SET_B_2D]);
-    ba.add(&profile_2d(&[&SET_A_2D]), 1.0).unwrap();
+    ba.add_scaled(&profile_2d(&[&SET_A_2D]), 1.0).unwrap();
     assert_eq!(ab, ba);
 }
 
@@ -109,7 +109,7 @@ fn scaled_2d_add_is_linear_except_squared_weights() {
     let (mut dst, src) = (profile_2d(&[&SET_A_2D]), profile_2d(&[&SET_B_2D]));
     let before = dst.clone();
     let c = 3.0;
-    dst.add(&src, c).unwrap();
+    dst.add_scaled(&src, c).unwrap();
 
     for (name, got, a, b) in [
         ("tsumw", dst.tsumw(), before.tsumw(), src.tsumw()),
@@ -139,7 +139,7 @@ fn scaled_3d_add_scales_its_extra_moments() {
     let (mut dst, src) = (profile_3d(&[&SET_A_3D]), profile_3d(&[&SET_B_3D]));
     let before = dst.clone();
     let c = 0.5;
-    dst.add(&src, c).unwrap();
+    dst.add_scaled(&src, c).unwrap();
     for (name, got, a, b) in [
         ("tsumwxz", dst.tsumwxz(), before.tsumwxz(), src.tsumwxz()),
         ("tsumwyz", dst.tsumwyz(), before.tsumwyz(), src.tsumwyz()),
@@ -161,7 +161,7 @@ fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
         .to_root()
         .unwrap(); // 2 x-bins, not 3
     assert!(matches!(
-        p.add(&other, 1.0),
+        p.add_scaled(&other, 1.0),
         Err(Error::BinningMismatch { .. })
     ));
     assert_eq!(p, before);
@@ -173,7 +173,7 @@ fn mismatched_binning_is_rejected_and_leaves_the_profile_unchanged() {
         .mean()
         .to_root()
         .unwrap();
-    assert!(q.add(&other3, 1.0).is_err());
+    assert!(q.add_scaled(&other3, 1.0).is_err());
     assert_eq!(q, profile_3d(&[&SET_A_3D]));
 }
 
@@ -190,7 +190,7 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
     b.fill_sample(0.5, 3.0);
     let b = b.to_root().unwrap();
 
-    a.add(&b, 1.0).unwrap();
+    a.add_scaled(&b, 1.0).unwrap();
     assert_eq!(a.sumy2().len(), a.sums().len());
     assert_eq!(a.sumy2()[1], 9.0, "b's Σw·y² must survive the merge");
 
@@ -200,7 +200,7 @@ fn an_empty_value_squared_array_is_treated_as_zeros() {
     let mut c = c.to_root().unwrap();
     let mut d: Profile1D = c.clone();
     d.optional_arrays_mut().0.clear();
-    c.add(&d, 1.0).unwrap();
+    c.add_scaled(&d, 1.0).unwrap();
     assert_eq!(c.sumy2()[1], 4.0);
 }
 
@@ -230,7 +230,7 @@ fn merge_all_folds_2d_and_3d_profiles() {
 fn negative_scale_of_weighted_profiles_squares_the_weights() {
     let (mut dst, src) = (profile_2d(&[&SET_B_2D]), profile_2d(&[&SET_B_2D]));
     let before = dst.clone();
-    dst.add(&src, -2.0).unwrap();
+    dst.add_scaled(&src, -2.0).unwrap();
     let cell = 1 + 5;
     assert_eq!(
         dst.sums()[cell],

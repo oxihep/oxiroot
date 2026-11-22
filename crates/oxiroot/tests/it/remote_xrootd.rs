@@ -524,7 +524,7 @@ fn xrootd_live_eospublic_reads_a_tree() {
         .range(0..20)
         .values()
         .expect("read lep_n");
-    let counts = leptons.values::<u32>().expect("lep_n is a uint32 branch");
+    let counts = leptons.as_slice::<u32>().expect("lep_n is a uint32 branch");
     assert_eq!(counts.len(), 20);
     assert!(
         counts.iter().all(|&n| (1..=2).contains(&n)),
@@ -577,7 +577,7 @@ fn xrootd_live_eospublic_reads_many_baskets() {
         .range(0..300_000)
         .values()
         .expect("read lep_n");
-    let counts = leptons.values::<u32>().expect("lep_n is a uint32 branch");
+    let counts = leptons.as_slice::<u32>().expect("lep_n is a uint32 branch");
     assert_eq!(counts.len(), 300_000);
     assert!(counts.iter().all(|&n| n <= 10), "plausible lepton counts");
     eprintln!("300 000 entries of lep_n in {:?}", start.elapsed());

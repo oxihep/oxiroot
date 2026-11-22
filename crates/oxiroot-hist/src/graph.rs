@@ -79,17 +79,11 @@ impl GraphFunction {
     /// Build a formula function over `[xmin, xmax]`. `formula` may use either
     /// `[0]`/`[1]` or `[p0]`/`[p1]` for parameters; it is stored in `[pN]` form.
     /// Errors/limits default to zero, sized to `params`.
-    pub fn new(
-        name: impl Into<String>,
-        formula: impl Into<String>,
-        params: Vec<f64>,
-        xmin: f64,
-        xmax: f64,
-    ) -> Self {
+    pub fn new(formula: impl Into<String>, params: Vec<f64>, xmin: f64, xmax: f64) -> Self {
         let title = formula.into();
         let n = params.len();
         Self {
-            name: name.into(),
+            name: String::new(),
             formula: normalize_formula(&title),
             title,
             params,
@@ -101,6 +95,13 @@ impl GraphFunction {
             chi2: 0.0,
             ndf: 0,
         }
+    }
+
+    /// This function named `name` (`fName`).
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
     }
 
     /// Number of parameters (`fNpar`).
@@ -504,9 +505,9 @@ mod function_list_tests {
     fn functions_named_by_a_class_back_reference_are_read() {
         let keylen = 58;
         let functions = [
-            GraphFunction::new("first", "[0]*x", vec![2.0], 0.0, 1.0),
-            GraphFunction::new("second", "[0]+x", vec![3.0], 0.0, 1.0),
-            GraphFunction::new("third", "[0]-x", vec![4.0], 0.0, 1.0),
+            GraphFunction::new("[0]*x", vec![2.0], 0.0, 1.0).named("first"),
+            GraphFunction::new("[0]+x", vec![3.0], 0.0, 1.0).named("second"),
+            GraphFunction::new("[0]-x", vec![4.0], 0.0, 1.0).named("third"),
         ];
         let bytes = root_style_list(keylen, &functions);
 

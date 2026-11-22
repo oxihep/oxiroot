@@ -103,7 +103,7 @@ const DIRS_RH: [f64; 3] = [3.0, 6.0, 9.0];
 fn canonical_hist() -> Hist1D {
     // Filled as an oxihist histogram and converted afterwards, so ROOT and
     // uproot reading it checks the oxihist → ROOT conversion end to end.
-    let mut h = Hist::reg(4, 0.0, 4.0).name("h").title("interop").double();
+    let mut h = Hist::reg(4, 0.0, 4.0).double().named("h").titled("interop");
     // Fill bin i (0-based) with i+1 entries at its center, giving contents
     // [1, 2, 3, 4].
     for (i, &count) in HIST_BINS.iter().enumerate() {

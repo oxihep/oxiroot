@@ -182,7 +182,7 @@ use oxiroot::data::Column;
 
 match t.branch("hits").values()? {
     Column::List { offsets, values } => {
-        let flat: &[f64] = values.values().expect("a list of f64");
+        let flat: &[f64] = values.as_slice().expect("a list of f64");
         for (i, w) in offsets.windows(2).enumerate() {
             let row = &flat[w[0] as usize..w[1] as usize];
             println!("entry {i}: {} hits", row.len());

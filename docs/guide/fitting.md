@@ -462,7 +462,7 @@ let blob = Model::product(
 let fit = map.fit_opts(&blob, &FitOptions::new().method(FitMethod::Likelihood));
 
 // A ROOT TF2 converts too:
-let tf2 = Func2D::new("plane", "[0]+[1]*x+[2]*y", -4.0..=4.0, -4.0..=4.0)?;
+let tf2 = Func2D::new("[0]+[1]*x+[2]*y", -4.0..=4.0, -4.0..=4.0)?.named("plane");
 let plane_fit = map.fit(&tf2.to_model());
 
 // Unbinned: events of two variables, normalized over x × y ranges.

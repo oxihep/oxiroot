@@ -94,15 +94,82 @@ pub struct Efficiency {
     /// Denominator histogram — total trials per bin (`fTotalHistogram`, a `TH1D`).
     pub(crate) total: Hist1D,
     /// Confidence level for the interval (`fConfLevel`).
-    pub conf_level: f64,
+    pub(crate) conf_level: f64,
     /// How the confidence interval is computed (`fStatisticOption`).
-    pub statistic_option: StatisticOption,
+    pub(crate) statistic_option: StatisticOption,
     /// Weight for combining efficiencies (`fWeight`).
-    pub weight: f64,
+    pub(crate) weight: f64,
     /// Bayesian prior α (`fBeta_alpha`).
-    pub beta_alpha: f64,
+    pub(crate) beta_alpha: f64,
     /// Bayesian prior β (`fBeta_beta`).
-    pub beta_beta: f64,
+    pub(crate) beta_beta: f64,
+}
+
+impl Efficiency {
+    /// Confidence level for the interval (`fConfLevel`).
+    #[must_use]
+    pub fn conf_level(&self) -> f64 {
+        self.conf_level
+    }
+
+    /// Set [`conf_level`](Self::conf_level).
+    #[must_use]
+    pub fn with_conf_level(mut self, conf_level: f64) -> Self {
+        self.conf_level = conf_level;
+        self
+    }
+
+    /// How the confidence interval is computed (`fStatisticOption`).
+    #[must_use]
+    pub fn statistic_option(&self) -> StatisticOption {
+        self.statistic_option
+    }
+
+    /// Set [`statistic_option`](Self::statistic_option).
+    #[must_use]
+    pub fn with_statistic_option(mut self, statistic_option: StatisticOption) -> Self {
+        self.statistic_option = statistic_option;
+        self
+    }
+
+    /// Weight for combining efficiencies (`fWeight`).
+    #[must_use]
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
+    /// Set [`weight`](Self::weight).
+    #[must_use]
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    /// Bayesian prior α (`fBeta_alpha`).
+    #[must_use]
+    pub fn beta_alpha(&self) -> f64 {
+        self.beta_alpha
+    }
+
+    /// Set [`beta_alpha`](Self::beta_alpha).
+    #[must_use]
+    pub fn with_beta_alpha(mut self, beta_alpha: f64) -> Self {
+        self.beta_alpha = beta_alpha;
+        self
+    }
+
+    /// Bayesian prior β (`fBeta_beta`).
+    #[must_use]
+    pub fn beta_beta(&self) -> f64 {
+        self.beta_beta
+    }
+
+    /// Set [`beta_beta`](Self::beta_beta).
+    #[must_use]
+    pub fn with_beta_beta(mut self, beta_beta: f64) -> Self {
+        self.beta_beta = beta_beta;
+        self
+    }
 }
 
 impl Efficiency {

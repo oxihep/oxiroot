@@ -195,7 +195,7 @@ impl<'f> Dataset<'f> {
 
     /// How each column is stored in the file: `std::vector` or C-style array,
     /// plain or half-precision float, `std::set` or `std::map`. Hand it to
-    /// [`DatasetWriter::schema`](crate::DatasetWriter::schema) to write the
+    /// [`DatasetWriter::with_schema`](crate::DatasetWriter::with_schema) to write the
     /// same types back.
     ///
     /// # Errors

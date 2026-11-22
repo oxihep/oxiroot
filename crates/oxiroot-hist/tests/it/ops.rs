@@ -23,7 +23,7 @@ fn adding_two_records_sums_bins_errors_entries_and_statistics() {
 
     let mut merged = a.to_root().unwrap();
     merged
-        .add(&b.to_root().unwrap(), 1.0)
+        .add_scaled(&b.to_root().unwrap(), 1.0)
         .expect("same binning");
     // bin 1: 2 + 3 = 5, with Σw² = 4 + 9 = 13.
     assert_eq!(merged.contents()[1], 5.0);
@@ -54,7 +54,10 @@ fn add_rejects_mismatched_binning() {
         .to_root()
         .unwrap()
         .named("b");
-    assert!(a.add(&b, 1.0).is_err(), "different bin counts -> error");
+    assert!(
+        a.add_scaled(&b, 1.0).is_err(),
+        "different bin counts -> error"
+    );
 
     // Same bin count but different range — must also be rejected (cell-count
     // equality alone would have missed this).
@@ -68,7 +71,7 @@ fn add_rejects_mismatched_binning() {
         .to_root()
         .unwrap()
         .named("d");
-    assert!(c.add(&d, 1.0).is_err(), "different edges -> error");
+    assert!(c.add_scaled(&d, 1.0).is_err(), "different edges -> error");
     assert_eq!(c.contents()[1], 0.0, "rejected add makes no change");
 }
 
@@ -98,7 +101,7 @@ fn profile_add_scales_weighted_sums_linearly() {
         dst.tsumwy2(),
     );
     let c = 3.0;
-    dst.add(&src, c).unwrap();
+    dst.add_scaled(&src, c).unwrap();
 
     // Σw² is quadratic in the scale factor; every Σw·(…) sum is linear.
     assert!((dst.tsumw() - (w0 + c * src.tsumw())).abs() < 1e-12);
@@ -131,7 +134,7 @@ fn profile_add_scales_tracked_squared_weights_quadratically() {
     *src.optional_arrays_mut().1 = vec![0.0, 9.0, 0.0, 0.0, 0.0, 0.0];
 
     let c = 2.0;
-    dst.add(&src, c).unwrap();
+    dst.add_scaled(&src, c).unwrap();
 
     // 4 + c²·9 = 40, not 4 + c·9 = 22.
     assert!(
@@ -213,7 +216,7 @@ mod merges {
             })
             .unwrap()
             .named("g")
-            .with_function(GraphFunction::new("f", "[0]*x", vec![1.0], 0.0, 1.0));
+            .with_function(GraphFunction::new("[0]*x", vec![1.0], 0.0, 1.0).named("f"));
         let b = Graph::new(vec![3.0, 4.0], vec![5.0, 6.0])
             .and_then(|g| {
                 g.with_errors(oxiroot_hist::GraphErrors::Symmetric {

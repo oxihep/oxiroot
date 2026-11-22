@@ -15,7 +15,7 @@
 //!
 //! // Fill a histogram (the Hist builder; `weight()` tracks Sumw2), then save
 //! // it: `to_root()` is the TH1D a file stores.
-//! let mut h = Hist::reg(50, 0.0, 100.0).name("pt").title("transverse momentum").weight();
+//! let mut h = Hist::reg(50, 0.0, 100.0).weight().named("pt").titled("transverse momentum");
 //! h.fill_weight(42.0, 1.5);
 //! FileWriter::create("out.root").add(&h.to_root()?).write()?;
 //!
@@ -74,8 +74,31 @@ pub use oxiroot_io_core::{Compression, FileReader, FileUpdater, FileWriter, Valu
 /// The ROOT file container and the object framework: reading and writing files,
 /// keys and directories, streamer info, and the traits objects implement
 /// (re-exported from `oxiroot-io-core`).
+///
+/// [`FileReader`], [`FileWriter`], [`FileUpdater`], [`Compression`] and
+/// [`Value`] are at the crate root, and columns are in [`data`]: each item
+/// has one path.
 pub mod file {
-    pub use oxiroot_io_core::*;
+    #[cfg(feature = "mmap")]
+    pub use oxiroot_io_core::MmapSource;
+    #[cfg(feature = "xrootd-tls")]
+    pub use oxiroot_io_core::XrootdOptions;
+    #[cfg(feature = "xrootd")]
+    pub use oxiroot_io_core::XrootdSource;
+    pub use oxiroot_io_core::{
+        ByteSource, BytesSource, ClassKind, Error, External, FileSource, KeyCheck, ListKind,
+        ObjList, ObjMap, ObjString, Object, ParamValue, Parameter, ReadRoot, Result, Storable,
+        Stored, StreamerRegistry, StreamerSet, SubdirWriter, Within, WriteInto, WriteRoot,
+    };
+    pub use oxiroot_io_core::{cast, streamer_gen, streamer_types};
+
+    /// The file format itself, and the buffers objects are streamed through:
+    /// for code that implements [`ReadRoot`] or [`WriteRoot`], or works below
+    /// the object API.
+    pub mod raw {
+        pub use oxiroot_io_core::raw::*;
+        pub use oxiroot_io_core::{CountToken, Patch, RBuffer, WBuffer, read_object};
+    }
 }
 
 pub mod hadd;
@@ -90,7 +113,9 @@ pub mod data {
 
 /// ROOT compression framing and codecs (re-exported from `oxiroot-compress`).
 pub mod compress {
-    pub use oxiroot_compress::*;
+    pub use oxiroot_compress::{
+        Algorithm, BlockHeader, CompressError, HDR_SIZE, MAX_CHUNK_SIZE, compress, decompress,
+    };
 }
 
 /// Classic ROOT histograms, profiles, graphs and functions —
