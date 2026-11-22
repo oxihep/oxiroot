@@ -7,6 +7,13 @@ change the API.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-22
+
+One way to do each thing. A review of the whole workspace settled one column
+type for every reader and writer, one histogram record, one way to write a
+dataset next to histograms, and one naming convention across the API. Most
+of it is breaking; see **Changed**.
+
 ### Changed
 
 - **Breaking: one column type for every reader and writer.** `Column` and
@@ -33,6 +40,8 @@ change the API.
   - The element type is the data's: `vec![1.0, 2.0]` is `f64`, where
     `Branch::f32("x", vec![1.0, 2.0])` used to say `f32`. Write
     `vec![1.0_f32, 2.0]`.
+- **oxihist 0.15.0**, whose `Hist` builder no longer has `.name(..)` and
+  `.title(..)`: name a histogram with `.named(..)` and `.titled(..)`.
 - **Breaking: one convention for each thing the API does**, from a second
   review of the public surface:
   - **Names.** No constructor takes an object's name; every object is named
@@ -1252,7 +1261,8 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/oxihep/oxiroot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/oxihep/oxiroot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/oxihep/oxiroot/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/oxihep/oxiroot/compare/v0.6.1...v0.7.0
