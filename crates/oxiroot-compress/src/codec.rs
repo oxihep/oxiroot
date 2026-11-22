@@ -168,11 +168,71 @@ pub(crate) fn zstd_encode(data: &[u8], level: u8) -> Result<Vec<u8>, CompressErr
                     .map_err(|e| CompressError::codec(Algorithm::Zstd, e))?,
             ),
         };
-        encoder
+        let frame = encoder
             .compress(data)
             .map(std::borrow::Cow::into_owned)
-            .map_err(|e| CompressError::codec(Algorithm::Zstd, e))
+            .map_err(|e| CompressError::codec(Algorithm::Zstd, e))?;
+        if !has_raw_block(&frame) {
+            return Ok(frame);
+        }
+        Ok(match zstd_encode_searched(data, level) {
+            Some(searched) if searched.len() < frame.len() => searched,
+            _ => frame,
+        })
     })
+}
+
+/// Whether the Zstd `frame` stores any of its blocks raw: the sign that the
+/// encoder gave up on part of the input. `false` for a frame this cannot
+/// walk.
+fn has_raw_block(frame: &[u8]) -> bool {
+    // Magic number, then the frame header descriptor.
+    let Some(&descriptor) = frame.get(4) else {
+        return false;
+    };
+    let single_segment = descriptor & 0x20 != 0;
+    let window = usize::from(!single_segment);
+    let dictionary = [0, 1, 2, 4][usize::from(descriptor & 3)];
+    let content_size = match descriptor >> 6 {
+        0 => usize::from(single_segment),
+        1 => 2,
+        2 => 4,
+        _ => 8,
+    };
+    let mut at = 5 + window + dictionary + content_size;
+    // Each block: a 3-byte little-endian header of last (1 bit), type
+    // (2 bits) and size (21 bits), then its content.
+    while let Some(&[a, b, c]) = frame.get(at..at + 3) {
+        let header = u32::from_le_bytes([a, b, c, 0]);
+        let size = (header >> 3) as usize;
+        at += 3 + match (header >> 1) & 3 {
+            0 => return true,
+            1 => 1, // one byte, repeated
+            _ => size,
+        };
+        if header & 1 != 0 {
+            break;
+        }
+    }
+    false
+}
+
+/// Encode `data` with a match search even where its bytes look random.
+///
+/// zrip samples each block's byte counts and stores a block raw, without
+/// looking for matches, when they are as flat as random data's. Values that
+/// are flat byte for byte but repeat (identifiers, hashes, a table read
+/// twice) then gain nothing. Parameters that keep literals raw skip the
+/// sampling, and raw literals are what such data wants anyway.
+///
+/// This runs only where the first pass stored a block raw, so it costs
+/// nothing on data that compresses, and about a fifth more on data that
+/// really is random. `None` if the level has no parameters or the encoder
+/// fails: the caller keeps the first frame.
+fn zstd_encode_searched(data: &[u8], level: i32) -> Option<Vec<u8>> {
+    let mut params = zrip::encode::strategy::level_params_for_size(level, data.len())?;
+    params.force_raw_literals = true;
+    zrip::compress_with_params(data, &params).ok()
 }
 
 /// Encode `data` as a ROOT LZMA block payload: a complete XZ stream (pure-Rust

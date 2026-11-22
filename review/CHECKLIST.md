@@ -158,7 +158,7 @@ Items not already covered by a phase entry above.
 - [x] `BlockHeader` 24-bit fields: `write` asserts them in debug builds (`compress` is the only producer and splits to fit). The assertion found a test whose forged size was truncated to 0.
 - [x] `Algorithm: Hash + Display`; `CompressError::Codec { algorithm, source }` keeps the codec's own error as its source
 
-- [ ] **Upstream (zrip)** The pure-Rust Zstd encoder finds no repeats at a distance of about 2000 bytes: data with a 2008-byte period compresses 1.0x, where C `zstd -1` gets 862x and this crate's LZ4 250x. On a realistic event dataset (run, event, pt, hit counts, trigger names) it is still the smallest of the fast codecs, so the default stands; a column with long-range repeats does better with zlib or LZMA.
+- [x] **Upstream (zrip)** Zstd gained nothing on data that repeats but whose bytes look random (a 2008-byte period compressed 1.0x, where C `zstd -1` gets 862x). The cause is not the distance: zrip samples each block's byte counts and stores the block raw, with no match search, when they are as flat as random data's; the same repeats over skewed bytes compress well. `zstd_encode` now looks for a raw block in the frame it gets back and, if there is one, encodes again with parameters that keep literals raw, which skip the sampling, and keeps the smaller frame: 170x at a 2008-byte period, 65x at 16 kB, 10x at 100 kB. Data that compresses is not touched; nearly incompressible `f64` takes 18% longer to compress and random bytes twice as long (0.09 to 0.19 ms per MiB). The second pass uses `zrip::encode::strategy`, which zrip hides from its docs.
 
 ### `oxiroot-io-core`
 

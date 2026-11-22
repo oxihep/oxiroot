@@ -195,6 +195,13 @@ change the API.
 
 ### Fixed
 
+- **Zstd gained nothing on repeating data whose bytes look random**
+  (identifiers, hashes, a table stored twice): the encoder samples each
+  block's byte counts and stores a flat-looking block without searching it
+  for matches. Such a block is now encoded a second time with the search
+  on, and the smaller result kept: a 2008-byte period goes from 1x to 170x.
+  Data that compresses is unaffected; nearly incompressible `f64` takes
+  about 18% longer to compress.
 - **A `TEfficiency` over `TH1F` histograms could not be read.** Its two
   histograms were taken to be `TH1D`; they are read as the class their
   header names. An efficiency over two- or three-dimensional histograms is
