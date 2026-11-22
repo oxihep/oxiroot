@@ -1896,8 +1896,8 @@ dependencies = [
 
 [[package]]
 name = "oxihist"
-version = "0.14.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.14.0#59071e5a589c9f9a333ce4132b9e1f94d088c03f"
+version = "0.15.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.15.0#7ed4204528abe09b3d58f025f8ac62127b6e310e"
 dependencies = [
  "foldhash 0.2.0",
  "oxifit",
@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "criterion",
  "oxifit",
@@ -1955,7 +1955,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-cli"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "clap",
  "oxiroot",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-compress"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "lz4_flex",
  "lzma-rust2",
@@ -1975,7 +1975,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-dataset"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -1991,7 +1991,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "oxifit",
  "oxihist",
@@ -2002,7 +2002,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist-func"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "oxifit",
  "oxifit-formula",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-io-core"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "bytes",
  "memmap2",
@@ -2026,14 +2026,14 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-linalg"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "oxiroot-io-core",
 ]
 
 [[package]]
 name = "oxiroot-rntuple"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "oxiroot-io-core",
  "oxiroot-linalg",
@@ -2043,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-tree"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "oxiroot-io-core",
  "rayon",
