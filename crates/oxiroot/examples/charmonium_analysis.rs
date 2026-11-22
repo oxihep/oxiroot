@@ -39,7 +39,6 @@ fn main() -> oxiroot::Result<()> {
 
 #[cfg(all(feature = "fit", feature = "plot"))]
 mod analysis {
-    use oxiroot::data::DatasetObject;
     use oxiroot::fit::{Events2, FitExt, FitMethod, FitOptions, Model, Toys};
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Scale, Style};
     use oxiroot::prelude::*;
@@ -168,9 +167,9 @@ mod analysis {
         }
         let tree_path = dir.join("dimuons.root");
         let candidates = Batch::new().column("mass", mass)?.column("ctau", ct)?;
-        let mut out = DatasetWriter::create(&tree_path, "dimuons", Format::Tree)?;
-        out.write(candidates)?;
-        out.finish()?;
+        FileWriter::create(&tree_path)
+            .add(NamedBatch::new("dimuons", Format::Tree, candidates))
+            .write()?;
 
         let file = FileReader::open(&tree_path)?;
         let tree = Dataset::open(&file, "dimuons")?;
@@ -542,7 +541,7 @@ mod analysis {
             .add(&m_hist.to_root()?)
             .add(&t_hist.to_root()?)
             .add(&pulls.to_root()?)
-            .add(DatasetObject::new(
+            .add(NamedBatch::new(
                 "toys",
                 Format::Tree,
                 Batch::new()

@@ -20,11 +20,12 @@
 //! FileWriter::create("out.root").add(&h.to_root()?).write()?;
 //!
 //! // Write a columnar dataset — an RNTuple here, `Format::Tree` for a TTree —
-//! // then read it back.
+//! // next to the histogram, then read it back.
 //! let batch = Batch::new().column("mass", vec![91.2_f64, 125.0])?;
-//! let mut out = DatasetWriter::create("data.root", "events", Format::Ntuple)?;
-//! out.write(batch)?;
-//! out.finish()?;
+//! FileWriter::create("data.root")
+//!     .add(&h.to_root()?)
+//!     .add(&NamedBatch::new("events", Format::Ntuple, batch))
+//!     .write()?;
 //! let f = FileReader::open("data.root")?;
 //! let events = Dataset::open(&f, "events")?;
 //! assert_eq!(events.read(["mass"])?.values::<f64>("mass")?, [91.2, 125.0]);
@@ -35,8 +36,10 @@
 //!
 //! [`data`] reads and writes ROOT's two columnar formats, `TTree` and `RNTuple`,
 //! through one API: a [`Batch`](data::Batch) of flat columns is what
-//! [`Dataset`](data::Dataset) reads and [`DatasetWriter`](data::DatasetWriter)
-//! writes, whatever the format. The format-specific readers and writers in
+//! [`Dataset`](data::Dataset) reads and what a [`NamedBatch`](data::NamedBatch) holds,
+//! whatever the format. A named batch is added to a [`FileWriter`] like a
+//! histogram; [`DatasetWriter`](data::DatasetWriter) streams a dataset too
+//! large to hold. The format-specific readers and writers in
 //! [`tree`] and [`ntuple`] remain for what only one format has.
 //!
 //! # Naming
@@ -78,7 +81,8 @@ pub mod file {
 pub mod hadd;
 
 /// One API to read and write `TTree` and `RNTuple`: [`Batch`](data::Batch)es of
-/// flat columns, read by [`Dataset`](data::Dataset) and written by
+/// flat columns, read by [`Dataset`](data::Dataset) and written as a
+/// [`NamedBatch`](data::NamedBatch) in a [`FileWriter`], or streamed by a
 /// [`DatasetWriter`](data::DatasetWriter) (from `oxiroot-dataset`).
 pub mod data {
     pub use oxiroot_dataset::*;
@@ -158,8 +162,8 @@ pub mod plot {
 /// traits objects are read and written through, the common histogram,
 /// profile, graph and function types, and the dataset API for `TTree` and
 /// `RNTuple` ([`Dataset`](crate::data::Dataset),
-/// [`DatasetWriter`](crate::data::DatasetWriter), [`Batch`](crate::data::Batch),
-/// [`Format`](crate::data::Format)). Everything else is in its module.
+/// [`NamedBatch`](crate::data::NamedBatch), [`DatasetWriter`](crate::data::DatasetWriter),
+/// [`Batch`](crate::data::Batch), [`Format`](crate::data::Format)). Everything else is in its module.
 pub mod prelude {
     // `Error` and `Result` are deliberately not here: a glob import would shadow
     // `std::result::Result`. Name them as `oxiroot::Error` / `oxiroot::Result`.
@@ -182,5 +186,5 @@ pub mod prelude {
     };
     pub use oxiroot_hist_func::{Func1D, Func2D, Func3D};
 
-    pub use oxiroot_dataset::{Batch, Dataset, DatasetWriter, Format};
+    pub use oxiroot_dataset::{Batch, Dataset, DatasetWriter, Format, NamedBatch};
 }

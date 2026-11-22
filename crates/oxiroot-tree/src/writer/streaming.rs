@@ -5,7 +5,7 @@ use oxiroot_io_core::cast::SaturatingFrom;
 use std::io::{Seek, Write};
 use std::path::Path;
 
-use oxiroot_io_core::raw::{ContainerWriter, DirId};
+use oxiroot_io_core::raw::{ContainerWriter, DirId, Objects};
 use oxiroot_io_core::{Compression, Error, Result};
 
 use super::baskets::{
@@ -507,7 +507,18 @@ impl<W: Write + Seek> TreeWriter<W> {
     ///
     /// [`Error::InvalidInput`] if no batch was written, [`Error::FileTooLarge`] if a small
     /// file grew past what it can address, and any error writing to the sink.
-    pub fn finish(mut self) -> Result<W> {
+    pub fn finish(self) -> Result<W> {
+        self.finish_with(&Objects::default())
+    }
+
+    /// [`finish`](Self::finish), storing `objects` (histograms, parameters)
+    /// in the top directory next to the tree.
+    ///
+    /// # Errors
+    ///
+    /// As [`finish`](Self::finish), and an object that cannot be stored: an
+    /// unnamed one, or one named as the tree or as another.
+    pub fn finish_with(mut self, objects: &Objects) -> Result<W> {
         if self.schema.is_none() {
             return Err(Error::InvalidInput(
                 "TreeWriter finished with no batches written".into(),
@@ -532,12 +543,14 @@ impl<W: Write + Seek> TreeWriter<W> {
         );
         self.file
             .place_key(DirId::TOP, "TTree", &self.tree_name, "", &tree_obj)?;
-        // The tree classes, plus each split branch's struct.
+        objects.place(&mut self.file, &self.tree_name)?;
+        // The tree classes, each split branch's struct, and the objects' own.
         let structs: Vec<_> = self
             .columns
             .iter()
             .filter_map(|c| c.rep.split())
             .map(split_class)
+            .chain(objects.classes().iter().cloned())
             .collect();
         self.file
             .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &structs)?;

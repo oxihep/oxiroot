@@ -29,7 +29,7 @@ pub use reader::{FileReader, find_key, split_cycle};
 #[cfg(feature = "mmap")]
 pub use source::MmapSource;
 pub use source::{ByteSource, BytesSource, FileSource};
-pub use writer::{FileUpdater, FileWriter, Storable, Stored, SubdirWriter, write_atomic};
+pub use writer::{FileUpdater, FileWriter, Objects, Storable, Stored, SubdirWriter, write_atomic};
 #[cfg(feature = "xrootd")]
 pub use xrootd::XrootdSource;
 #[cfg(feature = "xrootd-tls")]

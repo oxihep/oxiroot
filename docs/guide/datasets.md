@@ -9,15 +9,15 @@ is detected when reading and is one argument when writing.
 ```rust,no_run
 use oxiroot::prelude::*;
 
-// Write: build a batch, pick a format.
+// Write: build a batch, pick a format, add it to a file.
 let batch = Batch::new()
     .column("mass", vec![91.2_f64, 125.1, 173.0])?
     .column("charge", vec![0_i32, -1, 1])?
     .column("label", vec!["Z", "H", "top"])?
     .column("jet_pt", vec![vec![30.0_f32, 25.0], vec![], vec![120.0]])?;
-let mut out = DatasetWriter::create("events.root", "events", Format::Ntuple)?;
-out.write(batch)?;
-out.finish()?;
+FileWriter::create("events.root")
+    .add(NamedBatch::new("events", Format::Ntuple, batch))
+    .write()?;
 
 // Read: the format is detected.
 let file = FileReader::open("events.root")?;
@@ -95,7 +95,7 @@ let mut out = DatasetWriter::create("skim.root", "events", Format::Tree)?;
 for batch in events.batches(["mass", "jet_pt"]) {
     let batch = batch?;
     let keep: Vec<bool> = batch.values::<f64>("mass")?.iter().map(|&m| m > 100.0).collect();
-    out.write(batch.filter(&keep)?)?; 
+    out.write(batch.filter(&keep)?)?;
 }
 out.finish()?;
 # Ok::<(), oxiroot::Error>(())
@@ -125,8 +125,58 @@ indices and split objects.
 
 ## Writing
 
-`DatasetWriter::create(path, name, format)` writes to a file; `new(sink, …)`
-writes to any `Write + Seek`.
+A `NamedBatch` is a dataset held in memory: batches under a name and a format. It
+goes in a `FileWriter` with `add`, like a histogram or a graph, so any mix of
+objects is built first and written at the end:
+
+```rust,no_run
+use oxiroot::prelude::*;
+
+let mut events = NamedBatch::new(
+    "events",
+    Format::Tree,
+    Batch::new().column("energy", vec![10.5_f64, 20.1])?,
+);
+events.push(Batch::new().column("energy", vec![7.25_f64])?)?; // more entries
+let runs = NamedBatch::new("runs", Format::Ntuple, Batch::new().column("run", vec![101_i32])?);
+
+let mut spectrum = Hist::reg(50, 0.0, 100.0).double().named("spectrum");
+spectrum.fill(10.5);
+
+FileWriter::create("run.root")
+    .add(&spectrum.to_root()?)
+    .add(&events)
+    .add(&runs)
+    .write()?;
+# Ok::<(), oxiroot::Error>(())
+```
+
+The first batch fixes the columns; `push` takes more entries of the same
+columns. `.schema(…)` chooses the stored types, as below. `.add(&events)`
+copies the values into the file being built, and `.add(events)` hands them
+over.
+
+### A dataset too large to hold
+
+`DatasetWriter` streams batches to the file as they come, so only one
+cluster is in memory. `DatasetWriter::create(path, name, format)` writes to a
+file; `new(sink, …)` writes to any `Write + Seek`. `add` stores a histogram,
+a graph or a parameter in the same file:
+
+```rust,no_run
+use oxiroot::prelude::*;
+
+let mut spectrum = Hist::reg(50, 0.0, 100.0).double().named("spectrum");
+let mut out = DatasetWriter::create("big.root", "events", Format::Tree)?;
+for chunk in 0..100 {
+    let energy: Vec<f64> = (0..10_000).map(|i| f64::from(chunk * 10_000 + i) * 1e-4).collect();
+    energy.iter().for_each(|&e| spectrum.fill(e));
+    out.write(Batch::new().column("energy", energy)?)?;
+}
+out.add(&spectrum.to_root()?); // written with the file, next to the tree
+out.finish()?;
+# Ok::<(), oxiroot::Error>(())
+```
 
 - `.compression(c)` sets the compression (Zstd level 5 by default);
 - `.cluster_bytes(n)` sets the cluster size (32 MiB of values by default);
@@ -169,9 +219,9 @@ let schema = batch
     .schema()                                                   // the defaults
     .with("pt", DataType::Half)                                 // 16 bits per value
     .with("hits", DataType::Set(Box::new(DataType::I32)));      // a std::set<int>
-let mut out = DatasetWriter::create("out.root", "events", Format::Ntuple)?.schema(schema);
-out.write(batch)?;
-out.finish()?;
+FileWriter::create("out.root")
+    .add(NamedBatch::new("events", Format::Ntuple, batch).schema(schema))
+    .write()?;
 # Ok::<(), oxiroot::Error>(())
 ```
 
@@ -186,9 +236,9 @@ out.finish()?;
 | `Atomic(T)` | the bare `T` | RNTuple |
 
 A skim that keeps every stored type passes the source's schema on:
-`DatasetWriter::create(…)?.schema(events.schema()?)`. A type the format does
-not have (half precision in a `TTree`) or a batch that does not fit the schema
-is refused on the first write. A tree writes a counted array `x` together with
+`.schema(events.schema()?)`, on a `NamedBatch` or a `DatasetWriter`. A type
+the format does not have (half precision in a `TTree`) or a batch that does
+not fit the schema is refused when it is written. A tree writes a counted array `x` together with
 the branch `nx` that counts it; a column of that name read back from a tree is
 recognised as that branch and not written twice.
 
@@ -206,24 +256,6 @@ let events = Dataset::chain([Dataset::open(&a, "events")?, Dataset::open(&b, "ev
 for batch in events.batches(["pt"]) {
     let batch = batch?; // one cluster at a time, across both files
 }
-# Ok::<(), oxiroot::Error>(())
-```
-
-## Datasets next to other objects
-
-To put a dataset next to histograms or other datasets in one file, give a
-`DatasetObject` to a `FileWriter` (it takes a `.schema(…)` too):
-
-```rust,no_run
-use oxiroot::prelude::*;
-use oxiroot::data::DatasetObject;
-
-let events = Batch::new().column("energy", vec![10.5_f64, 20.1])?;
-let runs = Batch::new().column("run", vec![101_i32])?;
-FileWriter::create("run.root")
-    .add(DatasetObject::new("events", Format::Tree, events))
-    .add(DatasetObject::new("runs", Format::Ntuple, runs))
-    .write()?;
 # Ok::<(), oxiroot::Error>(())
 ```
 

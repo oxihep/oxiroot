@@ -9,7 +9,8 @@ use crate::schema::Schema;
 use crate::{Column, Jagged, Primitive, Strings};
 
 /// Named columns, all holding the same number of entries: what
-/// [`Dataset`](crate::Dataset) reads and [`DatasetWriter`](crate::DatasetWriter)
+/// [`Dataset`](crate::Dataset) reads, and what a
+/// [`NamedBatch`](crate::NamedBatch) or a [`DatasetWriter`](crate::DatasetWriter)
 /// writes, for a `TTree` and an `RNTuple` alike.
 ///
 /// Build one from your own data with [`column`](Self::column):

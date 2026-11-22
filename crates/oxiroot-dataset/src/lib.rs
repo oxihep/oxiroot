@@ -21,6 +21,10 @@
 //! # Ok::<(), oxiroot_io_core::Error>(())
 //! ```
 //!
+//! A dataset that fits in memory is a [`NamedBatch`], added to a
+//! [`FileWriter`](oxiroot_io_core::FileWriter) next to histograms and written
+//! with the file. A [`DatasetWriter`], as above, streams one that does not.
+//!
 //! # Columns
 //!
 //! A column is stored flat, the way Arrow stores it: scalars in one `Vec`,
@@ -56,8 +60,9 @@
 //! A column's shape does not say everything about how it is stored: a list
 //! can be a `std::vector`, a `std::set` or a C-style `x[n]`, and an `f32` can
 //! be kept in half precision. A [`Schema`] of [`DataType`]s says so.
-//! [`Dataset::schema`] reports what a file holds, and a writer stores each
-//! column as its own shape unless [`DatasetWriter::schema`] says otherwise:
+//! [`Dataset::schema`] reports what a file holds, and each column is stored
+//! as its own shape unless [`NamedBatch::schema`] or
+//! [`DatasetWriter::schema`] says otherwise:
 //!
 //! | Stored type | Held as | Format |
 //! |---|---|---|
@@ -91,7 +96,7 @@ pub use oxiroot_io_core::DataType;
 pub use oxiroot_io_core::column::{Column, Jagged, Primitive, Strings};
 pub use read::{Batches, Dataset, Format};
 pub use schema::Schema;
-pub use write::{DatasetObject, DatasetWriter};
+pub use write::{DatasetWriter, NamedBatch};
 
 /// The arrow-rs crates the `arrow` feature converts to and from, re-exported
 /// so their versions always match.

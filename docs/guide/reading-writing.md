@@ -6,9 +6,10 @@ persistence model: the `WriteRoot` and `ReadRoot` traits for single objects, and
 appending. There is one way to do each thing, and the files produced open in
 official ROOT and uproot.
 
-`TTree` and RNTuple datasets are read and written through one API,
-`Dataset` and `DatasetWriter` (they stream rather than hold a whole dataset in
-memory); see [Datasets](datasets.md), and [TTree](ttree.md) and
+`TTree` and RNTuple datasets are read and written through one API: a
+`Dataset` reads `Batch`es, a `NamedBatch` goes into a `FileWriter` like any
+other object, and a `DatasetWriter` streams a dataset too large to hold; see
+[Datasets](datasets.md), and [TTree](ttree.md) and
 [RNTuple](rntuple.md) for the format-specific layer.
 
 Types that read a file end in `Reader` (`FileReader`, `TreeReader`,

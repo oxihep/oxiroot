@@ -150,3 +150,66 @@ fn compacting_a_file_that_holds_a_tree_is_refused() {
     let tree = TreeReader::open(&file, "T").expect("tree");
     assert_eq!(tree.entries(), 3);
 }
+
+/// Objects built in memory and written together: a histogram, a `TTree` and
+/// an `RNTuple`, each added to the file the same way.
+#[test]
+fn named_batches_and_a_histogram_are_built_then_written_together() {
+    use oxiroot::data::NamedBatch;
+
+    let batch = |from: i32| {
+        Batch::new()
+            .column("id", (from..from + 3).collect::<Vec<i32>>())
+            .unwrap()
+    };
+    let mut tree = NamedBatch::new("tree", Format::Tree, batch(0));
+    tree.push(batch(3)).unwrap();
+    let ntuple = NamedBatch::new("ntuple", Format::Ntuple, batch(10));
+    let pt = hist();
+
+    let bytes = FileWriter::create("built.root")
+        .add(&pt)
+        .add(&tree)
+        .add(&ntuple)
+        .to_bytes()
+        .unwrap();
+    let file = FileReader::from_bytes(bytes).unwrap();
+    assert_eq!(file.get::<Hist1D>("pt").unwrap().contents(), pt.contents());
+    let read = |name| {
+        let ds = Dataset::open(&file, name).unwrap();
+        ds.read(["id"])
+            .unwrap()
+            .values::<i32>("id")
+            .unwrap()
+            .to_vec()
+    };
+    assert_eq!(read("tree"), [0, 1, 2, 3, 4, 5]);
+    assert_eq!(read("ntuple"), [10, 11, 12]);
+}
+
+/// A dataset streamed in several clusters, with the histogram filled along
+/// the way stored in the same file: one pass, nothing held but a cluster.
+#[test]
+fn a_streamed_dataset_and_a_histogram_share_a_file() {
+    for format in [Format::Tree, Format::Ntuple] {
+        let sink = std::io::Cursor::new(Vec::new());
+        let mut out = DatasetWriter::new(sink, "stream.root", "events", format).cluster_bytes(1);
+        let mut pt = Hist::reg(4, 0.0, 4.0).double().named("pt");
+        for chunk in 0..3 {
+            let values: Vec<f64> = (0..4)
+                .map(|i| f64::from(i) + 0.5 + f64::from(chunk))
+                .collect();
+            values.iter().for_each(|&v| pt.fill(v));
+            out.write(Batch::new().column("pt", values).unwrap())
+                .unwrap();
+        }
+        let pt = pt.to_root().unwrap();
+        out.add(&pt);
+        let file = FileReader::from_bytes(out.finish().unwrap().into_inner()).unwrap();
+
+        let events = Dataset::open(&file, "events").unwrap();
+        assert_eq!(events.entries(), 12, "{format:?}");
+        assert!(events.batches(["pt"]).count() > 1, "{format:?}");
+        assert_eq!(file.get::<Hist1D>("pt").unwrap().contents(), pt.contents());
+    }
+}
