@@ -1909,8 +1909,8 @@ dependencies = [
 
 [[package]]
 name = "oxiparticle"
-version = "0.1.0"
-source = "git+https://github.com/oxihep/oxiparticle?tag=v0.1.0#61ca817e2a2bff1d94a3519f11ad3ef45333159a"
+version = "0.2.0"
+source = "git+https://github.com/oxihep/oxiparticle?tag=v0.2.0#2b43c0c63eb6ea6f946e6100e9b5cb339a82fe08"
 
 [[package]]
 name = "oxiplot"

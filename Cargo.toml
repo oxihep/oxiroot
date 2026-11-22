@@ -59,7 +59,7 @@ oxiroot = { path = "crates/oxiroot", version = "0.10.0", default-features = fals
 # `git`/`tag`. Every crate here must name the same tag as oxifit and oxiplot do
 # for their own dependencies (oxistats, oxifit), so Cargo resolves one copy.
 oxistats = { git = "https://github.com/oxihep/oxistats", tag = "v0.2.0", version = "0.2.0" }
-oxiparticle = { git = "https://github.com/oxihep/oxiparticle", tag = "v0.1.0", version = "0.1.0" }
+oxiparticle = { git = "https://github.com/oxihep/oxiparticle", tag = "v0.2.0", version = "0.2.0" }
 oxifit = { git = "https://github.com/oxihep/oxifit", tag = "v0.9.0", version = "0.9.0" }
 oxifit-formula = { git = "https://github.com/oxihep/oxifit", tag = "v0.9.0", version = "0.9.0" }
 # Default features off: the crates that implement its data traits need none, and

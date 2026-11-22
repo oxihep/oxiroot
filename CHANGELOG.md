@@ -22,6 +22,10 @@ change the API.
 
 ### Changed
 
+- **oxiparticle 0.2.0** (Rust 1.100 and the 2024 edition; no API change).
+- The three open-data examples take their lepton IDs and the J/ψ, Υ(1S)
+  and Z masses from `oxiroot::particle`, where the IDs and the Z mass were
+  written out as numbers.
 - The `analysis` example writes its `RNTuple` and `TTree` next to a
   histogram in one file, and the `tree` example stores a histogram in the
   file its tree is streamed to.

@@ -21,6 +21,7 @@ fn main() {
 fn main() -> oxiroot::Result<()> {
     use oxiroot::fit::FitExt;
     use oxiroot::fit::{FitMethod, FitOptions, Minimizer, Model};
+    use oxiroot::particle::literals;
     use oxiroot::plot::{Axes, Color, CurveOpts, HistOpts, HistType, Style};
     use oxiroot::prelude::*;
 
@@ -38,7 +39,9 @@ fn main() -> oxiroot::Result<()> {
         start.elapsed()
     );
 
-    // Exactly two electrons (|PDG ID| 11), opposite charge, pT > 25 GeV.
+    // Exactly two electrons, opposite charge, pT > 25 GeV. The file stores a
+    // lepton's kind as the absolute value of its PDG ID: 11 for an electron.
+    let electron = literals::electron().pdgid().abspid().unsigned_abs();
     let mut mass = Hist::reg(50, 66.0, 116.0)
         .weight()
         .named("m_ee")
@@ -64,7 +67,7 @@ fn main() -> oxiroot::Result<()> {
         let kind = batch.jagged::<u32>("lep_type")?;
         for i in 0..batch.len() {
             let (kind, q, pt) = (kind.row(i), charge.row(i), pt.row(i));
-            if kind.len() != 2 || kind.iter().any(|&t| t != 11) || q[0] == q[1] {
+            if kind.len() != 2 || kind.iter().any(|&t| t != electron) || q[0] == q[1] {
                 continue;
             }
             if pt.iter().any(|&p| p < 25e3) {
@@ -162,7 +165,10 @@ fn main() -> oxiroot::Result<()> {
         "{:.0} % of the candidates sit more than 8 GeV below the peak: the radiative tail.",
         100.0 * tail / mass.integral(false)
     );
-    println!("(The PDG Z mass is 91.19 GeV; comparing this peak in data and simulation is how");
+    println!(
+        "(The PDG Z mass is {:.2} GeV; comparing this peak in data and simulation is how",
+        literals::z().mass().map_or(f64::NAN, |mev| mev / 1e3)
+    );
     println!(" the electron energy scale is calibrated.)");
 
     let fitted = model.with_params(fit.params.clone());

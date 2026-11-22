@@ -39,7 +39,7 @@ fn main() -> oxiroot::Result<()> {
     use oxiroot::data::DataType;
     use oxiroot::file::Parameter;
     use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model};
-    use oxiroot::particle::Particle;
+    use oxiroot::particle::literals;
     use oxiroot::plot::{Axes, Color, HistOpts, HistType, Scale, Style};
     use oxiroot::prelude::*;
 
@@ -209,9 +209,9 @@ fn main() -> oxiroot::Result<()> {
     // One pass over the skim's mass column fills a fine histogram around each
     // peak; a Gaussian on a straight line then measures it.
     let peaks = [
-        ("J/psi(1S)", "J/ψ", 2.9, 3.3, 0.03),
-        ("Upsilon(1S)", "Υ(1S)", 9.1, 9.8, 0.09),
-        ("Z0", "Z", 81.0, 101.0, 2.5),
+        (literals::jpsi(), "J/ψ", 2.9, 3.3, 0.03),
+        (literals::upsilon_1s(), "Υ(1S)", 9.1, 9.8, 0.09),
+        (literals::z(), "Z", 81.0, 101.0, 2.5),
     ];
     let mut windows: Vec<_> = peaks
         .iter()
@@ -225,16 +225,15 @@ fn main() -> oxiroot::Result<()> {
         }
     }
     println!("   resonance   candidates   fitted mass [GeV]      PDG [GeV]   width [GeV]");
-    for (&(pdg_name, label, lo, hi, width), window) in peaks.iter().zip(&windows) {
+    for (&(particle, label, lo, hi, width), window) in peaks.iter().zip(&windows) {
         let height = window.values(false).iter().copied().fold(0.0, f64::max);
         let floor = window.values(false)[0];
         let model =
             Model::gaussian("peak").with_params(vec![height - floor, 0.5 * (lo + hi), width])
                 + Model::polynomial("continuum", 1).with_params(vec![floor, 0.0]);
         let fit = window.fit_opts(&model, &FitOptions::new().method(FitMethod::Likelihood));
-        let pdg = Particle::from_name(pdg_name)
-            .and_then(|p| p.mass())
-            .map_or(f64::NAN, |mev| mev / 1e3);
+        // The world average, from the bundled PDG table (in MeV).
+        let pdg = particle.mass().map_or(f64::NAN, |mev| mev / 1e3);
         println!(
             "   {label:<9}   {:>10.0}   {:>8.4} ± {:.4}   {pdg:>12.4}   {:>11.4}",
             window.integral(false),
