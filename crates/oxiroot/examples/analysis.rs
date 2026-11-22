@@ -133,28 +133,28 @@ fn main() -> oxiroot::Result<()> {
         .write()?;
     println!("appended `{}` to {}", sig.name, multi_path.display());
 
-    // --- Write a columnar event dataset: a `Batch`, written as an RNTuple. ----
+    // --- Columnar event data next to the histograms, in one file. --------------
+    // A `Batch` under a name is a `NamedBatch`: added like any other object.
+    // The same batch goes in twice, as an RNTuple and as a classic TTree; only
+    // the format differs. More entries would be `events.append(batch)?`.
     let events_batch = Batch::new()
         .column("mass", vec![91.2, 125.1, 173.0])?
         .column("charge", vec![0_i32, -1, 1])?
         .column("label", vec!["Z", "H", "top"])?
         .column("jet_pt", vec![vec![30.0, 25.0], vec![], vec![120.0]])?;
-    let ntuple_path = dir.join("analysis_events.root");
-    FileWriter::create(&ntuple_path)
-        .add(NamedBatch::new(
-            "events",
-            Format::Ntuple,
-            events_batch.clone(),
-        ))
+    let ntuple = NamedBatch::new("events", Format::Ntuple, events_batch.clone());
+    let tree = NamedBatch::new("Events", Format::Tree, events_batch);
+    let events_path = dir.join("analysis_events.root");
+    FileWriter::create(&events_path)
+        .add(&pt.to_root()?)
+        .add(&ntuple)
+        .add(&tree)
         .write()?;
-    println!("wrote RNTuple -> {}", ntuple_path.display());
-
-    // --- The same batch as a classic TTree: only the format changes. -----------
-    let tree_path = dir.join("analysis_tree.root");
-    FileWriter::create(&tree_path)
-        .add(NamedBatch::new("Events", Format::Tree, events_batch))
-        .write()?;
-    println!("wrote TTree   -> {}", tree_path.display());
+    println!(
+        "wrote a TH1D, an RNTuple and a TTree ({} entries each) -> {}",
+        ntuple.entries(),
+        events_path.display()
+    );
 
     // --- Read it all back (`file.get::<Hist1D>(path)`; a subdirectory is part of the path).
     let f = FileReader::open(&hist_path)?;
@@ -166,9 +166,10 @@ fn main() -> oxiroot::Result<()> {
         sig_back.values().iter().sum::<f64>(),
     );
 
-    // Both read back the same way.
-    for (path, name) in [(&ntuple_path, "events"), (&tree_path, "Events")] {
-        let file = FileReader::open(path)?;
+    // The two datasets read back the same way, from the file the histogram
+    // is in.
+    let file = FileReader::open(&events_path)?;
+    for name in ["events", "Events"] {
         let events = Dataset::open(&file, name)?;
         let batch = events.read(["mass", "jet_pt"])?;
         let jets: Vec<&[f64]> = batch.jagged::<f64>("jet_pt")?.rows().collect();
@@ -179,6 +180,10 @@ fn main() -> oxiroot::Result<()> {
             batch.values::<f64>("mass")?
         );
     }
+    println!(
+        "and `pt` beside them: {} entries",
+        file.get::<Hist1D>("pt")?.entries()
+    );
 
     Ok(())
 }

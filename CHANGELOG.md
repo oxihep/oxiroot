@@ -7,6 +7,25 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **Two examples on real collision data**, read from CERN's open-data
+  server over `root://`:
+  - `open_data_dimuon`: the CMS 2012 dimuon spectrum. It streams 2 million
+    events, writes the selected pairs as an `RNTuple` skim one cluster at a
+    time with the spectrum and the counts in the same file, and measures
+    the J/ψ, Υ(1S) and Z from the skim.
+  - `open_data_zmumu`: ATLAS 2012 data against the Z → μμ simulation. One
+    selection and cut flow on both, the simulation scaled and subtracted,
+    and everything written to one file: histograms, parameters and both
+    candidate tables, in a directory per sample.
+
+### Changed
+
+- The `analysis` example writes its `RNTuple` and `TTree` next to a
+  histogram in one file, and the `tree` example stores a histogram in the
+  file its tree is streamed to.
+
 ## [0.10.0] — 2026-11-22
 
 One way to do each thing. A review of the whole workspace settled one column
