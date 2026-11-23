@@ -120,8 +120,11 @@ Ball, double Crystal Ball, and Voigt models; seed the rest with `with_params`.
 
 `Model::from_formula(name, formula)` builds a model from any ROOT
 [`TFormula`](functions.md) string — `"[0]*exp(-[1]*x)+[2]"`, `"gaus(0)+pol1(3)"`,
-… — so you are not limited to the built-in shapes. The parameter count is
-inferred from the formula; seed the values with `with_params`.
+`"xygaus"`, … — so you are not limited to the built-in shapes. The
+parameters are the formula's, with its names (`p0`, `p1`, …, or `Constant`,
+`Mean`, `Sigma` for `gaus` alone); seed them with `with_params` or `set`. The
+formula is compiled, and its exact gradient comes from its symbolic
+derivatives, so MIGRAD needs no finite differences.
 
 ```rust
 use oxiroot::prelude::*;

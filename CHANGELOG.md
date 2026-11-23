@@ -9,6 +9,16 @@ change the API.
 
 ### Added
 
+- **Functions take ROOT's parameter names.** `Func1D`/`Func2D`/`Func3D` have
+  `param_names`, `param_named`, `with_param` and `set_param`: `gaus` has
+  `Constant`, `Mean` and `Sigma`, `[N]*exp(-x/[tau])` has `N` and `tau`. A
+  file stores the names with the function (`GraphFunction::param_names`),
+  and ROOT reads them back.
+- **More of ROOT's formulas read**, through oxifit-formula 0.10: `gausn`,
+  `landau`, `crystalball`, `breitwigner`, `bigaus`, `chebN`, the 2- and 3-D
+  shortcuts, `TMath::Landau`, `ROOT::Math::crystalball_function` and the
+  rest of ROOT's functions and constants. A ROOT-written `crystalball` or
+  `landau` did not parse before.
 - `oxiroot::ntuple::raw::write_ntuple_clusters`: an RNTuple with a cluster per
   set of fields, into an open container.
 - `oxiroot::file::raw::PendingFile`: a file written in place of a path,
@@ -22,6 +32,15 @@ change the API.
 
 ### Changed
 
+- **A function is stored as ROOT stores it**: `fFormula` names each
+  parameter (`[Mean]`, `[p0]`) beside the map of names to indices, in ROOT's
+  spelling, so `Func1D::formula` gives that form. `GraphFunction::new` keeps
+  the formula as written (`[0]` and `[p0]` read alike) rather than rewriting
+  it, and `GraphFunction` has a `param_names` field.
+- A function refuses a formula with a variable it does not have
+  (`Func1D::new("x*y", …)` is an error, where `y` read as 0).
+- `to_model` uses the function's parameter names, its compiled formula and
+  its exact gradient.
 - **A `NamedBatch` is written in chunks** of about 1 MiB per column, as a
   `DatasetWriter` cuts a cluster: a basket per branch per chunk in a `TTree`,
   an RNTuple cluster per chunk. It was one basket per branch or one cluster for
@@ -34,6 +53,17 @@ change the API.
 
 ### Fixed
 
+- **A function read from a ROOT file could swap its parameters.** ROOT
+  stores `[1]*x+[0]` as `[p1]*x+[p0]`, which read back as `[0]*x+[1]`
+  (2.80 at x = 1.3 where ROOT gives 2.95); oxiroot's own files did the same,
+  and the two still compared equal. A ROOT-written fixture
+  (`fixtures/tf1_params.root`) covers it, with named, predefined and
+  out-of-order parameters.
+- **ROOT could not read some functions oxiroot wrote.** A formula with
+  named parameters (`[b]*x+[a]`) gave ROOT twice its parameters, all zero;
+  one written as `ln(x)`, `sign(x)` or `min(x,1)` did not compile (NaN). The
+  ROOT interop job now reads a file of such functions and checks each
+  one's parameter names and value.
 - **oxiroot did not build in a project of its own.** A project that adds
   oxiroot resolves its dependencies afresh, and `zrip-decode 0.8.18` (a patch
   release) moved to `zrip-core 0.14` while zrip 0.8.22 needs 0.12: the two met

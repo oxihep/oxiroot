@@ -49,39 +49,70 @@ f3.eval(1.0, 1.0, 1.0);                       // 3.0
 
 ## Formula syntax
 
-Parameters are `[0]`, `[1]`, … and the variables are `x`, `y`, `z`. The engine
-supports:
+Formulas are ROOT's `TFormula` syntax, and the engine follows ROOT closely:
+the same parameters in the same order, the same shortcuts and functions, and
+the same value — it is checked against ROOT 6.40 on more than a hundred
+formulas.
 
-- **Operators** `+ - * / ^` (and `**` for power), with the usual precedence;
-  comparisons (`< > <= >= == !=`) and `&& || ` yield `1.0`/`0.0`, and there is a
-  `cond ? a : b` ternary.
-- **Functions** `sin cos tan asin acos atan atan2 sinh cosh tanh exp log log10
-  log2 sqrt abs pow min max floor ceil …`, each with or without a `TMath::`
-  prefix (`TMath::Sqrt(x)` = `sqrt(x)`). ROOT's `log` is the natural log.
-- **Constants** `pi` (and `TMath::Pi()`).
-- **ROOT shortcuts** that expand to parameterised templates:
-  - `gaus` → `[0]*exp(-0.5*((x-[1])/[2])^2)`
-  - `expo` → `exp([0]+[1]*x)`
-  - `pol0`…`polN` → `[0]+[1]*x+…+[N]*x^N`
+- **Parameters** are `[0]`, `[1]`, … or names, `[mean]`. ROOT numbers them in
+  its own order: `p<N>` first, by number, then the names in byte order, and
+  `[N]` also defines every `[0]` … `[N-1]`. So `[b]*x+[a]` has `a` first.
+- **Variables** are `x`, `y`, `z` (and `t`), or ROOT's `x[0]`, `x[1]`, ….
+- **Operators** `+ - * /`, `^` and `**` (right-associative, and tighter than a
+  minus: `-x^2` is `-(x^2)`), comparisons, `&&`, `||`, `!` and `cond ? a : b`,
+  with C++ precedence; a comparison is `1` or `0`.
+- **Functions**: the C library's and `TMath`'s, with or without a namespace
+  (`sqrt`, `TMath::Sqrt`, `std::sqrt`), and `TMath::Gaus`, `TMath::Landau`,
+  `TMath::BreitWigner`, `ROOT::Math::normal_pdf`, `breitwigner_pdf`,
+  `crystalball_function`, `bigaussian_pdf` and `Chebyshev0`…`Chebyshev10`.
+- **Constants**: `pi`, `e`, `sqrt2`, `ln10`, `c`, `h`, `k`, … and the
+  `TMath::Pi()` forms, with ROOT's values.
+- **ROOT shortcuts**, expanded as ROOT expands them: `gaus`, `gausn`, `expo`,
+  `landau`, `landaun`, `crystalball`, `breitwigner`, `bigaus`, `cheb0`…`cheb10`
+  and `pol0`…`polN`. A shortcut takes the index of its first parameter
+  (`gaus(0)+pol1(3)`: the Gaussian is `[0..2]`, the line `[3..4]`), another
+  variable (`ygaus`, `gaus[y]`, `ypol2`, `pol2(y, 0)`), or two (`xygaus`,
+  `xyexpo`, `bigaus`); `pol2(x, [a], [b], [c])` names its parameters.
 
-  A shortcut takes an optional parameter offset — `gaus(0)+pol1(3)` uses `[0..2]`
-  for the Gaussian and `[3..4]` for the line.
+A formula that is one shortcut alone gets ROOT's names for its parameters:
 
 ```rust
 use oxiroot::prelude::*;
-let g = Func1D::new("gaus", -5.0..=5.0)?.named("g").with_params(&[2.0, 0.0, 1.0])?;
+let g = Func1D::new("gaus", -5.0..=5.0)?
+    .named("g")
+    .with_param("Constant", 2.0)?
+    .with_param("Sigma", 1.0)?;
+assert_eq!(g.param_names(), ["Constant", "Mean", "Sigma"]);
 assert_eq!(g.eval(0.0), 2.0);
 # Ok::<(), oxiroot::Error>(())
 ```
 
-## Precision and parameters
+A mistake is reported where it is, with a hint for the common ones:
 
-`npar()` is the number of parameters (inferred from the highest `[i]`), `ndim()`
-the dimensionality. Read parameters with `params()` (or `param(i)`, an `Option`), set them all with
-the `with_params(&[…])` builder, which checks their number, or change them in
-place through `params_mut()`.
-`title()` is the formula as written (ROOT's `fTitle`); `formula()` is ROOT's
-canonical `[pN]` form.
+```text
+bad formula: unexpected character `&`
+  x > 0 & x < 1
+        ^
+  help: ROOT writes logical AND as `&&`
+```
+
+A few spellings ROOT itself does not accept are taken too (`ln`, a
+one-argument `sign`, `min`), and a function is always stored as ROOT spells it
+(`log`, `TMath::Sign(1.,x)`, `TMath::Min`), so ROOT compiles every function
+oxiroot writes.
+
+## Parameters
+
+`npar()` is the number of parameters and `param_names()` their names, by
+index: `p0`, `p1`, … for numbered parameters. Read them with `params()`,
+`param(i)` or `param_named("Mean")`; set them all with `with_params(&[…])`,
+which checks their number, one by name with `with_param` (or `set_param` in
+place), or change them through `params_mut()`. A file stores the names with
+the function, and ROOT reads them back.
+
+`title()` is the formula as written (ROOT's `fTitle`); `formula()` is the
+formula as the file stores it (`fFormula`): ROOT's spelling, each parameter by
+its name.
 
 ## Read and write
 

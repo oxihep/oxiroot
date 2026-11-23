@@ -47,16 +47,20 @@ pub enum GraphErrors {
 
 /// A function (ROOT `TF1`) attached to a graph — e.g. a fitted curve stored in
 /// the graph's `fFunctions` list. Formula-based: the formula references
-/// parameters as `[p0]`, `[p1]`, … (ROOT also accepts `[0]`, `[1]`, which
-/// [`GraphFunction::new`] normalizes), with values in [`params`](Self::params).
+/// parameters by index, as `[0]` or `[p0]`, with their values in
+/// [`params`](Self::params) and their names in
+/// [`param_names`](Self::param_names).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphFunction {
     /// Function name (`fName`).
     pub name: String,
     /// Function title — ROOT's convention is the `[0]`-form formula (`fTitle`).
     pub title: String,
-    /// The formula in `[p0]`/`[p1]` form (`TFormula::fFormula`).
+    /// The formula, parameters by index (`TFormula::fFormula`).
     pub formula: String,
+    /// The parameter names, by index (`TFormula::fParams`): `p0`, `p1`, …,
+    /// or names such as `Constant`, `Mean`, `Sigma`.
+    pub param_names: Vec<String>,
     /// Current parameter values (`TFormula::fClingParameters`).
     pub params: Vec<f64>,
     /// Per-parameter fit errors (`Func1D::fParErrors`).
@@ -76,15 +80,16 @@ pub struct GraphFunction {
 }
 
 impl GraphFunction {
-    /// Build a formula function over `[xmin, xmax]`. `formula` may use either
-    /// `[0]`/`[1]` or `[p0]`/`[p1]` for parameters; it is stored in `[pN]` form.
+    /// Build a formula function over `[xmin, xmax]`, its parameters by index
+    /// (`[0]` or `[p0]`, as ROOT reads both) and named `p0`, `p1`, ….
     /// Errors/limits default to zero, sized to `params`.
     pub fn new(formula: impl Into<String>, params: Vec<f64>, xmin: f64, xmax: f64) -> Self {
         let title = formula.into();
         let n = params.len();
         Self {
             name: String::new(),
-            formula: normalize_formula(&title),
+            formula: title.clone(),
+            param_names: (0..n).map(|i| format!("p{i}")).collect(),
             title,
             params,
             par_errors: vec![0.0; n],
@@ -109,33 +114,6 @@ impl GraphFunction {
     pub fn npar(&self) -> usize {
         self.params.len()
     }
-}
-
-/// Rewrite bare `[N]` parameter references to ROOT's `[pN]` form (leaving an
-/// already-`[pN]` reference, or any non-numeric `[…]`, untouched).
-fn normalize_formula(s: &str) -> String {
-    let mut out = String::new();
-    let mut rest = s;
-    while let Some(open) = rest.find('[') {
-        out.push_str(&rest[..open]);
-        rest = &rest[open..];
-        if let Some(close) = rest.find(']') {
-            let inner = &rest[1..close];
-            if !inner.is_empty() && inner.bytes().all(|b| b.is_ascii_digit()) {
-                out.push_str("[p");
-                out.push_str(inner);
-                out.push(']');
-            } else {
-                out.push_str(&rest[..=close]);
-            }
-            rest = &rest[close + 1..];
-        } else {
-            out.push_str(rest);
-            rest = "";
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// An (x, y) graph, optionally with error bars (ROOT `TGraph` /

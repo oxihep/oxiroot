@@ -24,7 +24,10 @@
 #include <string>
 #include <vector>
 
+#include <TF1.h>
+#include <TF2.h>
 #include <TFile.h>
+#include <Math/PdfFuncMathCore.h>
 #include <TH1D.h>
 #include <TH2D.h>
 #include <TH3D.h>
@@ -353,9 +356,43 @@ static void read_rust(const char *dir) {
     }
     for (const char *codec : {"zlib", "lz4", "zstd", "lzma"})
         check_codec_file(dir, codec);
+    // Functions: ROOT compiles each stored formula, with the parameter names
+    // and order oxiroot gave it.
+    {
+        TFile *f = TFile::Open(join(dir, "rust_functions.root").c_str());
+        if (!f || f->IsZombie())
+            fail("cannot open rust_functions.root");
+        auto fn = [&](const char *name, const char *names, double want) {
+            auto *g = dynamic_cast<TF1 *>(f->Get(name));
+            if (!g)
+                fail(std::string("rust_functions.root: no TF1 ") + name);
+            std::string got;
+            for (int i = 0; i < g->GetNpar(); i++)
+                got += std::string(i ? "," : "") + g->GetParName(i);
+            if (got != names)
+                fail(std::string(name) + ": parameter names " + got + ", want " + names);
+            near(g->Eval(1.3), want, std::string(name) + " Eval(1.3)");
+        };
+        fn("named", "a,b", 1.5 * 1.3 + 1.0);
+        fn("swap", "p0,p1", 1.5 * 1.3 + 1.0);
+        fn("peak", "Constant,Mean,Sigma", 10.0 * std::exp(-0.5 * std::pow((1.3 - 0.5) / 2.0, 2)));
+        fn("cb", "Constant,Mean,Sigma,Alpha,N",
+           3.0 * ROOT::Math::crystalball_function(1.3, 1.2, 3.0, 0.8, 1.0));
+        fn("lan", "Constant,MPV,Sigma", 4.0 * TMath::Landau(1.3, 1.0, 0.7));
+        fn("lenient", "p0", 2.0 * std::log(1.3) - 1.0);
+        auto *xyg = dynamic_cast<TF2 *>(f->Get("xyg"));
+        if (!xyg)
+            fail("rust_functions.root: no TF2 xyg");
+        near(xyg->Eval(1.3, 0.7),
+             2.0 * std::exp(-0.5 * std::pow((1.3 - 0.5) / 1.0, 2) - 0.5 * std::pow((0.7 + 0.5) / 1.5, 2)),
+             "xyg Eval(1.3, 0.7)");
+        if (std::string(xyg->GetParName(4)) != "SigmaY")
+            fail(std::string("xyg: parameter 4 is ") + xyg->GetParName(4));
+        f->Close();
+    }
     std::printf("ROOT C++ read Rust hist + RNTuple + TTree (incl. split "
                 "std::vector<Hit>) + multi/subdir + append + 2-D/3-D/profile "
-                "under every codec — values match\n");
+                "under every codec + functions with their parameter names — values match\n");
 }
 
 int main(int argc, char **argv) {

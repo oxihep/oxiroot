@@ -28,6 +28,7 @@ fn reads_root_written_tf1() {
     assert_eq!(g.name(), "myfunc");
     assert_eq!(g.title(), "[0]*sin([1]*x) + [2]");
     assert_eq!(g.formula(), "[p0]*sin([p1]*x)+[p2]");
+    assert_eq!(g.param_names(), ["p0", "p1", "p2"]);
     assert_eq!(g.npar(), 3);
     assert_eq!(g.params(), &[2.0, 1.5, 0.5]);
     // ROOT: Eval(1)=2.494990, Integral(0,pi)=2.904130, Derivative(1)=0.212212.
@@ -161,4 +162,70 @@ fn reads_functions_held_in_a_root_written_list() {
     let formulas: Vec<&str> = functions.iter().map(Func1D::formula).collect();
     assert_eq!(formulas, ["[p0]*x", "[p0]+[p1]*x"]);
     assert_eq!(functions[1].params(), [1.5, 2.5]);
+}
+
+/// Functions whose parameters ROOT numbers and names in ways a reader has to
+/// follow (`scripts/gen_tf1_params.C`): each reads back with ROOT's names and
+/// ROOT's value at x = 1.3, and is written back as ROOT wrote it.
+#[test]
+fn reads_roots_parameter_order_and_names() {
+    let f = fixture("tf1_params.root");
+    for (name, value, names) in [
+        ("swap", 2.95, "p0,p1"),
+        ("named", 2.95, "a,b"),
+        ("peak", 9.231_163_463_866_357, "Constant,Mean,Sigma"),
+        ("cb", 2.796_307_477_078_582_5, "Constant,Mean,Sigma,Alpha,N"),
+        ("lan", 0.670_961_427_121_047, "Constant,MPV,Sigma"),
+        ("bkg", 3.246_278_070_458_871, "p0,p1,p2,p3"),
+    ] {
+        let g = f.get::<Func1D>(name).unwrap();
+        assert_eq!(g.param_names().join(","), names, "{name}");
+        let v = g.eval(1.3);
+        assert!(
+            (v - value).abs() <= 1e-12 * value.abs(),
+            "{name}: {v} where ROOT gives {value}"
+        );
+        // Written and read again: the same function.
+        let bytes = FileWriter::create("x.root").add(&g).to_bytes().unwrap();
+        let back = FileReader::from_bytes(bytes)
+            .unwrap()
+            .get::<Func1D>(name)
+            .unwrap();
+        assert_eq!(back, g, "{name}");
+        assert_eq!(back.eval(1.3).to_bits(), v.to_bits(), "{name}");
+    }
+    // ROOT stores `[1]*x+[0]` as `[p1]*x+[p0]`: parameter 1 first.
+    let swap = f.get::<Func1D>("swap").unwrap();
+    assert_eq!(swap.formula(), "[p1]*x+[p0]");
+    let named = f.get::<Func1D>("named").unwrap();
+    assert_eq!(named.param_named("b"), Some(1.5));
+}
+
+#[test]
+fn named_parameters_are_set_and_read_by_name() {
+    let mut f = Func1D::new("[N]*exp(-0.5*((x-[mu])/[sigma])^2)", -5.0..=5.0)
+        .unwrap()
+        .with_param("N", 10.0)
+        .unwrap()
+        .with_param("mu", 0.5)
+        .unwrap();
+    f.set_param("sigma", 2.0).unwrap();
+    assert_eq!(f.param_names(), ["N", "mu", "sigma"]);
+    assert_eq!(f.params(), [10.0, 0.5, 2.0]);
+    assert_eq!(f.param_named("mu"), Some(0.5));
+    assert_eq!(f.param_named("tau"), None);
+    let err = f.set_param("tau", 1.0).unwrap_err().to_string();
+    assert!(err.contains("the parameters are N, mu, sigma"), "{err}");
+    assert!((f.eval(1.3) - 9.231_163_463_866_357).abs() < 1e-12);
+}
+
+#[test]
+fn a_formula_needs_no_more_variables_than_its_function() {
+    let err = Func1D::new("x*y", 0.0..=1.0).unwrap_err().to_string();
+    assert!(err.contains("uses `y`"), "{err}");
+    assert!(Func2D::new("x*y", 0.0..=1.0, 0.0..=1.0).is_ok());
+    let err = Func1D::new("[0]*bogus(x)", 0.0..=1.0)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("unknown name `bogus`"), "{err}");
 }

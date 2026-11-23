@@ -264,9 +264,52 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
             .write()?;
     }
 
+    // Functions whose parameters ROOT numbers and names its own way, and a
+    // formula written with spellings ROOT does not take (`ln`, one-argument
+    // `sign`): ROOT must compile what is stored, with these names.
+    FileWriter::create(dir.join("rust_functions.root"))
+        .add(
+            &Func1D::new("[b]*x+[a]", 0.0..=5.0)?
+                .named("named")
+                .with_param("a", 1.0)?
+                .with_param("b", 1.5)?,
+        )
+        .add(
+            &Func1D::new("[1]*x+[0]", 0.0..=5.0)?
+                .named("swap")
+                .with_params(&[1.0, 1.5])?,
+        )
+        .add(
+            &Func1D::new("gaus", 0.0..=5.0)?
+                .named("peak")
+                .with_params(&[10.0, 0.5, 2.0])?,
+        )
+        .add(
+            &Func1D::new("crystalball", -5.0..=5.0)?
+                .named("cb")
+                .with_params(&[3.0, 1.0, 0.8, 1.2, 3.0])?,
+        )
+        .add(
+            &Func1D::new("landau", 0.0..=10.0)?
+                .named("lan")
+                .with_params(&[4.0, 1.0, 0.7])?,
+        )
+        .add(
+            &Func1D::new("[0]*ln(x) + sign(x-2)", 0.1..=5.0)?
+                .named("lenient")
+                .with_params(&[2.0])?,
+        )
+        .add(
+            &Func2D::new("xygaus", -3.0..=3.0, -3.0..=3.0)?
+                .named("xyg")
+                .with_params(&[2.0, 0.5, 1.0, -0.5, 1.5])?,
+        )
+        .write()?;
+
     println!(
         "wrote rust_hist.root + rust_ntuple.root + rust_tree.root + rust_multi.root \
-         + rust_append.root + rust_codec_{{zlib,lz4,zstd,lzma}}.root to {}",
+         + rust_append.root + rust_codec_{{zlib,lz4,zstd,lzma}}.root \
+         + rust_functions.root to {}",
         dir.display()
     );
     Ok(())
