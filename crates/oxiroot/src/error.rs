@@ -27,7 +27,7 @@ pub enum Error {
     /// A statistics function rejected its input.
     Stat(oxistats::StatError),
     /// A formula did not parse.
-    Formula(oxifit_formula::ParseError),
+    Formula(oxiformula::ParseError),
     /// An oxihist histogram operation failed.
     Hist(oxihist::Error),
     /// Building or saving a figure failed (the `plot` feature).
@@ -95,7 +95,7 @@ macro_rules! from {
 }
 from!(
     Stat(oxistats::StatError),
-    Formula(oxifit_formula::ParseError),
+    Formula(oxiformula::ParseError),
     Hist(oxihist::Error),
     #[cfg(feature = "plot")]
     Plot(oxiplot::Error),
@@ -105,10 +105,10 @@ from!(
 
 /// A ROOT-side error, except a formula's that one carries (building a
 /// `Func1D` from a formula that does not parse): that is [`Error::Formula`],
-/// whose [`ParseError`](oxifit_formula::ParseError) says where and how.
+/// whose [`ParseError`](oxiformula::ParseError) says where and how.
 impl From<oxiroot_io_core::Error> for Error {
     fn from(e: oxiroot_io_core::Error) -> Self {
-        match e.downcast::<oxifit_formula::ParseError>() {
+        match e.downcast::<oxiformula::ParseError>() {
             Ok(formula) => Self::Formula(formula),
             Err(e) => Self::Root(e),
         }

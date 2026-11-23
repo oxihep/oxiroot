@@ -18,7 +18,7 @@ splits uproot, hist, mplhep and particle. The facade re-exports them too, so
 | [`oxiroot-compress`](../api/oxiroot_compress/index.html) | ROOT 9-byte block framing + Zstd/zlib/LZ4/LZMA codecs |
 | [`oxiroot-rntuple`](../api/oxiroot_rntuple/index.html) | RNTuple reader/writer (spec v1.0.0.0) |
 | [`oxiroot-hist`](../api/oxiroot_hist/index.html) | Histograms, profiles, `Efficiency`/`SparseHist`/`PolyHist`, and the `Graph` family |
-| [`oxiroot-hist-func`](../api/oxiroot_hist_func/index.html) | `Func1D`/`Func2D`/`Func3D` parametric functions on `oxifit-formula`, with ROOT read/write |
+| [`oxiroot-hist-func`](../api/oxiroot_hist_func/index.html) | `Func1D`/`Func2D`/`Func3D` parametric functions on `oxiformula`, with ROOT read/write |
 | [`oxiroot-linalg`](../api/oxiroot_linalg/index.html) | ROOT linear-algebra objects — `Vector`/`Matrix`/`SymMatrix` (`TVectorD`/`TMatrixD`/`TMatrixDSym`), with byte-exact ROOT read/write |
 | [`oxiroot-tree`](../api/oxiroot_tree/index.html) | Classic `TTree` read/write |
 | `oxiroot-cli` | `oxroot`: a command-line inspector (`ls`/`show`/`dump`/`stat`) |
@@ -30,7 +30,7 @@ splits uproot, hist, mplhep and particle. The facade re-exports them too, so
 | `oxistats` | [oxihep/oxistats](https://github.com/oxihep/oxistats) | Dependency-free statistics: special functions, distributions, tests, HEP lineshapes (verified vs `scipy.stats`) | `oxiroot::stat` |
 | `oxiparticle` | [oxihep/oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data: the numbering-scheme decoder and a bundled particle table | `oxiroot::particle` |
 | `oxifit` | [oxihep/oxifit](https://github.com/oxihep/oxifit) | Minuit2 curve fitting for any 1-D data (`FitData`/`Model`) | `oxiroot::fit` (`fit` feature) |
-| `oxifit-formula` | [oxihep/oxifit](https://github.com/oxihep/oxifit) | Dependency-free `TFormula` expression engine: parse, evaluate, integrate, differentiate | behind `Func1D` and `Model::from_formula` |
+| `oxiformula` | [oxihep/oxiformula](https://github.com/oxihep/oxiformula) | ROOT's `TFormula`: parse, evaluate, compile, differentiate, and write back as ROOT compiles it | behind `Func1D` and `Model::from_formula`; `oxiroot::formula` |
 | `oxiplot` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Matplotlib-style SVG/PNG/PDF plotting; draws anything implementing its data traits, which `Hist1D`/`Hist2D`/`Profile1D`/`Graph` do | `oxiroot::plot` (`plot` feature) |
 | `oxiplot-tex` | [oxihep/oxiplot](https://github.com/oxihep/oxiplot) | Internal: the vendored ReX TeX math layout engine used by `oxiplot` | — |
 | `oxihist` | [oxihep/oxihist](https://github.com/oxihep/oxihist) | ROOT-free N-axis histograms (`Histogram<S, D>`): regular, variable, integer and category axes, five storages, growth, threaded and parallel fill | the `Hist` builder; `.to_root()?` / `FromRoot` convert to and from `Hist1D`/`Hist2D`/`Hist3D` and profiles |
@@ -40,9 +40,9 @@ splits uproot, hist, mplhep and particle. The facade re-exports them too, so
 The leaf crates layer cleanly: `io-core` and `compress` underpin the format
 crates (`rntuple`, `hist`, `tree`, `linalg`); the `WriteRoot`/`ReadRoot` object
 framework lives in `io-core`, so each format crate registers its own objects.
-`oxistats` and `oxifit-formula` are dependency-free leaves: `oxistats` is shared
+`oxistats` is a dependency-free leaf, and `oxiformula` depends only on it: `oxistats` is shared
 by `hist` (compatibility tests) and `oxifit` (goodness-of-fit), and
-`oxifit-formula` by `hist-func` (the `Func1D`/`Func2D`/`Func3D` functions) and
+`oxiformula` by `hist-func` (the `Func1D`/`Func2D`/`Func3D` functions) and
 `oxifit` (formula models). Keeping the functions in `hist-func` means a
 histogram-only build never compiles the formula engine. `oxifit` and `oxiplot`
 are optional, behind the `fit` and `plot` features. `oxiplot` knows nothing
@@ -52,18 +52,19 @@ implement UHI for mplhep.
 ```text
 oxiroot    -> io-core, compress, rntuple, hist, hist-func, linalg, tree,
               oxistats, oxiparticle, [oxifit], [oxiplot]
-hist-func  -> hist, io-core, oxifit-formula, [oxifit]
+hist-func  -> hist, io-core, oxiformula, [oxifit]
 hist       -> io-core, oxistats, [oxifit], [oxiplot]
 tree       -> io-core
 rntuple    -> io-core
 linalg     -> io-core
-io-core    -> compress, [oxistats], [oxifit-formula], [oxiplot]
+io-core    -> compress, [oxistats], [oxiformula], [oxiplot]
 compress: no oxiroot dependencies
 oxiroot-cli (oxroot) -> oxiroot
 
-oxifit     -> oxifit-formula, oxistats        (github.com/oxihep/oxifit)
+oxifit     -> oxiformula, oxistats            (github.com/oxihep/oxifit)
+oxiformula -> oxistats                        (github.com/oxihep/oxiformula)
 oxiplot    -> [oxifit], [oxiplot-tex]         (github.com/oxihep/oxiplot)
-oxistats, oxiparticle, oxifit-formula: no dependencies
+oxistats, oxiparticle: no dependencies
 
 [x] = optional, behind a feature. Only oxiroot and oxihep crates are listed.
 ```

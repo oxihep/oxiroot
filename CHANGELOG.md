@@ -19,7 +19,7 @@ change the API.
   `Constant`, `Mean` and `Sigma`, `[N]*exp(-x/[tau])` has `N` and `tau`. A
   file stores the names with the function (`GraphFunction::param_names`),
   and ROOT reads them back.
-- **More of ROOT's formulas read**, through oxifit-formula 0.10: `gausn`,
+- **More of ROOT's formulas read**, through oxiformula: `gausn`,
   `landau`, `crystalball`, `breitwigner`, `bigaus`, `chebN`, the 2- and 3-D
   shortcuts, `TMath::Landau`, `ROOT::Math::crystalball_function` and the
   rest of ROOT's functions and constants. A ROOT-written `crystalball` or
@@ -37,17 +37,19 @@ change the API.
 
 ### Changed
 
+- **The formula engine is [oxiformula](https://github.com/oxihep/oxiformula)**
+  (0.11.0), in a repository of its own (it was oxifit's `oxifit-formula`),
+  and is re-exported as `oxiroot::formula`. With it: oxifit 0.11.0, oxiplot
+  0.14.0, oxihist 0.18.0 and oxistats 0.2.1 (`erf`/`erfc` 16× faster), one
+  copy of each. oxiformula follows ROOT's `TFormula` in its parameters,
+  shortcuts and spelling, has ROOT's other densities, and compiles formulas
+  to run at about ROOT's speed.
 - **A formula that does not parse is an `oxiroot::Error::Formula`** through
   `?`, with the `ParseError`'s span and hint, where it was a string in
   `Error::InvalidInput`.
 - **`Func1D::derivative` is exact** where the formula has a symbolic
   derivative, and a central difference (as ROOT's) only where it has none.
-- oxistats 0.2.1 (`erf`/`erfc` 16× faster), oxifit 0.10.1 (ROOT's other
-  densities, `crystalballn`, compiled formulas at ROOT's speed), oxiplot
-  0.13.1 and oxihist 0.17.1.
-- **oxifit 0.10.0, oxiplot 0.13.0 and oxihist 0.17.0**: oxifit-formula
-  follows ROOT's `TFormula` (its parameters, shortcuts and spelling), and the
-  others move to it, so one copy of each oxihep crate is built.
+
 - **A function is stored as ROOT stores it**: `fFormula` names each
   parameter (`[Mean]`, `[p0]`) beside the map of names to indices, in ROOT's
   spelling, so `Func1D::formula` gives that form. `GraphFunction::new` keeps

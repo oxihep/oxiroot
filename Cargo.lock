@@ -1875,29 +1875,29 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "oxifit"
-version = "0.10.1"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.10.1#12accaedf9e60b6d51a6440169d27c83462419ff"
+version = "0.11.0"
+source = "git+https://github.com/oxihep/oxifit?tag=v0.11.0#109db1cc2cd2eb95ac894c298681526e8cecc817"
 dependencies = [
  "argmin",
  "argmin-math",
  "minuit2",
- "oxifit-formula",
+ "oxiformula",
  "oxistats",
  "rayon",
 ]
 
 [[package]]
-name = "oxifit-formula"
-version = "0.10.1"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.10.1#12accaedf9e60b6d51a6440169d27c83462419ff"
+name = "oxiformula"
+version = "0.11.0"
+source = "git+https://github.com/oxihep/oxiformula?tag=v0.11.0#4f7a8c5ee15528fc2f20a67d9a3987dbc7220771"
 dependencies = [
  "oxistats",
 ]
 
 [[package]]
 name = "oxihist"
-version = "0.17.1"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.17.1#6496ced72f975fad56b72f1c5b3424ddcc701e4a"
+version = "0.18.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.18.0#6d49e52aeb2991e209f280acf3aeb25914f824c9"
 dependencies = [
  "foldhash 0.2.0",
  "oxifit",
@@ -1914,8 +1914,8 @@ source = "git+https://github.com/oxihep/oxiparticle?tag=v0.2.0#2b43c0c63eb6ea6f9
 
 [[package]]
 name = "oxiplot"
-version = "0.13.1"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.13.1#c346e7a2575db106f30972ad2ed1fcf04c4aa09b"
+version = "0.14.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.14.0#30f2da0fa113bc49a877eded58e5145993fe9192"
 dependencies = [
  "oxifit",
  "oxiplot-tex",
@@ -1925,8 +1925,8 @@ dependencies = [
 
 [[package]]
 name = "oxiplot-tex"
-version = "0.13.1"
-source = "git+https://github.com/oxihep/oxiplot?tag=v0.13.1#c346e7a2575db106f30972ad2ed1fcf04c4aa09b"
+version = "0.14.0"
+source = "git+https://github.com/oxihep/oxiplot?tag=v0.14.0#30f2da0fa113bc49a877eded58e5145993fe9192"
 dependencies = [
  "skrifa",
 ]
@@ -1937,7 +1937,7 @@ version = "0.11.0"
 dependencies = [
  "criterion",
  "oxifit",
- "oxifit-formula",
+ "oxiformula",
  "oxihist",
  "oxiparticle",
  "oxiplot",
@@ -2008,7 +2008,7 @@ name = "oxiroot-hist-func"
 version = "0.11.0"
 dependencies = [
  "oxifit",
- "oxifit-formula",
+ "oxiformula",
  "oxiroot-hist",
  "oxiroot-io-core",
 ]

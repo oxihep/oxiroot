@@ -226,12 +226,12 @@ jobs:
 
       - name: Histogram-only builds do not compile the formula engine
         # TF1/TF2/TF3 live in oxiroot-hist-func so that oxiroot-hist (with or
-        # without its `plot` feature) stays free of oxifit-formula.
+        # without its `plot` feature) stays free of oxiformula.
         run: |
           set -euo pipefail
           hist=$(cargo tree -p oxiroot-hist -e normal)
           hist_plot=$(cargo tree -p oxiroot-hist -e normal --features plot)
-          if grep -E 'oxifit-formula|oxiroot-hist-func' <<<"$hist"; then
+          if grep -E 'oxiformula|oxiroot-hist-func' <<<"$hist"; then
             echo "oxiroot-hist must not depend on the formula engine"; exit 1
           fi
           if grep oxifit <<<"$hist_plot"; then
@@ -256,7 +256,7 @@ jobs:
       - name: No oxihep crate is built twice
         run: |
           set -euo pipefail
-          dups=$(cargo tree --locked --workspace --all-features --duplicates -e normal,build,dev --depth 0 --prefix none --format '{p}' | grep -E '^oxi(hist|plot|plot-tex|fit|fit-formula|stats|particle) ' || true)
+          dups=$(cargo tree --locked --workspace --all-features --duplicates -e normal,build,dev --depth 0 --prefix none --format '{p}' | grep -E '^oxi(hist|plot|plot-tex|fit|formula|stats|particle) ' || true)
           if [ -n "$dups" ]; then
             echo "These oxihep crates resolve to more than one tag; bump every manifest to the same tag:"
             echo "$dups" | sort -u

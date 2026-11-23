@@ -1,7 +1,7 @@
 //! The function type: [`Func`], with [`Func1D`], [`Func2D`] and [`Func3D`] as
 //! its one-, two- and three-dimensional forms, and their evaluation.
 
-use oxifit_formula::{Formula, derivative, integrate};
+use oxiformula::{Formula, derivative, integrate};
 use oxiroot_hist::GraphFunction;
 use oxiroot_io_core::{Error, Result};
 use std::ops::RangeInclusive;
@@ -405,7 +405,7 @@ impl<const D: usize> Func<D> {
     /// `model` with the formula's symbolic gradient, compiled, when every
     /// parameter has one.
     fn with_gradient(&self, model: oxifit::Model) -> oxifit::Model {
-        let derivatives: Option<Vec<oxifit_formula::Compiled>> = (0..self.formula.npar())
+        let derivatives: Option<Vec<oxiformula::Compiled>> = (0..self.formula.npar())
             .map(|k| self.formula.derivative(k).map(|d| d.compile()))
             .collect();
         match derivatives {
