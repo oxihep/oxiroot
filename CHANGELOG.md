@@ -13,6 +13,12 @@ change the API.
   set of fields, into an open container.
 - `oxiroot::file::raw::PendingFile`: a file written in place of a path,
   which takes the path's place on `commit` and is deleted if dropped first.
+- `Efficiency::is_weighted`, read from ROOT's `kUseWeights` bit and written
+  back with it.
+- The shortest Bayesian interval (ROOT's `SetShortestInterval`):
+  `Efficiency::shortest_interval` and `with_shortest_interval`, read from and
+  written to ROOT's bit. An efficiency with a Bayesian option is now written
+  with ROOT's `kIsBayesian` bit too.
 
 ### Changed
 
@@ -51,6 +57,12 @@ change the API.
 - **A replaced file reaches the disk before it takes its name**, so a crash
   or power cut right after a write cannot leave an empty file (`FileWriter`,
   `hadd`, and the streaming writers above).
+- **`Efficiency::interval` of a weighted efficiency is ROOT's.** It used the
+  unweighted formulas whatever the weights. As ROOT does when an efficiency
+  was filled with weights (`kUseWeights`), every frequentist option is now the
+  normal approximation over the sums of weights and of their squares, and a
+  Bayesian one the Beta posterior over the effective counts. Checked against
+  ROOT 6.40 on a new fixture (`scripts/gen_efficiency_weighted.C`) to 1e-9.
 
 ## [0.11.0] — 2026-11-22
 

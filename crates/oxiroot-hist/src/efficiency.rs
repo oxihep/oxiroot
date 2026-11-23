@@ -5,7 +5,7 @@
 //! ROOT C++ is the interop oracle here.
 
 use oxiroot_io_core::raw::{
-    K_BYTE_COUNT_MASK, K_CLASS_MASK, TagReader, read_named, skip_versioned,
+    K_BYTE_COUNT_MASK, K_CLASS_MASK, TagReader, read_object_base, skip_versioned,
 };
 use oxiroot_io_core::{Error, RBuffer, Result};
 use oxiroot_io_core::{Object, ReadRoot};
@@ -40,6 +40,12 @@ pub enum StatisticOption {
 }
 
 impl StatisticOption {
+    /// Whether this is one of the Bayesian options (ROOT's `kIsBayesian`).
+    #[must_use]
+    pub const fn is_bayesian(self) -> bool {
+        matches!(self, Self::Jeffrey | Self::Uniform | Self::Bayesian)
+    }
+
     /// The value a ROOT `fStatisticOption` code names.
     ///
     /// # Errors
@@ -103,7 +109,17 @@ pub struct Efficiency {
     pub(crate) beta_alpha: f64,
     /// Bayesian prior β (`fBeta_beta`).
     pub(crate) beta_beta: f64,
+    /// Whether the trials were filled with weights (ROOT's `kUseWeights`).
+    pub(crate) weighted: bool,
+    /// Whether a Bayesian interval is the shortest one rather than the
+    /// central one (ROOT's `kShortestInterval`).
+    pub(crate) shortest_interval: bool,
 }
+
+/// ROOT's `TEfficiency` status bits.
+pub(crate) const K_IS_BAYESIAN: u32 = 1 << 14;
+pub(crate) const K_SHORTEST_INTERVAL: u32 = 1 << 16;
+pub(crate) const K_USE_WEIGHTS: u32 = 1 << 18;
 
 impl Efficiency {
     /// Confidence level for the interval (`fConfLevel`).
@@ -192,7 +208,48 @@ impl Efficiency {
             weight: 1.0,
             beta_alpha: 1.0,
             beta_beta: 1.0,
+            weighted: false,
+            shortest_interval: false,
         }
+    }
+
+    /// Whether the trials were filled with weights (ROOT's `kUseWeights`, set
+    /// by `TEfficiency::FillWeighted`). Its intervals then follow from the sums
+    /// of weights and of their squares: the normal approximation for every
+    /// frequentist option, a Beta posterior over effective counts for the
+    /// Bayesian ones. [`weight`](Self::weight) alone does not make it weighted.
+    #[must_use]
+    pub fn is_weighted(&self) -> bool {
+        self.weighted
+    }
+
+    /// Whether a Bayesian interval is the shortest one holding the confidence
+    /// level, rather than the central one (ROOT's `SetShortestInterval`).
+    #[must_use]
+    pub fn shortest_interval(&self) -> bool {
+        self.shortest_interval
+    }
+
+    /// Set [`shortest_interval`](Self::shortest_interval).
+    #[must_use]
+    pub fn with_shortest_interval(mut self, shortest: bool) -> Self {
+        self.shortest_interval = shortest;
+        self
+    }
+
+    /// ROOT's status bits for these settings, on top of `base`.
+    pub(crate) fn status_bits(&self, base: u32) -> u32 {
+        let mut bits = base;
+        if self.statistic_option.is_bayesian() {
+            bits |= K_IS_BAYESIAN;
+        }
+        if self.shortest_interval {
+            bits |= K_SHORTEST_INTERVAL;
+        }
+        if self.weighted {
+            bits |= K_USE_WEIGHTS;
+        }
+        bits
     }
 
     /// Record one trial at `x`: always increments `total`, and `passed` too when
@@ -212,11 +269,17 @@ impl Efficiency {
     ///
     /// Clopper–Pearson (ROOT's default), the normal approximation, Wilson,
     /// Agresti–Coull and the three Bayesian options (the central interval of
-    /// the Beta posterior) are computed.
+    /// the Beta posterior, or the shortest one with
+    /// [`shortest_interval`](Self::shortest_interval)) are computed. A
+    /// [weighted](Self::is_weighted) efficiency is computed as ROOT computes
+    /// it: every frequentist option by the normal approximation with the sums
+    /// of weights and of their squares, the Bayesian ones over the effective
+    /// counts `passed · Σw / Σw²` and `(total − passed) · Σw / Σw²`.
     ///
     /// # Errors
     ///
-    /// [`Error::Unsupported`] for the Feldman–Cousins and mid-P options.
+    /// [`Error::Unsupported`] for the Feldman–Cousins and mid-P options of an
+    /// unweighted efficiency.
     pub fn interval(&self, bin: usize) -> Result<Option<(f64, f64)>> {
         let (Some(&n), Some(&k)) = (self.total.contents.get(bin), self.passed.contents.get(bin))
         else {
@@ -226,27 +289,55 @@ impl Efficiency {
             return Ok(None);
         }
         let level = self.conf_level;
-        // The central interval of a Beta(a, b) posterior.
-        let bayesian = |alpha: f64, beta: f64| {
-            let (a, b) = (k + alpha, n - k + beta);
-            let tail = (1.0 - level) / 2.0;
-            (
-                oxistats::betaincinv(a, b, tail),
-                oxistats::betaincinv(a, b, 1.0 - tail),
-            )
+        let tail = (1.0 - level) / 2.0;
+        let (alpha, beta) = match self.statistic_option {
+            StatisticOption::Jeffrey => (0.5, 0.5),
+            StatisticOption::Uniform => (1.0, 1.0),
+            _ => (self.beta_alpha, self.beta_beta),
         };
+        // The central or shortest interval of a Beta(a, b) posterior.
+        let posterior = |a: f64, b: f64| {
+            if self.shortest_interval {
+                beta_shortest_interval(a, b, level)
+            } else {
+                (
+                    oxistats::betaincinv(a, b, tail),
+                    oxistats::betaincinv(a, b, 1.0 - tail),
+                )
+            }
+        };
+        if self.weighted {
+            let sumw2 = |h: &Hist1D, fallback: f64| {
+                h.sumw2()
+                    .and_then(|s| s.get(bin).copied())
+                    .unwrap_or(fallback)
+            };
+            let (tw2, pw2) = (sumw2(&self.total, n), sumw2(&self.passed, k));
+            if self.statistic_option.is_bayesian() {
+                if tw2 <= 0.0 {
+                    let p = k / n;
+                    return Ok(Some((p, p)));
+                }
+                let norm = n / tw2;
+                return Ok(Some(posterior(k * norm + alpha, (n - k) * norm + beta)));
+            }
+            let p = k / n;
+            let variance = (pw2 * (1.0 - 2.0 * p) + tw2 * p * p) / (n * n);
+            let half = oxistats::ndtri(1.0 - tail) * variance.max(0.0).sqrt();
+            return Ok(Some(((p - half).max(0.0), (p + half).min(1.0))));
+        }
         Ok(Some(match self.statistic_option {
             StatisticOption::ClopperPearson => oxistats::clopper_pearson(k, n, level),
             StatisticOption::Wilson => oxistats::wilson_interval(k, n, level),
             StatisticOption::AgrestiCoull => oxistats::agresti_coull_interval(k, n, level),
             StatisticOption::Normal => {
                 let p = k / n;
-                let half = oxistats::ndtri(1.0 - (1.0 - level) / 2.0) * (p * (1.0 - p) / n).sqrt();
+                let half = oxistats::ndtri(1.0 - tail) * (p * (1.0 - p) / n).sqrt();
                 ((p - half).max(0.0), (p + half).min(1.0))
             }
-            StatisticOption::Jeffrey => bayesian(0.5, 0.5),
-            StatisticOption::Uniform => bayesian(1.0, 1.0),
-            StatisticOption::Bayesian => bayesian(self.beta_alpha, self.beta_beta),
+            StatisticOption::Jeffrey | StatisticOption::Uniform | StatisticOption::Bayesian => {
+                posterior(k + alpha, n - k + beta)
+            }
             other => {
                 return Err(Error::Unsupported(format!(
                     "the {other:?} interval of a TEfficiency (oxiroot computes \
@@ -268,7 +359,13 @@ impl Efficiency {
 
     pub(crate) fn read(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<Self> {
         let te = r.read_version()?; // Efficiency wrapper (v2)
-        let named = read_named(r)?;
+        // TNamed, read here for its TObject's status bits.
+        let named = r.read_version()?;
+        let bits = read_object_base(r)?.bits;
+        let (name, title) = (r.string()?, r.string()?);
+        if let Some(end) = named.end {
+            r.seek(end)?;
+        }
         skip_versioned(r)?; // TAttLine
         skip_versioned(r)?; // TAttFill
         skip_versioned(r)?; // TAttMarker
@@ -288,8 +385,8 @@ impl Efficiency {
         }
 
         Ok(Self {
-            name: named.name,
-            title: named.title,
+            name,
+            title,
             passed,
             total,
             conf_level,
@@ -297,8 +394,47 @@ impl Efficiency {
             weight,
             beta_alpha,
             beta_beta,
+            weighted: bits & K_USE_WEIGHTS != 0,
+            shortest_interval: bits & K_SHORTEST_INTERVAL != 0,
         })
     }
+}
+
+/// The shortest interval holding `level` of a Beta(`a`, `b`) distribution.
+/// When the density does not fall on both sides (`a ≤ 1` or `b ≤ 1`), it runs
+/// from the end where the density is highest; otherwise its lower tail
+/// probability is the one that makes it shortest, found by golden-section
+/// search (the width is unimodal in it).
+fn beta_shortest_interval(a: f64, b: f64, level: f64) -> (f64, f64) {
+    let quantile = |p: f64| oxistats::betaincinv(a, b, p.clamp(0.0, 1.0));
+    if a <= 1.0 && b > 1.0 {
+        return (0.0, quantile(level));
+    }
+    if b <= 1.0 && a > 1.0 {
+        return (quantile(1.0 - level), 1.0);
+    }
+    if a <= 1.0 && b <= 1.0 {
+        // A density highest at both ends: ROOT keeps the central interval.
+        let tail = (1.0 - level) / 2.0;
+        return (quantile(tail), quantile(1.0 - tail));
+    }
+    let width = |t: f64| quantile(t + level) - quantile(t);
+    let golden = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let (mut lo, mut hi) = (0.0, 1.0 - level);
+    for _ in 0..200 {
+        if hi - lo < 1e-14 {
+            break;
+        }
+        let x1 = hi - golden * (hi - lo);
+        let x2 = lo + golden * (hi - lo);
+        if width(x1) < width(x2) {
+            hi = x2;
+        } else {
+            lo = x1;
+        }
+    }
+    let t = (lo + hi) / 2.0;
+    (quantile(t), quantile(t + level))
 }
 
 /// Skip a byte-counted member (`{kByteCountMask | len}{len bytes}`).

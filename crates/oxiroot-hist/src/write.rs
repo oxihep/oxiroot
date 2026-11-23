@@ -486,7 +486,7 @@ fn write_th1f_ptr(w: &mut WBuffer, h: &Hist1D) {
 /// fStatisticOption, fTotalHistogram(TH1D*), fWeight }`.
 pub(crate) fn write_tefficiency(w: &mut WBuffer, h: &Efficiency) {
     let te = w.begin_object(2); // Efficiency version 2
-    write_named(w, HIST_BITS, &h.name, &h.title);
+    write_named(w, h.status_bits(HIST_BITS), &h.name, &h.title);
     write_attline(w);
     write_attfill(w);
     write_attmarker(w);
