@@ -103,7 +103,16 @@ impl Key {
         let class_name = r.string()?;
         let name = r.string()?;
         let title = r.string()?;
-        // The header occupies exactly `key_len` bytes; realign for the caller.
+        // The header occupies `key_len` bytes, at least those just read (a
+        // `TBasket` key adds its own fields). A shorter `fKeyLen` would move
+        // the cursor back, so a key list would read the same key forever.
+        let read = r.pos() - start;
+        if (key_len as usize) < read {
+            return Err(Error::Format(format!(
+                "key {name:?}: fKeyLen {key_len} is shorter than its {read}-byte header"
+            )));
+        }
+        // Realign for the caller.
         r.seek(start + key_len as usize)?;
 
         Ok(Self {

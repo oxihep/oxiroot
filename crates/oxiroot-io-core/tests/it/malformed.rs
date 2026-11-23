@@ -205,3 +205,37 @@ fn subdir_rejects_overflowing_big_directory_key() {
     // A path reaches the same offset computation via subdir().
     assert!(f.key("d/x").is_err());
 }
+
+/// Files the fuzzers built whose key list has a key with `fKeyLen` 0 and a
+/// count of about two billion. The key was read again and again from the same
+/// place until memory ran out; now the short key is an error.
+#[test]
+fn a_key_shorter_than_its_header_ends_the_key_list() {
+    for name in [
+        "key-loop-file.bin",
+        "key-loop-rntuple.bin",
+        "key-loop-hist.bin",
+    ] {
+        let bytes = fixture(&format!("fuzz/{name}"));
+        let start = std::time::Instant::now();
+        if let Ok(f) = FileReader::from_bytes(bytes) {
+            poke(&f);
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "{name} took {:?}",
+            start.elapsed()
+        );
+    }
+}
+
+#[test]
+fn key_read_refuses_a_key_length_shorter_than_the_header() {
+    let mut w = WBuffer::new();
+    key_header(&mut w, "TH1D", "h", 100, false);
+    let mut bytes = w.into_vec();
+    // fKeyLen sits after fNbytes (4), fVersion (2), fObjLen (4) and fDatime (4).
+    bytes[14..16].copy_from_slice(&0u16.to_be_bytes());
+    let err = Key::read(&mut oxiroot_io_core::RBuffer::new(&bytes)).unwrap_err();
+    assert!(err.to_string().contains("fKeyLen 0"), "{err}");
+}
