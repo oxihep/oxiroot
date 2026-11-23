@@ -47,7 +47,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use oxiroot_dataset::{DataType, Dataset, DatasetWriter, Format, Schema};
-use oxiroot_io_core::raw::KSTART_BIG_FILE;
+use oxiroot_io_core::raw::{KSTART_BIG_FILE, PendingFile};
 use oxiroot_io_core::{ClassKind, Compression, Error, FileReader, FileSource, Result};
 
 mod histograms;
@@ -298,16 +298,19 @@ fn write_atomically(
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("file.root");
-    let partial = output.with_file_name(format!(".{file_name}.{}.partial", std::process::id()));
-    let written = with_form_fallback(large, |big| {
-        write(std::fs::File::create(&partial)?, file_name, big)
-    })
-    .and_then(|()| Ok(std::fs::rename(&partial, output)?));
-    if written.is_err() {
-        // Best effort: the error to report is the merge's, not the cleanup's.
-        let _ = std::fs::remove_file(&partial);
+    // Each attempt fills a fresh temporary file; one that fails is deleted
+    // when its `PendingFile` drops.
+    let mut pending = None;
+    with_form_fallback(large, |big| {
+        let attempt = PendingFile::create(output)?;
+        write(attempt.file()?, file_name, big)?;
+        pending = Some(attempt);
+        Ok(())
+    })?;
+    match pending {
+        Some(p) => Ok(p.commit()?),
+        None => Ok(()),
     }
-    written
 }
 
 /// `schema` with every counted array whose counter is not one of `columns`

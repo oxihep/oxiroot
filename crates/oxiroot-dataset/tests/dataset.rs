@@ -1349,3 +1349,67 @@ fn a_large_named_batch_is_written_in_chunks_a_read_can_share() {
         assert_eq!(ds.read(["x", "v"]).unwrap(), b, "{format:?}");
     }
 }
+
+/// A writer created at a path writes beside it: until `finish` succeeds the
+/// file there keeps what it held, and nothing is left beside it.
+#[test]
+fn a_streamed_file_takes_its_path_only_when_finished() {
+    use oxiroot_rntuple::raw::NtupleWriter;
+    use oxiroot_tree::raw::TreeWriter;
+
+    let dir = std::env::temp_dir().join(format!("oxiroot-streamed-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.root");
+    let others = |dir: &std::path::Path| {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n != "events.root")
+            .collect::<Vec<_>>()
+    };
+    std::fs::write(&path, b"the old file").unwrap();
+    let b = sample(10, 0);
+
+    for format in [Format::Tree, Format::Ntuple] {
+        // Dropped part-way.
+        let mut w = DatasetWriter::create(&path, "events", format).unwrap();
+        w.append(b.clone()).unwrap();
+        drop(w);
+        assert_eq!(std::fs::read(&path).unwrap(), b"the old file", "{format:?}");
+        assert_eq!(others(&dir), Vec::<String>::new(), "{format:?}");
+
+        // Failed: a later batch with other columns.
+        let mut w = DatasetWriter::create(&path, "events", format).unwrap();
+        w.append(b.clone()).unwrap();
+        assert!(w.append(b.select(["idx"]).unwrap()).is_err());
+        drop(w);
+        assert_eq!(std::fs::read(&path).unwrap(), b"the old file", "{format:?}");
+    }
+
+    // The low-level streaming writers, dropped part-way.
+    let mut t = TreeWriter::create(&path, "events", Compression::Stored).unwrap();
+    t.write_batch(&[oxiroot_tree::raw::Branch::new("x", vec![1.0_f64])])
+        .unwrap();
+    drop(t);
+    let mut n = NtupleWriter::create(&path, "events", Compression::Stored).unwrap();
+    n.write_batch(&[oxiroot_rntuple::raw::Field::new("x", vec![1.0_f64])])
+        .unwrap();
+    drop(n);
+    assert_eq!(std::fs::read(&path).unwrap(), b"the old file");
+    assert_eq!(others(&dir), Vec::<String>::new());
+
+    // Finished: the dataset takes the path.
+    let mut w = DatasetWriter::create(&path, "events", Format::Ntuple).unwrap();
+    w.append(b.clone()).unwrap();
+    w.finish().unwrap();
+    let file = FileReader::open(&path).unwrap();
+    assert_eq!(
+        Dataset::open(&file, "events")
+            .unwrap()
+            .read(COLUMNS)
+            .unwrap(),
+        b
+    );
+    assert_eq!(others(&dir), Vec::<String>::new());
+    std::fs::remove_dir_all(&dir).ok();
+}

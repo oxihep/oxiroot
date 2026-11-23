@@ -160,10 +160,15 @@ pub struct TreeWriter<W: Write + Seek> {
     /// The first batch's schema; `None` until the first batch is written.
     schema: Option<Vec<ColSig>>,
     total_entries: i64,
+    /// For a writer [`create`](Self::create)d at a path: the temporary file
+    /// it writes, which takes the path's place when the writer finishes.
+    pending: Option<oxiroot_io_core::raw::PendingFile>,
 }
 
 impl TreeWriter<std::fs::File> {
-    /// Create a streaming tree file at `path`. The tree is named `tree_name`;
+    /// Create a streaming tree file at `path`. It is written beside `path`
+    /// and takes its place when [`finish`](TreeWriter::finish) succeeds, so a
+    /// write that fails or is dropped leaves `path` as it was. The tree is named `tree_name`;
     /// the file is the small (32-bit) container, so the total must stay under
     /// 2 GiB ([`finish`](TreeWriter::finish) errors otherwise). For a file that
     /// may exceed 2 GiB, use [`create_large`](TreeWriter::create_large).
@@ -207,8 +212,12 @@ impl TreeWriter<std::fs::File> {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        let file = std::fs::File::create(path)?;
-        Self::new_fmt(file, &file_name, tree_name, compression, big)
+        // Written beside `path` and renamed over it when finished, so a
+        // write that fails or is dropped leaves `path` as it was.
+        let pending = oxiroot_io_core::raw::PendingFile::create(path)?;
+        let mut writer = Self::new_fmt(pending.file()?, &file_name, tree_name, compression, big)?;
+        writer.pending = Some(pending);
+        Ok(writer)
     }
 }
 
@@ -264,6 +273,7 @@ impl<W: Write + Seek> TreeWriter<W> {
             columns: Vec::new(),
             schema: None,
             total_entries: 0,
+            pending: None,
         })
     }
 
@@ -554,7 +564,11 @@ impl<W: Write + Seek> TreeWriter<W> {
             .collect();
         self.file
             .place_streamer_info(&crate::streamer_gen::tree_streamer_info(), &structs)?;
-        self.file.finish()
+        let sink = self.file.finish()?;
+        if let Some(pending) = self.pending.take() {
+            pending.commit()?;
+        }
+        Ok(sink)
     }
 }
 
