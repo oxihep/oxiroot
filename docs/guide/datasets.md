@@ -128,6 +128,93 @@ RNTuple records read as `Column::Struct` and a `std::variant` as
 schema and schema extension, and `as_tree()` the `TreeReader`, for friends,
 indices and split objects.
 
+## Queries: derived columns and cuts
+
+`dataset.query()` computes new columns and keeps the entries that pass cuts,
+reading only the columns it uses, batch by batch. It is checked against the
+dataset's columns **before anything is read**: a missing column, a type that
+does not fit, or a cut that is not one bool per entry is an error up front,
+with the expression underlined and a hint.
+
+```rust
+use oxiroot::prelude::*;
+use oxiroot::data::query::col;
+
+let f = FileReader::open("nano.root")?;
+let events = Dataset::open(&f, "Events")?;
+let out = events
+    .query()
+    .select(["run", "event"])                          // kept as they are
+    .filter(col("nMuon").ge(2))                        // built in Rust…
+    .filter("any(Muon.pt > 20 and abs(Muon.eta) < 2.4)") // …or written as text
+    .define("lead_pt", col("Muon_pt").max())
+    .define("lead_eta", "Muon_eta[0] ?? -99")
+    .define("pt", (col("px").pow(2) + col("py").pow(2)).sqrt())
+    .read()?;                                          // or .batches() to stream
+# Ok::<(), oxiroot::Error>(())
+```
+
+An expression is built in Rust from `col`, `lit` and `when` with the `Expr`
+methods (`gt`, `abs`, `any`, `count`, `at`, `keep`, `unwrap_or`, …), or
+written as text. The two are the same thing: an expression prints as its text,
+and `Expr::parse` reads it back. The text form has columns (`pt`, `Muon.pt`,
+`` `odd name` ``), numbers, `true`/`false`, `+ - * / ^`, comparisons (which do
+not chain), `and or not` (or `&& || !`), `x ?? default`, `if c then a else b`,
+the usual functions (`sqrt`, `abs`, `exp`, `log`, `sin`, …, `atan2`, `hypot`,
+`min`, `max`), reductions (`any`, `all`, `count`, `sum`, `max`, `min`,
+`mean`, `len`), `x[i]` and `x[mask]`.
+
+**Per entry and per object.** `nMuon` has one value per entry, `Muon_pt` one
+per muon. An operation between them applies to each muon. `any`, `all`,
+`count`, `sum`, `max`, `min`, `mean`, `len` and `x[i]` bring the muons back to
+one value per entry, and `x[mask]` keeps the muons a per-muon bool selects. A
+cut has to say which it means:
+
+```text
+a filter needs one bool per entry, but this is one bool per object of `Muon_pt`
+  nMuon >= 2 and Muon_pt > 20
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  help: say which: any(…) or all(…)
+```
+
+**Missing values.** `Muon_pt[0]` for an event without muons, `max` of no
+objects, or a value of an optional column, is missing. It stays missing
+through arithmetic, a cut drops an entry where its condition is missing (but
+`false and missing` is false, and `true or missing` true), and `?? default`
+fills it. A defined column that can be missing is an optional column.
+
+**Records.** `Muon.pt` is the member `pt` of a record column `Muon`, or, where
+there is none, the NanoAOD column `Muon_pt`.
+
+**Types.** Integers stay integers (an event number past 2⁵³ compares
+exactly), `/` and `^` give floats, and a bool is not a number: `if c then 1
+else 0` makes one.
+
+For what an expression cannot say, `define_with` and `filter_with` take a
+Rust closure. Its argument types are checked against the columns before
+reading: a number or `bool` per entry, an `Option` for a column with missing
+values, a `Vec` for one value per object.
+
+```rust
+# use oxiroot::prelude::*;
+# let f = FileReader::open("nano.root")?;
+# let events = Dataset::open(&f, "Events")?;
+let out = events
+    .query()
+    .define_with("mt", ["pt", "met", "dphi"], |pt: f32, met: f32, dphi: f32| {
+        (2.0 * pt * met * (1.0 - dphi.cos())).sqrt()
+    })
+    .filter_with(["Jet_pt"], |pts: Vec<f32>| pts.iter().any(|&p| p > 30.0))
+    .read()?;
+# Ok::<(), oxiroot::Error>(())
+```
+
+A closure runs entry by entry; an expression runs a whole column at a time,
+and is the faster of the two. On the same file, the expression query above
+gives the same selection and the same values as ROOT's `RDataFrame` with the
+equivalent `Filter`/`Define` (a `float` column's sum differs in its last
+digits, as `RDataFrame` sums floats in single precision).
+
 ## Writing
 
 A `NamedBatch` is a dataset held in memory: batches under a name and a format. It

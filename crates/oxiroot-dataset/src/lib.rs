@@ -87,6 +87,7 @@ mod arrow_conv;
 mod batch;
 #[cfg(feature = "polars")]
 mod polars_conv;
+pub mod query;
 mod read;
 mod schema;
 mod write;
@@ -94,6 +95,7 @@ mod write;
 pub use batch::Batch;
 pub use oxiroot_io_core::DataType;
 pub use oxiroot_io_core::column::{Column, Jagged, Primitive, Strings};
+pub use query::Query;
 pub use read::{Batches, Dataset, Format};
 pub use schema::Schema;
 pub use write::{DatasetWriter, NamedBatch};

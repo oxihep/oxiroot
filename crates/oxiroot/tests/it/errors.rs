@@ -130,3 +130,28 @@ fn prelude_threaded_hist_takes_builder_histograms() {
     let root = h.to_root().unwrap();
     assert_eq!(root.entries(), 300.0);
 }
+
+/// A query that does not check: through `?`, the facade's `Query` error.
+#[test]
+fn a_query_error_is_a_query_error() {
+    use oxiroot::prelude::*;
+    let b = Batch::new().column("x", vec![1.0_f64, 2.0]).unwrap();
+    let bytes = FileWriter::create("q.root")
+        .add(NamedBatch::new("t", Format::Ntuple, b))
+        .to_bytes()
+        .unwrap();
+    let f = FileReader::from_bytes(bytes).unwrap();
+    let ds = Dataset::open(&f, "t").unwrap();
+    fn run(ds: &Dataset<'_>) -> oxiroot::Result<Batch> {
+        Ok(ds.query().filter("x > 1 & x < 3").read()?)
+    }
+    let err = run(&ds).unwrap_err();
+    let oxiroot::Error::Query(q) = &err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(q.hint(), Some("logical and is `and` (or `&&`)"));
+    assert!(
+        err.to_string().starts_with("query: unexpected `&`"),
+        "{err}"
+    );
+}
