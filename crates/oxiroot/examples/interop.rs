@@ -280,17 +280,17 @@ fn write(dir: &Path) -> oxiroot::Result<()> {
                 .with_params(&[1.0, 1.5])?,
         )
         .add(
-            &Func1D::new("gaus", 0.0..=5.0)?
+            &Func1D::gaus(0.0..=5.0)
                 .named("peak")
                 .with_params(&[10.0, 0.5, 2.0])?,
         )
         .add(
-            &Func1D::new("crystalball", -5.0..=5.0)?
+            &Func1D::crystalball(-5.0..=5.0)
                 .named("cb")
                 .with_params(&[3.0, 1.0, 0.8, 1.2, 3.0])?,
         )
         .add(
-            &Func1D::new("landau", 0.0..=10.0)?
+            &Func1D::landau(0.0..=10.0)
                 .named("lan")
                 .with_params(&[4.0, 1.0, 0.7])?,
         )

@@ -498,3 +498,46 @@ fn closures_of_every_type() {
     let e = ds.query().filter("(").read().unwrap_err();
     assert!(e.to_string().contains("ends too early"), "{e}");
 }
+
+#[test]
+fn casting_columns() {
+    use oxiroot_dataset::DataType;
+    let b = Batch::new()
+        .column("f", vec![1.5_f64, -2.25])
+        .unwrap()
+        .column("i", vec![3_i64, -4])
+        .unwrap()
+        .column("l", vec![vec![1.0_f64], vec![2.0, 3.0]])
+        .unwrap()
+        .column("o", vec![Some(1_i32), None])
+        .unwrap()
+        .column("b", vec![true, false])
+        .unwrap();
+    let c = b
+        .clone()
+        .cast("f", DataType::Half)
+        .unwrap()
+        .cast("i", DataType::I8)
+        .unwrap()
+        .cast("l", DataType::List(Box::new(DataType::F32)))
+        .unwrap()
+        .cast("o", DataType::Optional(Box::new(DataType::F64)))
+        .unwrap()
+        .cast("b", DataType::Bool)
+        .unwrap();
+    assert_eq!(c.values::<f32>("f").unwrap(), [1.5, -2.25]);
+    assert_eq!(c.values::<i8>("i").unwrap(), [3, -4]);
+    assert_eq!(c.jagged::<f32>("l").unwrap().row(1), [2.0, 3.0]);
+    for (to, msg) in [
+        (DataType::U8, "-4 does not fit u8"),
+        (DataType::Bool, "i64 does not convert to bool"),
+    ] {
+        let e = b.clone().cast("i", to).unwrap_err().to_string();
+        assert!(e.contains(msg), "{e}");
+    }
+    let e = b.clone().cast("f", DataType::I32).unwrap_err().to_string();
+    assert!(e.contains("round it first"), "{e}");
+    let e = b.clone().cast("l", DataType::F64).unwrap_err().to_string();
+    assert!(e.contains("not a number"), "{e}");
+    assert!(b.clone().cast("zz", DataType::F64).is_err());
+}

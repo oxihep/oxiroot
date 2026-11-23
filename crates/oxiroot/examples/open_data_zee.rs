@@ -47,44 +47,26 @@ fn main() -> oxiroot::Result<()> {
         .named("m_ee")
         .titled("dielectron mass");
 
-    // Lepton four-momenta (MeV), charge and type, for the first entries, one
-    // cluster at a time: only those baskets are fetched over the network.
-    let columns = [
-        "lep_pt",
-        "lep_eta",
-        "lep_phi",
-        "lep_E",
-        "lep_charge",
-        "lep_type",
-    ];
-    for batch in tree.batches(columns).range(0..entries) {
-        let batch = batch?;
-        let pt = batch.jagged::<f32>("lep_pt")?;
-        let eta = batch.jagged::<f32>("lep_eta")?;
-        let phi = batch.jagged::<f32>("lep_phi")?;
-        let energy = batch.jagged::<f32>("lep_E")?;
-        let charge = batch.jagged::<f32>("lep_charge")?;
-        let kind = batch.jagged::<u32>("lep_type")?;
-        for i in 0..batch.len() {
-            let (kind, q, pt) = (kind.row(i), charge.row(i), pt.row(i));
-            if kind.len() != 2 || kind.iter().any(|&t| t != electron) || q[0] == q[1] {
-                continue;
-            }
-            if pt.iter().any(|&p| p < 25e3) {
-                continue;
-            }
-            // Sum the four-momenta: (E, px, py, pz) from (E, pT, η, φ).
-            let (mut e, mut px, mut py, mut pz) = (0.0, 0.0, 0.0, 0.0);
-            let lepton = pt.iter().zip(energy.row(i)).zip(eta.row(i)).zip(phi.row(i));
-            for (((&pt, &en), &eta), &phi) in lepton {
-                let p = f64::from(pt);
-                e += f64::from(en);
-                px += p * f64::from(phi).cos();
-                py += p * f64::from(phi).sin();
-                pz += p * f64::from(eta).sinh();
-            }
-            mass.fill((e * e - px * px - py * py - pz * pz).max(0.0).sqrt() / 1e3);
-        }
+    // The selection and the mass as a query over the first entries. It is
+    // checked against the tree's branches before anything is read, and runs a
+    // cluster at a time: only the baskets of the six lepton branches it names
+    // are fetched over the network. The mass sums the two four-momenta
+    // (E, px, py, pz), built from (E, pT, η, φ), in MeV.
+    let pairs = tree
+        .query()
+        .range(0..entries)
+        .filter(format!(
+            "len(lep_type) == 2 and all(lep_type == {electron}) \
+             and lep_charge[0] != lep_charge[1] and all(lep_pt > 25e3)"
+        ))
+        .define(
+            "m_ee",
+            "sqrt(max(sum(lep_E)^2 - sum(lep_pt * cos(lep_phi))^2 \
+                  - sum(lep_pt * sin(lep_phi))^2 - sum(lep_pt * sinh(lep_eta))^2, 0)) / 1e3",
+        )
+        .read()?;
+    for &m in pairs.values::<f64>("m_ee")? {
+        mass.fill(m);
     }
     println!(
         "read 6 lepton branches for {entries} entries in {:.1?}",

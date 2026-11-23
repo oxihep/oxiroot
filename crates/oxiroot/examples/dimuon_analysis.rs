@@ -86,35 +86,37 @@ fn main() -> oxiroot::Result<()> {
         .write()?;
     println!("wrote {n_events} events to {}", tree_path.display());
 
-    // --- 2. Read them back: flat columns, one view per entry. -----------
+    // --- 2 and 3. Read and select, with a query: the two leading muons,
+    // pT > 25 and 15 GeV, opposite sign, and their mass from (pT, η, φ). The
+    // query is checked against the tree's columns before anything is read,
+    // and runs a whole column at a time. `Muon_pt[0]` is missing in an event
+    // with no muon; after the length cut none is, and `?? 0` says so, which
+    // makes `m_mumu` a plain column.
     let file = FileReader::open(&tree_path)?;
     let events = Dataset::open(&file, "Events")?;
-    let data = events.read(["Muon_pt", "Muon_eta", "Muon_phi", "Muon_charge"])?;
-    let pt = data.jagged::<f32>("Muon_pt")?;
-    let eta = data.jagged::<f32>("Muon_eta")?;
-    let phi = data.jagged::<f32>("Muon_phi")?;
-    let charge = data.jagged::<i32>("Muon_charge")?;
-
-    // --- 3. Select: the two leading muons, pT > 25 and 15 GeV, opposite sign.
+    let pairs = events
+        .query()
+        .filter(
+            "len(Muon_pt) >= 2 and Muon_pt[0] > 25 and Muon_pt[1] > 15 \
+             and Muon_charge[0] != Muon_charge[1]",
+        )
+        .define(
+            "m_mumu",
+            "sqrt(2 * Muon_pt[0] * Muon_pt[1] \
+                  * (cosh(Muon_eta[0] - Muon_eta[1]) - cos(Muon_phi[0] - Muon_phi[1]))) ?? 0",
+        )
+        .read()?;
     let mut mass = Hist::reg(60, 60.0, 120.0)
         .weight()
         .named("m_mumu")
         .titled("dimuon mass");
-    let mut selected = 0;
-    for i in 0..pt.len() {
-        let (pt, eta, phi, q) = (pt.row(i), eta.row(i), phi.row(i), charge.row(i));
-        if pt.len() < 2 || pt[0] < 25.0 || pt[1] < 15.0 || q[0] == q[1] {
-            continue;
-        }
-        let m = (2.0
-            * f64::from(pt[0])
-            * f64::from(pt[1])
-            * (f64::from(eta[0] - eta[1]).cosh() - f64::from(phi[0] - phi[1]).cos()))
-        .sqrt();
+    for &m in pairs.values::<f64>("m_mumu")? {
         mass.fill(m);
-        selected += 1;
     }
-    println!("{selected} events with an opposite-sign pair passing the pT cuts");
+    println!(
+        "{} events with an opposite-sign pair passing the pT cuts",
+        pairs.len()
+    );
 
     // --- 4. Fit: background from the low sideband, then Voigt + exponential.
     let sideband = mass.fit_opts(

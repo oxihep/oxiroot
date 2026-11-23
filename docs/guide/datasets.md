@@ -329,6 +329,21 @@ FileWriter::create("out.root")
 | `UniquePtr(T)` | optional | RNTuple |
 | `Atomic(T)` | the bare `T` | RNTuple |
 
+A batch that holds wider values than the schema stores (the `f64` columns a
+query computes, say) is narrowed first with `Batch::cast`: `F32` or `Half` for
+floats, a narrower integer, within lists and optionals too. An integer that
+does not fit its new type is an error, never wrapped:
+
+```rust,no_run
+# use oxiroot::prelude::*;
+# use oxiroot::data::DataType;
+# let pairs = Batch::new().column("mass", vec![91.2_f64])?.column("eta_1", vec![0.5_f64])?;
+let pairs = pairs
+    .cast("mass", DataType::F32)?
+    .cast("eta_1", DataType::Half)?; // held as f32, stored in 16 bits
+# Ok::<(), oxiroot::Error>(())
+```
+
 A skim that keeps every stored type passes the source's schema on:
 `.with_schema(events.schema()?)`, on a `NamedBatch` or a `DatasetWriter`. A type
 the format does not have (half precision in a `TTree`) or a batch that does

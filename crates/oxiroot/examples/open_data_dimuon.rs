@@ -36,7 +36,7 @@ fn main() {
     reason = "a mass of a few hundred GeV at most, stored in an f32 column"
 )]
 fn main() -> oxiroot::Result<()> {
-    use oxiroot::data::DataType;
+    use oxiroot::data::{DataType, Schema};
     use oxiroot::file::Parameter;
     use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model};
     use oxiroot::particle::literals;
@@ -81,92 +81,63 @@ fn main() -> oxiroot::Result<()> {
         .titled("opposite-charge dimuon mass");
 
     // ---- 2 and 3. Select, and skim as we go ------------------------------
-    // The skim's columns, and how they are stored: the angles do not need 32
-    // bits, so they go in half precision.
-    let pairs = |run: Vec<i32>, event: Vec<u64>, kin: [Vec<f32>; 7]| -> oxiroot::Result<Batch> {
-        let [mass, pt_1, pt_2, eta_1, eta_2, phi_1, phi_2] = kin;
-        Ok(Batch::new()
-            .column("run", run)?
-            .column("event", event)?
-            .column("mass", mass)?
-            .column("pt_1", pt_1)?
-            .column("pt_2", pt_2)?
-            .column("eta_1", eta_1)?
-            .column("eta_2", eta_2)?
-            .column("phi_1", phi_1)?
-            .column("phi_2", phi_2)?)
-    };
-    let mut schema = pairs(Vec::new(), Vec::new(), Default::default())?.schema();
-    for angle in ["eta_1", "eta_2", "phi_1", "phi_2"] {
-        schema = schema.with(angle, DataType::Half);
+    // A query: events with exactly two muons of opposite charge, and the
+    // pair's mass from each muon's (pT, η, φ, m), its energy and momentum
+    // summed over the pair. It is checked against the tree's branches before
+    // anything is read, reads only the branches it names, and runs a whole
+    // cluster at a time. `Muon_pt[0]` could be missing, in an event with no
+    // muon; after the cut none is, and `?? 0` makes the columns plain.
+    let mass = "sqrt(max(sum(sqrt((Muon_pt * cosh(Muon_eta))^2 + Muon_mass^2))^2 \
+                - sum(Muon_pt * cos(Muon_phi))^2 - sum(Muon_pt * sin(Muon_phi))^2 \
+                - sum(Muon_pt * sinh(Muon_eta))^2, 0))";
+    let mut query = events
+        .query()
+        .range(0..wanted)
+        .select(["run", "event"])
+        .filter("len(Muon_charge) == 2 and Muon_charge[0] != Muon_charge[1]")
+        .define("mass", mass);
+    for (name, branch, k) in [
+        ("pt_1", "Muon_pt", 0),
+        ("pt_2", "Muon_pt", 1),
+        ("eta_1", "Muon_eta", 0),
+        ("eta_2", "Muon_eta", 1),
+        ("phi_1", "Muon_phi", 0),
+        ("phi_2", "Muon_phi", 1),
+    ] {
+        query = query.define(name, format!("{branch}[{k}] ?? 0"));
     }
+
+    // The skim's columns, and how they are stored: floats in 32 bits, and the
+    // angles, which do not need that, in half precision.
+    let stored = [
+        ("mass", DataType::F32),
+        ("pt_1", DataType::F32),
+        ("pt_2", DataType::F32),
+        ("eta_1", DataType::Half),
+        ("eta_2", DataType::Half),
+        ("phi_1", DataType::Half),
+        ("phi_2", DataType::Half),
+    ];
+    let schema: Schema = [("run", DataType::I32), ("event", DataType::U64)]
+        .into_iter()
+        .chain(stored.iter().cloned())
+        .collect();
     let mut skim =
         DatasetWriter::create(&skim_path, "dimuons", Format::Ntuple)?.with_schema(schema);
 
-    let columns = [
-        "run",
-        "event",
-        "Muon_pt",
-        "Muon_eta",
-        "Muon_phi",
-        "Muon_mass",
-        "Muon_charge",
-    ];
-    let (mut read, mut clusters) = (0_u64, 0_u32);
-    for batch in events.batches(columns).range(0..wanted) {
-        let batch = batch?;
-        let run = batch.values::<i32>("run")?;
-        let event = batch.values::<u64>("event")?;
-        let pt = batch.jagged::<f32>("Muon_pt")?;
-        let eta = batch.jagged::<f32>("Muon_eta")?;
-        let phi = batch.jagged::<f32>("Muon_phi")?;
-        let m = batch.jagged::<f32>("Muon_mass")?;
-        let charge = batch.jagged::<i32>("Muon_charge")?;
-
-        let (mut runs, mut ids) = (Vec::new(), Vec::new());
-        let mut kin: [Vec<f32>; 7] = Default::default();
-        for i in 0..batch.len() {
-            let q = charge.row(i);
-            if q.len() != 2 || q[0] == q[1] {
-                continue;
-            }
-            // The pair's four-momentum from each muon's (pT, η, φ, m).
-            let (mut e, mut px, mut py, mut pz) = (0.0_f64, 0.0, 0.0, 0.0);
-            for k in 0..2 {
-                let (pt, eta, phi) = (
-                    f64::from(pt.row(i)[k]),
-                    f64::from(eta.row(i)[k]),
-                    f64::from(phi.row(i)[k]),
-                );
-                let (x, y, z) = (pt * phi.cos(), pt * phi.sin(), pt * eta.sinh());
-                let mass = f64::from(m.row(i)[k]);
-                e += (x * x + y * y + z * z + mass * mass).sqrt();
-                px += x;
-                py += y;
-                pz += z;
-            }
-            let mass = (e * e - px * px - py * py - pz * pz).max(0.0).sqrt();
-            spectrum.fill(mass);
-
-            runs.push(run[i]);
-            ids.push(event[i]);
-            let row = [
-                mass as f32,
-                pt.row(i)[0],
-                pt.row(i)[1],
-                eta.row(i)[0],
-                eta.row(i)[1],
-                phi.row(i)[0],
-                phi.row(i)[1],
-            ];
-            for (column, value) in kin.iter_mut().zip(row) {
-                column.push(value);
-            }
+    let mut clusters = 0_u32;
+    for pairs in query.batches()? {
+        let mut pairs = pairs?;
+        for &m in pairs.values::<f64>("mass")? {
+            spectrum.fill(m);
         }
-        read += batch.len() as u64;
+        for (name, data_type) in &stored {
+            pairs = pairs.cast(name, data_type.clone())?;
+        }
+        skim.append(pairs)?;
         clusters += 1;
-        skim.append(pairs(runs, ids, kin)?)?;
     }
+    let read = wanted;
     let selected = skim.entries();
     println!(
         "2. Read 7 branches of {read} events in {clusters} clusters: {selected} opposite-charge \

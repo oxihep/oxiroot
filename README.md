@@ -28,7 +28,8 @@ of them, so one dependency gives you the lot.
 | **oxiroot** (this repository) | Read and write ROOT files: `TTree`, RNTuple, ROOT histograms and graphs | uproot | — |
 | [oxihist](https://github.com/oxihep/oxihist) | Histograms: typed axes, weighted and profile storages | boost-histogram, hist | `Hist`, `oxiroot::hist::oxihist` |
 | [oxiplot](https://github.com/oxihep/oxiplot) | Plotting to SVG/PNG/PDF with an mplhep look | matplotlib, mplhep | `oxiroot::plot` (`plot` feature) |
-| [oxifit](https://github.com/oxihep/oxifit) | Curve fitting with Minuit2, and a `TFormula` engine | iminuit | `oxiroot::fit` (`fit` feature) |
+| [oxifit](https://github.com/oxihep/oxifit) | Curve fitting with Minuit2 | iminuit | `oxiroot::fit` (`fit` feature) |
+| [oxiformula](https://github.com/oxihep/oxiformula) | ROOT's `TFormula` language: parse, evaluate, differentiate, compile | formulate | `oxiroot::formula` |
 | [oxistats](https://github.com/oxihep/oxistats) | Statistics, HEP lineshapes and intervals | scipy.stats, hepstats | `oxiroot::stat` |
 | [oxiparticle](https://github.com/oxihep/oxiparticle) | PDG particle data and ID decoding | particle | `oxiroot::particle` |
 
@@ -61,8 +62,10 @@ None of them is on crates.io yet; depend on them from GitHub (see
   and `MultiErrorGraph` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `Func1D`).
 - 🧮 **Functions** — standalone `Func1D`/`Func2D`/`Func3D` keys backed by a real
-  `TFormula` expression engine ([oxiformula](https://github.com/oxihep/oxiformula); arbitrary formulas, ROOT `gaus`/`expo`/`pol`
-  shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
+  `TFormula` engine ([oxiformula](https://github.com/oxihep/oxiformula)):
+  arbitrary formulas and ROOT's predefined shapes (`Func1D::gaus`, `expo`,
+  `pol(n)`, `crystalball`, …), parameters by ROOT's names (`Mean`, `[tau]`),
+  pure-Rust `eval`/`integral` and an exact `derivative`; any formula is also
   fittable via `Model::from_formula`.
 - 📐 **Statistics** (`oxiroot::stat`) — [oxistats](https://github.com/oxihep/oxistats),
   re-exported: `scipy.stats`-verified special functions, distributions,
@@ -80,6 +83,9 @@ None of them is on crates.io yet; depend on them from GitHub (see
   `FileWriter` next to histograms, or streamed by a `DatasetWriter`. Typed slices with no copies,
   cluster-by-cluster iteration, strict types, and skims with no per-type code;
   parallel reads and writes with `rayon`, and conversion to Arrow and Polars.
+  **Queries** compute columns and apply cuts, written in Rust or as text
+  (`"any(Muon_pt > 20) and len(Muon_pt) >= 2"`), checked against the
+  dataset's columns before anything is read.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -455,15 +461,20 @@ FileWriter::create("gfit.root").add(&g).compression(Compression::Stored).write()
 
 - **Standalone `Func1D`/`Func2D`/`Func3D` keys** — real ROOT function objects (each
   embedding a `TFormula`), built from a formula and a range and read/written like
-  any other object. `Func1D::new("[0]*sin([1]*x)", 0.0..=6.3)?.named("f").with_params(&...)?`.
+  any other object. `Func1D::new("[A]*sin([omega]*x)", 0.0..=6.3)?.with_param("A", 2.0)?`,
+  or one of ROOT's shapes: `Func1D::gaus(-5.0..=5.0).with_param("Sigma", 1.2)?`.
 - **A real `TFormula` expression engine** ([`oxiformula`], its own
-  crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
-  operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
-  with or without a `TMath::` prefix), comparisons/`?:`, and ROOT's `gaus`/`expo`/
-  `pol0..N` shortcuts.
+  crate, `oxiroot::formula`): ROOT's formula language — operators
+  `+ - * / ^`, ROOT's functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…, with or
+  without a `TMath::` prefix), comparisons/`?:`, and ROOT's predefined shapes
+  (`gaus`, `expo`, `polN`, `landau`, `crystalball`, `breitwigner`, `chebN`,
+  `xygaus`, …) with ROOT's parameter names. A formula that does not parse is an
+  `Error::Formula` that points at the mistake.
+- **Named parameters**: `param_names`, `param_named`, `with_param` and
+  `set_param`, stored with the function the way ROOT stores them.
 - **`eval` / `integral` / `derivative`** in pure Rust — adaptive Gauss–Kronrod
-  quadrature and a Richardson central derivative, matching `Func1D::Integral` /
-  `Func1D::Derivative`.
+  quadrature, and a derivative that is exact where the formula has a
+  symbolic one (a central difference, as ROOT's, where it has none).
 - The same engine powers `Model::from_formula`, so any formula is fittable, and
   `Func1D::to_model()` bridges a function to a fit. oxiroot embeds the
   `Func1D`/`Func2D`/`Func3D`/`TFormula` `TStreamerInfo`, so **ROOT C++ and uproot both read
@@ -749,8 +760,18 @@ ax2.save("heatmap.svg")?;
 - **Strict**: a type mismatch is an error naming the column, never a silent
   conversion; a column the format cannot hold is refused before anything is
   written.
-- `filter`, `slice`, `select` and `append` work on whole batches, so a skim or
-  a TTree → RNTuple conversion needs no per-type code. With the `arrow` /
+- **Queries: derived columns and cuts.** `dataset.query()` defines columns
+  and filters entries with expressions built in Rust (`col("Muon_pt").gt(20.0)
+  .any()`) or written as text (`"any(Muon_pt > 20)"`), or with typed Rust
+  closures (`define_with`, `filter_with`). The query is checked against the
+  dataset's columns before anything is read — a missing column or a type that
+  does not fit is an error that underlines the expression — then runs a
+  column at a time, batch by batch, reading only the columns it names.
+  Per-object columns broadcast and reduce (`any`, `sum`, `max`, `x[0]`, …);
+  missing values propagate and `??` fills them.
+- `filter`, `slice`, `select`, `append` and `cast` work on whole batches, so a
+  skim, a TTree → RNTuple conversion or a narrowing to the stored precision
+  needs no per-type code. With the `arrow` /
   `polars` features a batch converts to an Arrow `RecordBatch` or a Polars
   `DataFrame` and back. Worked examples:
   `cargo run -p oxiroot --example tree`, `--example rntuple`.
@@ -946,17 +967,17 @@ on, so nothing extra is needed.
 | Example | What it shows |
 |---|---|
 | **Start here** | |
-| [`analysis`](crates/oxiroot/examples/analysis.rs) | End-to-end mini analysis: weighted/variable-bin histograms → scale/merge/normalize → subdirectories → a columnar dataset → read-back |
+| [`analysis`](crates/oxiroot/examples/analysis.rs) | End-to-end mini analysis: weighted/variable-bin histograms → scale/merge/normalize → subdirectories → a columnar dataset → read-back, and one query asked of both formats |
 | [`inspect`](crates/oxiroot/examples/inspect.rs) | Introspect *any* ROOT file you did not write — a programmatic `oxroot ls` |
-| [`dimuon_analysis`](crates/oxiroot/examples/dimuon_analysis.rs) | A NanoAOD-style analysis: jagged muon branches → opposite-sign pairs → invariant mass → Z fit (Voigt + continuum) → plot → saved histogram |
+| [`dimuon_analysis`](crates/oxiroot/examples/dimuon_analysis.rs) | A NanoAOD-style analysis: jagged muon branches → a query for opposite-sign pairs and their invariant mass → Z fit (Voigt + continuum) → plot → saved histogram |
 | [`charmonium_analysis`](crates/oxiroot/examples/charmonium_analysis.rs) | A complete J/ψ + ψ(2S) analysis: dimuon `TTree` → Crystal Ball mass fit with MINOS on the yield ratio → profile and 68/95 % contours → 500-toy pull study → 2-D unbinned (mass, decay length) fit for the non-prompt fraction and b-hadron lifetime → five plots and a results file with the toy pulls (`--release`, about half a minute) |
 | [`resonance_search`](crates/oxiroot/examples/resonance_search.rs) | A diphoton-style bump hunt: `TTree` → histogram → background-function choice → local p₀ scan and signal fit → look-elsewhere correction from toy scans → CLs limits against mass; the fit with its residuals, p₀ against mass and the Brazil band, and the limit curves written as `TGraph`s (`--release`, a few seconds) |
 | [`template_fit`](crates/oxiroot/examples/template_fit.rs) | A HistFactory-style search from ROOT histograms: templates with JES variations and MC-statistics errors written to and read from a file → signal + control region fit → pulls, impact ranking, significance and limit → the post-fit stack with its uncertainty band and data/fit ratio, the pulls and impacts plots, and the post-fit histograms written out |
 | [`splot_lifetime`](crates/oxiroot/examples/splot_lifetime.rs) | A B⁰ lifetime from sWeights: candidates `TTree` → extended mass fit → sWeights written as a friend tree → weighted lifetime fit with naive, SumW2 and asymptotic errors → toys showing only the asymptotic ones cover; mass fit, sWeighted decay times, sWeights against mass and toy pulls plotted |
 | [`tag_and_probe`](crates/oxiroot/examples/tag_and_probe.rs) | A trigger efficiency by tag and probe: probes `TTree` → simultaneous pass/fail Z fits per (pT, \|η\|) bin → efficiency map (`TH2D`) and turn-ons per region → a matched sample as a `TEfficiency` fitted with the binomial likelihood, and toys of binomial against χ²; plots of a bin's fits, the map, the turn-ons and the pulls |
-| [`open_data_dimuon`](crates/oxiroot/examples/open_data_dimuon.rs) | Real collisions, start to finish: 2 million events of the 3.5 GB CMS 2012 `DoubleMuParked` open data streamed with `root://` → opposite-charge pairs → a skim written as an `RNTuple` one cluster at a time, with the spectrum and the counts stored beside it → the J/ψ, Υ(1S) and Z measured from the skim → the dimuon spectrum from 0.25 to 300 GeV (needs `--features xrootd`) |
-| [`open_data_zmumu`](crates/oxiroot/examples/open_data_zmumu.rs) | Data against simulation: ATLAS 2012 muon data and the Z → μμ simulation read with `root://` → the same selection and a labelled cut flow on both → simulation scaled to the data and subtracted, the momentum scale from the two peaks → one file of histograms, parameters and both candidate tables (a `TTree` and an `RNTuple`) in a directory per sample → data over simulation with their ratio (needs `--features xrootd`) |
-| [`open_data_zee`](crates/oxiroot/examples/open_data_zee.rs) | A remote file without downloading it: Z → ee from a 966 MB ATLAS open-data simulation sample streamed with `root://`, with a Crystal Ball fit of the radiative tail (needs `--features xrootd`) |
+| [`open_data_dimuon`](crates/oxiroot/examples/open_data_dimuon.rs) | Real collisions, start to finish: 2 million events of the 3.5 GB CMS 2012 `DoubleMuParked` open data streamed with `root://` → a query for opposite-charge pairs and their mass → a skim written as an `RNTuple` one cluster at a time, with the spectrum and the counts stored beside it → the J/ψ, Υ(1S) and Z measured from the skim → the dimuon spectrum from 0.25 to 300 GeV (needs `--features xrootd`) |
+| [`open_data_zmumu`](crates/oxiroot/examples/open_data_zmumu.rs) | Data against simulation: ATLAS 2012 muon data and the Z → μμ simulation read with `root://` → the same query on both, each cut a column, and a labelled cut flow from them → simulation scaled to the data and subtracted, the momentum scale from the two peaks → one file of histograms, parameters and both candidate tables (a `TTree` and an `RNTuple`) in a directory per sample → data over simulation with their ratio (needs `--features xrootd`) |
+| [`open_data_zee`](crates/oxiroot/examples/open_data_zee.rs) | A remote file without downloading it: Z → ee from a 966 MB ATLAS open-data simulation sample streamed with `root://` and selected with a query, with a Crystal Ball fit of the radiative tail (needs `--features xrootd`) |
 | **Statistics** — `oxiroot::stat` | |
 | [`stat_intro`](crates/oxiroot/examples/stat_intro.rs) | Descriptive stats + the `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions and confidence intervals |
 | [`stat_tests`](crates/oxiroot/examples/stat_tests.rs) | Hypothesis tests (t-test, Mann–Whitney, KS), correlation (Pearson/Spearman), goodness-of-fit, normality |
@@ -965,7 +986,7 @@ on, so nothing extra is needed.
 | [`particles`](crates/oxiroot/examples/particles.rs) | PDG particle data — decode IDs (`PdgId`) and look up masses/widths/lifetimes (`Particle`) |
 | **Fitting** — `oxiroot::fit` | |
 | [`fit`](crates/oxiroot/examples/fit.rs) | Fit a Gaussian peak (χ² *and* likelihood), a peak-on-background, a `Graph`, and raw points — one API |
-| [`robust_fit`](crates/oxiroot/examples/robust_fit.rs) | Outlier-resistant losses (`SoftL1`/`Huber`/`Cauchy`) versus ordinary least squares |
+| [`robust_fit`](crates/oxiroot/examples/robust_fit.rs) | Outlier-resistant losses (`SoftL1`/`Huber`/`Cauchy`) versus ordinary least squares, the line a `Func1D` with named parameters |
 | **Histograms & profiles** | |
 | [`profile`](crates/oxiroot/examples/profile.rs) | `Profile1D` / `Profile2D` — the mean of *y* in slices of *x* |
 | [`efficiency`](crates/oxiroot/examples/efficiency.rs) | `Efficiency` turn-on curve with a Clopper–Pearson interval |
@@ -973,7 +994,7 @@ on, so nothing extra is needed.
 | [`threaded`](crates/oxiroot/examples/threaded.rs) | Multithreaded fill with `ThreadedHist` (ROOT's `TThreadedObject` analog) |
 | **Graphs & functions** | |
 | [`graphs`](crates/oxiroot/examples/graphs.rs) | `Graph` / `TGraphErrors` / `TGraphAsymmErrors` / `Graph2D` / `GraphStack` |
-| [`functions`](crates/oxiroot/examples/functions.rs) | `Func1D`/`Func2D`/`Func3D` from formulas: `eval` / `integral` / `derivative` + round-trip |
+| [`functions`](crates/oxiroot/examples/functions.rs) | `Func1D`/`Func2D`/`Func3D` from formulas and ROOT's shapes, with named parameters: `eval` / `integral` / `derivative`, a formula error, and a round-trip |
 | **Objects & linear algebra** | |
 | [`objects`](crates/oxiroot/examples/objects.rs) | Store run provenance (`ObjString` / `Parameter` / `TList`) next to your data |
 | [`linalg`](crates/oxiroot/examples/linalg.rs) | `Vector` / `Matrix` / `SymMatrix` round-trip (a fit-covariance shape) |

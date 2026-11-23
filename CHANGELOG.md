@@ -23,6 +23,10 @@ change the API.
   `filter_with` take typed Rust closures, checked against the columns too.
   Cross-checked against ROOT's `RDataFrame` on the same file. Through `?`,
   a query mistake is `oxiroot::Error::Query`.
+- `Batch::cast`: a column converted to another number type, within lists,
+  arrays and optionals too, to write it at the precision a schema stores
+  (`F32`, `Half`, a narrower integer). An integer that does not fit is an
+  error; a float is never cast to an integer.
 - **Constructors for ROOT's predefined functions**: `Func1D::gaus`,
   `gausn`, `expo`, `landau`, `crystalball`, `breitwigner`, `pol` and `cheb`,
   and `Func2D::gaus` (`xygaus`) and `bigaus`, with ROOT's parameter names.
@@ -73,6 +77,13 @@ change the API.
   (`Func1D::new("x*y", …)` is an error, where `y` read as 0).
 - `to_model` uses the function's parameter names, its compiled formula and
   its exact gradient.
+- **The examples use queries and the new function API.** `dimuon_analysis`,
+  `open_data_dimuon`, `open_data_zee` and `open_data_zmumu` select and compute
+  with `Dataset::query` instead of per-event loops (the Z → μμ cut flow is a
+  bool column per cut), with the same results; `analysis` asks one query of
+  both formats. `functions`, `robust_fit` and `interop` build functions with
+  the constructors and named parameters, and `functions` shows a formula
+  error.
 - **A `NamedBatch` is written in chunks** of about 1 MiB per column, as a
   `DatasetWriter` cuts a cluster: a basket per branch per chunk in a `TTree`,
   an RNTuple cluster per chunk. It was one basket per branch or one cluster for

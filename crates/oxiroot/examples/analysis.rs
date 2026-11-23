@@ -179,6 +179,21 @@ fn main() -> oxiroot::Result<()> {
             events.entries(),
             batch.values::<f64>("mass")?
         );
+        // A query asks the same of either format: the entries with a jet, and
+        // a column computed from the others. It is checked against the
+        // dataset's columns before anything is read.
+        let jetty = events
+            .query()
+            .filter("len(jet_pt) > 0")
+            .define("lead_jet", "max(jet_pt) ?? 0")
+            .define("pt_over_m", "sum(jet_pt) / mass")
+            .read()?;
+        println!(
+            "   query: {} entries with a jet, leading jet {:?}, Σ jet pT / mass {:.3?}",
+            jetty.len(),
+            jetty.values::<f64>("lead_jet")?,
+            jetty.values::<f64>("pt_over_m")?
+        );
     }
     println!(
         "and `pt` beside them: {} entries",
