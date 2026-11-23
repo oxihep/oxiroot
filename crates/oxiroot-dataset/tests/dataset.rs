@@ -1233,3 +1233,119 @@ fn a_chain_needs_parts_with_the_same_columns() {
     };
     assert!(matches!(err, Error::SchemaChanged { .. }), "{err:?}");
 }
+
+/// 400 000 `std::variant<double, std::int64_t>` entries, alternating, plus a
+/// plain column: enough values for a writer to cut several chunks.
+fn variants() -> Batch {
+    let n = 400_000usize;
+    let tags: Vec<u32> = (0..n).map(|i| 1 + u32::from(i % 2 == 1)).collect();
+    let doubles: Vec<f64> = (0..n / 2).map(|i| i as f64 * 0.5).collect();
+    let ints: Vec<i64> = (0..n / 2).map(|i| -i64::try_from(i).unwrap()).collect();
+    Batch::new()
+        .column(
+            "u",
+            Column::variant(vec![doubles.into(), ints.into()], tags),
+        )
+        .unwrap()
+        .column("x", vec![1.5_f64; n])
+        .unwrap()
+}
+
+#[test]
+fn a_variant_column_is_written_once_however_it_is_cut() {
+    let b = variants();
+    // About the values: 12 bytes of switch, 8 of value and 8 of `x` per entry.
+    let values = 28 * b.len();
+    let in_memory = FileWriter::create("v.root")
+        .add(NamedBatch::new("events", Format::Ntuple, b.clone()))
+        .compression(Compression::Stored)
+        .to_bytes()
+        .unwrap();
+    let mut w = DatasetWriter::new(Cursor::new(Vec::new()), "v.root", "events", Format::Ntuple)
+        .compression(Compression::Stored);
+    w.append(b.clone()).unwrap();
+    let streamed = w.finish().unwrap().into_inner();
+    for (how, bytes) in [("NamedBatch", in_memory), ("DatasetWriter", streamed)] {
+        assert!(
+            bytes.len() < values + values / 10,
+            "{how}: {} bytes for {values} bytes of values",
+            bytes.len()
+        );
+        let file = FileReader::from_bytes(bytes).unwrap();
+        let ds = Dataset::open(&file, "events").unwrap();
+        assert!(
+            ds.as_ntuple().unwrap().cluster_boundaries().len() > 2,
+            "{how}"
+        );
+        assert_eq!(ds.read(["u", "x"]).unwrap(), b, "{how}");
+    }
+}
+
+#[test]
+fn slicing_and_filtering_a_variant_keeps_only_its_own_values() {
+    let b = variants();
+    let Some(Column::Union { alternatives, .. }) = b.slice(1000..1010).get("u").cloned() else {
+        panic!("a union");
+    };
+    assert_eq!(
+        alternatives[0].1,
+        Column::F64((500..505).map(|i| f64::from(i) * 0.5).collect())
+    );
+    assert_eq!(
+        alternatives[1].1,
+        Column::I64((500..505).map(|i| -i).collect())
+    );
+
+    // Every third entry: the values no longer follow each other.
+    let mask: Vec<bool> = (0..b.len()).map(|i| i % 3 == 0).collect();
+    let kept = b.filter(&mask).unwrap();
+    let Some(Column::Union {
+        tags,
+        indices,
+        alternatives,
+    }) = kept.get("u")
+    else {
+        panic!("a union");
+    };
+    let held: usize = alternatives.iter().map(|(_, c)| c.len()).sum();
+    assert_eq!(held, kept.len());
+    for (k, i) in (0..b.len()).step_by(3).enumerate() {
+        let (tag, index) = (tags[k], usize::try_from(indices[k]).unwrap());
+        match (&alternatives[tag as usize - 1].1, i % 2) {
+            (Column::F64(v), 0) => assert_eq!(v[index], (i / 2) as f64 * 0.5),
+            (Column::I64(v), 1) => assert_eq!(v[index], -i64::try_from(i / 2).unwrap()),
+            other => panic!("entry {i}: {other:?}"),
+        }
+    }
+    kept.get("u").unwrap().validate("u").unwrap();
+}
+
+#[test]
+fn a_large_named_batch_is_written_in_chunks_a_read_can_share() {
+    let n = 1_000_000usize;
+    let b = Batch::new()
+        .column("x", (0..n).map(|i| i as f64).collect::<Vec<_>>())
+        .unwrap()
+        .column(
+            "v",
+            (0..n)
+                .map(|i| vec![i as f32; i % 3])
+                .collect::<Vec<Vec<f32>>>(),
+        )
+        .unwrap();
+    for format in [Format::Tree, Format::Ntuple] {
+        let bytes = FileWriter::create("big.root")
+            .add(NamedBatch::new("events", format, b.clone()))
+            .to_bytes()
+            .unwrap();
+        let file = FileReader::from_bytes(bytes).unwrap();
+        let ds = Dataset::open(&file, "events").unwrap();
+        let cuts = match format {
+            Format::Tree => ds.as_tree().unwrap().basket_boundaries("x").unwrap(),
+            _ => ds.as_ntuple().unwrap().cluster_boundaries(),
+        };
+        assert!(cuts.len() > 3, "{format:?}: {cuts:?}");
+        assert!(ds.batches(["x", "v"]).count() > 2, "{format:?}");
+        assert_eq!(ds.read(["x", "v"]).unwrap(), b, "{format:?}");
+    }
+}

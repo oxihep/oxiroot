@@ -29,14 +29,14 @@ struct PreparedCluster {
 /// well as physical columns — `(type, bits)` alone would let a field rename or
 /// reorder slip through.
 #[derive(PartialEq, Eq)]
-struct SchemaSig {
+pub(super) struct SchemaSig {
     /// `(name, type_name, parent_id, role)` per field, in lowered order.
     fields: Vec<(String, String, u32, u16)>,
     /// `(column type, bit width, owning field id)` per physical column.
     columns: Vec<(u16, u16, u32)>,
 }
 
-fn schema_sig(field_plans: &[FieldPlan], cols: &[ColumnPlan]) -> SchemaSig {
+pub(super) fn schema_sig(field_plans: &[FieldPlan], cols: &[ColumnPlan]) -> SchemaSig {
     SchemaSig {
         fields: field_plans
             .iter()

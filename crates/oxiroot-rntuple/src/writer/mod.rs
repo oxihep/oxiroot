@@ -250,6 +250,101 @@ fn write_one_rntuple<W: Write + Seek>(
     Ok(())
 }
 
+/// One cluster lowered: its field and column plans, entry count, and each
+/// column's page as stored.
+type LoweredCluster = (Vec<FieldPlan>, Vec<ColumnPlan>, u32, Vec<Vec<u8>>);
+
+/// Write one `RNTuple` with a cluster per entry of `clusters` (every one with
+/// the same fields) at the end of `file`, then its anchor key in `dir`: the
+/// header, each cluster's pages, the page list of every cluster, the footer.
+/// The clusters are encoded and compressed in parallel with the `rayon`
+/// feature. With no entries at all, the `RNTuple` has the first cluster's
+/// fields and no cluster.
+fn write_clustered_rntuple<W: Write + Seek>(
+    file: &mut ContainerWriter<W>,
+    dir: DirId,
+    name: &str,
+    clusters: &[Vec<Field>],
+) -> Result<()> {
+    let compression = file.compression();
+    let prepare = |fields: &Vec<Field>| -> Result<LoweredCluster> {
+        let (plans, cols, n) = lower(fields)?;
+        let disks = cols
+            .iter()
+            .map(|c| on_disk_page(&c.page, compression))
+            .collect();
+        Ok((plans, cols, n, disks))
+    };
+    #[cfg(feature = "rayon")]
+    let prepared: Vec<_> = {
+        use rayon::prelude::*;
+        clusters.par_iter().map(prepare).collect::<Result<_>>()?
+    };
+    #[cfg(not(feature = "rayon"))]
+    let prepared: Vec<_> = clusters.iter().map(prepare).collect::<Result<_>>()?;
+    let Some((plans, cols, _, _)) = prepared.first() else {
+        return Err(Error::InvalidInput(format!(
+            "RNTuple {name:?} has no fields"
+        )));
+    };
+    let signature = streaming::schema_sig(plans, cols);
+    if prepared
+        .iter()
+        .any(|(p, c, _, _)| streaming::schema_sig(p, c) != signature)
+    {
+        return Err(Error::SchemaChanged {
+            detail: format!("the clusters of RNTuple {name:?} do not have the same fields"),
+        });
+    }
+    let header_env = build_header(name, plans, cols);
+    let header_checksum = crate::envelope::trailing_checksum(&header_env)
+        .ok_or_else(|| Error::Format("the header envelope has no checksum".into()))?;
+    let seek_header = file.place_blob(&header_env)?;
+
+    let mut element_base = vec![0u64; cols.len()];
+    let mut summaries = Vec::new();
+    let mut cluster_pages = Vec::new();
+    let mut entries = 0u64;
+    for (_, cols, n, disks) in &prepared {
+        if *n == 0 {
+            continue;
+        }
+        let mut recs = Vec::with_capacity(cols.len());
+        for ((c, disk), base) in cols.iter().zip(disks).zip(&mut element_base) {
+            recs.push(PageRec {
+                offset: file.place_blob(disk)?,
+                disk_size: disk.len(),
+                n_elements: c.n,
+                element_offset: base.cast_signed(),
+            });
+            *base += u64::from(c.n);
+        }
+        cluster_pages.push(recs);
+        summaries.push((entries, u64::from(*n)));
+        entries += u64::from(*n);
+    }
+    let page_list_env = build_page_list(&summaries, &cluster_pages, compression, header_checksum)?;
+    let page_list_offset = file.place_blob(&page_list_env)?;
+    let footer_env = build_footer(
+        u32::try_from(entries)
+            .map_err(|_| Error::Unsupported(format!("RNTuple {name:?} has {entries} entries")))?,
+        u32::saturating_from(summaries.len()),
+        offset(page_list_offset)?,
+        page_list_env.len(),
+        header_checksum,
+        None,
+    );
+    let seek_footer = file.place_blob(&footer_env)?;
+    let anchor = build_anchor(
+        offset(seek_header)?,
+        header_env.len(),
+        offset(seek_footer)?,
+        footer_env.len(),
+    );
+    file.place_key_uncompressed(dir, ANCHOR_CLASS, name, "", &anchor)?;
+    Ok(())
+}
+
 /// A file offset as the `usize` the envelope builders take.
 fn offset(seek: u64) -> Result<usize> {
     usize::try_from(seek)
@@ -293,6 +388,24 @@ pub mod raw {
             super::prep_ntuple_extended(name, fields, late, setting)?
         };
         super::write_one_rntuple(file, dir, &prep)
+    }
+
+    /// Write the `RNTuple` `name` into `file` under directory `dir`, a cluster
+    /// per entry of `clusters`, each holding the same fields with its own
+    /// entries. Smaller clusters let a reader decompress only the window it
+    /// asks for, and read clusters in parallel.
+    ///
+    /// # Errors
+    ///
+    /// No cluster, clusters whose fields differ, fields of different lengths
+    /// within a cluster, a type the writer cannot encode, or a write error.
+    pub fn write_ntuple_clusters<W: Write + Seek>(
+        file: &mut ContainerWriter<W>,
+        dir: DirId,
+        name: &str,
+        clusters: &[Vec<Field>],
+    ) -> Result<()> {
+        super::write_clustered_rntuple(file, dir, name, clusters)
     }
 
     /// The `TStreamerInfo` classes an `RNTuple` with these fields needs in its

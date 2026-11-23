@@ -521,15 +521,17 @@ impl<'f> NtupleReader<'f> {
                 let switch_ci = *columns.first().ok_or_else(|| {
                     Error::Format(format!("variant field {:?} has no switch column", fld.name))
                 })?;
-                let (indices, tags): (Vec<_>, Vec<_>) = match self.column_values(file, switch_ci)? {
-                    ColumnValues::Switch(v) => v.into_iter().unzip(),
-                    other => {
-                        return Err(Error::Format(format!(
-                            "variant switch column decoded as {other:?}"
-                        )));
-                    }
-                };
+                let (mut indices, tags): (Vec<_>, Vec<_>) =
+                    match self.column_values(file, switch_ci)? {
+                        ColumnValues::Switch(v) => v.into_iter().unzip(),
+                        other => {
+                            return Err(Error::Format(format!(
+                                "variant switch column decoded as {other:?}"
+                            )));
+                        }
+                    };
                 let children = self.child_fields(field_idx);
+                self.rebase_switch(switch_ci, children, &tags, &mut indices);
                 if children.is_empty() {
                     return Err(Error::Format(format!(
                         "variant field {:?} has no alternatives",
@@ -551,6 +553,76 @@ impl<'f> NtupleReader<'f> {
                 "field role {other:?} is not supported"
             ))),
         }
+    }
+
+    /// Make a variant's switch indices count from the start of the read, not
+    /// of each cluster. A switch entry's index counts the values of its
+    /// alternative within its cluster, and the alternatives are read whole, so
+    /// an index in a later cluster moves past the values that alternative holds
+    /// in the earlier ones. Those come from the alternative's own pages: ROOT
+    /// stores one value per entry that chose it, and files oxiroot 0.10 and
+    /// 0.11 wrote could store more.
+    fn rebase_switch(
+        &self,
+        switch_ci: usize,
+        children: &[usize],
+        tags: &[u32],
+        indices: &mut [u64],
+    ) {
+        let held_per_cluster: Vec<Option<Vec<u64>>> = children
+            .iter()
+            .map(|&c| self.elements_per_cluster(c))
+            .collect();
+        let mut held = vec![0u64; children.len()];
+        let mut at = 0usize;
+        for (cluster_no, cluster) in self.page_clusters().iter().enumerate() {
+            let n: usize = cluster
+                .columns
+                .get(switch_ci)
+                .map_or(0, |c| c.pages.iter().map(|p| p.num_elements as usize).sum());
+            let end = at.saturating_add(n).min(tags.len());
+            let mut chosen = vec![0u64; children.len()];
+            for (&tag, index) in tags[at..end].iter().zip(&mut indices[at..end]) {
+                if let Some(k) = (tag as usize)
+                    .checked_sub(1)
+                    .filter(|&k| k < children.len())
+                {
+                    *index = index.saturating_add(held[k]);
+                    chosen[k] += 1;
+                }
+            }
+            for ((h, counts), chosen) in held.iter_mut().zip(&held_per_cluster).zip(chosen) {
+                *h += counts
+                    .as_ref()
+                    .and_then(|c| c.get(cluster_no).copied())
+                    .unwrap_or(chosen);
+            }
+            at = end;
+        }
+    }
+
+    /// How many values field `field_idx` holds in each cluster this reader
+    /// covers: the elements of its first (principal) column, or for a record or
+    /// fixed array without columns, its first sub-field's, per array element.
+    fn elements_per_cluster(&self, field_idx: usize) -> Option<Vec<u64>> {
+        if let Some(&ci) = self.field_columns(field_idx).first() {
+            return Some(
+                self.page_clusters()
+                    .iter()
+                    .map(|cluster| {
+                        cluster.columns.get(ci).map_or(0, |c| {
+                            c.pages.iter().map(|p| u64::from(p.num_elements)).sum()
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        let child = *self.child_fields(field_idx).first()?;
+        let counts = self.elements_per_cluster(child)?;
+        Some(match self.header.fields.get(field_idx)?.array_size {
+            Some(n) if n > 0 => counts.into_iter().map(|c| c / n).collect(),
+            _ => counts,
+        })
     }
 
     /// Column indices belonging to field `field_idx`, in column order.

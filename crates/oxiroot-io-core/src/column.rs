@@ -115,6 +115,70 @@ fn to_usize(n: u64) -> usize {
     usize::saturating_from(n)
 }
 
+/// A union of the entries `tags` and `indices`, kept from a larger one whose
+/// alternatives are `alternatives`: each alternative keeps only the values
+/// those entries hold, and the indices are shifted to match. A slice, a filter
+/// and the chunks a writer cuts a batch into therefore carry their own values
+/// and no others.
+///
+/// An index past its alternative (a column built by hand, which writing it
+/// would reject) points at nothing kept, and becomes 0.
+fn compact_union(
+    tags: Vec<u32>,
+    mut indices: Vec<u64>,
+    alternatives: &[(String, Column)],
+) -> Column {
+    let compacted = alternatives
+        .iter()
+        .enumerate()
+        .map(|(k, (name, values))| {
+            let held = values.len();
+            let mine = |tag: u32| (tag as usize).checked_sub(1) == Some(k);
+            let used: Vec<usize> = tags
+                .iter()
+                .zip(&indices)
+                .filter(|&(&t, &i)| mine(t) && to_usize(i) < held)
+                .map(|(_, &i)| to_usize(i))
+                .collect();
+            let (Some(&lo), Some(&hi)) = (used.iter().min(), used.iter().max()) else {
+                return (name.clone(), values.slice(0, 0));
+            };
+            // The usual case: consecutive values, in order, each used once.
+            let contiguous = hi - lo + 1 == used.len() && used.windows(2).all(|w| w[0] + 1 == w[1]);
+            if contiguous {
+                for (t, i) in tags.iter().zip(indices.iter_mut()) {
+                    if mine(*t) {
+                        *i = i.saturating_sub(lo as u64);
+                    }
+                }
+                return (name.clone(), values.slice(lo, hi + 1));
+            }
+            // Otherwise keep the values used, and renumber by rank.
+            let mut keep = vec![false; held];
+            for &i in &used {
+                keep[i] = true;
+            }
+            let mut rank = vec![0u64; held];
+            let mut next = 0u64;
+            for (r, &k) in rank.iter_mut().zip(&keep) {
+                *r = next;
+                next += u64::from(k);
+            }
+            for (t, i) in tags.iter().zip(indices.iter_mut()) {
+                if mine(*t) {
+                    *i = rank.get(to_usize(*i)).copied().unwrap_or(0);
+                }
+            }
+            (name.clone(), values.filter(&keep))
+        })
+        .collect();
+    Column::Union {
+        tags,
+        indices,
+        alternatives: compacted,
+    }
+}
+
 impl Column {
     /// The number of entries.
     #[must_use]
@@ -455,12 +519,11 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.slice(start, end))).collect(),
             ),
-            // The alternatives stay whole: the kept entries still point into them.
-            Self::Union { tags, indices, alternatives } => Self::Union {
-                tags: tags.get(start..end).unwrap_or(&[]).to_vec(),
-                indices: indices.get(start..end).unwrap_or(&[]).to_vec(),
-                alternatives: alternatives.clone(),
-            },
+            Self::Union { tags, indices, alternatives } => compact_union(
+                tags.get(start..end).unwrap_or(&[]).to_vec(),
+                indices.get(start..end).unwrap_or(&[]).to_vec(),
+                alternatives,
+            ),
         })
     }
 
@@ -508,11 +571,9 @@ impl Column {
             Self::Struct(members) => Self::Struct(
                 members.iter().map(|(n, c)| (n.clone(), c.filter(mask))).collect(),
             ),
-            Self::Union { tags, indices, alternatives } => Self::Union {
-                tags: keep(tags, mask),
-                indices: keep(indices, mask),
-                alternatives: alternatives.clone(),
-            },
+            Self::Union { tags, indices, alternatives } => {
+                compact_union(keep(tags, mask), keep(indices, mask), alternatives)
+            }
         })
     }
 

@@ -159,7 +159,9 @@ FileWriter::create("run.root")
 The first batch fixes the columns; `append` takes more entries of the same
 columns. `.with_schema(…)` chooses the stored types, as below. `.add(&events)`
 copies the values into the file being built, and `.add(events)` hands them
-over.
+over. The entries are cut into chunks of about 1 MiB per column, as a
+`DatasetWriter` cuts a cluster (below), so a read of a window or in parallel
+need not decompress everything.
 
 ### A dataset too large to hold
 
