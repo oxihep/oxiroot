@@ -177,21 +177,16 @@ Larger pieces, each worth a design note before code.
   reduce, missing values propagate. Cross-checked against `RDataFrame` on the
   same file. The open-data examples select with queries, with the same
   results as the loops they replaced.
+- **Actions on queries, and branches** (on `main`, unreleased).
+  `RDataFrame`'s `Count`, `Sum`, `Mean`, `Min`, `Max`, `Histo1D`–`3D`,
+  `Report` and `Take`: an action books a result and returns a handle, and the
+  first `get` runs one pass that fills every action booked, merged across
+  threads with `rayon`. Each step makes a new query on top of the last, so
+  one query is the base of several branches sharing its steps; named filters
+  give the cut flow. The Z → μμ example fills its cut flow, mass histogram
+  and candidates in one pass per file.
 
 ### Still open
-
-- **Actions on a query: histograms and sums in one pass.**
-  - *Today:* a query defines columns and filters entries (`RDataFrame`'s
-    `Define` and `Filter`), and its output is batches: filling a histogram
-    or summing is a loop over them, and two results mean two passes or a
-    loop that does both.
-  - *Done when:* a query fills histograms and accumulates sums and counts
-    (`Histo1D`, `Sum`, `Count`), several of them booked before one pass
-    over the data, merged across threads; a cut flow comes from the filters
-    without a column per cut.
-  - *Design first:* how results are booked and returned (handles filled by
-    the run, as `RDataFrame`'s are, or one call returning them all), and
-    whether a query becomes lazy and branching (`Filter` on a shared base).
 
 - **XRootD GSI (X.509 proxy) authentication.**
   - *Today:* `unix` and token (`ztn`, over TLS) authentication ship, which
@@ -219,10 +214,10 @@ use, to see where it still chafes.
 
 - **`RDataFrame`-style analysis, the rest.** Queries (0.12.0) are its first
   half: `Define` and `Filter`, column by column, cluster by cluster, in
-  parallel. The actions are next (see *Still open*). Past them, a full
-  analysis front-end: systematic variations (`Vary`), snapshots that keep a
-  query's output as a dataset, and joins across datasets in the manner of
-  ROOT's `RNTupleProcessor`.
+  parallel; actions and branches followed (above). Past them, a full analysis
+  front-end: systematic variations (`Vary`), snapshots that write a query's
+  output as a dataset while the pass runs, profiles as actions, and joins
+  across datasets in the manner of ROOT's `RNTupleProcessor`.
 
 ## Out of scope
 

@@ -194,6 +194,21 @@ fn main() -> oxiroot::Result<()> {
             jetty.values::<f64>("lead_jet")?,
             jetty.values::<f64>("pt_over_m")?
         );
+        // Two branches of one query, and results booked on each: nothing is
+        // read until one is asked for, then one pass fills them all.
+        let all = events.query();
+        let (with_jet, without) = (
+            all.filter("len(jet_pt) > 0"),
+            all.filter("len(jet_pt) == 0"),
+        );
+        let (n_with, n_without) = (with_jet.count(), without.count());
+        let jet_sum = with_jet.sum("jet_pt");
+        println!(
+            "   branches, one pass: {} with a jet (Σ pT {:.1}), {} without",
+            n_with.get()?,
+            jet_sum.get()?,
+            n_without.get()?
+        );
     }
     println!(
         "and `pt` beside them: {} entries",

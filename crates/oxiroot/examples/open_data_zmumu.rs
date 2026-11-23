@@ -70,52 +70,48 @@ mod analysis {
         let tree = Dataset::open(&file, "mini")?;
         let entries = entries.min(tree.entries());
 
-        let mut mass = Hist::reg(BINS, LO, HI)
-            .weight()
-            .named(format!("m_mumu_{name}"));
-        // The selection as a query: each cut is a bool column built on the
-        // one before, so every event carries how far it got, and the counts
-        // of the cut flow are the sums of those columns. The file stores a
-        // lepton's kind as |PDG ID|: 13 for a muon. Momenta are in MeV; the
-        // mass sums the two four-momenta (E, px, py, pz).
+        // The selection as a query, each cut named, and three results booked
+        // on it: the mass histogram, the cut flow and the table of
+        // candidates. Nothing is read until the first is asked for; then one
+        // pass over the file fills all three. The file stores a lepton's
+        // kind as |PDG ID|: 13 for a muon. Momenta are in MeV; the mass sums
+        // the two four-momenta (E, px, py, pz).
         let muon = literals::muon().pdgid().abspid().unsigned_abs();
-        let events = tree
+        let selected = tree
             .query()
             .range(0..entries)
-            .define("event", "eventNumber")
-            .define(
-                "two_muons",
+            .filter_named(
+                CUTS[1],
                 format!("len(lep_type) == 2 and all(lep_type == {muon})"),
             )
-            .define(
-                "opposite",
-                "(two_muons and lep_charge[0] != lep_charge[1]) ?? false",
-            )
-            .define("hard", "opposite and all(lep_pt > 25e3)")
+            .filter_named(CUTS[2], "lep_charge[0] != lep_charge[1]")
+            .filter_named(CUTS[3], "all(lep_pt > 25e3)")
+            .define("event", "eventNumber")
             .define(
                 "mass",
                 "sqrt(max(sum(lep_E)^2 - sum(lep_pt * cos(lep_phi))^2 \
                       - sum(lep_pt * sin(lep_phi))^2 - sum(lep_pt * sinh(lep_eta))^2, 0)) / 1e3",
             )
             .define("pt_lead", "(max(lep_pt) ?? 0) / 1e3")
-            .define("pt_sub", "(min(lep_pt) ?? 0) / 1e3")
-            .read()?;
-        let mut passed = [events.len() as u64, 0, 0, 0];
-        for (count, cut) in passed[1..]
-            .iter_mut()
-            .zip(["two_muons", "opposite", "hard"])
-        {
-            *count = events.values::<bool>(cut)?.iter().filter(|&&p| p).count() as u64;
-        }
-        let selected = events
-            .filter(events.values::<bool>("hard")?)?
-            .select(["event", "mass", "pt_lead", "pt_sub"])?;
-        for &m in selected.values::<f64>("mass")? {
-            mass.fill(m);
-        }
+            .define("pt_sub", "(min(lep_pt) ?? 0) / 1e3");
+        let mass = selected.fill(
+            Hist::reg(BINS, LO, HI)
+                .weight()
+                .named(format!("m_mumu_{name}")),
+            ["mass"],
+        );
+        let report = selected.report();
+        let table = selected.collect();
+
+        let report = report.get()?; // the pass: every result is filled now
+        let mass = mass.get()?;
+        let passed: Vec<u64> = std::iter::once(entries)
+            .chain(report.cuts().iter().map(oxiroot::data::query::Cut::passed))
+            .collect();
         // Stored in the file as the source has them: the event number in 32
         // bits, and the floats in 32 bits, which is all a mass in GeV needs.
-        let candidates = selected
+        let candidates = table
+            .get()?
             .cast("event", DataType::I32)?
             .cast("mass", DataType::F32)?
             .cast("pt_lead", DataType::F32)?
