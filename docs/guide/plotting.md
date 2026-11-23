@@ -13,7 +13,7 @@ behind the **`plot` feature** and exposed as `oxiroot::plot`.
 ```toml
 [dependencies]
 # the `plot` feature is on by default:
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.11.0" }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.12.0" }
 ```
 
 !!! note "How it works"

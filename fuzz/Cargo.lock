@@ -171,17 +171,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxifit-formula"
-version = "0.9.0"
-source = "git+https://github.com/oxihep/oxifit?tag=v0.9.0#166418f4dfd76de64bd0af2ce8ccdc992ae4c637"
+name = "oxiformula"
+version = "0.11.0"
+source = "git+https://github.com/oxihep/oxiformula?tag=v0.11.0#4f7a8c5ee15528fc2f20a67d9a3987dbc7220771"
 dependencies = [
  "oxistats",
 ]
 
 [[package]]
 name = "oxihist"
-version = "0.16.0"
-source = "git+https://github.com/oxihep/oxihist?tag=v0.16.0#27f9b6dce65b389dc7b9103e3c61d0de75a41902"
+version = "0.18.0"
+source = "git+https://github.com/oxihep/oxihist?tag=v0.18.0#6d49e52aeb2991e209f280acf3aeb25914f824c9"
 dependencies = [
  "foldhash",
  "oxistats",
@@ -190,13 +190,15 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-compress"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "lz4_flex",
  "lzma-rust2",
  "miniz_oxide",
  "xxhash-rust",
  "zrip",
+ "zrip-decode",
+ "zrip-encode",
 ]
 
 [[package]]
@@ -214,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxihist",
  "oxiroot-io-core",
@@ -223,16 +225,16 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist-func"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
- "oxifit-formula",
+ "oxiformula",
  "oxiroot-hist",
  "oxiroot-io-core",
 ]
 
 [[package]]
 name = "oxiroot-io-core"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "bytes",
  "oxiroot-compress",
@@ -240,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-rntuple"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxiroot-io-core",
  "xxhash-rust",
@@ -248,15 +250,15 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-tree"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxiroot-io-core",
 ]
 
 [[package]]
 name = "oxistats"
-version = "0.2.0"
-source = "git+https://github.com/oxihep/oxistats?tag=v0.2.0#ee8d0c48eeace5a7e4ca0f45d6ebebc83cf400f8"
+version = "0.2.1"
+source = "git+https://github.com/oxihep/oxistats?tag=v0.2.1#df9ab8b4066555964f818f94734578dadba9ce30"
 
 [[package]]
 name = "r-efi"
