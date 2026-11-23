@@ -263,6 +263,29 @@ jobs:
             exit 1
           fi
 
+  fresh-deps:
+    name: newest dependencies
+    # What a project that adds oxiroot gets: its own resolution, every
+    # dependency at the newest version the manifests allow, not this
+    # repository's Cargo.lock. Catches an upstream patch release that breaks
+    # the build (zrip-decode 0.8.18 did) before a user does. Not a required
+    # check: a failure here comes from a release elsewhere, so it is a reason
+    # to pin or bump, not a fault in the PR.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Resolve every dependency afresh
+        run: cargo update
+
+      - name: Build and test with all features
+        run: cargo test --workspace --all-features
+
   coverage:
     name: coverage
     # Line coverage of the workspace's tests (cargo-llvm-cov). On a PR, the

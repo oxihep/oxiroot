@@ -17,6 +17,13 @@ miniz_oxide = "0.9.1"
 # Pinned exactly: `zstd_encode` calls `zrip::encode::strategy::level_params_for_size`,
 # which zrip hides from its docs and may change in a patch release.
 zrip = "=0.8.22"
+# zrip's own crates, pinned to the versions zrip 0.8.22 was released with. zrip
+# asks for them with caret ranges, and their patch releases have moved to new
+# `zrip-core` minors: `zrip-decode 0.8.18` needs `zrip-core 0.14` where zrip
+# 0.8.22 needs 0.12, so a fresh resolution put two `zrip-core`s in one build
+# and zrip stopped compiling. Not used directly; move these with `zrip`.
+zrip-decode = { version = "=0.8.16", default-features = false }
+zrip-encode = { version = "=0.9.10", default-features = false }
 lz4_flex = { version = "0.14", default-features = false, features = ["alloc", "safe-encode", "safe-decode", "checked-decode"] }
 # Pure-Rust LZMA/XZ (tukaani xz-for-java port). Both directions: `xz` gives the
 # decoder, `encoder` the compressor. `optimization` improves the ratio.
@@ -28,3 +35,7 @@ proptest.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-machete]
+# Pins only: see `zrip-decode` above.
+ignored = ["zrip-decode", "zrip-encode"]

@@ -1971,6 +1971,8 @@ dependencies = [
  "proptest",
  "xxhash-rust",
  "zrip",
+ "zrip-decode",
+ "zrip-encode",
 ]
 
 [[package]]

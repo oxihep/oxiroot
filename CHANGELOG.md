@@ -34,6 +34,13 @@ change the API.
 
 ### Fixed
 
+- **oxiroot did not build in a project of its own.** A project that adds
+  oxiroot resolves its dependencies afresh, and `zrip-decode 0.8.18` (a patch
+  release) moved to `zrip-core 0.14` while zrip 0.8.22 needs 0.12: the two met
+  in one build and zrip failed to compile (`E0308`). This repository's
+  `Cargo.lock` hid it. zrip's decoder and encoder crates are now pinned to the
+  versions zrip 0.8.22 was released with, and a new CI job, *newest
+  dependencies*, builds and tests against a fresh resolution on every run.
 - **A crafted file could make opening it run out of memory.** A key whose
   `fKeyLen` was shorter than its own header (0, say) sent the reader back to
   where the key started, so a key list claiming two billion keys read the same
