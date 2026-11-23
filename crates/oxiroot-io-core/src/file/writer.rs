@@ -650,22 +650,12 @@ impl FileUpdater {
     }
 }
 
-/// Write `bytes` as the file `path`, all or nothing: they go to a temporary
-/// file beside it, which then takes its name. An existing file — the one an
-/// update is rewriting — is replaced in one step, so a failure part-way
-/// leaves it as it was instead of cut short.
-///
-/// # Errors
-///
-/// If the temporary file cannot be written or renamed.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// The temporary file beside `path` that is written in its place, and the
+/// file `path` names (the one a symbolic link points at, not the link).
+fn temporary_beside(path: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-    // Replace the file a symbolic link names, not the link.
     let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let Some(name) = target.file_name() else {
-        return std::fs::write(&target, bytes);
-    };
+    let name = target.file_name().unwrap_or_default();
     let mut tmp_name = std::ffi::OsString::from(".");
     tmp_name.push(name);
     tmp_name.push(format!(
@@ -673,19 +663,108 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         std::process::id(),
         COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    let tmp = target.with_file_name(tmp_name);
+    (target.with_file_name(tmp_name), target)
+}
 
-    let written = std::fs::write(&tmp, bytes)
-        .and_then(|()| match std::fs::metadata(&target) {
-            // Keep the permissions of the file being replaced.
-            Ok(existing) => std::fs::set_permissions(&tmp, existing.permissions()),
-            Err(_) => Ok(()),
-        })
-        .and_then(|()| std::fs::rename(&tmp, &target));
+/// Make a finished temporary file `tmp` the file `target`: its bytes reach
+/// the disk, it takes the permissions of the file it replaces, then its name.
+fn put_in_place(file: &std::fs::File, tmp: &Path, target: &Path) -> std::io::Result<()> {
+    file.sync_all()?;
+    if let Ok(existing) = std::fs::metadata(target) {
+        std::fs::set_permissions(tmp, existing.permissions())?;
+    }
+    std::fs::rename(tmp, target)
+}
+
+/// Write `bytes` as the file `path`, all or nothing: they go to a temporary
+/// file beside it, which reaches the disk and then takes its name. An existing
+/// file — the one an update is rewriting — is replaced in one step, so a
+/// failure part-way leaves it as it was instead of cut short.
+///
+/// # Errors
+///
+/// If the temporary file cannot be written or renamed.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if path.file_name().is_none() {
+        return std::fs::write(path, bytes);
+    }
+    let (tmp, target) = temporary_beside(path);
+    let written = std::fs::File::create(&tmp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        put_in_place(&file, &tmp, &target)
+    });
     if written.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
     written
+}
+
+/// A file being written in place of `path`, for a writer that streams to
+/// disk: the writer fills [`file`](Self::file), a temporary file beside
+/// `path`, and [`commit`](Self::commit) makes it `path` once the file is
+/// complete. Dropped without a commit — the writer failed, or was dropped part
+/// way — it deletes the temporary file, so `path` keeps what it held.
+#[derive(Debug)]
+pub struct PendingFile {
+    tmp: std::path::PathBuf,
+    target: std::path::PathBuf,
+    file: Option<std::fs::File>,
+}
+
+impl PendingFile {
+    /// Start a file to take the place of `path`.
+    ///
+    /// # Errors
+    ///
+    /// If the temporary file cannot be created.
+    pub fn create(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let (tmp, target) = temporary_beside(path.as_ref());
+        let file = std::fs::File::create(&tmp)?;
+        Ok(Self {
+            tmp,
+            target,
+            file: Some(file),
+        })
+    }
+
+    /// The temporary file to write, as a handle of its own.
+    ///
+    /// # Errors
+    ///
+    /// If the handle cannot be duplicated.
+    pub fn file(&self) -> std::io::Result<std::fs::File> {
+        self.file
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("the pending file is gone"))?
+            .try_clone()
+    }
+
+    /// Make the written file `path`: its bytes reach the disk, then it takes
+    /// the name (and the permissions of the file it replaces).
+    ///
+    /// # Errors
+    ///
+    /// If it cannot be synced or renamed; the temporary file is deleted.
+    pub fn commit(mut self) -> std::io::Result<()> {
+        let file = self
+            .file
+            .take()
+            .ok_or_else(|| std::io::Error::other("the pending file is gone"))?;
+        let done = put_in_place(&file, &self.tmp, &self.target);
+        if done.is_ok() {
+            // Nothing left for `drop` to delete.
+            self.tmp = std::path::PathBuf::new();
+        }
+        done
+    }
+}
+
+impl Drop for PendingFile {
+    fn drop(&mut self) {
+        if !self.tmp.as_os_str().is_empty() {
+            let _ = std::fs::remove_file(&self.tmp);
+        }
+    }
 }
 
 /// A directory being copied from one file into another: the objects it holds,

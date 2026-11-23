@@ -96,7 +96,7 @@ pub mod raw {
     pub use crate::error::{check_len, decompress_payload};
     pub use crate::file::{
         BIG_FILE_VERSION, ContainerWriter, DATIME, Datime, DirId, Directory, FILE_VERSION,
-        FileHeader, Form, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Objects, Uuid,
+        FileHeader, Form, FreeSegment, KSTART_BIG_FILE, Key, MAGIC, Objects, PendingFile, Uuid,
         compress_if_smaller, find_key, read_free, split_cycle, write_atomic,
     };
     pub use crate::object::{K_CLASS_MASK, K_NEW_CLASS_TAG, ObjectRef, RecordHeader, TagReader};

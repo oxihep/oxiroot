@@ -80,11 +80,16 @@ pub struct NtupleWriter<W: Write + Seek> {
     total_entries: u64,
     summaries: Vec<(u64, u64)>,
     cluster_pages: Vec<Vec<PageRec>>,
+    /// For a writer [`create`](Self::create)d at a path: the temporary file
+    /// it writes, which takes the path's place when the writer finishes.
+    pending: Option<oxiroot_io_core::raw::PendingFile>,
 }
 
 impl NtupleWriter<std::fs::File> {
     /// Create a streaming `RNTuple` file at `path` (32-bit container; supports up
     /// to 2 GiB — [`finish`](NtupleWriter::finish) errors if that is exceeded).
+    /// It is written beside `path` and takes its place when `finish` succeeds,
+    /// so a write that fails or is dropped leaves `path` as it was.
     ///
     /// # Errors
     ///
@@ -125,8 +130,12 @@ impl NtupleWriter<std::fs::File> {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        let file = std::fs::File::create(path)?;
-        Self::new_fmt(file, &file_name, ntuple_name, compression, big)
+        // Written beside `path` and renamed over it when finished, so a
+        // write that fails or is dropped leaves `path` as it was.
+        let pending = oxiroot_io_core::raw::PendingFile::create(path)?;
+        let mut writer = Self::new_fmt(pending.file()?, &file_name, ntuple_name, compression, big)?;
+        writer.pending = Some(pending);
+        Ok(writer)
     }
 }
 
@@ -183,6 +192,7 @@ impl<W: Write + Seek> NtupleWriter<W> {
             total_entries: 0,
             summaries: Vec::new(),
             cluster_pages: Vec::new(),
+            pending: None,
         })
     }
 
@@ -382,7 +392,11 @@ impl<W: Write + Seek> NtupleWriter<W> {
         objects.place(&mut self.file, &self.ntuple_name)?;
         self.file
             .place_streamer_info(&header.streamer_info, objects.classes())?;
-        self.file.finish()
+        let sink = self.file.finish()?;
+        if let Some(pending) = self.pending.take() {
+            pending.commit()?;
+        }
+        Ok(sink)
     }
 }
 

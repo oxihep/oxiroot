@@ -11,6 +11,8 @@ change the API.
 
 - `oxiroot::ntuple::raw::write_ntuple_clusters`: an RNTuple with a cluster per
   set of fields, into an open container.
+- `oxiroot::file::raw::PendingFile`: a file written in place of a path,
+  which takes the path's place on `commit` and is deleted if dropped first.
 
 ### Changed
 
@@ -40,6 +42,15 @@ change the API.
   before. It now does, from each alternative's own pages, so variant files
   oxiroot 0.10 and 0.11 wrote (every cluster with every value) still read right.
   A ROOT-written fixture over three clusters covers it.
+- **A streamed file no longer replaces its path before it is complete.**
+  `DatasetWriter::create`, `TreeWriter::create` and `NtupleWriter::create`
+  truncated the path at once, so a write that failed or was dropped part-way
+  destroyed the file there and left a broken one. They now write beside the
+  path and rename over it when `finish` succeeds, as `FileWriter` and `hadd`
+  already did.
+- **A replaced file reaches the disk before it takes its name**, so a crash
+  or power cut right after a write cannot leave an empty file (`FileWriter`,
+  `hadd`, and the streaming writers above).
 
 ## [0.11.0] — 2026-11-22
 

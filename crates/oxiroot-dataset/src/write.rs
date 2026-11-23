@@ -77,6 +77,9 @@ fn map_chunks<T: Send>(
 pub struct DatasetWriter<W: Write + Seek = File> {
     /// The sink and the file name, until the first cluster is written.
     pending: Option<(W, String)>,
+    /// For a writer [`create`](DatasetWriter::create)d at a path: the
+    /// temporary file the sink is, which takes the path's place at `finish`.
+    in_place_of: Option<oxiroot_io_core::raw::PendingFile>,
     /// The file's writer, from the first cluster on.
     opened: Option<Opened<W>>,
     name: String,
@@ -102,9 +105,11 @@ enum Opened<W: Write + Seek> {
 }
 
 impl DatasetWriter<File> {
-    /// Create the file `path` (truncating it) to hold the dataset `name` in
-    /// `format`, compressed with Zstd level 5 unless
-    /// [`compression`](Self::compression) says otherwise.
+    /// Create the file `path` to hold the dataset `name` in `format`,
+    /// compressed with Zstd level 5 unless [`compression`](Self::compression)
+    /// says otherwise. It is written beside `path` and takes its place when
+    /// [`finish`](Self::finish) succeeds, so a write that fails or is dropped
+    /// leaves `path` as it was.
     ///
     /// # Errors
     ///
@@ -116,7 +121,10 @@ impl DatasetWriter<File> {
             .and_then(|s| s.to_str())
             .unwrap_or("file.root")
             .to_string();
-        Ok(Self::new(File::create(path)?, &file_name, name, format))
+        let pending = oxiroot_io_core::raw::PendingFile::create(path)?;
+        let mut writer = Self::new(pending.file()?, &file_name, name, format);
+        writer.in_place_of = Some(pending);
+        Ok(writer)
     }
 }
 
@@ -126,6 +134,7 @@ impl<W: Write + Seek> DatasetWriter<W> {
     pub fn new(sink: W, file_name: &str, name: &str, format: Format) -> Self {
         Self {
             pending: Some((sink, file_name.to_string())),
+            in_place_of: None,
             opened: None,
             name: name.to_string(),
             format,
@@ -320,14 +329,18 @@ impl<W: Write + Seek> DatasetWriter<W> {
                 Opened::Ntuple(w) => w.write_batch(&ntuple_fields(empty, &schema))?,
             }
         }
-        match self.opened {
+        let sink = match self.opened {
             Some(Opened::Tree(w)) => w.finish_with(&self.objects),
             Some(Opened::Ntuple(w)) => w.finish_with(&self.objects),
             None => Err(Error::InvalidInput(format!(
                 "dataset {:?}: no entries were written",
                 self.name
             ))),
+        }?;
+        if let Some(pending) = self.in_place_of.take() {
+            pending.commit()?;
         }
+        Ok(sink)
     }
 }
 
