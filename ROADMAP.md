@@ -138,6 +138,19 @@ Larger pieces, each worth a design note before code.
   0.11.0 and oxihist 0.13.0). Names that collided across crates are renamed,
   public fields are private behind accessors, and options builders take one
   form: toggles named after their option, taking a `bool`.
+- **One way to do each thing** (0.10.0). A second, line-by-line review of the
+  workspace: one `Column` type below every reader and writer (`std::variant`
+  included), one histogram record per dimension (built and filled with
+  oxihist, read and written as the record), a `NamedBatch` added to a file
+  like any other object, one naming convention across the public API, a
+  26-name prelude, and errors that keep their source. Its defects fixed:
+  checked allocation sizes, atomic writes, collections and fitted histograms
+  that survive a round trip, and every embedded object read through its key's
+  class table.
+- **HEP plotting** (0.11.0): oxiplot 0.12 (Poisson errors, ratio and pull
+  panels, uncertainty bands, the experiments' styles), `Efficiency::interval`
+  checked against ROOT, and two examples that run whole analyses on CMS and
+  ATLAS open data read over `root://`.
 - **Cast lints in every workspace.** `cast_possible_truncation`,
   `cast_sign_loss`, `cast_possible_wrap` and `cast_lossless` are on; each hit
   is fixed or justified where it stands. In oxiroot the `i32`/`usize` mixing
@@ -159,7 +172,9 @@ Larger pieces, each worth a design note before code.
 
 ## Toward 1.0
 
-The API review is done (see above): the surface is what 1.0 would freeze.
+The API was reviewed twice (0.6.0, then 0.10.0, see above). The 0.10.0
+surface is the candidate for 1.0; what is left before freezing it is time in
+use, to see where it still chafes.
 
 - **Publishing.** The crates stay on GitHub until it is decided to publish.
   - *When it is:* publish in dependency order (oxistats → oxiparticle →

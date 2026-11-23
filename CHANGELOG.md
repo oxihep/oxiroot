@@ -27,6 +27,10 @@ change the API.
   an RNTuple cluster per chunk. It was one basket per branch or one cluster for
   the whole dataset, which a read could neither window nor share across
   threads. ROOT 6.40 reads both forms of a 1-million-entry batch.
+- `zrip` is pinned to exactly `0.8.22`: the Zstd encoder calls a function
+  zrip hides from its docs, which a patch release could change.
+- ROADMAP lists the 0.10.0 and 0.11.0 work; the README and installation guide
+  no longer name the removed `FileReader::open_ranged`.
 
 ### Fixed
 
