@@ -13,11 +13,12 @@ oxistats = { git = "https://github.com/oxihep/oxistats", tag = "v0.1.0", version
 ## The dependency order
 
 ```text
-oxistats, oxiparticle, oxifit-formula        (no oxihep dependencies)
-oxifit       -> oxistats, oxifit-formula
+oxistats, oxiparticle                       (no oxihep dependencies)
+oxiformula   -> oxistats
+oxifit       -> oxistats, oxiformula
 oxiplot      -> [oxifit]
 oxihist      -> [oxiplot], [oxifit]
-oxiroot      -> oxistats, oxiparticle, oxifit, oxifit-formula, oxihist, [oxiplot]
+oxiroot      -> oxistats, oxiparticle, oxiformula, oxifit, oxihist, [oxiplot]
 ```
 
 `[x]` is an optional (feature) dependency.

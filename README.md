@@ -61,7 +61,7 @@ None of them is on crates.io yet; depend on them from GitHub (see
   and `MultiErrorGraph` — read and write, including a graph's display frame
   (`fHistogram`) and attached fitted functions (`fFunctions`, faithful `Func1D`).
 - 🧮 **Functions** — standalone `Func1D`/`Func2D`/`Func3D` keys backed by a real
-  `TFormula` expression engine (oxifit-formula, from [oxifit](https://github.com/oxihep/oxifit); arbitrary formulas, ROOT `gaus`/`expo`/`pol`
+  `TFormula` expression engine ([oxiformula](https://github.com/oxihep/oxiformula); arbitrary formulas, ROOT `gaus`/`expo`/`pol`
   shortcuts), with pure-Rust `eval`/`integral`/`derivative`; any formula is also
   fittable via `Model::from_formula`.
 - 📐 **Statistics** (`oxiroot::stat`) — [oxistats](https://github.com/oxihep/oxistats),
@@ -456,7 +456,7 @@ FileWriter::create("gfit.root").add(&g).compression(Compression::Stored).write()
 - **Standalone `Func1D`/`Func2D`/`Func3D` keys** — real ROOT function objects (each
   embedding a `TFormula`), built from a formula and a range and read/written like
   any other object. `Func1D::new("[0]*sin([1]*x)", 0.0..=6.3)?.named("f").with_params(&...)?`.
-- **A real `TFormula` expression engine** ([`oxifit-formula`], a dependency-free
+- **A real `TFormula` expression engine** ([`oxiformula`], its own
   crate): a tokenizer + Pratt parser + AST evaluator for arbitrary formulas —
   operators `+ - * / ^`, the usual functions (`sin`/`exp`/`log`/`sqrt`/`pow`/…,
   with or without a `TMath::` prefix), comparisons/`?:`, and ROOT's `gaus`/`expo`/
@@ -470,7 +470,7 @@ FileWriter::create("gfit.root").add(&g).compression(Compression::Stored).write()
   and re-evaluate** all three.
 - See the [`functions` example](crates/oxiroot/examples/functions.rs).
 
-[`oxifit-formula`]: https://github.com/oxihep/oxifit
+[`oxiformula`]: https://github.com/oxihep/oxiformula
 
 ### Persistable objects (`oxiroot::hist`)
 

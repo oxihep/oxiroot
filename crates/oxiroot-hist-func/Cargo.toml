@@ -13,7 +13,7 @@ description = "ROOT parametric functions (TF1/TF2/TF3) evaluated in pure Rust, w
 [dependencies]
 oxiroot-hist = { workspace = true }
 oxiroot-io-core = { workspace = true }
-oxifit-formula = { workspace = true }
+oxiformula = { workspace = true }
 oxifit = { workspace = true, optional = true }
 
 [features]

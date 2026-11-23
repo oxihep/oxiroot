@@ -275,7 +275,7 @@ fn the_derivative_is_exact_where_the_formula_has_one() {
 #[test]
 fn a_formula_error_keeps_where_and_why() {
     let err = Func1D::new("x & 1", 0.0..=1.0).unwrap_err();
-    let parse = err.downcast_ref::<oxifit_formula::ParseError>().unwrap();
+    let parse = err.downcast_ref::<oxiformula::ParseError>().unwrap();
     assert_eq!(parse.span(), 2..3);
     assert_eq!(parse.hint(), Some("ROOT writes logical AND as `&&`"));
 }

@@ -153,6 +153,21 @@ pub mod stat {
     pub use oxistats::*;
 }
 
+/// ROOT's `TFormula`: parse, evaluate, compile and differentiate formulas,
+/// and write them back as ROOT compiles them (from `oxiformula`). The
+/// functions [`Func1D`](hist::Func1D)/`Func2D`/`Func3D` and
+/// `Model::from_formula` are built on it.
+///
+/// ```
+/// use oxiroot::formula::Formula;
+/// let f = Formula::parse("gaus")?;
+/// assert_eq!(f.param_names(), ["Constant", "Mean", "Sigma"]);
+/// # Ok::<(), oxiroot::Error>(())
+/// ```
+pub mod formula {
+    pub use oxiformula::*;
+}
+
 /// PDG particle data — the [`PdgId`](oxiparticle::PdgId) Monte Carlo
 /// numbering-scheme decoder (is it a lepton? meson? baryon? its charge/spin/quark
 /// content) plus a bundled [`Particle`](oxiparticle::Particle) table (mass,
