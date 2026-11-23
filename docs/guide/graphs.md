@@ -200,7 +200,8 @@ let f = FileReader::open("graph_function.root")?;
 let g = f.get::<Graph>("gfit")?;
 
 for fun in g.functions() {
-    // `formula` is in ROOT's `[pN]` form; `params` are the current values.
+    // `formula` names each parameter, as ROOT stores it (`[p0]`, `[Mean]`);
+    // `param_names` gives their order and `params` their values.
     println!("{}: {} {:?}", fun.name, fun.formula, fun.params);
 }
 ```
@@ -208,8 +209,9 @@ for fun in g.functions() {
 Build one from scratch with `GraphFunction::new(formula, params, xmin, xmax).named(name)`
 (or convert a `Func1D` with `to_graph_function()`, see
 [Functions](functions.md#read-and-write)) and attach it with `with_function`.
-The formula may use either `[0]`/`[1]` or `[p0]`/`[p1]` to reference parameters;
-it is stored in ROOT's `[pN]` form.
+The formula may use either `[0]`/`[1]` or `[p0]`/`[p1]` to reference parameters
+(ROOT reads both); it is stored as written, with the parameters named `p0`,
+`p1`, ….
 
 ```rust
 use oxiroot::prelude::*;
@@ -219,7 +221,8 @@ let g = Graph::new(vec![0.0, 1.0, 2.0], vec![1.0, 3.0, 5.0])?
     .named("gfit")
     .with_function(GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 2.0).named("line"));
 
-assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
+assert_eq!(g.functions()[0].formula, "[0]+[1]*x");
+assert_eq!(g.functions()[0].param_names, ["p0", "p1"]);
 FileWriter::create("graph_function.root").add(&g).compression(Compression::Stored).write()?;
 ```
 

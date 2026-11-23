@@ -40,7 +40,7 @@ impl GraphFunction {
         let _save = read_vector_f64(r)?;
         let _normalized = r.u8()?;
         let _norm_integral = r.be_f64()?;
-        let (formula, params) = read_tformula_ptr(r, tags)?;
+        let (formula, params, param_names) = read_tformula_ptr(r, tags)?;
         if let Some(end) = tf1.end {
             r.seek(end)?; // skip fParams + fComposition
         }
@@ -48,6 +48,7 @@ impl GraphFunction {
             name: named.name,
             title: named.title,
             formula,
+            param_names,
             params,
             par_errors,
             par_min,
@@ -121,12 +122,15 @@ fn read_vector_f64(r: &mut RBuffer<'_>) -> Result<Vec<f64>> {
 }
 
 /// Read the `fFormula` (`TFormula*`) object pointer, returning
-/// `(fFormula string, fClingParameters)`.
-fn read_tformula_ptr(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(String, Vec<f64>)> {
+/// `(fFormula string, fClingParameters, parameter names by index)`.
+fn read_tformula_ptr(
+    r: &mut RBuffer<'_>,
+    tags: &mut TagReader,
+) -> Result<(String, Vec<f64>, Vec<String>)> {
     let header = tags.read_header(r)?;
     let (Some(_), Some(end)) = (header.class_name, header.end) else {
         // A null pointer, or a formula shared with an earlier function.
-        return Ok((String::new(), Vec::new()));
+        return Ok((String::new(), Vec::new(), Vec::new()));
     };
     let _ver = r.read_version()?; // TFormula v14
     let _named = read_named(r)?;
@@ -135,7 +139,24 @@ fn read_tformula_ptr(r: &mut RBuffer<'_>, tags: &mut TagReader) -> Result<(Strin
     let names = read_param_map(r)?; // fParams
     let formula = positional(&r.string()?, &names); // fFormula
     r.seek(end)?;
-    Ok((formula, params))
+    let by_index = names_by_index(&names, params.len());
+    Ok((formula, params, by_index))
+}
+
+/// The names of `n` parameters in index order, from the stored name → index
+/// map; `p0`, `p1`, … where the map does not give each index one name.
+fn names_by_index(names: &[(String, i32)], n: usize) -> Vec<String> {
+    let mut out = vec![None; n];
+    for (name, index) in names {
+        match usize::try_from(*index).ok().and_then(|i| out.get_mut(i)) {
+            Some(slot @ None) => *slot = Some(name.clone()),
+            _ => return (0..n).map(|i| format!("p{i}")).collect(),
+        }
+    }
+    out.into_iter()
+        .enumerate()
+        .map(|(i, name)| name.unwrap_or_else(|| format!("p{i}")))
+        .collect()
 }
 
 /// Read a `map<TString,int>` (`[bc][ver][count]` then `count` `{TString}{i32}`):
@@ -200,7 +221,7 @@ fn write_tformula_body(w: &mut WBuffer, f: &GraphFunction, ndim: i32) {
     write_named(w, FORMULA_NOT_GLOBAL, &f.name, &f.title);
     write_vector_f64(w, &f.params); // fClingParameters
     w.u8(1); // fAllParametersSetted
-    write_param_map(w, npar); // fParams (map<TString,int>)
+    write_param_map(w, &f.param_names, npar); // fParams (map<TString,int>)
     w.string(&f.formula); // fFormula (in [pN] form)
     w.be_i32(ndim); // fNdim
     w.be_i32(0); // fNumber
@@ -228,15 +249,19 @@ fn write_vector_f64(w: &mut WBuffer, data: &[f64]) {
     w.patch_be_u32(bc, K_BYTE_COUNT_MASK | len);
 }
 
-/// Write a `TFormula::fParams` `map<TString,int>` for `n` parameters: the entries
-/// `p0→0, p1→1, …` in index order (ROOT re-sorts on read by its own comparator).
-fn write_param_map(w: &mut WBuffer, n: usize) {
+/// Write a `TFormula::fParams` `map<TString,int>` for `n` parameters: each
+/// name and its index, in index order (ROOT re-sorts on read by its own
+/// comparator). `names` gives them, or, if it does not have `n`, `p0`, `p1`, ….
+fn write_param_map(w: &mut WBuffer, names: &[String], n: usize) {
     let bc = w.reserve::<4>();
     let start = w.len();
     w.be_i16(0x000a); // streamer version
     w.be_i32(i32::saturating_from(n)); // count
     for i in 0..n {
-        w.string(&format!("p{i}"));
+        match names.get(i).filter(|_| names.len() == n) {
+            Some(name) => w.string(name),
+            None => w.string(&format!("p{i}")),
+        }
         w.be_i32(i32::saturating_from(i));
     }
     let len = u32::saturating_from(w.len() - start);

@@ -65,7 +65,8 @@ fn graph_function_round_trips_from_root() {
 }
 
 /// A function built from scratch with [`GraphFunction::new`] attaches, persists,
-/// and round-trips. `new` normalizes the `[0]`-form formula to `[pN]` form.
+/// and round-trips. `new` keeps the formula as written (ROOT reads `[0]` and
+/// `[p0]` alike) and names its parameters `p0`, `p1`, ….
 #[test]
 fn graph_function_built_from_scratch() {
     let g = Graph::new(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![1.0, 3.0, 5.0, 7.0, 9.0])
@@ -75,7 +76,8 @@ fn graph_function_built_from_scratch() {
         .with_function(GraphFunction::new("[0]+[1]*x", vec![1.0, 2.0], 0.0, 4.0).named("line"));
 
     assert_eq!(g.functions().len(), 1);
-    assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
+    assert_eq!(g.functions()[0].formula, "[0]+[1]*x");
+    assert_eq!(g.functions()[0].param_names, ["p0", "p1"]);
     assert_eq!(g.functions()[0].par_errors, vec![0.0, 0.0]); // defaulted, sized to params
 
     let out = std::env::temp_dir().join("oxiroot_graph_function_scratch.root");
@@ -111,7 +113,7 @@ fn multiple_functions_round_trip() {
     assert_eq!(back.functions().len(), 2);
     assert_eq!(back.functions()[0].name, "lin");
     assert_eq!(back.functions()[1].name, "sq");
-    assert_eq!(back.functions()[1].formula, "[p0]*x*x");
+    assert_eq!(back.functions()[1].formula, "[0]*x*x");
     assert_eq!(back, g);
     let _ = std::fs::remove_file(&out);
 }

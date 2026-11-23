@@ -14,8 +14,9 @@ use std::ops::RangeInclusive;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Func<const D: usize> {
     /// What ROOT stores for the function: the name, the title (the formula as
-    /// written), the formula in `[pN]` form, the parameters with their errors
-    /// and limits, the `x` range and the fit's chi-square.
+    /// written), the formula as ROOT compiles it and its parameters' names,
+    /// the parameters with their errors and limits, the `x` range and the
+    /// fit's chi-square.
     record: GraphFunction,
     /// The record's formula, parsed.
     formula: Formula,
@@ -40,15 +41,22 @@ fn bounds(range: &RangeInclusive<f64>) -> (f64, f64) {
 impl<const D: usize> Func<D> {
     /// A function from the formula `source`, unnamed, its parameters zero.
     fn build(source: &str, x: &RangeInclusive<f64>, outer: [(f64, f64); 2]) -> Result<Self> {
-        let formula = Formula::parse(source)
-            .map_err(|e| Error::InvalidInput(format!("bad formula {source:?}: {e}")))?;
+        let formula =
+            Formula::parse(source).map_err(|e| Error::InvalidInput(format!("bad formula: {e}")))?;
+        if let Some(var) = beyond::<D>(&formula) {
+            return Err(Error::InvalidInput(format!(
+                "formula {source:?} uses `{var}`, but a {D}-dimensional function has only {}",
+                ["x", "x and y", "x, y and z"][D - 1]
+            )));
+        }
         let npar = formula.npar();
         let (xmin, xmax) = bounds(x);
         Ok(Self {
             record: GraphFunction {
                 name: String::new(),
                 title: source.to_string(),
-                formula: formula.root_formula().to_owned(),
+                formula: formula.to_root_named(),
+                param_names: formula.param_names().to_vec(),
                 params: vec![0.0; npar],
                 par_errors: vec![0.0; npar],
                 par_min: vec![0.0; npar],
@@ -64,12 +72,33 @@ impl<const D: usize> Func<D> {
     }
 
     /// A function from the record ROOT stores and the ranges of its axes
-    /// after `x`. The record's formula is kept in the form the parser writes.
+    /// after `x`. The record's formula is kept as this crate writes it, with
+    /// the names the record gives its parameters.
     pub(crate) fn from_record(mut record: GraphFunction, outer: [(f64, f64); 2]) -> Result<Self> {
-        let formula = Formula::parse(&record.formula).map_err(|e| {
+        let mut formula = Formula::parse(&record.formula).map_err(|e| {
             Error::Unsupported(format!("formula {:?} does not parse: {e}", record.formula))
         })?;
-        formula.root_formula().clone_into(&mut record.formula);
+        if formula.npar() != record.params.len() {
+            return Err(Error::Unsupported(format!(
+                "formula {:?} has {} parameters, but the function stores {}",
+                record.formula,
+                formula.npar(),
+                record.params.len()
+            )));
+        }
+        if let Some(var) = beyond::<D>(&formula) {
+            return Err(Error::Unsupported(format!(
+                "formula {:?} uses `{var}`, more variables than a {D}-dimensional function has",
+                record.formula
+            )));
+        }
+        // The file's names, when they fit (a file of another writer may have
+        // `p0`… for a formula of named parameters, or none).
+        if let Ok(named) = formula.clone().with_param_names(&record.param_names) {
+            formula = named;
+        }
+        record.formula = formula.to_root_named();
+        record.param_names = formula.param_names().to_vec();
         Ok(Self {
             record,
             formula,
@@ -104,10 +133,56 @@ impl<const D: usize> Func<D> {
     pub fn title(&self) -> &str {
         &self.record.title
     }
-    /// The formula in ROOT's canonical `[pN]` form.
+    /// The formula as a file stores it (`TFormula::fFormula`): ROOT's
+    /// spelling, with each parameter by its name (`[p0]`, `[Mean]`); the
+    /// names' order is [`param_names`](Self::param_names).
     #[must_use]
     pub fn formula(&self) -> &str {
         &self.record.formula
+    }
+    /// The parameter names, by index: `p0`, `p1`, … for numbered
+    /// parameters, and names as the formula gives them, such as `Constant`,
+    /// `Mean`, `Sigma` for `gaus`. A file stores them with the function.
+    #[must_use]
+    pub fn param_names(&self) -> &[String] {
+        &self.record.param_names
+    }
+    /// The value of the parameter named `name` (`"Mean"`, or `"p1"` and
+    /// `"1"` for parameter 1), or `None` if there is none.
+    #[must_use]
+    pub fn param_named(&self, name: &str) -> Option<f64> {
+        self.formula.param_index(name).and_then(|i| self.param(i))
+    }
+    /// Set the parameter named `name`, as a builder.
+    ///
+    /// ```
+    /// use oxiroot_hist_func::Func1D;
+    /// let f = Func1D::new("gaus", -5.0..=5.0)?
+    ///     .with_param("Constant", 10.0)?
+    ///     .with_param("Sigma", 2.0)?;
+    /// assert_eq!(f.params(), [10.0, 0.0, 2.0]);
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    /// [`Error::InvalidInput`] if no parameter has this name.
+    pub fn with_param(mut self, name: &str, value: f64) -> Result<Self> {
+        self.set_param(name, value)?;
+        Ok(self)
+    }
+    /// Set the parameter named `name`.
+    ///
+    /// # Errors
+    /// [`Error::InvalidInput`] if no parameter has this name.
+    pub fn set_param(&mut self, name: &str, value: f64) -> Result<()> {
+        let i = self.formula.param_index(name).ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "no parameter named {name:?}; the parameters are {}",
+                self.record.param_names.join(", ")
+            ))
+        })?;
+        self.record.params[i] = value;
+        Ok(())
     }
     /// The number of parameters.
     #[must_use]
@@ -175,7 +250,8 @@ impl Func<1> {
     /// `Func1D::Integral`.
     #[must_use]
     pub fn integral(&self, a: f64, b: f64) -> f64 {
-        integrate(|x| self.eval(x), a, b)
+        let f = self.formula.compile();
+        integrate(|x| f.eval(&[x], &self.record.params), a, b)
     }
 
     /// The derivative `f'(x)` (Richardson central difference), as
@@ -194,14 +270,16 @@ impl Func<1> {
     /// This function as the `Func1D` record a graph's `fFunctions` list holds, for
     /// example to attach it to a graph with
     /// [`Graph::with_function`](oxiroot_hist::Graph::with_function). The
-    /// record's `formula` is the canonical `[pN]` form.
+    /// record's `formula` names its parameters, as ROOT stores it, with their
+    /// order beside it.
     ///
     /// ```
     /// use oxiroot_hist::Graph;
     /// use oxiroot_hist_func::Func1D;
-    /// let f = Func1D::new("[0]+[1]*x", 0.0..=2.0)?.named("line").with_params(&[1.0, 2.0])?;
+    /// let f = Func1D::new("[a]+[b]*x", 0.0..=2.0)?.named("line").with_params(&[1.0, 2.0])?;
     /// let g = Graph::new(vec![0.0, 1.0], vec![1.0, 3.0])?.with_function(f.to_graph_function());
-    /// assert_eq!(g.functions()[0].formula, "[p0]+[p1]*x");
+    /// assert_eq!(g.functions()[0].formula, "[a]+[b]*x");
+    /// assert_eq!(g.functions()[0].param_names, ["a", "b"]);
     /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
     #[must_use]
@@ -226,31 +304,54 @@ impl Func<1> {
     /// function's current parameters — so `data.fit(&tf1.to_model())` fits data
     /// to this function's shape. Requires the `fit` feature.
     ///
-    /// The model evaluates the same formula as [`eval`](Func1D::eval). Its
-    /// parameter names come from the title when the title is a formula with the
-    /// same number of parameters (so `gaus` keeps its named parameters);
-    /// otherwise, as for a read function whose title is free text, from the
-    /// canonical `[pN]` formula.
+    /// The model evaluates the same formula as [`eval`](Func1D::eval),
+    /// compiled, with its exact gradient where the formula has one; its
+    /// parameter names are the function's ([`param_names`](Self::param_names)).
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.formula.clone();
-        let names = model_names(self.title(), &formula);
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        oxifit::Model::new(self.name(), &names, self.params().to_vec(), move |x, p| {
-            formula.eval1(x, p)
-        })
+        let value = self.formula.compile();
+        let model = oxifit::Model::new(
+            self.name(),
+            &self.name_refs(),
+            self.params().to_vec(),
+            move |x, p| value.eval(&[x], p),
+        );
+        self.with_gradient(model)
     }
 }
 
-/// A function's parameter names for a [`Model`](oxifit::Model): from its
-/// title when the title is a formula with the same number of parameters (so
-/// `gaus` keeps its named parameters), else from the canonical `[pN]` formula.
 #[cfg(feature = "fit")]
-fn model_names(title: &str, formula: &Formula) -> Vec<String> {
-    match Formula::parse(title) {
-        Ok(t) if t.npar() == formula.npar() => t.param_names().to_vec(),
-        _ => formula.param_names().to_vec(),
+impl<const D: usize> Func<D> {
+    fn name_refs(&self) -> Vec<&str> {
+        self.record.param_names.iter().map(String::as_str).collect()
     }
+
+    /// `model` with the formula's symbolic gradient, compiled, when every
+    /// parameter has one.
+    fn with_gradient(&self, model: oxifit::Model) -> oxifit::Model {
+        let derivatives: Option<Vec<oxifit_formula::Compiled>> = (0..self.formula.npar())
+            .map(|k| self.formula.derivative(k).map(|d| d.compile()))
+            .collect();
+        match derivatives {
+            Some(d) => model.with_gradient_at(move |c, p, g| {
+                for (gk, dk) in g.iter_mut().zip(&d) {
+                    *gk = dk.eval(c, p);
+                }
+            }),
+            None => model,
+        }
+    }
+}
+
+/// The first variable `formula` uses that a function of `D` variables lacks.
+fn beyond<const D: usize>(formula: &Formula) -> Option<&'static str> {
+    formula.variables().into_iter().find(|v| {
+        let index = ["x", "y", "z", "t"]
+            .iter()
+            .position(|n| n == v)
+            .unwrap_or(0);
+        index >= D
+    })
 }
 
 impl Func<2> {
@@ -271,19 +372,18 @@ impl Func<2> {
     /// Convert to a fittable 2-D [`Model`](oxifit::Model), seeded with this
     /// function's current parameters — so `h2.fit(&tf2.to_model())` fits a 2-D
     /// histogram to this function's shape. Requires the `fit` feature;
-    /// parameter names as for [`Func1D::to_model`].
+    /// parameter names and gradient as for [`Func1D::to_model`].
     #[cfg(feature = "fit")]
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.formula.clone();
-        let names = model_names(self.title(), &formula);
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        oxifit::Model::new2(
+        let value = self.formula.compile();
+        let model = oxifit::Model::new2(
             self.name(),
-            &names,
+            &self.name_refs(),
             self.params().to_vec(),
-            move |x, y, p| formula.eval(&[x, y], p),
-        )
+            move |x, y, p| value.eval(&[x, y], p),
+        );
+        self.with_gradient(model)
     }
 
     /// The `x` and `y` ranges (`fXmin`/`fXmax`, `fYmin`/`fYmax`).
@@ -316,19 +416,18 @@ impl Func<3> {
 
     /// Convert to a fittable 3-D [`Model`](oxifit::Model), seeded with this
     /// function's current parameters. Requires the `fit` feature; parameter
-    /// names as for [`Func1D::to_model`].
+    /// names and gradient as for [`Func1D::to_model`].
     #[cfg(feature = "fit")]
     #[must_use]
     pub fn to_model(&self) -> oxifit::Model {
-        let formula = self.formula.clone();
-        let names = model_names(self.title(), &formula);
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        oxifit::Model::new3(
+        let value = self.formula.compile();
+        let model = oxifit::Model::new3(
             self.name(),
-            &names,
+            &self.name_refs(),
             self.params().to_vec(),
-            move |x, y, z, p| formula.eval(&[x, y, z], p),
-        )
+            move |x, y, z, p| value.eval(&[x, y, z], p),
+        );
+        self.with_gradient(model)
     }
 
     /// The `x`, `y`, and `z` ranges.
