@@ -7,6 +7,15 @@ change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A crafted file could make opening it run out of memory.** A key whose
+  `fKeyLen` was shorter than its own header (0, say) sent the reader back to
+  where the key started, so a key list claiming two billion keys read the same
+  key until memory ran out: 77 bytes were enough to make `FileReader::open`
+  allocate 2 GB. Such a key is now a format error. The fuzzers found it; their
+  three inputs are regression tests (`fixtures/fuzz/`).
+
 ## [0.11.0] — 2026-11-22
 
 HEP plotting: oxiplot 0.12.0 and oxihist 0.16.0, an efficiency with its
