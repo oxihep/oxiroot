@@ -32,6 +32,9 @@ change the API.
 
 ### Changed
 
+- **oxifit 0.10.0, oxiplot 0.13.0 and oxihist 0.17.0**: oxifit-formula
+  follows ROOT's `TFormula` (its parameters, shortcuts and spelling), and the
+  others move to it, so one copy of each oxihep crate is built.
 - **A function is stored as ROOT stores it**: `fFormula` names each
   parameter (`[Mean]`, `[p0]`) beside the map of names to indices, in ROOT's
   spelling, so `Func1D::formula` gives that form. `GraphFunction::new` keeps
