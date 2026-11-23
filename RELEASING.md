@@ -51,6 +51,9 @@ resolves to more than one source.
    ```
    In oxiroot, pushing the tag runs `.github/workflows/release.yml`, which
    publishes a GitHub Release whose notes are the version's CHANGELOG section.
+   Then point the organization page at the new tag: the `oxiroot = { git … }`
+   line in `profile/README.md` of
+   [oxihep/.github](https://github.com/oxihep/.github), in a PR there.
    Point the install instructions at the new tag in the same PR (and, in
    oxiroot, `version` and `date-released` in `CITATION.cff`): every
    README's dependency line, and for oxiroot the `oxiroot = { git … }` lines
