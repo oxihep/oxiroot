@@ -31,6 +31,7 @@ fn main() {
 
 #[cfg(all(feature = "xrootd", feature = "fit", feature = "plot"))]
 mod analysis {
+    use oxiroot::data::DataType;
     use oxiroot::file::Parameter;
     use oxiroot::fit::{FitExt, FitMethod, FitOptions, Model};
     use oxiroot::hist::oxihist::Weight;
@@ -63,10 +64,6 @@ mod analysis {
     }
 
     /// Run the Z → μμ selection over the first `entries` events of `path`.
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "a mass around 91 GeV, stored in an f32 column"
-    )]
     fn select(path: &str, name: &str, entries: u64) -> oxiroot::Result<Sample> {
         let start = std::time::Instant::now();
         let file = FileReader::open_url(&format!("{BASE}/{path}"))?;
@@ -76,63 +73,53 @@ mod analysis {
         let mut mass = Hist::reg(BINS, LO, HI)
             .weight()
             .named(format!("m_mumu_{name}"));
+        // The selection as a query: each cut is a bool column built on the
+        // one before, so every event carries how far it got, and the counts
+        // of the cut flow are the sums of those columns. The file stores a
+        // lepton's kind as |PDG ID|: 13 for a muon. Momenta are in MeV; the
+        // mass sums the two four-momenta (E, px, py, pz).
         let muon = literals::muon().pdgid().abspid().unsigned_abs();
-        let mut passed = [0_u64; 4];
-        let (mut events, mut masses, mut lead, mut sub) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-
-        let columns = [
-            "eventNumber",
-            "lep_pt",
-            "lep_eta",
-            "lep_phi",
-            "lep_E",
-            "lep_charge",
-            "lep_type",
-        ];
-        for batch in tree.batches(columns).range(0..entries) {
-            let batch = batch?;
-            let event = batch.values::<i32>("eventNumber")?;
-            let pt = batch.jagged::<f32>("lep_pt")?;
-            let eta = batch.jagged::<f32>("lep_eta")?;
-            let phi = batch.jagged::<f32>("lep_phi")?;
-            let energy = batch.jagged::<f32>("lep_E")?;
-            let charge = batch.jagged::<f32>("lep_charge")?;
-            let kind = batch.jagged::<u32>("lep_type")?;
-            for (i, &event) in event.iter().enumerate() {
-                passed[0] += 1;
-                // The file stores a lepton's kind as |PDG ID|: 13 for a muon.
-                let (kind, q, pt) = (kind.row(i), charge.row(i), pt.row(i));
-                if kind.len() != 2 || kind.iter().any(|&t| t != muon) {
-                    continue;
-                }
-                passed[1] += 1;
-                if q[0] == q[1] {
-                    continue;
-                }
-                passed[2] += 1;
-                if pt.iter().any(|&p| p < 25e3) {
-                    continue;
-                }
-                passed[3] += 1;
-                // Momenta are in MeV: sum the two (E, px, py, pz).
-                let (mut e, mut px, mut py, mut pz) = (0.0_f64, 0.0, 0.0, 0.0);
-                let muons = pt.iter().zip(energy.row(i)).zip(eta.row(i)).zip(phi.row(i));
-                for (((&pt, &en), &eta), &phi) in muons {
-                    let p = f64::from(pt);
-                    e += f64::from(en);
-                    px += p * f64::from(phi).cos();
-                    py += p * f64::from(phi).sin();
-                    pz += p * f64::from(eta).sinh();
-                }
-                let m = (e * e - px * px - py * py - pz * pz).max(0.0).sqrt() / 1e3;
-                mass.fill(m);
-                events.push(event);
-                masses.push(m as f32);
-                lead.push(pt[0].max(pt[1]) / 1e3);
-                sub.push(pt[0].min(pt[1]) / 1e3);
-            }
+        let events = tree
+            .query()
+            .range(0..entries)
+            .define("event", "eventNumber")
+            .define(
+                "two_muons",
+                format!("len(lep_type) == 2 and all(lep_type == {muon})"),
+            )
+            .define(
+                "opposite",
+                "(two_muons and lep_charge[0] != lep_charge[1]) ?? false",
+            )
+            .define("hard", "opposite and all(lep_pt > 25e3)")
+            .define(
+                "mass",
+                "sqrt(max(sum(lep_E)^2 - sum(lep_pt * cos(lep_phi))^2 \
+                      - sum(lep_pt * sin(lep_phi))^2 - sum(lep_pt * sinh(lep_eta))^2, 0)) / 1e3",
+            )
+            .define("pt_lead", "(max(lep_pt) ?? 0) / 1e3")
+            .define("pt_sub", "(min(lep_pt) ?? 0) / 1e3")
+            .read()?;
+        let mut passed = [events.len() as u64, 0, 0, 0];
+        for (count, cut) in passed[1..]
+            .iter_mut()
+            .zip(["two_muons", "opposite", "hard"])
+        {
+            *count = events.values::<bool>(cut)?.iter().filter(|&&p| p).count() as u64;
         }
+        let selected = events
+            .filter(events.values::<bool>("hard")?)?
+            .select(["event", "mass", "pt_lead", "pt_sub"])?;
+        for &m in selected.values::<f64>("mass")? {
+            mass.fill(m);
+        }
+        // Stored in the file as the source has them: the event number in 32
+        // bits, and the floats in 32 bits, which is all a mass in GeV needs.
+        let candidates = selected
+            .cast("event", DataType::I32)?
+            .cast("mass", DataType::F32)?
+            .cast("pt_lead", DataType::F32)?
+            .cast("pt_sub", DataType::F32)?;
 
         // The cut flow is a histogram with a label on each bin: filled with
         // the counts as weights, then turned into the record ROOT stores,
@@ -159,11 +146,7 @@ mod analysis {
         Ok(Sample {
             mass,
             cutflow,
-            candidates: Batch::new()
-                .column("event", events)?
-                .column("mass", masses)?
-                .column("pt_lead", lead)?
-                .column("pt_sub", sub)?,
+            candidates,
         })
     }
 

@@ -498,3 +498,102 @@ fn closures_of_every_type() {
     let e = ds.query().filter("(").read().unwrap_err();
     assert!(e.to_string().contains("ends too early"), "{e}");
 }
+
+#[test]
+fn casting_columns() {
+    use oxiroot_dataset::DataType;
+    let b = Batch::new()
+        .column("f", vec![1.5_f64, -2.25])
+        .unwrap()
+        .column("i", vec![3_i64, -4])
+        .unwrap()
+        .column("l", vec![vec![1.0_f64], vec![2.0, 3.0]])
+        .unwrap()
+        .column("o", vec![Some(1_i32), None])
+        .unwrap()
+        .column("b", vec![true, false])
+        .unwrap();
+    let c = b
+        .clone()
+        .cast("f", DataType::Half)
+        .unwrap()
+        .cast("i", DataType::I8)
+        .unwrap()
+        .cast("l", DataType::List(Box::new(DataType::F32)))
+        .unwrap()
+        .cast("o", DataType::Optional(Box::new(DataType::F64)))
+        .unwrap()
+        .cast("b", DataType::Bool)
+        .unwrap();
+    assert_eq!(c.values::<f32>("f").unwrap(), [1.5, -2.25]);
+    assert_eq!(c.values::<i8>("i").unwrap(), [3, -4]);
+    assert_eq!(c.jagged::<f32>("l").unwrap().row(1), [2.0, 3.0]);
+    for (to, msg) in [
+        (DataType::U8, "-4 does not fit u8"),
+        (DataType::Bool, "i64 does not convert to bool"),
+    ] {
+        let e = b.clone().cast("i", to).unwrap_err().to_string();
+        assert!(e.contains(msg), "{e}");
+    }
+    let e = b.clone().cast("f", DataType::I32).unwrap_err().to_string();
+    assert!(e.contains("round it first"), "{e}");
+    let e = b.clone().cast("l", DataType::F64).unwrap_err().to_string();
+    assert!(e.contains("not a number"), "{e}");
+    assert!(b.clone().cast("zz", DataType::F64).is_err());
+}
+
+#[test]
+fn casting_every_number_type() {
+    use oxiroot_dataset::DataType;
+    // 7 fits every integer type; each source reaches each target and f64.
+    let b = Batch::new()
+        .column("i8", vec![7_i8])
+        .unwrap()
+        .column("u8", vec![7_u8])
+        .unwrap()
+        .column("i16", vec![7_i16])
+        .unwrap()
+        .column("u16", vec![7_u16])
+        .unwrap()
+        .column("i32", vec![7_i32])
+        .unwrap()
+        .column("u32", vec![7_u32])
+        .unwrap()
+        .column("i64", vec![7_i64])
+        .unwrap()
+        .column("u64", vec![7_u64])
+        .unwrap();
+    let targets = [
+        DataType::I8,
+        DataType::U8,
+        DataType::I16,
+        DataType::U16,
+        DataType::I32,
+        DataType::U32,
+        DataType::I64,
+        DataType::U64,
+        DataType::F64,
+    ];
+    for source in ["i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"] {
+        for to in &targets {
+            let c = b.clone().cast(source, to.clone()).unwrap();
+            let column = c.get(source).unwrap();
+            assert_eq!(column.type_name(), to.to_string(), "{source} as {to}");
+        }
+        let f = b.clone().cast(source, DataType::F64).unwrap();
+        assert_eq!(f.values::<f64>(source).unwrap(), [7.0]);
+    }
+    // An f32 widens to f64 exactly; a fixed-size array casts its values.
+    let b = Batch::new()
+        .column("f", vec![0.1_f32, 2.0])
+        .unwrap()
+        .column("a", vec![[1_i32, 2], [3, 4]])
+        .unwrap();
+    let c = b
+        .cast("f", DataType::F64)
+        .unwrap()
+        .cast("a", DataType::Array(2, Box::new(DataType::I16)))
+        .unwrap();
+    assert_eq!(c.values::<f64>("f").unwrap(), [f64::from(0.1_f32), 2.0]);
+    assert_eq!(c.arrays::<i16>("a").unwrap(), (&[1_i16, 2, 3, 4][..], 2));
+}

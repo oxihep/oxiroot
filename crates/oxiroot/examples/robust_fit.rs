@@ -39,7 +39,7 @@ impl XorShift64 {
 fn main() {
     use oxiroot::fit::FitExt;
     use oxiroot::fit::Points;
-    use oxiroot::fit::{FitOptions, FitResult, Loss, Model};
+    use oxiroot::fit::{FitOptions, FitResult, Loss};
     use oxiroot::prelude::*;
 
     let mut rng = XorShift64(0x0DD_F00D_CAFE_BEEF);
@@ -74,8 +74,14 @@ fn main() {
     }
     println!();
 
-    // The model: a straight line `a + b·x`, seeded at (0, 0).
-    let line = || Model::new("line", &["a", "b"], vec![0.0, 0.0], |x, p| p[0] + p[1] * x);
+    // The model: a straight line `a + b·x`, written once as a function with
+    // named parameters (both zero to start). `to_model` makes it a fit model
+    // that evaluates the formula compiled, with its exact gradient; the same
+    // function, given the fitted values, is what gets written to the file.
+    let line_fn = Func1D::new("[a] + [b]*x", xs[0]..=xs[n - 1])
+        .expect("a valid formula")
+        .named("robust_line");
+    let line = || line_fn.to_model();
     let data = Points::new(&xs, &ys, &sigmas).expect("x, y and their errors have the same length");
 
     // --- 1. Ordinary least squares (Loss::Linear). ----------------------------
@@ -131,15 +137,15 @@ fn main() {
     println!("was seeded from the Huber fit so its narrow basin still converges.");
 
     // --- Write the outlier-cleaned line as a persistable Func1D, then read it back.
-    // The robust (Cauchy) fit is the trustworthy one — save its curve to a ROOT
-    // file so it can be reused. The file lives in the temp dir and is deleted
-    // before we return; nothing is left behind.
+    // The robust (Cauchy) fit is the trustworthy one: save the line with its
+    // parameters, by name, to a ROOT file so it can be reused. The file lives
+    // in the temp dir and is deleted before we return; nothing is left behind.
     let path = std::env::temp_dir().join("oxiroot_ex_robust_fit.root");
-    let fitted = Func1D::new("[0]+[1]*x", xs[0]..=xs[n - 1])
-        .expect("valid formula")
-        .named("robust_line")
-        .with_params(&[cauchy.params[0], cauchy.params[1]])
-        .unwrap();
+    let fitted = line_fn
+        .clone()
+        .with_param("a", cauchy.params[0])
+        .and_then(|f| f.with_param("b", cauchy.params[1]))
+        .expect("the line has parameters a and b");
     oxiroot::FileWriter::create(&path)
         .add(&fitted)
         .write()
@@ -148,7 +154,9 @@ fn main() {
     let back = f.get::<Func1D>("robust_line").expect("read TF1");
     println!();
     println!(
-        "wrote + read back the robust line as a TF1: y({:.1}) = {:.3}, y({:.1}) = {:.3}",
+        "wrote + read back the robust line as a TF1: a = {:.3}, b = {:.3}; y({:.1}) = {:.3}, y({:.1}) = {:.3}",
+        back.param_named("a").unwrap_or(f64::NAN),
+        back.param_named("b").unwrap_or(f64::NAN),
         xs[0],
         back.eval(xs[0]),
         xs[n - 1],

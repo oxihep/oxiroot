@@ -1,7 +1,8 @@
-//! Standalone `Func1D`/`Func2D`/`Func3D` functions: build several formula forms (a ROOT
-//! `gaus` shortcut, `expo`, a `pol2` polynomial, and a hand-written expression),
-//! evaluate them in pure Rust (`eval`), do calculus (`integral`/`derivative`),
-//! scan a grid to find a peak and a crossing, then write them to a ROOT file and
+//! Standalone `Func1D`/`Func2D`/`Func3D` functions: build them from ROOT's
+//! built-in shapes (`gaus`, `expo`, `pol2`) and from a hand-written formula
+//! with named parameters, evaluate them in pure Rust (`eval`), do calculus
+//! (`integral`/`derivative`), scan a grid to find a peak and a crossing, see
+//! what a formula with a mistake reports, then write them to a ROOT file and
 //! read one back — a round-trip that ROOT C++ and uproot also read.
 //!
 //! ```sh
@@ -11,42 +12,45 @@
 use oxiroot::prelude::*;
 
 fn main() -> oxiroot::Result<()> {
-    // --- Four 1-D functions, one per formula flavour. --------------------------
-    // A hand-written expression: a decaying sine. Parameters are [0], [1], …; the
-    // free variable is `x`. `with_params` fills them in builder style.
-    let damped = Func1D::new("[0]*exp(-[1]*x)*sin([2]*x)", 0.0..=10.0)?
+    // --- Four 1-D functions. ----------------------------------------------------
+    // A hand-written formula: a decaying sine. A parameter is written in
+    // brackets, by number (`[0]`) or by name (`[A]`); the variable is `x`.
+    // `with_param` sets one by its name.
+    let damped = Func1D::new("[A]*exp(-[gamma]*x)*sin([omega]*x)", 0.0..=10.0)?
         .named("damped")
-        .with_params(&[5.0, 0.3, 2.0])?;
+        .with_param("A", 5.0)?
+        .with_param("gamma", 0.3)?
+        .with_param("omega", 2.0)?;
 
-    // ROOT's `gaus` shortcut expands to `[0]*exp(-0.5*((x-[1])/[2])^2)` — a
-    // Gaussian with (constant, mean, sigma). The engine knows the parameter count.
-    let gauss = Func1D::new("gaus", -5.0..=5.0)?
+    // ROOT's built-in shapes, with ROOT's parameter names: `gaus` is
+    // `Constant·exp(−½((x − Mean)/Sigma)²)`, `expo` is `exp(Constant + Slope·x)`,
+    // `pol2` is `p0 + p1·x + p2·x²`. `with_params` sets them all, in order.
+    let gauss = Func1D::gaus(-5.0..=5.0)
         .named("gauss")
         .with_params(&[2.0, 0.5, 1.2])?;
-
-    // `expo` is `exp([0] + [1]*x)`; `pol2` is `[0] + [1]*x + [2]*x^2`.
-    let decay = Func1D::new("expo", 0.0..=5.0)?
+    let decay = Func1D::expo(0.0..=5.0)
         .named("decay")
         .with_params(&[1.0, -0.7])?;
-    let parab = Func1D::new("pol2", -3.0..=3.0)?
+    let parab = Func1D::pol(2, -3.0..=3.0)?
         .named("parab")
         .with_params(&[1.0, -2.0, 1.0])?;
 
-    println!("Four TF1s (formula shown in ROOT's canonical [pN] form):");
+    println!("Four TF1s (each formula as ROOT stores it, and its parameters):");
     for f in [&damped, &gauss, &decay, &parab] {
-        // `title()` is the source as typed; `formula()` is ROOT's [pN] form.
+        // `title()` is the formula as written; `formula()` is ROOT's spelling.
         println!(
-            "  {:<7} {:<34} npar={}  eval(1.0) = {:+.6}",
+            "  {:<7} {:<42} ({})  eval(1.0) = {:+.6}",
             f.name(),
             f.formula(),
-            f.npar(),
+            f.param_names().join(", "),
             f.eval(1.0),
         );
     }
 
-    // --- Calculus: these are real callable functions, so we can integrate ------
-    // and differentiate them numerically (adaptive Gauss–Kronrod / Richardson).
-    // integral(a,b) is the signed area under the curve; derivative(x) is the slope.
+    // --- Calculus. --------------------------------------------------------------
+    // integral(a,b) is the signed area under the curve (adaptive Gauss–Kronrod);
+    // derivative(x) is the slope, exact where the formula has a closed-form
+    // derivative (as all of these do), numerical where it has not.
     println!("\nCalculus on `damped` = 5·exp(-0.3x)·sin(2x):");
     println!(
         "  integral(0,10) = {:+.6}   (net signed area over the range)",
@@ -84,9 +88,8 @@ fn main() -> oxiroot::Result<()> {
     println!("\nGrid scan of `damped` over [0,10]:");
     println!("  maximum ≈ {:.4} at x ≈ {:.4}", y_max, x_max);
 
-    let &[height, mean, sigma] = gauss.params() else {
-        unreachable!("a Gaussian has three parameters")
-    };
+    let param = |name| gauss.param_named(name).expect("a `gaus` parameter");
+    let (height, mean, sigma) = (param("Constant"), param("Mean"), param("Sigma"));
     let half = height / 2.0; // half of the Gaussian's peak height
     let mut crossing = f64::NAN;
     for i in 0..=n {
@@ -117,6 +120,11 @@ fn main() -> oxiroot::Result<()> {
     );
     println!("  f3(1,1,1) = {:.6}   (2·1 + 1·1)", f3.eval(1.0, 1.0, 1.0));
 
+    // --- A formula with a mistake says what and where. --------------------------
+    if let Err(e) = Func1D::new("[A]*exp(-[gamma]*x", 0.0..=10.0) {
+        println!("\nA formula with a missing parenthesis:\n{e}");
+    }
+
     // --- Write all six to a ROOT file (ROOT C++ and uproot read these keys). ----
     // The file lives in the temp dir and is removed before we return — no litter.
     let out = std::env::temp_dir().join("oxiroot_ex_functions.root");
@@ -131,8 +139,8 @@ fn main() -> oxiroot::Result<()> {
     println!("\nwrote {}", out.display());
 
     // --- Round-trip: read one Func1D back and confirm it evaluates identically. ---
-    // `file.get::<Func1D>` re-parses the embedded TFormula and its parameters, so the
-    // decoded function reproduces `eval` to the bit at sampled points.
+    // `file.get::<Func1D>` re-parses the stored TFormula, with its parameters and
+    // their names, so the decoded function reproduces `eval` at sampled points.
     let g = FileReader::open(&out)?.get::<Func1D>("gauss")?;
     for &x in &[-2.0, -0.5, 0.5, 2.0] {
         assert!(
@@ -141,8 +149,8 @@ fn main() -> oxiroot::Result<()> {
         );
     }
     println!(
-        "read back `gauss`: npar={}, eval(0.5) = {:.6} (matches original {:.6})",
-        g.npar(),
+        "read back `gauss`: parameters {}, eval(0.5) = {:.6} (matches original {:.6})",
+        g.param_names().join(", "),
         g.eval(0.5),
         gauss.eval(0.5),
     );

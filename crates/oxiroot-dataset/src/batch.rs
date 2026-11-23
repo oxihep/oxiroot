@@ -6,7 +6,7 @@ use std::ops::Range;
 use oxiroot_io_core::{Error, Result};
 
 use crate::schema::Schema;
-use crate::{Column, Jagged, Primitive, Strings};
+use crate::{Column, DataType, Jagged, Primitive, Strings};
 
 /// Named columns, all holding the same number of entries: what
 /// [`Dataset`](crate::Dataset) reads, and what a
@@ -131,6 +131,39 @@ impl Batch {
         self.names.push(name);
         self.columns.push(column);
         Ok(())
+    }
+
+    /// This batch with column `name` converted to `to`: a number to another
+    /// number type, within lists, fixed arrays and optionals too. An integer
+    /// must fit its new type; a float becomes a narrower float by rounding;
+    /// a float does not become an integer (round it first). `to` may be a
+    /// stored type: `Half` converts to `f32`, the type it is stored from.
+    ///
+    /// ```
+    /// use oxiroot_dataset::{Batch, DataType};
+    ///
+    /// let b = Batch::new().column("mass", vec![91.1876_f64, 125.1])?;
+    /// let b = b.cast("mass", DataType::F32)?;
+    /// assert_eq!(b.values::<f32>("mass")?, [91.1876_f32, 125.1]);
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// No column `name`, a shape or kind `to` does not have (a bool to a
+    /// number, a list to a scalar), or a value that does not fit.
+    pub fn cast(mut self, name: &str, to: DataType) -> Result<Self> {
+        let i = self
+            .names
+            .iter()
+            .position(|n| n == name)
+            .ok_or_else(|| Error::NotFound {
+                what: "column",
+                name: name.to_owned(),
+            })?;
+        self.columns[i] = cast_column(&self.columns[i], &to.storage())
+            .map_err(|why| Error::InvalidInput(format!("column {name:?} as {to}: {why}")))?;
+        Ok(self)
     }
 
     /// Remove column `name` and return it.
@@ -327,4 +360,87 @@ impl Batch {
     pub fn byte_size(&self) -> usize {
         self.columns.iter().map(Column::byte_size).sum()
     }
+}
+
+/// `column` as `to` (an in-memory type), or why not.
+fn cast_column(column: &Column, to: &DataType) -> std::result::Result<Column, String> {
+    let ints = |c: &Column| -> Option<Vec<i128>> {
+        Some(match c {
+            Column::I8(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::U8(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::I16(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::U16(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::I32(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::U32(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::I64(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            Column::U64(v) => v.iter().map(|&x| i128::from(x)).collect(),
+            _ => return None,
+        })
+    };
+    macro_rules! to_int {
+        ($variant:ident, $t:ty) => {{
+            let values = ints(column).ok_or_else(|| {
+                format!(
+                    "{} does not become an integer: round it first",
+                    column.type_name()
+                )
+            })?;
+            Column::$variant(
+                values
+                    .into_iter()
+                    .map(|x| {
+                        <$t>::try_from(x)
+                            .map_err(|_| format!("{x} does not fit {}", stringify!($t)))
+                    })
+                    .collect::<std::result::Result<_, _>>()?,
+            )
+        }};
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "an integer as a float, as asked"
+    )]
+    let floats = |c: &Column| -> Option<Vec<f64>> {
+        Some(match c {
+            Column::F32(v) => v.iter().map(|&x| f64::from(x)).collect(),
+            Column::F64(v) => v.clone(),
+            other => ints(other)?.into_iter().map(|x| x as f64).collect(),
+        })
+    };
+    Ok(match (column, to) {
+        (Column::List { offsets, values }, DataType::List(t)) => Column::List {
+            offsets: offsets.clone(),
+            values: Box::new(cast_column(values, t)?),
+        },
+        (Column::Array { len, values }, DataType::Array(n, t)) if len == n => Column::Array {
+            len: *len,
+            values: Box::new(cast_column(values, t)?),
+        },
+        (Column::Optional { valid, values }, DataType::Optional(t)) => Column::Optional {
+            valid: valid.clone(),
+            values: Box::new(cast_column(values, t)?),
+        },
+        (Column::Bool(v), DataType::Bool) => Column::Bool(v.clone()),
+        (_, DataType::F64) => Column::F64(floats(column).ok_or("not a number")?),
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "f64 to f32 rounds, as asked"
+        )]
+        (_, DataType::F32) => Column::F32(
+            floats(column)
+                .ok_or("not a number")?
+                .into_iter()
+                .map(|x| x as f32)
+                .collect(),
+        ),
+        (_, DataType::I8) => to_int!(I8, i8),
+        (_, DataType::U8) => to_int!(U8, u8),
+        (_, DataType::I16) => to_int!(I16, i16),
+        (_, DataType::U16) => to_int!(U16, u16),
+        (_, DataType::I32) => to_int!(I32, i32),
+        (_, DataType::U32) => to_int!(U32, u32),
+        (_, DataType::I64) => to_int!(I64, i64),
+        (_, DataType::U64) => to_int!(U64, u64),
+        _ => return Err(format!("{} does not convert to {to}", column.type_name())),
+    })
 }

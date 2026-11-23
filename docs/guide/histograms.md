@@ -272,7 +272,7 @@ resampled.fill_random(&source, 100_000, &mut rng);
 
 // …or draw from a function over the histogram's range:
 resampled.fill_random_fn(|x| (-0.5 * x * x).exp(), 100_000, &mut rng);
-let g = Func1D::new("gaus", -5.0..=5.0)?.named("g").with_params(&[1.0, 0.0, 1.0])?;
+let g = Func1D::gaus(-5.0..=5.0).named("g").with_params(&[1.0, 0.0, 1.0])?;
 let y = g.get_random(&mut rng);             // TF1::GetRandom
 ```
 
