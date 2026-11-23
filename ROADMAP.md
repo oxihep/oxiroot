@@ -158,8 +158,40 @@ Larger pieces, each worth a design note before code.
   clamps instead of wrapping), same-width reinterpretations are explicit
   (`cast_signed`/`cast_unsigned`), and the bit-level encodings say why they
   truncate.
+- **The formula engine in its own crate** (0.12.0,
+  [oxiformula](https://github.com/oxihep/oxiformula), `oxiroot::formula`).
+  It left oxifit and follows ROOT's `TFormula`: its parameters and their
+  names, its predefined shapes (`gaus`, `crystalball`, `landau`, `chebN`, the
+  2- and 3-D ones), its spelling, and its densities. Formulas compile to run
+  at about ROOT's speed, derivatives are symbolic where a closed form exists,
+  and a parse error points at the mistake. A CI job evaluates a set of
+  formulas in ROOT and checks oxiformula against it. Functions gained ROOT's
+  parameter names (`with_param("Sigma", …)`) and constructors
+  (`Func1D::gaus`, `pol(n)`, …).
+- **Queries on datasets** (0.12.0, `Dataset::query`). Derived columns and
+  cuts, built in Rust (`col("Muon_pt").gt(20.0).any()`), written as text
+  (`"any(Muon_pt > 20)"`), or given as typed Rust closures. A query is checked
+  against the dataset's columns before anything is read, with the mistake
+  underlined, then runs a column at a time, batch by batch, in parallel if
+  asked, reading only the columns it names. Per-object columns broadcast and
+  reduce, missing values propagate. Cross-checked against `RDataFrame` on the
+  same file. The open-data examples select with queries, with the same
+  results as the loops they replaced.
 
 ### Still open
+
+- **Actions on a query: histograms and sums in one pass.**
+  - *Today:* a query defines columns and filters entries (`RDataFrame`'s
+    `Define` and `Filter`), and its output is batches: filling a histogram
+    or summing is a loop over them, and two results mean two passes or a
+    loop that does both.
+  - *Done when:* a query fills histograms and accumulates sums and counts
+    (`Histo1D`, `Sum`, `Count`), several of them booked before one pass
+    over the data, merged across threads; a cut flow comes from the filters
+    without a column per cut.
+  - *Design first:* how results are booked and returned (handles filled by
+    the run, as `RDataFrame`'s are, or one call returning them all), and
+    whether a query becomes lazy and branching (`Filter` on a shared base).
 
 - **XRootD GSI (X.509 proxy) authentication.**
   - *Today:* `unix` and token (`ztn`, over TLS) authentication ship, which
@@ -173,27 +205,24 @@ Larger pieces, each worth a design note before code.
 ## Toward 1.0
 
 The API was reviewed twice (0.6.0, then 0.10.0, see above). The 0.10.0
-surface is the candidate for 1.0; what is left before freezing it is time in
+surface, with the query API added in 0.12.0, is the candidate for 1.0; what is left before freezing it is time in
 use, to see where it still chafes.
 
 - **Publishing.** The crates stay on GitHub until it is decided to publish.
   - *When it is:* publish in dependency order (oxistats → oxiparticle →
-    oxifit → oxiplot → oxihist → oxiroot), drop the `git`/`tag` from each
+    oxiformula → oxifit → oxiplot → oxihist → oxiroot), drop the `git`/`tag` from each
     manifest, and turn the `package (dry run)` job into a real gate.
   - [`RELEASING.md`](RELEASING.md) describes the tag lockstep that would carry
     over.
 
 ## Far future
 
-- **`RDataFrame`-style analysis.** A lazy, columnar front-end built on the
-  existing readers:
-  - `Define`, `Filter`, `Histo1D` and `Sum`, run in one pass over a `TTree` or
-    RNTuple;
-  - parallelised across clusters.
-  This is a compute engine rather than IO, and the natural cap on the stack
-  once the IO layer is complete. Its foundation is in place: `Dataset`
-  reads cluster by cluster, in parallel, into Arrow-style batches. ROOT's `RNTupleProcessor` has the same shape
-  and would share the machinery.
+- **`RDataFrame`-style analysis, the rest.** Queries (0.12.0) are its first
+  half: `Define` and `Filter`, column by column, cluster by cluster, in
+  parallel. The actions are next (see *Still open*). Past them, a full
+  analysis front-end: systematic variations (`Vary`), snapshots that keep a
+  query's output as a dataset, and joins across datasets in the manner of
+  ROOT's `RNTupleProcessor`.
 
 ## Out of scope
 
