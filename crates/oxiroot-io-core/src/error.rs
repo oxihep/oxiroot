@@ -193,6 +193,21 @@ impl Error {
             _ => None,
         }
     }
+
+    /// The wrapped error itself, if this is an [`Error::Other`] holding a
+    /// `T`; otherwise this error back.
+    ///
+    /// # Errors
+    /// `self`, unchanged, if it does not hold a `T`.
+    pub fn downcast<T: std::error::Error + 'static>(self) -> Result<T, Self> {
+        match self {
+            Self::Other(External(e)) => match e.downcast::<T>() {
+                Ok(t) => Ok(*t),
+                Err(e) => Err(Self::Other(External(e))),
+            },
+            other => Err(other),
+        }
+    }
 }
 
 impl fmt::Display for Error {

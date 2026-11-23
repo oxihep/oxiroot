@@ -29,9 +29,23 @@ f.derivative(1.0);                // 3*cos(1.5)        = 0.212212
 # Ok::<(), oxiroot::Error>(())
 ```
 
-`integral` is an adaptive Gauss–Kronrod quadrature and `derivative` a
-Richardson-extrapolated central difference, matching `Func1D::Integral` /
-`Func1D::Derivative` to ~10 significant figures.
+`integral` is an adaptive Gauss–Kronrod quadrature, matching ROOT's
+`Integral` to ~10 significant figures. `derivative` is exact, from the
+formula's symbolic derivative; for a formula with no closed form here
+(`TMath::Landau` and the other special densities) it is a
+Richardson-extrapolated central difference, as ROOT's `Derivative` is.
+
+ROOT's predefined functions have constructors, with ROOT's parameter names:
+`Func1D::gaus`, `gausn`, `expo`, `landau`, `crystalball`, `breitwigner`,
+`pol(degree, …)` and `cheb(degree, …)`, and `Func2D::gaus` (`xygaus`) and
+`bigaus`:
+
+```rust
+use oxiroot::prelude::*;
+let peak = Func1D::gaus(80.0..=100.0).with_params(&[100.0, 91.2, 2.5])?;
+assert_eq!(peak.param_names(), ["Constant", "Mean", "Sigma"]);
+# Ok::<(), oxiroot::Error>(())
+```
 
 `Func2D`/`Func3D` add coordinates — the formula gains `y` (and `z`):
 
@@ -87,10 +101,12 @@ assert_eq!(g.eval(0.0), 2.0);
 # Ok::<(), oxiroot::Error>(())
 ```
 
-A mistake is reported where it is, with a hint for the common ones:
+A mistake is reported where it is, with a hint for the common ones. Through
+`?` it is an `oxiroot::Error::Formula`, whose `ParseError` gives the `span`
+and the `hint`:
 
 ```text
-bad formula: unexpected character `&`
+invalid formula: unexpected character `&`
   x > 0 & x < 1
         ^
   help: ROOT writes logical AND as `&&`

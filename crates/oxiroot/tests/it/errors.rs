@@ -41,6 +41,26 @@ fn formula_errors_convert() {
     assert!(model("[0]*x").is_ok());
 }
 
+/// A function built from a formula that does not parse: through `?`, the
+/// error is the facade's `Formula`, with where and how to fix it.
+#[test]
+fn a_function_formula_error_is_a_formula_error() {
+    fn function(formula: &str) -> oxiroot::Result<oxiroot::hist::Func1D> {
+        Ok(oxiroot::hist::Func1D::new(formula, 0.0..=1.0)?)
+    }
+    let err = function("x | 1").unwrap_err();
+    let oxiroot::Error::Formula(parse) = &err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(parse.position(), 2);
+    assert_eq!(parse.hint(), Some("ROOT writes logical OR as `||`"));
+    assert!(err.to_string().starts_with("invalid formula: "), "{err}");
+    // Other ROOT-side errors stay ROOT errors.
+    let err = function("x*y").unwrap_err();
+    assert!(matches!(err, oxiroot::Error::Root(_)), "{err:?}");
+    assert!(function("gaus").is_ok());
+}
+
 #[cfg(feature = "plot")]
 #[test]
 fn plotting_errors_convert() {

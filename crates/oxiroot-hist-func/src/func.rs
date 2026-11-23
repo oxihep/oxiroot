@@ -20,6 +20,8 @@ pub struct Func<const D: usize> {
     record: GraphFunction,
     /// The record's formula, parsed.
     formula: Formula,
+    /// Its derivative in `x`, where it has a closed form.
+    dx: Option<Formula>,
     /// The ranges of the axes after `x`; the record has `x`'s.
     outer: [(f64, f64); 2],
 }
@@ -41,8 +43,9 @@ fn bounds(range: &RangeInclusive<f64>) -> (f64, f64) {
 impl<const D: usize> Func<D> {
     /// A function from the formula `source`, unnamed, its parameters zero.
     fn build(source: &str, x: &RangeInclusive<f64>, outer: [(f64, f64); 2]) -> Result<Self> {
-        let formula =
-            Formula::parse(source).map_err(|e| Error::InvalidInput(format!("bad formula: {e}")))?;
+        // The parse error stays whole (`Error::other`): through `?`, the
+        // `oxiroot` facade makes it its `Error::Formula`.
+        let formula = Formula::parse(source).map_err(Error::other)?;
         if let Some(var) = beyond::<D>(&formula) {
             return Err(Error::InvalidInput(format!(
                 "formula {source:?} uses `{var}`, but a {D}-dimensional function has only {}",
@@ -66,6 +69,7 @@ impl<const D: usize> Func<D> {
                 chi2: 0.0,
                 ndf: 0,
             },
+            dx: formula.variable_derivative(0),
             formula,
             outer,
         })
@@ -101,9 +105,18 @@ impl<const D: usize> Func<D> {
         record.param_names = formula.param_names().to_vec();
         Ok(Self {
             record,
+            dx: formula.variable_derivative(0),
             formula,
             outer,
         })
+    }
+
+    /// ROOT's shortcut `name` alone, a 1-D function: built in, so it parses.
+    fn shortcut(name: &str, x: &RangeInclusive<f64>) -> Self {
+        match Self::build(name, x, [(0.0, 0.0); 2]) {
+            Ok(f) => f,
+            Err(e) => unreachable!("ROOT's `{name}` parses: {e}"),
+        }
     }
 
     /// The record ROOT stores: the `TF1` part of the function.
@@ -240,6 +253,64 @@ impl Func<1> {
         Self::build(formula, &x, [(0.0, 0.0); 2])
     }
 
+    /// ROOT's `gaus` over `x`: `Constant·exp(−½((x − Mean)/Sigma)²)`, its
+    /// parameters `Constant`, `Mean`, `Sigma`, all zero.
+    ///
+    /// ```
+    /// use oxiroot_hist_func::Func1D;
+    /// let g = Func1D::gaus(-5.0..=5.0).with_params(&[2.0, 0.0, 1.0])?;
+    /// assert_eq!(g.param_names(), ["Constant", "Mean", "Sigma"]);
+    /// assert_eq!(g.eval(0.0), 2.0);
+    /// # Ok::<(), oxiroot_io_core::Error>(())
+    /// ```
+    #[must_use]
+    pub fn gaus(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("gaus", &x)
+    }
+    /// ROOT's `gausn`: the Gaussian of area `Constant`.
+    #[must_use]
+    pub fn gausn(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("gausn", &x)
+    }
+    /// ROOT's `expo`: `exp(Constant + Slope·x)`.
+    #[must_use]
+    pub fn expo(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("expo", &x)
+    }
+    /// ROOT's `landau`: `Constant·TMath::Landau(x, MPV, Sigma)`.
+    #[must_use]
+    pub fn landau(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("landau", &x)
+    }
+    /// ROOT's `crystalball`: parameters `Constant`, `Mean`, `Sigma`, `Alpha`,
+    /// `N`.
+    #[must_use]
+    pub fn crystalball(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("crystalball", &x)
+    }
+    /// ROOT's `breitwigner`: `p0` times the unit-area Breit–Wigner of mean
+    /// `p1` and width `p2`.
+    #[must_use]
+    pub fn breitwigner(x: RangeInclusive<f64>) -> Self {
+        Self::shortcut("breitwigner", &x)
+    }
+    /// ROOT's `pol<degree>`: `p0 + p1·x + … + pN·xᴺ`.
+    ///
+    /// # Errors
+    /// [`Error::Other`] if the polynomial has more parameters than a formula
+    /// may (10 000).
+    pub fn pol(degree: usize, x: RangeInclusive<f64>) -> Result<Self> {
+        Self::new(&format!("pol{degree}"), x)
+    }
+    /// ROOT's `cheb<degree>`: `Σ pₖ·Tₖ(x)`, Chebyshev polynomials up to
+    /// degree 10.
+    ///
+    /// # Errors
+    /// [`Error::Other`] for a degree past 10.
+    pub fn cheb(degree: usize, x: RangeInclusive<f64>) -> Result<Self> {
+        Self::new(&format!("cheb{degree}"), x)
+    }
+
     /// Evaluate `f(x)` with the current parameters.
     #[must_use]
     pub fn eval(&self, x: f64) -> f64 {
@@ -254,11 +325,16 @@ impl Func<1> {
         integrate(|x| f.eval(&[x], &self.record.params), a, b)
     }
 
-    /// The derivative `f'(x)` (Richardson central difference), as
-    /// `Func1D::Derivative`.
+    /// The derivative `f'(x)`: exact, from the formula's symbolic
+    /// derivative; for a formula with no closed form here (`TMath::Landau`,
+    /// the special densities), a Richardson central difference, as ROOT's
+    /// `TF1::Derivative` takes.
     #[must_use]
     pub fn derivative(&self, x: f64) -> f64 {
-        derivative(|x| self.eval(x), x)
+        match &self.dx {
+            Some(d) => d.eval1(x, &self.record.params),
+            None => derivative(|x| self.eval(x), x),
+        }
     }
 
     /// The function's range (`fXmin..=fXmax`).
@@ -361,6 +437,26 @@ impl Func<2> {
     /// Returns an error if `formula` is not a valid expression.
     pub fn new(formula: &str, x: RangeInclusive<f64>, y: RangeInclusive<f64>) -> Result<Self> {
         Self::build(formula, &x, [bounds(&y), (0.0, 0.0)])
+    }
+
+    /// ROOT's `xygaus`: a Gaussian in `x` times one in `y`, parameters
+    /// `Constant`, `MeanX`, `SigmaX`, `MeanY`, `SigmaY`.
+    #[must_use]
+    pub fn gaus(x: RangeInclusive<f64>, y: RangeInclusive<f64>) -> Self {
+        Self::shortcut2("xygaus", &x, &y)
+    }
+    /// ROOT's `bigaus`: the correlated 2-D Gaussian, parameters `Constant`,
+    /// `MeanX`, `SigmaX`, `MeanY`, `SigmaY`, `Rho`.
+    #[must_use]
+    pub fn bigaus(x: RangeInclusive<f64>, y: RangeInclusive<f64>) -> Self {
+        Self::shortcut2("bigaus", &x, &y)
+    }
+
+    fn shortcut2(name: &str, x: &RangeInclusive<f64>, y: &RangeInclusive<f64>) -> Self {
+        match Self::build(name, x, [bounds(y), (0.0, 0.0)]) {
+            Ok(f) => f,
+            Err(e) => unreachable!("ROOT's `{name}` parses: {e}"),
+        }
     }
 
     /// Evaluate `f(x, y)` with the current parameters.

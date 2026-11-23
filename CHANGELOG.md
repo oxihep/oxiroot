@@ -9,6 +9,11 @@ change the API.
 
 ### Added
 
+- **Constructors for ROOT's predefined functions**: `Func1D::gaus`,
+  `gausn`, `expo`, `landau`, `crystalball`, `breitwigner`, `pol` and `cheb`,
+  and `Func2D::gaus` (`xygaus`) and `bigaus`, with ROOT's parameter names.
+- `Error::downcast` (`oxiroot::file::Error`): the error another crate's
+  error was wrapped from, owned.
 - **Functions take ROOT's parameter names.** `Func1D`/`Func2D`/`Func3D` have
   `param_names`, `param_named`, `with_param` and `set_param`: `gaus` has
   `Constant`, `Mean` and `Sigma`, `[N]*exp(-x/[tau])` has `N` and `tau`. A
@@ -32,6 +37,14 @@ change the API.
 
 ### Changed
 
+- **A formula that does not parse is an `oxiroot::Error::Formula`** through
+  `?`, with the `ParseError`'s span and hint, where it was a string in
+  `Error::InvalidInput`.
+- **`Func1D::derivative` is exact** where the formula has a symbolic
+  derivative, and a central difference (as ROOT's) only where it has none.
+- oxistats 0.2.1 (`erf`/`erfc` 16× faster), oxifit 0.10.1 (ROOT's other
+  densities, `crystalballn`, compiled formulas at ROOT's speed), oxiplot
+  0.13.1 and oxihist 0.17.1.
 - **oxifit 0.10.0, oxiplot 0.13.0 and oxihist 0.17.0**: oxifit-formula
   follows ROOT's `TFormula` (its parameters, shortcuts and spelling), and the
   others move to it, so one copy of each oxihep crate is built.

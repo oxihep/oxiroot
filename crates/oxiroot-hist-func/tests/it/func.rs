@@ -229,3 +229,53 @@ fn a_formula_needs_no_more_variables_than_its_function() {
         .to_string();
     assert!(err.contains("unknown name `bogus`"), "{err}");
 }
+
+#[test]
+fn roots_predefined_functions_have_constructors() {
+    let g = Func1D::gaus(-5.0..=5.0);
+    assert_eq!(g.param_names(), ["Constant", "Mean", "Sigma"]);
+    assert_eq!(g.title(), "gaus");
+    assert_eq!(Func1D::expo(0.0..=1.0).param_names(), ["Constant", "Slope"]);
+    assert_eq!(
+        Func1D::landau(0.0..=1.0).param_names(),
+        ["Constant", "MPV", "Sigma"]
+    );
+    assert_eq!(Func1D::crystalball(0.0..=1.0).npar(), 5);
+    assert_eq!(Func1D::gausn(0.0..=1.0).npar(), 3);
+    assert_eq!(Func1D::breitwigner(0.0..=1.0).npar(), 3);
+    assert_eq!(Func1D::pol(3, 0.0..=1.0).unwrap().npar(), 4);
+    assert_eq!(Func1D::cheb(2, 0.0..=1.0).unwrap().npar(), 3);
+    assert!(Func1D::cheb(11, 0.0..=1.0).is_err());
+    assert_eq!(
+        Func2D::gaus(0.0..=1.0, 0.0..=1.0).param_names(),
+        ["Constant", "MeanX", "SigmaX", "MeanY", "SigmaY"]
+    );
+    assert_eq!(Func2D::bigaus(0.0..=1.0, 0.0..=1.0).npar(), 6);
+}
+
+#[test]
+fn the_derivative_is_exact_where_the_formula_has_one() {
+    let g = Func1D::gaus(-5.0..=5.0)
+        .with_params(&[2.0, 0.5, 1.5])
+        .unwrap();
+    for x in [-2.0, 0.1, 0.5, 3.3] {
+        let u: f64 = (x - 0.5) / 1.5;
+        let exact = -2.0 * u / 1.5 * (-0.5 * u * u).exp();
+        assert!((g.derivative(x) - exact).abs() < 1e-14, "{x}");
+    }
+    // TMath::Landau has no closed form here: a central difference.
+    let l = Func1D::landau(0.0..=10.0)
+        .with_params(&[4.0, 1.0, 0.7])
+        .unwrap();
+    let h = 1e-5;
+    let numeric = (l.eval(2.0 + h) - l.eval(2.0 - h)) / (2.0 * h);
+    assert!((l.derivative(2.0) - numeric).abs() < 1e-6);
+}
+
+#[test]
+fn a_formula_error_keeps_where_and_why() {
+    let err = Func1D::new("x & 1", 0.0..=1.0).unwrap_err();
+    let parse = err.downcast_ref::<oxifit_formula::ParseError>().unwrap();
+    assert_eq!(parse.span(), 2..3);
+    assert_eq!(parse.hint(), Some("ROOT writes logical AND as `&&`"));
+}
