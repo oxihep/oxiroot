@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "criterion",
  "oxifit",
@@ -1955,7 +1955,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-cli"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "clap",
  "oxiroot",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-compress"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "lz4_flex",
  "lzma-rust2",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-dataset"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -1993,7 +1993,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxifit",
  "oxihist",
@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-hist-func"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxifit",
  "oxiformula",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-io-core"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "bytes",
  "memmap2",
@@ -2029,14 +2029,14 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-linalg"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxiroot-io-core",
 ]
 
 [[package]]
 name = "oxiroot-rntuple"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxiroot-io-core",
  "oxiroot-linalg",
@@ -2046,7 +2046,7 @@ dependencies = [
 
 [[package]]
 name = "oxiroot-tree"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "oxiroot-io-core",
  "rayon",

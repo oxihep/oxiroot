@@ -7,6 +7,13 @@ change the API.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-23
+
+Queries on datasets, and the formula engine in a crate of its own:
+`Dataset::query` computes columns and applies cuts, written in Rust or as
+text and checked before anything is read; oxiformula 0.11.0 follows ROOT's
+`TFormula`, with ROOT's parameter names, constructors and exact derivatives.
+
 ### Added
 
 - **Queries: derived columns and cuts on a dataset** (`Dataset::query`,
@@ -1471,7 +1478,8 @@ MIT. `oxiroot-particle` also bundles data under BSD-3-Clause
 (`MIT AND BSD-3-Clause`), and `oxiroot-rex` carries the original ReX authors'
 copyright notices in its `LICENSE-3rdparty`.
 
-[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/oxihep/oxiroot/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/oxihep/oxiroot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/oxihep/oxiroot/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/oxihep/oxiroot/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/oxihep/oxiroot/compare/v0.9.0...v0.10.0

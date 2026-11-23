@@ -187,7 +187,7 @@ example `|h, ev| h.fill_weight(ev.x, ev.w)` over a slice of event structs.
 
 ```toml
 [dependencies]
-oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.11.0", features = ["rayon"] }
+oxiroot = { git = "https://github.com/oxihep/oxiroot", tag = "v0.12.0", features = ["rayon"] }
 ```
 
 !!! warning "Summation order"
