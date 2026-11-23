@@ -90,8 +90,10 @@ fn main() -> oxiroot::Result<()> {
     // pT > 25 and 15 GeV, opposite sign, and their mass from (pT, η, φ). The
     // query is checked against the tree's columns before anything is read,
     // and runs a whole column at a time. `Muon_pt[0]` is missing in an event
-    // with no muon; after the length cut none is, and `?? 0` says so, which
-    // makes `m_mumu` a plain column.
+    // with no muon; after the length cut none is, and `?? 0` says so.
+    //
+    // The histogram and the count are actions booked on it: the first `get`
+    // reads the tree once and fills both.
     let file = FileReader::open(&tree_path)?;
     let events = Dataset::open(&file, "Events")?;
     let pairs = events
@@ -104,18 +106,19 @@ fn main() -> oxiroot::Result<()> {
             "m_mumu",
             "sqrt(2 * Muon_pt[0] * Muon_pt[1] \
                   * (cosh(Muon_eta[0] - Muon_eta[1]) - cos(Muon_phi[0] - Muon_phi[1]))) ?? 0",
-        )
-        .read()?;
-    let mut mass = Hist::reg(60, 60.0, 120.0)
-        .weight()
-        .named("m_mumu")
-        .titled("dimuon mass");
-    for &m in pairs.values::<f64>("m_mumu")? {
-        mass.fill(m);
-    }
+        );
+    let mass = pairs.fill(
+        Hist::reg(60, 60.0, 120.0)
+            .weight()
+            .named("m_mumu")
+            .titled("dimuon mass"),
+        ["m_mumu"],
+    );
+    let selected = pairs.count();
+    let mass = mass.get()?;
     println!(
         "{} events with an opposite-sign pair passing the pT cuts",
-        pairs.len()
+        selected.get()?
     );
 
     // --- 4. Fit: background from the low sideband, then Voigt + exponential.

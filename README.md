@@ -85,7 +85,9 @@ None of them is on crates.io yet; depend on them from GitHub (see
   parallel reads and writes with `rayon`, and conversion to Arrow and Polars.
   **Queries** compute columns and apply cuts, written in Rust or as text
   (`"any(Muon_pt > 20) and len(Muon_pt) >= 2"`), checked against the
-  dataset's columns before anything is read.
+  dataset's columns before anything is read; histograms, sums, counts and a
+  cut flow booked on them, and on branches of them, fill in one pass, as
+  `RDataFrame`'s actions do.
 - 🌳 **`TTree`** — read and write scalar, fixed/variable-length array, string,
   `std::vector<T>`, and **split `std::vector<MyStruct>`** branches; read nested
   structs, `std::vector<std::vector<T>>`, `TClonesArray`, split single objects,
@@ -769,6 +771,13 @@ ax2.save("heatmap.svg")?;
   column at a time, batch by batch, reading only the columns it names.
   Per-object columns broadcast and reduce (`any`, `sum`, `max`, `x[0]`, …);
   missing values propagate and `??` fills them.
+- **Actions, filled in one pass.** `count`, `sum`, `mean`, `min`, `max`,
+  `fill` (a histogram in 1 to 3 dimensions, oxihist's or any `Fill`),
+  `report` (the cut flow of named filters) and `collect` book results and
+  return handles; the first `get` reads the dataset once and fills them all.
+  Each step makes a new query on top of the last, so one query is the base
+  of several branches (signal and control regions), sharing its steps. With
+  `rayon`, a pass fills from several batches at once.
 - `filter`, `slice`, `select`, `append` and `cast` work on whole batches, so a
   skim, a TTree → RNTuple conversion or a narrowing to the stored precision
   needs no per-type code. With the `arrow` /
@@ -976,7 +985,7 @@ on, so nothing extra is needed.
 | [`splot_lifetime`](crates/oxiroot/examples/splot_lifetime.rs) | A B⁰ lifetime from sWeights: candidates `TTree` → extended mass fit → sWeights written as a friend tree → weighted lifetime fit with naive, SumW2 and asymptotic errors → toys showing only the asymptotic ones cover; mass fit, sWeighted decay times, sWeights against mass and toy pulls plotted |
 | [`tag_and_probe`](crates/oxiroot/examples/tag_and_probe.rs) | A trigger efficiency by tag and probe: probes `TTree` → simultaneous pass/fail Z fits per (pT, \|η\|) bin → efficiency map (`TH2D`) and turn-ons per region → a matched sample as a `TEfficiency` fitted with the binomial likelihood, and toys of binomial against χ²; plots of a bin's fits, the map, the turn-ons and the pulls |
 | [`open_data_dimuon`](crates/oxiroot/examples/open_data_dimuon.rs) | Real collisions, start to finish: 2 million events of the 3.5 GB CMS 2012 `DoubleMuParked` open data streamed with `root://` → a query for opposite-charge pairs and their mass → a skim written as an `RNTuple` one cluster at a time, with the spectrum and the counts stored beside it → the J/ψ, Υ(1S) and Z measured from the skim → the dimuon spectrum from 0.25 to 300 GeV (needs `--features xrootd`) |
-| [`open_data_zmumu`](crates/oxiroot/examples/open_data_zmumu.rs) | Data against simulation: ATLAS 2012 muon data and the Z → μμ simulation read with `root://` → the same query on both, each cut a column, and a labelled cut flow from them → simulation scaled to the data and subtracted, the momentum scale from the two peaks → one file of histograms, parameters and both candidate tables (a `TTree` and an `RNTuple`) in a directory per sample → data over simulation with their ratio (needs `--features xrootd`) |
+| [`open_data_zmumu`](crates/oxiroot/examples/open_data_zmumu.rs) | Data against simulation: ATLAS 2012 muon data and the Z → μμ simulation read with `root://` → the same query on both, its named cuts, mass histogram and candidates filled in one pass, and a labelled cut flow from its report → simulation scaled to the data and subtracted, the momentum scale from the two peaks → one file of histograms, parameters and both candidate tables (a `TTree` and an `RNTuple`) in a directory per sample → data over simulation with their ratio (needs `--features xrootd`) |
 | [`open_data_zee`](crates/oxiroot/examples/open_data_zee.rs) | A remote file without downloading it: Z → ee from a 966 MB ATLAS open-data simulation sample streamed with `root://` and selected with a query, with a Crystal Ball fit of the radiative tail (needs `--features xrootd`) |
 | **Statistics** — `oxiroot::stat` | |
 | [`stat_intro`](crates/oxiroot/examples/stat_intro.rs) | Descriptive stats + the `Normal`/`StudentT`/`ChiSquared`/`FisherF` distributions and confidence intervals |

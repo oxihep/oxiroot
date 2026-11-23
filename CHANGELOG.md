@@ -7,6 +7,33 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- **Actions on queries, filled in one pass** (as `RDataFrame`'s): `count`,
+  `sum`, `mean`, `min`, `max`, `fill` and `fill_weighted` (a histogram, one
+  expression per dimension: oxihist's in 1 to 3 dimensions, or any type
+  implementing `query::Fill`), `report` (a `Report` of each cut's entries in
+  and out; `filter_named` names a cut) and `collect` (what `read` returns).
+  Each books a result and returns a `query::Handle`; the first `get` runs
+  one pass over the dataset that fills every action booked, and `run` starts
+  one. A per-object value fills once per object; missing values are skipped.
+  With the `rayon` feature and `parallel(true)`, a pass fills from several
+  batches at once and merges what each thread filled. An action whose own
+  values do not fit fails alone.
+- **Branching queries.** Each step makes a new query on top of the one it is
+  called on and leaves that one usable, so one query is the base of several
+  (signal and control regions); they share its steps, computed once per
+  batch, and their actions fill in the same pass.
+
+### Changed
+
+- **Query steps take `&self`** and return a new query: `select`, `define`,
+  `filter`, `define_with`, `filter_with`, `step`, `range` and `parallel`.
+  Chained code is unchanged. `step`, `range` and `parallel` hold for every
+  query built from the same `Dataset::query`.
+- The examples fill histograms, counts, the Z → μμ cut flow and its
+  candidate table with actions, in one pass per file, with the same results.
+
 ## [0.12.0] — 2026-11-23
 
 Queries on datasets, and the formula engine in a crate of its own:

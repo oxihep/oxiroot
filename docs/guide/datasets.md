@@ -215,6 +215,73 @@ gives the same selection and the same values as ROOT's `RDataFrame` with the
 equivalent `Filter`/`Define` (a `float` column's sum differs in its last
 digits, as `RDataFrame` sums floats in single precision).
 
+### Actions: histograms, sums and a cut flow, in one pass
+
+An **action** books a result on a query: `count`, `sum`, `mean`, `min`,
+`max`, `fill` (a histogram, one expression per dimension), `fill_weighted`,
+`report` (the cut flow) and `collect` (what `read` returns). Booking reads
+nothing. The first `get` of any of them runs **one pass** over the dataset
+that fills every action booked so far:
+
+```rust
+# use oxiroot::prelude::*;
+# let f = FileReader::open("nano.root")?;
+# let events = Dataset::open(&f, "Events")?;
+let pairs = events
+    .query()
+    .filter_named("two muons", "len(Muon_pt) == 2")
+    .filter_named("opposite charge", "Muon_charge[0] != Muon_charge[1]")
+    .define("m", "sqrt(2 * Muon_pt[0] * Muon_pt[1] \
+                   * (cosh(Muon_eta[0] - Muon_eta[1]) - cos(Muon_phi[0] - Muon_phi[1]))) ?? 0");
+let mass = pairs.fill(Hist::reg(60, 60.0, 120.0).weight(), ["m"]);
+let pt_eta = pairs.fill(Hist::reg(20, 0.0, 100.0).reg(24, -2.4, 2.4).weight(), ["Muon_pt", "Muon_eta"]);
+let n = pairs.count();
+let flow = pairs.report();
+
+let mass = mass.get()?;        // reads the file once: all four are filled now
+println!("{} pairs\n{}", n.get()?, flow.get()?);
+# Ok::<(), oxiroot::Error>(())
+```
+
+```text
+two muons             26011 of     300000    8.7 %  (cumulative   8.7 %)
+opposite charge       25566 of      26011   98.3 %  (cumulative   8.5 %)
+```
+
+A value with one per object fills once per object (`Muon_pt` above fills
+every muon), with any per-entry value beside it repeated for each; a missing
+value is not filled, nor summed. `fill` takes any `Fill` histogram: oxihist's,
+in 1 to 3 dimensions, or your own. The histogram keeps what it held.
+
+**Branches.** A step makes a new query on top of the one it is called on,
+and leaves that one as it was, so one query is the base of several. They
+share its steps (read and computed once per batch) and their actions fill in
+the same pass, as `RDataFrame`'s do:
+
+```rust
+# use oxiroot::prelude::*;
+# let f = FileReader::open("nano.root")?;
+# let events = Dataset::open(&f, "Events")?;
+let base = events.query().filter("nMuon >= 2").define(
+    "m",
+    "sqrt(2 * Muon_pt[0] * Muon_pt[1] * (cosh(Muon_eta[0] - Muon_eta[1]) - cos(Muon_phi[0] - Muon_phi[1]))) ?? 0",
+);
+let signal = base.filter("abs(m - 91) < 10");
+let sidebands = base.filter("abs(m - 91) >= 10");
+let (s, b) = (signal.count(), sidebands.count());
+println!("{} in the window, {} outside", s.get()?, b.get()?);   // one pass
+# Ok::<(), oxiroot::Error>(())
+```
+
+An action booked after a pass waits for a pass of its own: `run()` starts
+one, filling everything still booked. With the `rayon` feature and
+`.parallel(true)`, a pass fills from several batches at once and merges what
+each thread filled: counts and the cut flow are exact, while float sums may
+differ in their last digits from one run to the next, as their order does.
+An action whose own values do not fit (two per-object columns with different
+numbers of objects) fails alone; a step that fails fails the actions below
+it.
+
 ## Writing
 
 A `NamedBatch` is a dataset held in memory: batches under a name and a format. It

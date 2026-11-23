@@ -498,3 +498,266 @@ fn deep_nesting_is_an_error_not_a_stack_overflow() {
     let nots = format!("{}x", "not ".repeat(10_000));
     assert!(Expr::parse(&nots).is_err());
 }
+
+// ---- Actions: results booked on queries, filled in one pass ---------------
+
+use oxihist::Hist;
+
+#[test]
+fn actions_match_a_loop_over_the_events() {
+    each_format(|ds, evs, _| {
+        let muons = ds.query().step(700).filter("nMuon >= 1");
+        let n = muons.count();
+        let sum_pt = muons.sum("Muon_pt");
+        let mean_px = muons.mean("px");
+        let lo = muons.min("Muon_pt");
+        let hi = muons.max("Muon_pt");
+        let pt = muons.fill(Hist::reg(30, 0.0, 75.0).weight(), ["Muon_pt"]);
+        let px = muons.fill_weighted(Hist::reg(20, -50.0, 50.0).weight(), ["px"], "weight");
+        let pt_eta = muons.fill(
+            Hist::reg(10, 0.0, 75.0).reg(12, -3.0, 3.0).weight(),
+            ["Muon_pt", "Muon_eta"],
+        );
+
+        let kept: Vec<&Ev> = evs.iter().filter(|e| !e.pt.is_empty()).collect();
+        let mut want_pt = Hist::reg(30, 0.0, 75.0).weight();
+        let mut want_px = Hist::reg(20, -50.0, 50.0).weight();
+        let mut want_pt_eta = Hist::reg(10, 0.0, 75.0).reg(12, -3.0, 3.0).weight();
+        for e in &kept {
+            for (&p, &h) in e.pt.iter().zip(&e.eta) {
+                want_pt.fill(f64::from(p));
+                want_pt_eta.fill(f64::from(p), f64::from(h));
+            }
+            want_px.fill_weight(e.px, e.weight);
+        }
+        let all_pt: Vec<f64> = kept
+            .iter()
+            .flat_map(|e| e.pt.iter().map(|&p| f64::from(p)))
+            .collect();
+
+        // One `get` runs the pass that fills every action booked.
+        assert_eq!(n.get().unwrap(), kept.len() as u64);
+        assert!(sum_pt.is_ready() && pt_eta.is_ready());
+        assert!(close(sum_pt.get().unwrap(), all_pt.iter().sum()));
+        let want_mean = kept.iter().map(|e| e.px).sum::<f64>() / kept.len() as f64;
+        assert!(close(mean_px.get().unwrap().unwrap(), want_mean));
+        assert_eq!(lo.get().unwrap(), all_pt.iter().copied().reduce(f64::min));
+        assert_eq!(hi.get().unwrap(), all_pt.iter().copied().reduce(f64::max));
+        assert_eq!(pt.get().unwrap(), want_pt);
+        assert_eq!(px.get().unwrap(), want_px);
+        assert_eq!(pt_eta.get().unwrap(), want_pt_eta);
+    });
+}
+
+#[test]
+fn branches_share_their_steps_and_one_pass() {
+    each_format(|ds, evs, _| {
+        let base = ds
+            .query()
+            .step(700)
+            .filter_named("a muon", "nMuon >= 1")
+            .define("met2", "px^2 + py^2");
+        let signal = base.filter_named("east", "px > 0");
+        let control = base.filter("px <= 0").filter_named("north", "py > 0");
+        let all = base.count();
+        let (sr, cr) = (signal.count(), control.count());
+        let sr_met = signal.sum("met2");
+        let report = control.report();
+        let base_report = base.report();
+        // The base is unchanged by the branches built on it.
+        assert_eq!(
+            base.to_string(),
+            "filter nMuon >= 1  # a muon\ndefine met2 = px ^ 2 + py ^ 2\n"
+        );
+
+        let muon: Vec<&Ev> = evs.iter().filter(|e| !e.pt.is_empty()).collect();
+        let east = muon.iter().filter(|e| e.px > 0.0).count() as u64;
+        let west = muon.iter().filter(|e| e.px <= 0.0).count() as u64;
+        let north_west = muon.iter().filter(|e| e.px <= 0.0 && e.py > 0.0).count() as u64;
+        assert_eq!(all.get().unwrap(), muon.len() as u64);
+        assert!(sr.is_ready() && cr.is_ready() && report.is_ready());
+        assert_eq!(sr.get().unwrap(), east);
+        assert_eq!(cr.get().unwrap(), north_west);
+        let want: f64 = muon
+            .iter()
+            .filter(|e| e.px > 0.0)
+            .map(|e| e.px * e.px + e.py * e.py)
+            .sum();
+        assert!(close(sr_met.get().unwrap(), want));
+
+        let report = report.get().unwrap();
+        let names: Vec<&str> = report
+            .cuts()
+            .iter()
+            .map(oxiroot_dataset::query::Cut::name)
+            .collect();
+        assert_eq!(names, ["a muon", "px <= 0", "north"]);
+        let counts: Vec<(u64, u64)> = report
+            .cuts()
+            .iter()
+            .map(|c| (c.all(), c.passed()))
+            .collect();
+        assert_eq!(
+            counts,
+            [
+                (evs.len() as u64, muon.len() as u64),
+                (muon.len() as u64, west),
+                (west, north_west)
+            ]
+        );
+        assert_eq!(
+            report.cut("north").unwrap().efficiency(),
+            Some(north_west as f64 / west as f64)
+        );
+        let text = report.to_string();
+        assert!(
+            text.lines().count() == 3 && text.contains("cumulative"),
+            "{text}"
+        );
+        assert_eq!(base_report.get().unwrap().cuts().len(), 1);
+    });
+}
+
+#[test]
+fn a_later_action_takes_a_pass_of_its_own() {
+    each_format(|ds, evs, _| {
+        let q = ds.query().filter("nMuon == 0");
+        let first = q.count();
+        q.run().unwrap();
+        assert!(first.is_ready());
+        let second = q.sum("weight");
+        assert!(!second.is_ready());
+        let none: Vec<&Ev> = evs.iter().filter(|e| e.pt.is_empty()).collect();
+        assert_eq!(first.get().unwrap(), none.len() as u64);
+        assert!(close(
+            second.get().unwrap(),
+            none.iter().map(|e| e.weight).sum()
+        ));
+        // Nothing booked: a run reads nothing.
+        q.run().unwrap();
+    });
+}
+
+#[test]
+fn actions_skip_missing_values_and_keep_what_a_histogram_held() {
+    each_format(|ds, evs, format| {
+        // `Muon_pt[1]` is missing where there are fewer than two muons.
+        let q = ds.query();
+        let second = q.sum("Muon_pt[1]");
+        let empty = q.filter("nMuon > 100").mean("px");
+        let mut start = Hist::reg(4, 0.0, 4.0).weight();
+        start.fill(0.5);
+        let held = q.fill(start, ["nMuon"]);
+        let met = (format == Format::Ntuple).then(|| q.sum("met"));
+
+        let want: f64 = evs
+            .iter()
+            .filter_map(|e| e.pt.get(1))
+            .map(|&p| f64::from(p))
+            .sum();
+        assert!(close(second.get().unwrap(), want));
+        assert_eq!(empty.get().unwrap(), None);
+        let held = held.get().unwrap();
+        let zeros = evs.iter().filter(|e| e.pt.is_empty()).count() as f64;
+        assert_eq!(held.values(false)[0], zeros + 1.0);
+        if let Some(met) = met {
+            assert!(close(
+                met.get().unwrap(),
+                evs.iter().filter_map(|e| e.met).sum()
+            ));
+        }
+    });
+}
+
+#[test]
+fn a_mistake_fails_its_own_action_and_not_the_others() {
+    each_format(|ds, _, _| {
+        let q = ds.query();
+        let good = q.count();
+        let typo = q.sum("Muon_ptt");
+        let unparsed = q.sum("px +");
+        let bad_branch = q.filter("px >").count();
+        let not_a_cut = q.filter("px").count();
+        let mixed = q.fill(
+            Hist::reg(4, 0.0, 4.0).reg(4, 0.0, 4.0).weight(),
+            ["Muon_pt", "Jet_pt"],
+        );
+
+        assert_eq!(good.get().unwrap(), 3000);
+        let e = query_error(typo.get().unwrap_err());
+        assert_eq!(e.hint(), Some("did you mean `Muon_pt`?"));
+        assert!(query_error(unparsed.get().unwrap_err()).span().is_some());
+        let e = query_error(bad_branch.get().unwrap_err());
+        assert!(e.span().is_some(), "{e}");
+        assert!(
+            query_error(not_a_cut.get().unwrap_err())
+                .message()
+                .contains("one bool per entry")
+        );
+        // Muons and jets differ in number: caught as the pass fills.
+        let e = mixed.get().unwrap_err().to_string();
+        assert!(e.contains("different numbers of objects"), "{e}");
+    });
+}
+
+#[test]
+fn a_failed_pass_fails_every_action_it_was_filling() {
+    each_format(|ds, _, _| {
+        // A shared step that fails (muons and jets differ in number) fails
+        // the pass, and every action below and beside it.
+        let q = ds.query();
+        let below = q.filter("any(Muon_pt > Jet_pt)").count();
+        let count = q.count();
+        let e = q.run().unwrap_err().to_string();
+        assert!(e.contains("different numbers of objects"), "{e}");
+        assert!(below.is_ready() && count.is_ready());
+        assert!(below.get().is_err());
+        let e = count.get().unwrap_err().to_string();
+        assert!(e.contains("the pass that fills this result failed"), "{e}");
+    });
+}
+
+#[cfg(feature = "rayon")]
+#[test]
+fn a_parallel_pass_fills_the_same_results() {
+    each_format(|ds, _, _| {
+        let book = |parallel: bool| {
+            let q = ds.query().step(100).parallel(parallel).filter("nMuon >= 1");
+            let h = q.fill_weighted(Hist::reg(30, 0.0, 75.0).weight(), ["Muon_pt"], "weight");
+            let (n, s, r) = (q.count(), q.sum("Muon_pt"), q.report());
+            (
+                h.get().unwrap(),
+                n.get().unwrap(),
+                s.get().unwrap(),
+                r.get().unwrap(),
+            )
+        };
+        let (h1, n1, s1, r1) = book(false);
+        let (h2, n2, s2, r2) = book(true);
+        assert_eq!((n1, &r1), (n2, &r2));
+        assert!(close(s1, s2));
+        for (a, b) in h1.values(true).iter().zip(h2.values(true)) {
+            assert!(close(*a, b));
+        }
+    });
+}
+
+#[test]
+fn collect_is_read_filled_in_the_shared_pass() {
+    each_format(|ds, _, _| {
+        for parallel in [false, true] {
+            let base = ds.query().step(100).parallel(parallel).filter("nMuon >= 2");
+            let pairs = base
+                .select(["event", "label"])
+                .define("lead", "Muon_pt[0] ?? 0")
+                .define("lead_over_ht", "(Muon_pt[0] ?? 0) / (sum(Jet_pt) + 1)");
+            let rest = base.filter("px > 0").select(["run"]);
+            let (table, other, n) = (pairs.collect(), rest.collect(), base.count());
+            let table = table.get().unwrap();
+            assert!(n.is_ready() && other.is_ready());
+            assert_eq!(table, pairs.read().unwrap(), "parallel: {parallel}");
+            assert_eq!(other.get().unwrap(), rest.read().unwrap());
+            assert_eq!(table.len() as u64, n.get().unwrap());
+        }
+    });
+}

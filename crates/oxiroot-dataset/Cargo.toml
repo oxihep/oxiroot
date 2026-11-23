@@ -14,6 +14,7 @@ description = "One API to read and write ROOT TTree and RNTuple: columnar batche
 oxiroot-io-core = { workspace = true }
 oxiroot-tree = { workspace = true }
 oxiroot-rntuple = { workspace = true }
+oxihist = { workspace = true }
 rayon = { version = "1", optional = true }
 arrow-array = { version = "60", optional = true }
 arrow-buffer = { version = "60", optional = true }
@@ -26,7 +27,7 @@ polars-arrow = { version = "0.55", optional = true, default-features = false }
 # Read a batch's columns concurrently (`Batches::parallel`), decompressing
 # baskets and pages in parallel too; and convert and compress the chunks a
 # `DatasetWriter` writes in parallel.
-rayon = ["dep:rayon", "oxiroot-tree/rayon", "oxiroot-rntuple/rayon"]
+rayon = ["dep:rayon", "oxiroot-tree/rayon", "oxiroot-rntuple/rayon", "oxihist/rayon"]
 
 # Convert a `Batch` to and from an Arrow `RecordBatch` (arrow-rs).
 arrow = ["dep:arrow-array", "dep:arrow-buffer", "dep:arrow-schema", "dep:arrow-select"]

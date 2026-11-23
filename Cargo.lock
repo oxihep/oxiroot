@@ -1983,6 +1983,7 @@ dependencies = [
  "arrow-buffer",
  "arrow-schema",
  "arrow-select",
+ "oxihist",
  "oxiroot-io-core",
  "oxiroot-rntuple",
  "oxiroot-tree",

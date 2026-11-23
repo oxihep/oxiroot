@@ -22,7 +22,7 @@ impl Data {
         }
     }
 
-    fn floats(&self) -> Vec<f64> {
+    pub(crate) fn floats(&self) -> Vec<f64> {
         match self {
             Self::Bool(v) => v.iter().map(|&b| f64::from(u8::from(b))).collect(),
             #[allow(clippy::cast_precision_loss, reason = "an integer used as a float")]
