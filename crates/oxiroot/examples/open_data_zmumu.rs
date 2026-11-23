@@ -106,7 +106,7 @@ mod analysis {
         let report = report.get()?; // the pass: every result is filled now
         let mass = mass.get()?;
         let passed: Vec<u64> = std::iter::once(entries)
-            .chain(report.cuts().iter().map(|cut| cut.passed()))
+            .chain(report.cuts().iter().map(oxiroot::data::query::Cut::passed))
             .collect();
         // Stored in the file as the source has them: the event number in 32
         // bits, and the floats in 32 bits, which is all a mass in GeV needs.
