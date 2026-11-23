@@ -246,8 +246,8 @@ impl<'d, 'f> Query<'d, 'f> {
     /// # Ok::<(), oxiroot_io_core::Error>(())
     /// ```
     ///
-    /// An entry where an argument is missing (or does not fit its type, an
-    /// integer out of range) gets a missing value without calling `f`.
+    /// A value that does not fit its argument's type (an integer out of
+    /// range) is an error, naming the argument, the column and the value.
     pub fn define_with<Args, R, F, I, S>(self, name: impl Into<String>, columns: I, f: F) -> Self
     where
         Args: 'static,
@@ -411,6 +411,13 @@ impl<'d, 'f> Query<'d, 'f> {
                 }
             }
         }
+        // A query that reads no column still needs the entries: read the
+        // first column for its count (it is not in the output).
+        if reads.is_empty()
+            && let Some((first, _)) = dataset.first()
+        {
+            reads.push(first.clone());
+        }
         Ok(Plan {
             reads,
             steps,
@@ -566,7 +573,16 @@ impl<'d, 'f> Query<'d, 'f> {
                         .map(&value_of)
                         .collect::<std::result::Result<Vec<_>, _>>()
                         .map_err(|m| Error::other(QueryError::new(m)))?;
-                    let value = f.run(&args, entries);
+                    let value = f.run(&args, entries).map_err(|(i, m)| {
+                        let column = match step {
+                            Step::DefineWith(_, c, _) | Step::FilterWith(c, _) => c[i].clone(),
+                            _ => String::new(),
+                        };
+                        Error::other(QueryError::new(format!(
+                            "argument {} of a closure, from column `{column}`: {m}",
+                            i + 1
+                        )))
+                    })?;
                     match planned {
                         Planned::DefineWith(name, ..) => defined.push((name.clone(), value)),
                         _ => {

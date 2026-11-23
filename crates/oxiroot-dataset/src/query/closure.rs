@@ -36,7 +36,7 @@ pub trait FromValue: private::Sealed + Sized {
     #[doc(hidden)]
     fn __accepts(ty: &ArgType) -> bool;
     #[doc(hidden)]
-    fn __get(column: ArgColumn<'_>, entry: usize) -> Option<Self>;
+    fn __get(column: ArgColumn<'_>, entry: usize) -> Result<Self, String>;
 }
 
 /// A type a closure can return: a number or `bool`, an `Option` of one (a
@@ -127,12 +127,8 @@ macro_rules! scalar_values {
             fn __accepts(ty: &ArgType) -> bool {
                 fits(<$t>::SCALAR, ty.0.scalar) && ty.0.objects.is_none() && !ty.0.nullable
             }
-            fn __get(column: ArgColumn<'_>, entry: usize) -> Option<Self> {
-                let v = column.0;
-                if v.valid.as_ref().is_some_and(|valid| !valid[entry]) {
-                    return None;
-                }
-                <$t>::from_data(&v.data, entry)
+            fn __get(column: ArgColumn<'_>, entry: usize) -> Result<Self, String> {
+                fetch::<$t>(column.0, entry)
             }
         }
         impl IntoValue for $t {
@@ -151,8 +147,12 @@ macro_rules! scalar_values {
             fn __accepts(ty: &ArgType) -> bool {
                 fits(<$t>::SCALAR, ty.0.scalar) && ty.0.objects.is_none()
             }
-            fn __get(column: ArgColumn<'_>, entry: usize) -> Option<Self> {
-                Some(<$t as FromValue>::__get(column, entry))
+            fn __get(column: ArgColumn<'_>, entry: usize) -> Result<Self, String> {
+                let v = column.0;
+                if v.valid.as_ref().is_some_and(|valid| !valid[entry]) {
+                    return Ok(None);
+                }
+                fetch::<$t>(v, entry).map(Some)
             }
         }
         impl IntoValue for Option<$t> {
@@ -166,16 +166,16 @@ macro_rules! scalar_values {
         impl private::Sealed for Vec<$t> {}
         impl FromValue for Vec<$t> {
             fn __accepts(ty: &ArgType) -> bool {
-                fits(<$t>::SCALAR, ty.0.scalar) && ty.0.objects.is_some()
+                fits(<$t>::SCALAR, ty.0.scalar) && ty.0.objects.is_some() && !ty.0.nullable
             }
-            fn __get(column: ArgColumn<'_>, entry: usize) -> Option<Self> {
+            fn __get(column: ArgColumn<'_>, entry: usize) -> Result<Self, String> {
                 let v = column.0;
-                let offsets = v.offsets.as_ref()?;
-                let range = usize::try_from(offsets[entry]).ok()?..usize::try_from(offsets[entry + 1]).ok()?;
-                range
-                    .filter(|&i| v.valid.as_ref().is_none_or(|valid| valid[i]))
-                    .map(|i| <$t>::from_data(&v.data, i))
-                    .collect()
+                let Some(offsets) = v.offsets.as_ref() else {
+                    return Err("not one value per object".into());
+                };
+                let start = usize::try_from(offsets[entry]).unwrap_or(usize::MAX);
+                let end = usize::try_from(offsets[entry + 1]).unwrap_or(usize::MAX);
+                (start..end).map(|i| fetch::<$t>(v, i)).collect()
             }
         }
         impl IntoValue for Vec<$t> {
@@ -193,6 +193,18 @@ macro_rules! scalar_values {
             }
         }
     )*};
+}
+
+/// The value at `i` as a `T`, or why it does not fit.
+fn fetch<T: ScalarValue>(v: &Val, i: usize) -> Result<T, String> {
+    T::from_data(&v.data, i).ok_or_else(|| {
+        let shown = match &v.data {
+            Data::Int(x) => x[i].to_string(),
+            Data::Float(x) => x[i].to_string(),
+            Data::Bool(x) => x[i].to_string(),
+        };
+        format!("{shown} does not fit {}", std::any::type_name::<T>())
+    })
 }
 
 /// A value for a missing slot, never read as one: zero, or false.
@@ -219,7 +231,7 @@ pub trait Callable<Args, R>: Send + Sync + 'static {
     #[doc(hidden)]
     fn __accepts(types: &[ArgType]) -> Option<usize>;
     #[doc(hidden)]
-    fn __call(&self, columns: &[ArgColumn<'_>], entry: usize) -> Option<R>;
+    fn __call(&self, columns: &[ArgColumn<'_>], entry: usize) -> Result<R, (usize, String)>;
 }
 
 macro_rules! callable {
@@ -234,8 +246,8 @@ macro_rules! callable {
             fn __accepts(types: &[ArgType]) -> Option<usize> {
                 [$($t::__accepts(&types[$i])),*].iter().position(|ok| !ok)
             }
-            fn __call(&self, columns: &[ArgColumn<'_>], entry: usize) -> Option<R> {
-                Some(self($($t::__get(columns[$i], entry)?),*))
+            fn __call(&self, columns: &[ArgColumn<'_>], entry: usize) -> Result<R, (usize, String)> {
+                Ok(self($($t::__get(columns[$i], entry).map_err(|m| ($i, m))?),*))
             }
         }
     };
@@ -253,7 +265,9 @@ pub(crate) trait Erased: Send + Sync {
     /// The first argument the column types do not fit, if one.
     fn rejects(&self, types: &[Ty]) -> Option<usize>;
     fn output(&self) -> Ty;
-    fn run(&self, columns: &[Val], entries: usize) -> Val;
+    /// The closure over every entry, or the first argument that does not
+    /// fit, with why.
+    fn run(&self, columns: &[Val], entries: usize) -> Result<Val, (usize, String)>;
     fn signature(&self) -> &'static str;
 }
 
@@ -287,9 +301,12 @@ where
     fn output(&self) -> Ty {
         R::__type().0
     }
-    fn run(&self, columns: &[Val], entries: usize) -> Val {
+    fn run(&self, columns: &[Val], entries: usize) -> Result<Val, (usize, String)> {
         let args: Vec<ArgColumn<'_>> = columns.iter().map(ArgColumn).collect();
-        R::__collect((0..entries).map(|e| self.f.__call(&args, e)).collect()).0
+        let values = (0..entries)
+            .map(|e| self.f.__call(&args, e).map(Some))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(R::__collect(values).0)
     }
     fn signature(&self) -> &'static str {
         std::any::type_name::<Args>()
