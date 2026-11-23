@@ -94,7 +94,6 @@ macro_rules! from {
     )*};
 }
 from!(
-    Root(oxiroot_io_core::Error),
     Stat(oxistats::StatError),
     Formula(oxifit_formula::ParseError),
     Hist(oxihist::Error),
@@ -103,6 +102,18 @@ from!(
     #[cfg(feature = "fit")]
     Fit(oxifit::FitError),
 );
+
+/// A ROOT-side error, except a formula's that one carries (building a
+/// `Func1D` from a formula that does not parse): that is [`Error::Formula`],
+/// whose [`ParseError`](oxifit_formula::ParseError) says where and how.
+impl From<oxiroot_io_core::Error> for Error {
+    fn from(e: oxiroot_io_core::Error) -> Self {
+        match e.downcast::<oxifit_formula::ParseError>() {
+            Ok(formula) => Self::Formula(formula),
+            Err(e) => Self::Root(e),
+        }
+    }
+}
 
 /// I/O errors (e.g. from `std::fs`) arrive as ROOT-side I/O errors.
 impl From<std::io::Error> for Error {
