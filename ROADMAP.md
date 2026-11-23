@@ -177,14 +177,14 @@ Larger pieces, each worth a design note before code.
   reduce, missing values propagate. Cross-checked against `RDataFrame` on the
   same file. The open-data examples select with queries, with the same
   results as the loops they replaced.
-- **Actions on queries, and branches** (on `main`, unreleased; `RDataFrame`'s `Count`, `Sum`,
-  `Mean`, `Min`, `Max`, `Histo1D`–`3D`, `Report` and `Take`). An action books
-  a result and returns a handle; the first `get` runs one pass that fills
-  every action booked, merged across threads with `rayon`. Each step makes a
-  new query on top of the last, so one query is the base of several
-  branches sharing its steps; named filters give the cut flow. The Z → μμ
-  example fills its cut flow, mass histogram and candidates in one pass per
-  file.
+- **Actions on queries, and branches** (on `main`, unreleased).
+  `RDataFrame`'s `Count`, `Sum`, `Mean`, `Min`, `Max`, `Histo1D`–`3D`,
+  `Report` and `Take`: an action books a result and returns a handle, and the
+  first `get` runs one pass that fills every action booked, merged across
+  threads with `rayon`. Each step makes a new query on top of the last, so
+  one query is the base of several branches sharing its steps; named filters
+  give the cut flow. The Z → μμ example fills its cut flow, mass histogram
+  and candidates in one pass per file.
 
 ### Still open
 

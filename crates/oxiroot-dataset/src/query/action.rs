@@ -617,11 +617,14 @@ impl<'d, 'f> Query<'d, 'f> {
     }
 }
 
+/// For `collect`: the selected columns, and the defined ones with their
+/// types.
+type Output = (Vec<String>, Vec<(String, super::check::Ty)>);
+
 /// An action that checked, ready to be filled.
 struct Live {
     booked: Booked,
-    /// For `collect`: the selected columns and the defined ones, typed.
-    output: Option<(Vec<String>, Vec<(String, super::check::Ty)>)>,
+    output: Option<Output>,
     /// Each expression and the columns it reads.
     exprs: Vec<(Expr, Vec<(String, Source)>)>,
 }
