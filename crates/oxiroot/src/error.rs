@@ -28,6 +28,9 @@ pub enum Error {
     Stat(oxistats::StatError),
     /// A formula did not parse.
     Formula(oxiformula::ParseError),
+    /// A dataset query does not check, or its values do not fit
+    /// ([`Dataset::query`](crate::data::Dataset::query)).
+    Query(oxiroot_dataset::query::QueryError),
     /// An oxihist histogram operation failed.
     Hist(oxihist::Error),
     /// Building or saving a figure failed (the `plot` feature).
@@ -59,6 +62,7 @@ impl fmt::Display for Error {
             Self::Root(e) => fmt::Display::fmt(e, f),
             Self::Stat(e) => write!(f, "statistics: {e}"),
             Self::Formula(e) => write!(f, "invalid formula: {e}"),
+            Self::Query(e) => write!(f, "query: {e}"),
             Self::Hist(e) => write!(f, "histogram: {e}"),
             #[cfg(feature = "plot")]
             Self::Plot(e) => write!(f, "plotting: {e}"),
@@ -74,6 +78,7 @@ impl std::error::Error for Error {
             Self::Root(e) => Some(e),
             Self::Stat(e) => Some(e),
             Self::Formula(e) => Some(e),
+            Self::Query(e) => Some(e),
             Self::Hist(e) => Some(e),
             #[cfg(feature = "plot")]
             Self::Plot(e) => Some(e),
@@ -103,14 +108,18 @@ from!(
     Fit(oxifit::FitError),
 );
 
-/// A ROOT-side error, except a formula's that one carries (building a
-/// `Func1D` from a formula that does not parse): that is [`Error::Formula`],
-/// whose [`ParseError`](oxiformula::ParseError) says where and how.
+/// A ROOT-side error, except the formula and query errors one carries:
+/// building a `Func1D` from a formula that does not parse is
+/// [`Error::Formula`], and a dataset query that does not check is
+/// [`Error::Query`], each saying where and how.
 impl From<oxiroot_io_core::Error> for Error {
     fn from(e: oxiroot_io_core::Error) -> Self {
         match e.downcast::<oxiformula::ParseError>() {
             Ok(formula) => Self::Formula(formula),
-            Err(e) => Self::Root(e),
+            Err(e) => match e.downcast::<oxiroot_dataset::query::QueryError>() {
+                Ok(query) => Self::Query(query),
+                Err(e) => Self::Root(e),
+            },
         }
     }
 }

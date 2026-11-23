@@ -9,6 +9,20 @@ change the API.
 
 ### Added
 
+- **Queries: derived columns and cuts on a dataset** (`Dataset::query`,
+  `oxiroot::data::query`). Expressions are built in Rust (`col("Muon_pt")
+  .gt(20.0).any()`) or written as text (`"any(Muon.pt > 20)"`), the same
+  tree either way, and checked against the dataset's columns before anything
+  is read: a missing column, a type that does not fit, or a cut that is not
+  one bool per entry is an error with the expression underlined and a hint.
+  Per-object columns broadcast, reduce (`any`, `count`, `sum`, `max`, …,
+  `x[i]`) and select objects (`x[mask]`); missing values propagate and `??`
+  fills them; integers stay exact; `Muon.pt` reaches record members and
+  NanoAOD's `Muon_pt`. Evaluated a whole column at a time, batch by batch
+  (`read`, `batches`), reading only the columns used. `define_with` and
+  `filter_with` take typed Rust closures, checked against the columns too.
+  Cross-checked against ROOT's `RDataFrame` on the same file. Through `?`,
+  a query mistake is `oxiroot::Error::Query`.
 - **Constructors for ROOT's predefined functions**: `Func1D::gaus`,
   `gausn`, `expo`, `landau`, `crystalball`, `breitwigner`, `pol` and `cheb`,
   and `Func2D::gaus` (`xygaus`) and `bigaus`, with ROOT's parameter names.
