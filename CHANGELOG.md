@@ -7,6 +7,19 @@ change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `oxiroot::ntuple::raw::write_ntuple_clusters`: an RNTuple with a cluster per
+  set of fields, into an open container.
+
+### Changed
+
+- **A `NamedBatch` is written in chunks** of about 1 MiB per column, as a
+  `DatasetWriter` cuts a cluster: a basket per branch per chunk in a `TTree`,
+  an RNTuple cluster per chunk. It was one basket per branch or one cluster for
+  the whole dataset, which a read could neither window nor share across
+  threads. ROOT 6.40 reads both forms of a 1-million-entry batch.
+
 ### Fixed
 
 - **A crafted file could make opening it run out of memory.** A key whose
@@ -15,6 +28,18 @@ change the API.
   key until memory ran out: 77 bytes were enough to make `FileReader::open`
   allocate 2 GB. Such a key is now a format error. The fuzzers found it; their
   three inputs are regression tests (`fixtures/fuzz/`).
+- **A `std::variant` column was written once per chunk.** A slice of a union
+  kept all its alternatives, and a writer cuts each cluster into chunks of
+  about 1 MiB per column, so every chunk stored every alternative value of the
+  batch: 400 000 entries in 6 chunks took 27 MB for 11 MB of values, and read
+  back six times over. A slice or a filter of a union now keeps only the values
+  its entries hold. `hadd` and `NamedBatch` had the same growth.
+- **A `std::variant` RNTuple over several clusters read wrong from the second
+  cluster on**, for files ROOT wrote: a switch index counts its alternative's
+  values within the cluster, and the reader did not add those of the clusters
+  before. It now does, from each alternative's own pages, so variant files
+  oxiroot 0.10 and 0.11 wrote (every cluster with every value) still read right.
+  A ROOT-written fixture over three clusters covers it.
 
 ## [0.11.0] — 2026-11-22
 

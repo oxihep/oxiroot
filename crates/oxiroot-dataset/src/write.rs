@@ -427,26 +427,39 @@ impl NamedBatch {
         &self.batch
     }
 
-    /// The batch as the format's own records.
+    /// The batch as the format's own records, cut into chunks of about
+    /// [`CHUNK_BYTES_PER_COLUMN`] per column as a [`DatasetWriter`] cuts a
+    /// cluster: a basket per branch per chunk, or an `RNTuple` cluster per
+    /// chunk, so a read can take a window or run in parallel.
     fn content(self) -> Result<Content> {
         let schema = self.schema.unwrap_or_else(|| self.batch.schema());
         check_batch(&schema, &self.batch)?;
         for (column, data_type) in schema.iter() {
             check_type(self.format, column, data_type)?;
         }
+        let chunks = chunk_ranges(&self.batch);
         Ok(match self.format {
             Format::Tree => {
                 check_counts(&self.batch, &schema)?;
-                Content::Tree(tree_branches(self.batch, &schema))
+                let per_basket = chunks.first().map_or(0, ExactSizeIterator::len);
+                Content::Tree(tree_branches(self.batch, &schema), per_basket)
             }
-            Format::Ntuple => Content::Ntuple(ntuple_fields(self.batch, &schema)),
+            Format::Ntuple if chunks.len() > 1 => Content::Ntuple(
+                chunks
+                    .into_iter()
+                    .map(|r| ntuple_fields(self.batch.slice(r), &schema))
+                    .collect(),
+            ),
+            Format::Ntuple => Content::Ntuple(vec![ntuple_fields(self.batch, &schema)]),
         })
     }
 }
 
 enum Content {
-    Tree(Vec<Branch>),
-    Ntuple(Vec<Field>),
+    /// The branches, and the entries in each basket (`0`: one basket).
+    Tree(Vec<Branch>, usize),
+    /// The fields of each cluster.
+    Ntuple(Vec<Vec<Field>>),
 }
 
 /// A [`NamedBatch`] converted for its format, or why it could not be.
@@ -509,17 +522,21 @@ impl WriteInto for Records {
     }
     fn write_into(&self, file: &mut ContainerWriter<Cursor<Vec<u8>>>, dir: DirId) -> Result<()> {
         match &self.content {
-            Ok(Content::Tree(b)) => oxiroot_tree::raw::write_tree(file, dir, &self.name, b, 0),
-            Ok(Content::Ntuple(f)) => {
-                oxiroot_rntuple::raw::write_ntuple(file, dir, &self.name, f, &[])
+            Ok(Content::Tree(b, per_basket)) => {
+                oxiroot_tree::raw::write_tree(file, dir, &self.name, b, *per_basket)
+            }
+            Ok(Content::Ntuple(clusters)) => {
+                oxiroot_rntuple::raw::write_ntuple_clusters(file, dir, &self.name, clusters)
             }
             Err(deferred) => Err(deferred.take()),
         }
     }
     fn streamer_classes(&self) -> Vec<ClassDef<'static>> {
         match &self.content {
-            Ok(Content::Tree(b)) => oxiroot_tree::raw::tree_streamer_classes(b),
-            Ok(Content::Ntuple(f)) => oxiroot_rntuple::raw::ntuple_streamer_classes(f),
+            Ok(Content::Tree(b, _)) => oxiroot_tree::raw::tree_streamer_classes(b),
+            Ok(Content::Ntuple(clusters)) => oxiroot_rntuple::raw::ntuple_streamer_classes(
+                clusters.first().into_iter().flatten(),
+            ),
             Err(_) => Vec::new(),
         }
     }
