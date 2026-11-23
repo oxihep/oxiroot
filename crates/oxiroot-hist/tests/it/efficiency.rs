@@ -84,3 +84,119 @@ fn statistic_options_round_trip_their_codes() {
     assert!(StatisticOption::from_code(9).is_err());
     assert!(StatisticOption::from_code(-1).is_err());
 }
+
+/// Efficiencies ROOT 6.40 filled with weights, and the bounds it gives each
+/// bin (`GetEfficiency ∓ GetEfficiencyError{Low,Up}`), from
+/// `scripts/gen_efficiency_weighted.C`. Bin 4 holds no trials.
+#[test]
+fn weighted_and_shortest_intervals_are_those_of_root() {
+    let file = FileReader::open(fixture("efficiency_weighted.root")).unwrap();
+    type Bounds = [(f64, f64); 3];
+    let cases: [(&str, bool, bool, Bounds); 7] = [
+        // A weighted Clopper-Pearson is the normal approximation, as in ROOT.
+        (
+            "cp_weighted",
+            true,
+            false,
+            [
+                (0.409786392795, 0.74172875872),
+                (0.00063951104699, 0.285074774667),
+                (1.0, 1.0),
+            ],
+        ),
+        (
+            "normal_weighted",
+            true,
+            false,
+            [
+                (0.409786392795, 0.74172875872),
+                (0.00063951104699, 0.285074774667),
+                (1.0, 1.0),
+            ],
+        ),
+        (
+            "jeffrey_weighted",
+            true,
+            false,
+            [
+                (0.411562837177, 0.724195885577),
+                (0.0486096496099, 0.403653743841),
+                (0.808416213809, 0.995728054003),
+            ],
+        ),
+        (
+            "uniform_weighted",
+            true,
+            false,
+            [
+                (0.41238420286, 0.711130498468),
+                (0.0933207409606, 0.452961245298),
+                (0.711597977865, 0.968626828123),
+            ],
+        ),
+        (
+            "wilson_weight_one",
+            true,
+            false,
+            [
+                (0.424835592063, 0.744975728691),
+                (0.00953687883754, 0.354099484799),
+                (1.0, 1.0),
+            ],
+        ),
+        // A weight set on an unweighted efficiency changes nothing.
+        (
+            "cp_setweight",
+            false,
+            false,
+            [
+                (0.39530770522, 0.780086353313),
+                (0.0422249266737, 0.618546137188),
+                (0.691840295304, 1.0),
+            ],
+        ),
+        (
+            "jeffrey_shortest",
+            false,
+            true,
+            [
+                (0.456952442104, 0.751509784233),
+                (0.037139073404, 0.402032571842),
+                (0.909175480341, 1.0),
+            ],
+        ),
+    ];
+    for (name, weighted, shortest, expected) in cases {
+        let e = file.get::<Efficiency>(name).unwrap();
+        assert_eq!(e.is_weighted(), weighted, "{name}");
+        assert_eq!(e.shortest_interval(), shortest, "{name}");
+        let tolerance = if shortest { 1e-6 } else { 1e-9 };
+        for (bin, (lo, hi)) in (1..).zip(expected) {
+            let (l, h) = e.interval(bin).unwrap().unwrap();
+            assert!(
+                (l - lo).abs() < tolerance && (h - hi).abs() < tolerance,
+                "{name} bin {bin}: ({l}, {h}), ROOT ({lo}, {hi})"
+            );
+        }
+        assert_eq!(e.interval(4).unwrap(), None, "{name}");
+    }
+}
+
+/// The settings survive a write: ROOT reads them from the same bits.
+#[test]
+fn weighted_and_shortest_settings_round_trip() {
+    let file = FileReader::open(fixture("efficiency_weighted.root")).unwrap();
+    for name in ["jeffrey_weighted", "jeffrey_shortest", "cp_setweight"] {
+        let e = file.get::<Efficiency>(name).unwrap();
+        let bytes = oxiroot_io_core::FileWriter::create("e.root")
+            .add(&e)
+            .compression(Compression::Stored)
+            .to_bytes()
+            .unwrap();
+        let back = FileReader::from_bytes(bytes)
+            .unwrap()
+            .get::<Efficiency>(name)
+            .unwrap();
+        assert_eq!(back, e, "{name}");
+    }
+}
